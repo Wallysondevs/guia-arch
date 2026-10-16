@@ -421,14 +421,30 @@ Descrição            : Shell script analysis tool
 Depende de           : ghc-libs  haskell-aeson  haskell-diff  haskell-fgl  haskell-quickcheck  haskell-regex-tdfa
 …</pre>
 
-<p>Ele é escrito em Haskell, por isso puxa muitas bibliotecas <code>haskell-*</code>: em outubro de 2026, numa instalação como a da Ana, eram 55 pacotes e cerca de 22 MiB de download. Instale com <code>sudo pacman -S shellcheck</code>. Uma saída típica (ilustrativa):</p>
+<p>Ele é escrito em Haskell, por isso puxa muitas bibliotecas <code>haskell-*</code>: em outubro de 2026, numa instalação como a da Ana, eram 55 pacotes e cerca de 22 MiB de download. Instale com <code>sudo pacman -S shellcheck</code>. Veja o que ele diz deste script de três linhas:</p>
+
+<pre class="file" data-file="apaga.sh">#!/usr/bin/env bash
+PASTA=$1
+rm -rf $PASTA/*
+</pre>
 
 <pre class="term" data-cwd="~/scripts">$ shellcheck apaga.sh
 
 In apaga.sh line 3:
 rm -rf $PASTA/*
-       ^-----^ SC2086 (info): Double quote to prevent globbing and word splitting.
-       ^-----^ SC2115 (warning): Use "${var:?}" to ensure this never expands to /* .</pre>
+       ^------^ SC2115 (warning): Use "${var:?}" to ensure this never expands to /* .
+       ^----^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean:                       « ele já sugere a correção
+rm -rf "$PASTA"/*
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2115 -- Use "${var:?}" to ensure this nev...
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...
+$ echo $?
+1                                   « 1 = achou problemas; 0 = nada a apontar</pre>
+
+<p>Saída real do ShellCheck 0.11 (a mesma versão do Arch em outubro de 2026). Cada aviso tem um código (<code>SC2115</code>, <code>SC2086</code>) com uma página explicando o problema no site do ShellCheck. </p>
 
 <p>O aviso SC2115 é sério: se <code>$PASTA</code> estiver vazia, o comando vira <code>rm -rf /*</code>.</p>
 
