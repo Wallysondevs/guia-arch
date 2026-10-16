@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Primeiro Boot — reiniciar, entrar e conferir a instalação | Guia Arch</title>
+<meta name="description" content="Sair do chroot, desmontar, reiniciar e tirar o pendrive; o menu do GRUB e a tela de login; entrar como ana e conferir a instalação com saídas reais (os-release, hostnamectl, localectl, nmcli, systemctl --failed); Wi-Fi com nmcli e o que fazer quando não liga.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Primeiro Boot</span></h1>
+
+<p class="intro">É a hora da verdade: sair do ambiente live, reiniciar e ver o seu Arch ligar sozinho, do disco. Nesta aula você fecha a instalação do jeito certo, reconhece cada tela que aparece, entra como <code>ana</code> e confere, comando por comando, se tudo o que configurou está valendo. No fim, um checklist e o que fazer se a máquina não ligar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Sair do chroot, desmontar as partições e reiniciar sem perder nada.</li>
+  <li>O que aparece no primeiro boot: o menu do GRUB e a tela de login em texto.</li>
+  <li>Conferir sistema, nome, idioma, fuso, rede e serviços com as saídas reais da VM.</li>
+  <li>Conectar no Wi-Fi pelo terminal com <code>nmcli</code>.</li>
+  <li>Diagnosticar quando a máquina não liga ou liga sem rede.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>1. Sair do chroot</h2>
+<p>Você terminou a aula <a href="bootloader.html">Bootloader</a> dentro do sistema novo, com o prompt <code>[root@archiso /]#</code>. O <code>exit</code> fecha o Bash do chroot e devolve você ao zsh do live:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> exit
+exit
+</pre>
+
+<p>O prompt volta a ser o do live, <code>root@archiso ~ #</code>. (Também funciona <kbd>Ctrl</kbd>+<kbd>D</kbd>.) Na VM do guia os comandos foram rodados com <code>arch-chroot /mnt comando</code>, um de cada vez, então não houve <code>exit</code>: cada <code>arch-chroot</code> já saía sozinho.</p>
+
+<hr>
+
+<h2>2. Desmontar tudo: umount -R</h2>
+<p>O Linux não grava tudo no disco na hora: guarda parte na memória para gravar depois. <strong>Desmontar</strong> obriga essa gravação e fecha as partições com segurança. Desligar sem desmontar pode deixar o sistema de arquivos marcado como "sujo" (foi o que aconteceu com a partição EFI da VM depois de um desligamento forçado; veja <a href="recuperar-boot.html">Recuperar o Boot</a>).</p>
+
+<dl class="anatomy">
+  <dt>umount</dt><dd>Desmonta (sem o "n": <em>u-mount</em>).</dd>
+  <dt>-R</dt><dd><em>recursive</em>: desmonta <code>/mnt</code> e tudo o que está montado dentro dele (<code>/mnt/boot</code> e o que o <code>arch-chroot</code> montou), na ordem certa.</dd>
+  <dt>/mnt</dt><dd>A raiz do sistema novo.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> umount -R /mnt
+#> swapoff /dev/sda2               « opcional: desliga a swap que o live estava usando
+#> echo ok
+ok
+</pre>
+
+<p>No log da VM, os três comandos foram numa linha só (<code>umount -R /mnt; swapoff /dev/sda2; echo ok</code>) e só o <code>ok</code> apareceu: nenhuma mensagem quer dizer que deu certo. O <code>swapoff</code> é opcional; o <code>reboot</code> também desligaria a swap.</p>
+
+<div class="cenario">
+<strong>"umount: /mnt: target is busy."</strong>
+<p><strong>O que aconteceu:</strong> algum programa ainda está usando algo dentro de <code>/mnt</code>; quase sempre é o próprio terminal, que está numa pasta lá dentro (você fez <code>cd /mnt</code>), ou você ainda está no chroot. Na VM do guia, reproduzindo o erro com uma pasta de teste (no sistema instalado a mensagem sai em português; código de saída 32):</p>
+<pre class="term" data-user="root">#> cd /tmp/a3/m
+#> umount -R /tmp/a3/m
+umount: /tmp/a3/m: o alvo está ocupado.
+#> cd /
+#> umount -R /tmp/a3/m
+#> echo $?
+0</pre>
+<p><strong>Como resolver:</strong> saia do chroot (<code>exit</code>), vá para outra pasta (<code>cd</code>) e tente de novo.</p>
+</div>
+
+<hr>
+
+<h2>3. Reiniciar e tirar o pendrive</h2>
+
+<pre class="term" data-host="archiso" data-user="root">#> reboot
+</pre>
+
+<p>A tela apaga e o computador reinicia. Agora tire o pendrive (ou, na máquina virtual, ejete a ISO). Se você esquecer, alguns computadores ligam o live de novo, porque o pendrive está antes do disco na ordem de boot do firmware. Na VM do guia isso não acontece: o <code>grub-install</code> pôs a entrada GRUB em <strong>primeiro</strong> no <code>BootOrder</code> (<code>0003,0000,0001,0002</code>; veja <a href="bootloader.html">Bootloader</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Como tirar a mídia de instalação</th></tr>
+<tr><td>Computador de verdade</td><td>Puxe o pendrive quando a tela apagar (ou já no menu do GRUB).</td></tr>
+<tr><td>VirtualBox</td><td>Menu <em>Dispositivos → Discos Ópticos → Remover disco do drive virtual</em>; ou, com a VM desligada, <em>Configurações → Armazenamento</em> e remova a ISO.</td></tr>
+<tr><td>Ligou o live de novo?</td><td>Sem problema: nada se perdeu. Desligue (<code>poweroff</code>), tire a mídia e ligue.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. O que aparece na tela</h2>
+
+<h3>O menu do GRUB</h3>
+<p>Primeiro vem o menu do GRUB, com uma contagem de <strong>5 segundos</strong> (o <code>GRUB_TIMEOUT=5</code>). Sem tocar em nada, ele liga o primeiro item, <strong>Arch Linux</strong>. Os itens do primeiro boot são os que o <code>grub-mkconfig</code> criou na instalação:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Para que serve</th></tr>
+<tr><td><strong>Arch Linux</strong></td><td>O boot normal. É o padrão.</td></tr>
+<tr><td><strong>Advanced options for Arch Linux</strong></td><td>Submenu com cada kernel instalado. Como o menu foi gerado no live (em inglês), o nome sai em inglês; quando você gerar de novo no sistema instalado, vira "Opções avançadas para Arch Linux".</td></tr>
+<tr><td><strong>UEFI Firmware Settings</strong></td><td>Reinicia direto na configuração do firmware.</td></tr>
+<tr><td><strong>… (EFI BootNext)</strong></td><td>Um item para cada entrada do firmware (UiApp, CD-ROM, disco, GRUB). Escolher um reinicia por aquela entrada. Normalmente você não usa.</td></tr>
+</table>
+</div>
+
+<p>Use as setas para escolher e <kbd>Enter</kbd> para ligar. Depois do menu, o boot é quase silencioso (o <code>quiet</code> do <code>GRUB_CMDLINE_LINUX_DEFAULT</code>): a tela fica preta por alguns segundos e aparece o login.</p>
+
+<h3>A tela de login</h3>
+<p>Não há interface gráfica: o Arch instalado assim é só texto. A primeira tela da VM do guia foi esta:</p>
+
+<figure>
+<img src="img/primeiro-boot-login.png" alt="Tela preta com o texto: Arch Linux 7.2.10-arch1-1 (tty1), e embaixo: notebook login:" loading="lazy">
+<figcaption>Primeiro boot da VM do guia: o console de texto esperando o login.</figcaption>
+</figure>
+
+<dl class="anatomy">
+  <dt>Arch Linux</dt><dd>O nome do sistema (do arquivo <code>/etc/os-release</code>).</dd>
+  <dt>7.2.10-arch1-1</dt><dd>A versão do kernel que ligou.</dd>
+  <dt>(tty1)</dt><dd>O terminal: o <strong>tty1</strong> é o primeiro console de texto. Existem outros: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> abre o tty2 (útil quando algo trava; veja <a href="travamentos.html">Quando o Sistema Trava</a>).</dd>
+  <dt>notebook</dt><dd>O nome da máquina, lido de <code>/etc/hostname</code>. Se aparece <code>archlinux</code> ou outro nome, o arquivo não foi escrito.</dd>
+  <dt>login:</dt><dd>Esperando o nome de usuário.</dd>
+</dl>
+
+<p>A primeira linha vem do arquivo <code>/etc/issue</code>, que tem códigos trocados na hora: <code>\S{PRETTY_NAME}</code> = nome do sistema, <code>\r</code> = versão do kernel, <code>\l</code> = terminal.</p>
+
+<pre class="term">$ cat /etc/issue
+\S{PRETTY_NAME} \r (\l)
+</pre>
+
+<h3>Entrar como ana</h3>
+<p>Digite <code>ana</code> e <kbd>Enter</kbd>. Aparece o pedido de senha; digite a senha que você definiu com <code>passwd ana</code> (nada aparece enquanto digita) e <kbd>Enter</kbd>. Se der certo, surge o prompt:</p>
+
+<pre class="term">$ whoami
+ana
+</pre>
+
+<p>Esse <code>[ana@notebook ~]$</code> resume a instalação: <strong>ana</strong> (a usuária do <code>useradd</code>), <strong>notebook</strong> (o <code>/etc/hostname</code>), <strong>~</strong> (a pasta pessoal, criada pelo <code>-m</code>) e <strong>$</strong> (usuária comum, não root). Errou a senha? Aparece uma mensagem de login incorreto e o <code>login:</code> volta; tente de novo, atenção ao teclado (ABNT2) e ao <kbd>Caps Lock</kbd>.</p>
+
+<hr>
+
+<h2>5. Conferir a instalação</h2>
+<p>Agora você confere, uma por uma, as escolhas da instalação. As saídas abaixo são as do primeiro boot da VM do guia (todas juntas no log 09 da instalação), e algumas foram repetidas depois para mostrar a versão completa.</p>
+
+<h3>Qual sistema e qual kernel</h3>
+<pre class="term">$ cat /etc/os-release
+NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch
+BUILD_ID=rolling                   « não há "versão": o Arch é rolling release
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo
+$ uname -r
+7.2.10-arch1-1                     « o kernel do pacote linux
+</pre>
+
+<p>Repare que não existe <code>VERSION=</code>: o Arch não tem versões numeradas (<a href="rolling-release.html">Rolling Release</a>). O <code>uname -r</code> (<em>release</em>) mostra a versão do kernel em uso, a mesma da tela de login.</p>
+
+<h3>Nome da máquina</h3>
+<pre class="term">$ hostnamectl
+ Static hostname: notebook                  « o /etc/hostname
+       Icon name: computer-vm
+         Chassis: vm 💽
+      Machine ID: 42634ff99dd3440394e6cd711c974f65
+         Boot ID: d89c67becb284e04b53080f044b99d6c
+  Virtualization: oracle                    « detectou o VirtualBox
+Operating System: Arch Linux
+          Kernel: Linux 7.2.10-arch1-1
+    Architecture: x86-64
+ Hardware Vendor: innotek GmbH
+  Hardware Model: VirtualBox
+Hardware Version: 1.2
+Firmware Version: VirtualBox
+   Firmware Date: Fri 2006-12-01
+    Firmware Age: 19y 10month 2w 1d
+</pre>
+
+<p>O <code>hostnamectl</code> (do systemd) junta o nome da máquina com informações do hardware. Num computador de verdade, <code>Chassis</code> diz <code>laptop</code> ou <code>desktop</code>, e não há linha <code>Virtualization</code>.</p>
+
+<h3>Idioma e teclado</h3>
+<pre class="term">$ localectl
+System Locale: LANG=pt_BR.UTF-8      « o /etc/locale.conf
+    VC Keymap: br-abnt2              « o /etc/vconsole.conf (VC = console virtual)
+   X11 Layout: (unset)               « teclado da interface gráfica: ainda não há uma
+</pre>
+
+<h3>Fuso e relógio</h3>
+<pre class="term">$ timedatectl
+               Local time: sex 2026-10-16 13:23:05 -03      « hora de Brasília
+           Universal time: sex 2026-10-16 16:23:05 UTC
+                 RTC time: sex 2026-10-16 16:23:05          « o relógio da placa, em UTC
+                Time zone: America/Sao_Paulo (-03, -0300)
+System clock synchronized: no
+              NTP service: inactive                         « ninguém acerta o relógio pela internet
+          RTC in local TZ: no
+</pre>
+
+<p>O fuso está certo, mas repare nas duas linhas do meio: no live, <code>NTP service</code> estava <code>active</code> (o live liga o <code>systemd-timesyncd</code>); no sistema instalado, ninguém ativou. Sem ele, o relógio vai se atrasando aos poucos. Para ligar a sincronização pela internet (NTP), rode <code>sudo timedatectl set-ntp true</code>, que ativa o <code>systemd-timesyncd</code>. (A VM do guia ficou assim de propósito; esse comando não foi rodado nela.)</p>
+
+<h3>Rede</h3>
+<pre class="term">$ nmcli device
+DEVICE  TYPE      STATE                     CONNECTION
+enp0s3  ethernet  conectado                 Conexão cabeada 1      « a placa de rede, conectada
+lo      loopback  conectado (externamente)  lo                     « a interface interna (sempre existe)
+$ ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes de dados.
+64 bytes de 209.126.35.79: icmp_seq=1 ttl=64 tempo=41.9 ms
+64 bytes de 209.126.35.79: icmp_seq=2 ttl=64 tempo=49.5 ms
+64 bytes de 209.126.35.79: icmp_seq=3 ttl=64 tempo=45.7 ms
+
+--- archlinux.org estatísticas de ping ---
+3 pacotes transmitidos, 3 recebidos, 0% packet loss, time 2371ms
+rtt min/avg/max/mdev = 41.882/45.696/49.493/3.107 ms
+</pre>
+
+<p>O <code>nmcli</code> é a linha de comando do NetworkManager. <code>enp0s3</code> é o nome da placa com fio (<code>en</code> = ethernet, <code>p0s3</code> = a posição no barramento PCI). A conexão <code>Conexão cabeada 1</code> foi criada sozinha pelo NetworkManager ao ver o cabo: você não configurou nada além do <code>systemctl enable</code>. O <code>ping</code> confirma que a internet e o DNS funcionam. Mais sobre rede em <a href="rede.html">NetworkManager e iwd</a>.</p>
+
+<h3>Serviços com falha</h3>
+<pre class="term">$ systemctl --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.              « nenhum serviço falhou
+</pre>
+
+<p>Esta é a melhor resposta possível: zero unidades com falha. Se aparecer alguma, investigue com <code>systemctl status NOME</code> e <code>journalctl -b -u NOME</code> (veja <a href="systemd.html">systemctl e Serviços</a>).</p>
+
+<h3>Pacotes e disco</h3>
+<pre class="term">$ pacman -Q | wc -l
+193                                 « os mesmos 193 pacotes do pacstrap
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda3        25G  2.3G   21G  10% /
+</pre>
+
+<p>O <code>pacman -Q</code> lista os pacotes instalados, um por linha; o <code>wc -l</code> conta as linhas: 193, exatamente o <code>Packages (193)</code> do <code>pacstrap</code>. A raiz ocupa 2,3 GB dos 25 GB. É um sistema mínimo: sem interface gráfica, sem navegador.</p>
+
+<h3>O sudo funciona?</h3>
+<pre class="term">$ groups
+ana wheel
+$ sudo whoami
+[sudo] senha para ana:              « a senha da ana (não a do root)
+root
+</pre>
+
+<p>Se o <code>sudo</code> respondeu <code>root</code>, a linha do <code>wheel</code> no <code>sudoers</code> está certa (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+
+<div class="try" data-goal="out:notebook" data-solucao="hostnamectl">
+<p class="try-task"><strong>Missão:</strong> no terminal simulado, use o comando do systemd que mostra o nome da máquina e o hardware.</p>
+</div>
+
+<div class="try" data-goal="ran:systemctl --failed,out:0 loaded units listed" data-solucao="systemctl --failed">
+<p class="try-task"><strong>Missão:</strong> confira se algum serviço falhou no boot.</p>
+</div>
+
+<hr>
+
+<h2>6. Wi-Fi pelo terminal (ilustrativo)</h2>
+<p>A VM do guia usa rede com fio, e o NetworkManager confirma que ela não tem Wi-Fi (<code>WIFI-HW faltando</code>):</p>
+
+<pre class="term">$ nmcli general
+STATE      CONNECTIVITY  WIFI-HW   WIFI        WWAN-HW   WWAN        METERED
+conectado  completa      faltando  habilitado  faltando  habilitado  não (adivinhado)
+</pre>
+
+<p>Num notebook, os passos abaixo conectam no Wi-Fi. Eles não foram executados na VM (não há placa); siga a sequência e leia as mensagens:</p>
+
+<ol class="passo">
+  <li><strong>Veja se a placa existe.</strong> <code>nmcli device</code> deve listar um dispositivo do tipo <code>wifi</code> (o nome costuma ser <code>wlan0</code> ou <code>wlp2s0</code>). Se ele não aparece, falta o firmware da placa: o pacote <code>linux-firmware</code> resolve na maioria dos casos.</li>
+  <li><strong>Liste as redes.</strong> <code>nmcli device wifi list</code> mostra as redes por perto, com o sinal e a segurança.</li>
+  <li><strong>Conecte.</strong> <code>nmcli device wifi connect "Nome da Rede" --ask</code>: o <code>--ask</code> pergunta a senha sem deixá-la no histórico do Bash. (Também existe <code>password "senha"</code> no fim do comando, mas a senha fica visível.)</li>
+  <li><strong>Confira.</strong> <code>nmcli device</code> deve mostrar a placa como conectada, e <code>ping -c 3 archlinux.org</code> deve responder.</li>
+</ol>
+
+<dl class="anatomy">
+  <dt>nmcli</dt><dd>O cliente de linha de comando do NetworkManager.</dd>
+  <dt>device wifi</dt><dd>Operações de Wi-Fi nos dispositivos.</dd>
+  <dt>connect "Nome da Rede"</dt><dd>Conectar a esta rede (o SSID). Aspas por causa dos espaços.</dd>
+  <dt>--ask</dt><dd>Pergunta o que faltar (a senha) no terminal.</dd>
+</dl>
+
+<div class="tip">
+<strong>Prefere menus?</strong>
+<p>O <code>nmtui</code> (vem com o NetworkManager) abre uma interface de texto com setas: <em>Ativar uma conexão</em> → escolha a rede → digite a senha. A conexão fica salva e liga sozinha nos próximos boots.</p>
+</div>
+
+<hr>
+
+<h2>Deu tudo certo? Checklist</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Confira</th><th>Comando</th><th>Resposta esperada</th><th>Se não…</th></tr>
+<tr><td>Ligou sem o pendrive</td><td>(ver a tela)</td><td>menu do GRUB e <code>notebook login:</code></td><td><a href="bootloader.html">Bootloader</a></td></tr>
+<tr><td>Nome da máquina</td><td><code>hostnamectl</code></td><td><code>Static hostname: notebook</code></td><td><code>/etc/hostname</code></td></tr>
+<tr><td>Idioma e teclado</td><td><code>localectl</code></td><td><code>LANG=pt_BR.UTF-8</code>, <code>br-abnt2</code></td><td><code>/etc/locale.conf</code>, <code>/etc/vconsole.conf</code></td></tr>
+<tr><td>Fuso</td><td><code>timedatectl</code></td><td><code>America/Sao_Paulo (-03, -0300)</code></td><td><code>ln -sf …/etc/localtime</code></td></tr>
+<tr><td>Rede</td><td><code>nmcli device</code>, <code>ping</code></td><td><code>conectado</code>, respostas do ping</td><td>seção "sem rede" abaixo</td></tr>
+<tr><td>Serviços</td><td><code>systemctl --failed</code></td><td><code>0 loaded units listed.</code></td><td><code>systemctl status</code></td></tr>
+<tr><td>Partições</td><td><code>findmnt --verify</code></td><td><code>Sucesso, nenhum erro ou aviso detectado</code></td><td><a href="fstab.html">mount e fstab</a></td></tr>
+<tr><td>sudo</td><td><code>sudo whoami</code></td><td><code>root</code></td><td><code>EDITOR=nano visudo</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não liga</h2>
+
+<div class="cenario">
+<strong>Ligou direto na tela do firmware, ou num "UEFI Interactive Shell"</strong>
+<p><strong>O que aconteceu:</strong> o firmware não achou o bootloader: o <code>grub-install</code> falhou ou não rodou, ou o firmware ignora a entrada GRUB (comum no VirtualBox e em algumas placas).</p>
+<p><strong>Como resolver:</strong> ligue o pendrive, monte as partições, <code>arch-chroot /mnt</code> e reinstale o GRUB; se o firmware for "teimoso", use o <code>--removable</code> (<a href="bootloader.html">Bootloader</a>, seção "Quando não funciona"). O roteiro de montar e entrar está em <a href="chroot-resgate.html">Resgate com chroot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Caiu em <code>grub&gt;</code> ou <code>grub rescue&gt;</code></strong>
+<p><strong>O que aconteceu:</strong> <code>grub&gt;</code> = o GRUB ligou mas não achou o <code>grub.cfg</code> (faltou o <code>grub-mkconfig -o …</code>). <code>grub rescue&gt;</code> = nem os módulos ele achou (partição mudou ou foi formatada).</p>
+<p><strong>Como resolver:</strong> pelo pendrive e chroot, rode <code>grub-mkconfig -o /boot/grub/grub.cfg</code> (e, no segundo caso, o <code>grub-install</code> também). Passo a passo em <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Kernel panic: "Unable to mount root fs", ou o boot para esperando um disco</strong>
+<p><strong>O que aconteceu:</strong> o kernel não achou a partição raiz: o <code>root=UUID=…</code> do GRUB não corresponde a nenhuma partição (formatou de novo depois de gerar o menu?) ou o initramfs não tem o driver do disco.</p>
+<p><strong>Como resolver:</strong> pelo chroot, confira o UUID com <code>lsblk -f</code>, rode <code>mkinitcpio -P</code> e <code>grub-mkconfig -o /boot/grub/grub.cfg</code>. Veja <a href="recuperar-boot.html">Recuperar o Boot</a> e <a href="mkinitcpio.html">mkinitcpio</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Entrou em "emergency mode" pedindo a senha do root</strong>
+<p><strong>O que aconteceu:</strong> o kernel ligou, mas o systemd não conseguiu montar algo do <code>/etc/fstab</code> (UUID errado, linha repetida, partição que não existe).</p>
+<p><strong>Como resolver:</strong> digite a senha do root (por isso ela é importante), rode <code>findmnt --verify</code> para achar a linha com problema, corrija com <code>nano /etc/fstab</code> e <code>reboot</code>. Detalhes em <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Ligou, mas sem rede</strong>
+<p><strong>Como confirmar:</strong> <code>nmcli device</code> responde que o NetworkManager não está rodando, ou <code>systemctl is-enabled NetworkManager</code> diz <code>disabled</code>.</p>
+<p><strong>Como resolver:</strong> se o pacote está instalado mas faltou ativar: <code>sudo systemctl enable --now NetworkManager</code> (o <code>--now</code> ativa e já liga). Se o pacote nem foi instalado (esqueceu o <code>networkmanager</code> no <code>pacstrap</code>), não dá para baixá-lo sem rede: ligue o pendrive, monte, <code>arch-chroot /mnt</code> e rode <code>pacman -S networkmanager</code> (o live tem internet), depois <code>systemctl enable NetworkManager</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O teclado digita errado no login (Ç, acentos, /?)</strong>
+<p><strong>O que aconteceu:</strong> o console está com o teclado americano: o <code>/etc/vconsole.conf</code> não foi criado ou tem erro de digitação.</p>
+<p><strong>Como resolver:</strong> entre (a senha pode exigir procurar as teclas), confira <code>localectl</code> e corrija com <code>sudo localectl set-keymap br-abnt2</code>, que grava o <code>/etc/vconsole.conf</code> por você.</p>
+</div>
+
+<hr>
+
+<h2>E agora?</h2>
+<p>O seu Arch está instalado, mas mínimo. A ordem natural dos próximos passos:</p>
+<ol class="passo">
+  <li><strong>Atualize</strong> o sistema: <code>sudo pacman -Syu</code> (<a href="atualizar.html">Atualizar o Sistema</a>).</li>
+  <li><strong>Entenda o sudo</strong> e as contas: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</li>
+  <li><strong>Instale programas</strong> com o pacman: <a href="pacman.html">pacman: o Básico</a>.</li>
+  <li><strong>Instale uma interface gráfica</strong>, se quiser: <a href="desktop.html">Instalar um Desktop</a>.</li>
+</ol>
+<p>Quer refazer tudo do zero, de uma vez, com tempo estimado de cada etapa? Use o <a href="projeto-instalacao.html">projeto Instalação Completa do Zero</a>.</p>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>exit</code></td><td>Sai do chroot.</td></tr>
+<tr><td><code>umount -R /mnt</code></td><td>Desmonta o sistema novo inteiro.</td></tr>
+<tr><td><code>reboot</code> / <code>poweroff</code></td><td>Reinicia / desliga.</td></tr>
+<tr><td><code>cat /etc/os-release</code>, <code>uname -r</code></td><td>Sistema e versão do kernel.</td></tr>
+<tr><td><code>hostnamectl</code></td><td>Nome da máquina e hardware.</td></tr>
+<tr><td><code>localectl</code></td><td>Idioma e teclado.</td></tr>
+<tr><td><code>timedatectl</code> / <code>sudo timedatectl set-ntp true</code></td><td>Fuso e relógio / ligar a sincronização NTP.</td></tr>
+<tr><td><code>nmcli device</code>, <code>nmcli general</code></td><td>Estado da rede.</td></tr>
+<tr><td><code>nmcli device wifi connect "REDE" --ask</code></td><td>Conecta no Wi-Fi.</td></tr>
+<tr><td><code>systemctl --failed</code></td><td>Serviços que falharam.</td></tr>
+<tr><td><code>pacman -Q | wc -l</code></td><td>Quantos pacotes estão instalados.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Desmontar tudo</h3>
+<p>Complete o comando que desmonta <code>/mnt</code> e tudo o que está montado dentro dele:</p>
+<div class="ex-code">umount <input data-answer="-R /mnt|--recursive /mnt" aria-label="opção e pasta" size="10"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Contar os pacotes</h3>
+<p>Complete para contar quantos pacotes estão instalados:</p>
+<div class="ex-code">pacman -Q | <input data-answer="wc -l" aria-label="contar linhas" size="8"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Na tela <code>Arch Linux 7.2.10-arch1-1 (tty1)</code> / <code>notebook login:</code>, de onde vem a palavra <code>notebook</code>?</p>
+<label><input type="radio" name="q3"> Do nome da usuária.</label>
+<label><input type="radio" name="q3"> Do <code>--bootloader-id</code> do GRUB.</label>
+<label><input type="radio" name="q3"> Do arquivo <code>/etc/hostname</code>.</label>
+<label><input type="radio" name="q3"> Do modelo do computador.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O primeiro boot ligou, mas não há internet e <code>systemctl is-enabled NetworkManager</code> diz <code>disabled</code>. O que resolve?</p>
+<label><input type="radio" name="q4"> Reinstalar o Arch.</label>
+<label><input type="radio" name="q4"> <code>sudo systemctl enable --now NetworkManager</code></label>
+<label><input type="radio" name="q4"> <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code></label>
+<label><input type="radio" name="q4"> <code>sudo mkinitcpio -P</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O <code>timedatectl</code> mostra o fuso certo, mas <code>NTP service: inactive</code>. O que isso significa?</p>
+<label><input type="radio" name="q5"> Que o fuso está errado.</label>
+<label><input type="radio" name="q5"> Que não há internet.</label>
+<label><input type="radio" name="q5"> Que o relógio da placa guarda a hora local.</label>
+<label><input type="radio" name="q5"> Que nenhum serviço está acertando o relógio pela internet; <code>sudo timedatectl set-ntp true</code> liga.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>exit</code>, <code>umount -R /mnt</code>, <code>reboot</code> e tire a mídia de instalação.</li>
+  <li>O GRUB espera 5 segundos e liga o Arch; o login é em texto: <code>notebook login:</code>.</li>
+  <li>Confira com <code>hostnamectl</code>, <code>localectl</code>, <code>timedatectl</code>, <code>nmcli device</code>, <code>systemctl --failed</code> e <code>sudo whoami</code>.</li>
+  <li>A VM ligou com 193 pacotes, 2,3 GB usados e nenhum serviço com falha. Faltou só o NTP (<code>timedatectl set-ntp true</code>).</li>
+  <li>Wi-Fi: <code>nmcli device wifi connect "REDE" --ask</code> ou <code>nmtui</code>.</li>
+  <li>Não ligou? Pendrive + <code>arch-chroot</code> resolvem quase tudo: <a href="chroot-resgate.html">Resgate com chroot</a>, <a href="recuperar-boot.html">Recuperar o Boot</a>.</li>
+</ul>
+
+<h2>Na Arch Wiki</h2>
+<p>A seção <a href="https://wiki.archlinux.org/title/Installation_guide#Reboot">Reboot</a> do <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> fecha a instalação, e a página seguinte, <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a> (em português: <a href="https://wiki.archlinux.org/title/General_recommendations_(Portugu%C3%AAs)">Recomendações gerais</a>), é o roteiro oficial do que fazer depois. Para os temas desta aula: <a href="https://wiki.archlinux.org/title/NetworkManager">NetworkManager</a> (com o <code>nmcli</code> e o <code>nmtui</code>), <a href="https://wiki.archlinux.org/title/Systemd-timesyncd">systemd-timesyncd</a>, <a href="https://wiki.archlinux.org/title/Getty">Getty</a> (a tela de login em texto) e <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
