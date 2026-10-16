@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch mkinitcpio — o initramfs, os HOOKS e o mkinitcpio -P | Guia Arch</title>
+<meta name="description" content="O que é o initramfs e por que o Arch precisa dele, o /etc/mkinitcpio.conf real com cada HOOK explicado (base, systemd, autodetect, microcode, modconf, kms, keyboard, sd-vconsole, block, filesystems, fsck), presets, mkinitcpio -P, lsinitcpio, quando acrescentar sd-encrypt, lvm2 e btrfs, e o que é uma UKI.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>mkinitcpio e <span class="hl">initramfs</span></h1>
+
+<p class="intro">Junto com o kernel, o bootloader carrega um segundo arquivo: o <strong>initramfs</strong> (<em>initial RAM file system</em>), um sistema minúsculo que roda na memória só pelo tempo de encontrar e montar o seu disco. No Arch, quem fabrica esse arquivo é o <code>mkinitcpio</code> (<em>make initial cpio</em>). Na maior parte do tempo ele trabalha sozinho; você precisa entendê-lo quando usa criptografia, LVM, Btrfs em vários discos, ou quando o boot para logo no começo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que existe o initramfs e onde ele entra no boot.</li>
+  <li>Ler o <code>/etc/mkinitcpio.conf</code> da ana, hook por hook.</li>
+  <li>O que são os <em>presets</em> e o que o <code>mkinitcpio -P</code> mostra na tela.</li>
+  <li>Testar uma mudança sem arriscar o boot, e olhar dentro da imagem com <code>lsinitcpio</code>.</li>
+  <li>Quando acrescentar <code>sd-encrypt</code>, <code>lvm2</code> ou <code>btrfs</code>, e o que é uma UKI.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O problema do ovo e da galinha</h2>
+<p>Para montar a partição raiz, o kernel precisa do driver do disco (SATA, NVMe, USB…), do driver do sistema de arquivos e, às vezes, de programas (o <code>cryptsetup</code>, para pedir a senha de um disco criptografado). Só que esses arquivos estão… dentro da partição raiz, que ainda não foi montada.</p>
+<p>A solução é levar junto um "kit de primeiros socorros": um arquivo compactado com só o necessário, que o bootloader carrega na memória ao lado do kernel. A ordem do boot fica assim:</p>
+
+<ol class="passo">
+<li><strong>Firmware UEFI</strong> → inicia o GRUB (a partição EFI, <code>/boot</code>).</li>
+<li><strong>GRUB</strong> → carrega na memória o kernel (<code>/boot/vmlinuz-linux</code>) e o initramfs (<code>/boot/initramfs-linux.img</code>, junto com o <code>intel-ucode.img</code>; veja <a href="microcode.html">Microcode</a>).</li>
+<li><strong>Kernel</strong> → descompacta o initramfs e roda o programa de dentro dele.</li>
+<li><strong>Initramfs</strong> → carrega os drivers, acha o disco pelo UUID (<code>root=UUID=75d167c8-…</code>, que o GRUB passou), verifica com <code>fsck</code> e monta a raiz.</li>
+<li><strong>switch_root</strong> → troca a raiz da memória pela raiz do disco e passa o comando para o systemd do sistema instalado.</li>
+</ol>
+
+<p>O nome <code>mkinitcpio</code> vem de <code>cpio</code>, o formato de arquivo compactado (parecido com um <code>.tar</code>) usado para o initramfs.</p>
+
+<hr>
+
+<h2>O /etc/mkinitcpio.conf da ana</h2>
+<p>O arquivo tem muitas linhas de comentário com exemplos. Sem elas, sobra isto (é o arquivo padrão do pacote <code>mkinitcpio 42.2</code>, sem nenhuma mudança):</p>
+
+<pre class="term">$ grep -v "^#" /etc/mkinitcpio.conf | grep -v "^$"
+MODULES=()
+BINARIES=()
+FILES=()
+HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck)
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Para que serve</th><th>Exemplo</th></tr>
+<tr><td><code>MODULES=()</code></td><td>Módulos do kernel que entram <strong>sempre</strong>, além dos detectados</td><td><code>MODULES=(nvme)</code></td></tr>
+<tr><td><code>BINARIES=()</code></td><td>Programas extras</td><td><code>BINARIES=(fsck.btrfs)</code></td></tr>
+<tr><td><code>FILES=()</code></td><td>Arquivos extras</td><td>Uma chave de criptografia</td></tr>
+<tr><td><code>HOOKS=(…)</code></td><td><strong>O principal.</strong> A lista de "receitas" que montam o initramfs, na ordem</td><td>Veja abaixo</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="ran:\bgrep\b.*HOOKS.*mkinitcpio\.conf,out:sd-vconsole" data-solucao="grep '^HOOKS' /etc/mkinitcpio.conf">
+<p class="try-task"><strong>Missão:</strong> mostre só a linha <code>HOOKS</code> do arquivo <code>/etc/mkinitcpio.conf</code>.</p>
+</div>
+
+<h3>Os HOOKS, um por um</h3>
+<p>Cada <strong>hook</strong> é uma receita: um script em <code>/usr/lib/initcpio/install/</code> que, na hora de gerar a imagem, copia para dentro dela os módulos, programas e arquivos de que precisa. A <strong>ordem importa</strong>: eles rodam da esquerda para a direita.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Hook</th><th>O que põe no initramfs</th></tr>
+<tr><td><code>base</code></td><td>A base: pastas, o <code>busybox</code> (um canivete suíço de comandos) e utilitários como <code>mount</code>. Sempre o primeiro</td></tr>
+<tr><td><code>systemd</code></td><td>Um systemd dentro do initramfs, que comanda o boot inicial (inclui o <code>udev</code>, que detecta o hardware e carrega drivers)</td></tr>
+<tr><td><code>autodetect</code></td><td>Olha o hardware <strong>desta</strong> máquina e faz os hooks seguintes copiarem só os módulos necessários. Deixa a imagem bem menor</td></tr>
+<tr><td><code>microcode</code></td><td>A atualização de microcode do processador, carregada antes de tudo (veja <a href="microcode.html">Microcode</a>)</td></tr>
+<tr><td><code>modconf</code></td><td>As configurações de <code>/etc/modprobe.d/</code> (opções e blacklist de módulos; veja <a href="kernels.html">Kernels</a>)</td></tr>
+<tr><td><code>kms</code></td><td>Os drivers de vídeo (<em>kernel mode setting</em>), para a tela ganhar a resolução certa cedo e a senha do disco aparecer bonita</td></tr>
+<tr><td><code>keyboard</code></td><td>Drivers de teclado (USB, por exemplo), para você conseguir digitar algo no boot</td></tr>
+<tr><td><code>sd-vconsole</code></td><td>O layout do teclado e a fonte do console, lidos de <code>/etc/vconsole.conf</code> (na ana, <code>KEYMAP=br-abnt2</code>). Importa para digitar a senha de um disco criptografado com o ç no lugar</td></tr>
+<tr><td><code>block</code></td><td>Drivers de discos: SATA, NVMe, USB, cartão SD</td></tr>
+<tr><td><code>filesystems</code></td><td>Drivers de sistemas de arquivos (ext4, Btrfs, XFS…)</td></tr>
+<tr><td><code>fsck</code></td><td>O verificador do sistema de arquivos da raiz (na ana, o <code>e2fsck</code>), que roda antes de montá-la</td></tr>
+</table>
+</div>
+
+<p>Cada hook tem uma ajuda própria, em inglês: <code>mkinitcpio -H nome</code>. Por exemplo:</p>
+<pre class="term">$ mkinitcpio -H autodetect
+==&gt; Help for hook 'autodetect':
+This hook shrinks your initramfs to a smaller size by autodetecting the needed
+modules. Be sure to verify included modules are correct and none are missing.
+This hook must be run before other subsystem hooks in order to take advantage
+of auto-detection.  Any hooks placed before 'autodetect' will be installed in
+full.
+</pre>
+<p>Ou seja: o que vem <strong>antes</strong> do <code>autodetect</code> entra completo; o que vem depois, só o que esta máquina usa. Por isso ele fica logo no começo.</p>
+
+<h3>Dois estilos: busybox e systemd</h3>
+<p>O initramfs pode ser comandado por scripts simples (com o hook <code>udev</code>) ou pelo systemd (hook <code>systemd</code>). O padrão atual do Arch, e o da ana, é o systemd. Alguns hooks têm duas versões, e não se misturam:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Estilo busybox</th><th>Estilo systemd (o da ana)</th></tr>
+<tr><td>Comandar o boot inicial</td><td><code>udev</code></td><td><code>systemd</code></td></tr>
+<tr><td>Teclado e fonte</td><td><code>keymap</code> + <code>consolefont</code></td><td><code>sd-vconsole</code></td></tr>
+<tr><td>Disco criptografado (LUKS)</td><td><code>encrypt</code></td><td><code>sd-encrypt</code></td></tr>
+<tr><td>LVM</td><td colspan="2"><code>lvm2</code> (serve nos dois)</td></tr>
+</table>
+</div>
+<p>Muitos tutoriais antigos na internet usam o estilo busybox. Se o seu <code>HOOKS</code> tem <code>systemd</code>, use as versões <code>sd-</code>.</p>
+
+<hr>
+
+<h2>Presets: uma receita por kernel</h2>
+<p>Cada kernel instalado tem um arquivo de <strong>preset</strong> em <code>/etc/mkinitcpio.d/</code>, que diz qual kernel usar e onde gravar a imagem:</p>
+
+<pre class="term">$ ls /etc/mkinitcpio.d/
+linux-lts.preset
+linux.preset
+$ cat /etc/mkinitcpio.d/linux.preset
+# mkinitcpio preset file for the 'linux' package
+
+#ALL_config="/etc/mkinitcpio.conf"
+ALL_kver="/boot/vmlinuz-linux"                         « o kernel
+#ALL_kerneldest="/boot/vmlinuz-linux"
+
+PRESETS=('default')                                    « só uma imagem
+#PRESETS=('default' 'fallback')
+
+#default_config="/etc/mkinitcpio.conf"
+default_image="/boot/initramfs-linux.img"              « onde gravar
+#default_uki="/efi/EFI/Linux/arch-linux.efi"
+#default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"
+
+#fallback_config="/etc/mkinitcpio.conf"
+#fallback_image="/boot/initramfs-linux-fallback.img"
+#fallback_uki="/efi/EFI/Linux/arch-linux-fallback.efi"
+#fallback_options="-S autodetect"
+</pre>
+
+<p>Repare na linha <code>PRESETS=('default')</code>: hoje o Arch gera <strong>só</strong> a imagem padrão. Antigamente vinha também uma <strong>fallback</strong> ("de reserva"), gerada sem o <code>autodetect</code> (<code>-S autodetect</code>), com todos os drivers, útil se você trocasse o disco de computador. Para tê-la de volta, troque pela linha comentada <code>PRESETS=('default' 'fallback')</code>. Os dois kernels usam o <strong>mesmo</strong> <code>/etc/mkinitcpio.conf</code> (o <code>#ALL_config</code> comentado é o padrão).</p>
+
+<hr>
+
+<h2>mkinitcpio -P: gerar as imagens</h2>
+
+<dl class="anatomy">
+  <dt>mkinitcpio</dt><dd>O gerador.</dd>
+  <dt>-P</dt><dd><em>allpresets</em>: processa <strong>todos</strong> os presets de <code>/etc/mkinitcpio.d/</code> (uma imagem para cada kernel). Para um só: <code>-p linux</code>.</dd>
+</dl>
+
+<p>A saída real, na instalação da ana (dentro do <code>arch-chroot</code>, com um kernel só):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt mkinitcpio -P
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'    « preset e imagem
+==&gt; Using default configuration file: '/etc/mkinitcpio.conf'
+  -&gt; -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img                     « kernel → imagem
+==&gt; Starting build: '7.2.10-arch1-1'                                          « versão do kernel
+  -&gt; Running build hook: [base]                                              « cada hook, na ordem do HOOKS
+  -&gt; Running build hook: [systemd]
+  -&gt; Running build hook: [autodetect]
+  -&gt; Running build hook: [microcode]
+  -&gt; Running build hook: [modconf]
+  -&gt; Running build hook: [kms]
+  -&gt; Running build hook: [keyboard]
+  -&gt; Running build hook: [sd-vconsole]
+  -&gt; Running build hook: [block]
+  -&gt; Running build hook: [filesystems]
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'     « comprimido com zstd
+  -&gt; Early uncompressed CPIO image generation successful                     « a parte "early" (microcode)
+==&gt; Initcpio image generation successful                                     « deu certo
+</pre>
+
+<p>Linhas com <code>==&gt;</code> são etapas; com <code>-&gt;</code>, detalhes. A última linha é a que importa: <strong>successful</strong>. Com dois kernels, o bloco aparece duas vezes, uma por preset (você vê isso em <a href="kernels.html">Kernels</a>).</p>
+
+<h3>Quando ele roda sozinho</h3>
+<p>Quase nunca você precisa rodá-lo à mão. Um hook do pacman (<code>/usr/share/libalpm/hooks/90-mkinitcpio-install.hook</code>) o chama no fim de qualquer transação que mexa no que vai dentro do initramfs. Um trecho real do arquivo:</p>
+<pre class="file" data-file="/usr/share/libalpm/hooks/90-mkinitcpio-install.hook (trecho)">[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/lib/modules/*/vmlinuz
+
+[Action]
+Description = Updating linux initcpios...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/mkinitcpio install
+NeedsTargets
+</pre>
+<p>É ele que aparece no fim das atualizações como <code>(15/18) Updating linux initcpios...</code>. Outros gatilhos do mesmo arquivo: firmware, <code>systemd</code>, <code>cryptsetup</code>, <code>lvm</code> e módulos DKMS. Rode à mão (<code>sudo mkinitcpio -P</code>) quando <strong>você</strong> mudar o <code>/etc/mkinitcpio.conf</code> ou o <code>/etc/vconsole.conf</code>.</p>
+
+<h3>O aviso do vconsole.conf (log real)</h3>
+<p>No <code>pacstrap</code>, o kernel foi instalado antes de existir o <code>/etc/vconsole.conf</code>, e o mkinitcpio avisou:</p>
+<pre class="term" data-host="archiso" data-user="root">  -&gt; Running build hook: [sd-vconsole]
+==&gt; WARNING: sd-vconsole: "/etc/vconsole.conf" not found, will use default values
+  -&gt; Running build hook: [block]
+</pre>
+<p>Um <code>WARNING</code> não é erro: a imagem foi criada, com o teclado americano. Depois a ana criou o arquivo (<code>KEYMAP=br-abnt2</code>) e rodou o <code>mkinitcpio -P</code> mostrado acima, já sem o aviso. É por isso que o guia de instalação manda rodar o <code>mkinitcpio -P</code> <strong>depois</strong> de configurar o teclado (<a href="configurar.html">Configurar o Sistema</a>).</p>
+
+<hr>
+
+<h2>Testar uma mudança sem arriscar o boot</h2>
+<p>Mudar os HOOKS e gerar direto em <code>/boot</code> é arriscado: se a imagem sair errada, o próximo boot para no começo (e os dois kernels usam o mesmo arquivo de configuração). Dá para gerar uma imagem de teste em outro lugar, a partir de uma <strong>cópia</strong> da configuração:</p>
+
+<dl class="anatomy">
+  <dt>-c /tmp/a7/mkinitcpio.conf</dt><dd><em>config</em>: usa este arquivo em vez do <code>/etc/mkinitcpio.conf</code>.</dd>
+  <dt>-k 7.2.10-arch1-1</dt><dd><em>kernel</em>: para qual versão (a de <code>uname -r</code>).</dd>
+  <dt>-g /tmp/a7/teste.img</dt><dd><em>generate</em>: grava a imagem aqui. O <code>/boot</code> não é tocado.</dd>
+</dl>
+
+<p>Primeiro, um erro de digitação proposital (<code>filesytems</code>, sem o "s" do meio):</p>
+<pre class="term">#> cp /etc/mkinitcpio.conf /tmp/a7/mkinitcpio.conf
+#> sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesytems fsck)/' /tmp/a7/mkinitcpio.conf
+#> mkinitcpio -c /tmp/a7/mkinitcpio.conf -k 7.2.10-arch1-1 -g /tmp/a7/teste.img
+==&gt; Starting build: '7.2.10-arch1-1'
+  -&gt; Running build hook: [base]
+  -&gt; Running build hook: [systemd]
+  -&gt; Running build hook: [autodetect]
+  -&gt; Running build hook: [microcode]
+  -&gt; Running build hook: [modconf]
+  -&gt; Running build hook: [kms]
+  -&gt; Running build hook: [keyboard]
+  -&gt; Running build hook: [sd-vconsole]
+  -&gt; Running build hook: [block]
+==&gt; ERROR: Hook 'filesytems' cannot be found                                « o erro
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/tmp/a7/teste.img'
+==&gt; WARNING: errors were encountered during the build. The image may not be complete.
+#> echo $?
+1
+</pre>
+<p>Ele <strong>gerou a imagem mesmo assim</strong>, avisando que pode estar incompleta, e saiu com código 1. Sem o hook <code>filesystems</code>, essa imagem não teria o driver para montar a raiz. Se isso tivesse ido para <code>/boot</code>, o próximo boot falharia. Regra: <strong>só reinicie depois de um <code>mkinitcpio -P</code> sem nenhum <code>ERROR</code></strong>.</p>
+
+<div class="try" data-setup="printf 'MODULES=()\nBINARIES=()\nFILES=()\nHOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck)\n' &gt; mkinitcpio.conf" data-goal="contains:~/mkinitcpio.conf=block sd-encrypt filesystems" data-solucao="sed -i 's/block filesystems/block sd-encrypt filesystems/' mkinitcpio.conf">
+<p class="try-task"><strong>Missão:</strong> na pasta da ana há uma cópia, <code>mkinitcpio.conf</code>. Acrescente o hook <code>sd-encrypt</code> <strong>entre</strong> <code>block</code> e <code>filesystems</code>, sem editor: use <code>sed -i 's/velho/novo/'</code>. Confira com <code>grep HOOKS mkinitcpio.conf</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando acrescentar hooks</h2>
+<p>Com a raiz num ext4 simples, como a da ana, o padrão basta. Você mexe nos HOOKS quando a raiz depende de algo que precisa ser "aberto" antes de montar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sua raiz está…</th><th>Acrescente</th><th>Onde</th><th>Aula</th></tr>
+<tr><td>Num disco criptografado (LUKS)</td><td><code>sd-encrypt</code></td><td>Depois de <code>block</code>, antes de <code>filesystems</code></td><td><a href="luks.html">Criptografia (LUKS)</a></td></tr>
+<tr><td>Num volume LVM</td><td><code>lvm2</code> (precisa do pacote <code>lvm2</code>)</td><td>Depois de <code>block</code> (e depois do <code>sd-encrypt</code>, se houver)</td><td><a href="lvm.html">LVM</a></td></tr>
+<tr><td>Num Btrfs de <strong>vários discos</strong></td><td><code>btrfs</code> (vem com o <code>btrfs-progs</code>)</td><td>Antes de <code>filesystems</code></td><td><a href="btrfs.html">Btrfs</a></td></tr>
+<tr><td>Num Btrfs de um disco só</td><td>Nada</td><td>O <code>filesystems</code> já cuida</td><td><a href="btrfs.html">Btrfs</a></td></tr>
+</table>
+</div>
+
+<p>Exemplo: criptografia e LVM juntos ficariam <code>HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt lvm2 filesystems fsck)</code>. A ordem é a ordem das camadas: primeiro abre a criptografia, depois acha o LVM dentro dela, depois monta o sistema de arquivos.</p>
+
+<h3>O que o sd-encrypt muda (teste real)</h3>
+<pre class="term">#> sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)/' /tmp/a7/mkinitcpio.conf
+#> mkinitcpio -c /tmp/a7/mkinitcpio.conf -k 7.2.10-arch1-1 -g /tmp/a7/teste.img
+==&gt; Starting build: '7.2.10-arch1-1'
+  -&gt; Running build hook: [base]
+…
+  -&gt; Running build hook: [block]
+  -&gt; Running build hook: [sd-encrypt]
+==&gt; WARNING: Possibly missing firmware for module: 'qat_6xxx'
+  -&gt; Running build hook: [filesystems]
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/tmp/a7/teste.img'
+  -&gt; Early uncompressed CPIO image generation successful
+==&gt; Initcpio image generation successful
+#> lsinitcpio /tmp/a7/teste.img | grep -E "cryptsetup|dm-crypt"
+usr/lib/modules/7.2.10-arch1-1/kernel/drivers/md/dm-crypt.ko.zst
+usr/bin/systemd-cryptsetup
+…
+usr/lib/libcryptsetup.so.12.11.0
+…
+usr/lib/systemd/systemd-cryptsetup
+#> ls -lh /tmp/a7/teste.img /boot/initramfs-linux.img
+-rwxr-xr-x 1 root root 15M 16 out 12:58 /boot/initramfs-linux.img
+-rw------- 1 root root 20M 16 out 13:30 /tmp/a7/teste.img
+</pre>
+<p>A imagem passou de 15 para 20 MiB, com o módulo <code>dm-crypt</code> e as ferramentas do <code>systemd-cryptsetup</code>. O <code>WARNING: Possibly missing firmware</code> fala de um acelerador de criptografia da Intel (QuickAssist) que esta máquina não tem: é comum aparecerem avisos assim para hardware que você não possui, e eles podem ser ignorados. O que <strong>não</strong> pode ser ignorado é <code>ERROR</code>. A ajuda do hook explica como ele descobre o que abrir:</p>
+<pre class="term">$ mkinitcpio -H sd-encrypt
+==&gt; Help for hook 'sd-encrypt':
+This hook allows systemd to unlock encrypted LUKS1 volumes with a password, and encrypted LUKS2 volumes with a password, FIDO2 token or TPM2 key. Unlocking of LUKS2 volumes with a PKCS#11 token is supported for some tokens by additional 'sd-encrypt-opensc' hook.
+
+See the manpage of systemd-cryptsetup-generator(8) for available kernel
+command line options. Alternatively, if /etc/crypttab contains lines with
+x-initrd.attach in the fourth field, those lines will be added to /etc/crypttab
+in the initramfs. See the crypttab(5) manpage for more information on crypttab
+syntax.
+</pre>
+
+<hr>
+
+<h2>lsinitcpio: olhar dentro da imagem</h2>
+
+<dl class="anatomy">
+  <dt>lsinitcpio</dt><dd><em>list initcpio</em>: mostra o conteúdo de um initramfs. Os arquivos de <code>/boot</code> têm permissão de leitura para todos, então não precisa de root.</dd>
+  <dt>-a</dt><dd><em>analyze</em>: um resumo em vez da lista de arquivos.</dd>
+</dl>
+
+<pre class="term">$ lsinitcpio -a /boot/initramfs-linux.img
+==&gt; Image: /boot/initramfs-linux.img
+==&gt; Created with mkinitcpio 42.2
+==&gt; Kernel: 7.2.10-arch1-1
+==&gt; Early CPIO: 760 KiB
+==&gt; Size: 14.09 MiB
+==&gt; Compressed with: zstd
+  -&gt; Uncompressed size: 42.45 MiB (.331 ratio)
+  -&gt; Estimated decompression time: 0,145s
+
+==&gt; Included modules (17):
+  cdrom			  nvme			  sr_mod
+  drm_ttm_helper	  nvme-auth		  ttm
+  intel-agp		  nvme-core		  uas
+  intel-gtt		  nvme-keyring		  usb-storage
+  mmc_block		  rpmb-core		  vmwgfx
+  mmc_core		  serio_raw
+
+==&gt; Included binaries (17):
+  blkid			  loadkeys		  switch_root
+  busybox		  mount			  systemctl
+  e2fsck		  setfont		  systemd-tmpfiles
+  fsck			  sulogin		  udevadm
+  journalctl		  swapoff		  umount
+  kmod			  swapon
+</pre>
+
+<ul>
+  <li><strong>Size 14.09 MiB</strong>, comprimido a um terço (42,45 MiB descompactado), abre em 0,145 s.</li>
+  <li><strong>17 módulos</strong>, graças ao <code>autodetect</code>: o <code>vmwgfx</code> é o vídeo do VirtualBox (hook <code>kms</code>), <code>usb-storage</code>/<code>uas</code> e <code>nvme</code> são do <code>block</code>. Não aparecem <code>ext4</code> nem o driver SATA porque no kernel do Arch eles são <strong>embutidos</strong>, não módulos.</li>
+  <li><strong>17 programas</strong>: <code>e2fsck</code> (do hook <code>fsck</code>), <code>loadkeys</code>/<code>setfont</code> (do <code>sd-vconsole</code>), <code>switch_root</code> (a troca final para o disco), <code>sulogin</code> (o shell de emergência).</li>
+</ul>
+
+<p>Outras formas: <code>lsinitcpio arquivo</code> lista todos os arquivos (513 na imagem da ana), <code>lsinitcpio -c arquivo</code> mostra com qual configuração ela foi feita, e <code>lsinitcpio -x arquivo</code> extrai tudo na pasta atual.</p>
+
+<hr>
+
+<h2>UKI: kernel e initramfs num arquivo só</h2>
+<p>Uma <strong>UKI</strong> (<em>Unified Kernel Image</em>) junta num único arquivo <code>.efi</code> o kernel, o initramfs, o microcode e a linha de comando do kernel. O firmware UEFI (ou o systemd-boot) inicia esse arquivo direto. Vantagens: um arquivo só para assinar no <strong>Secure Boot</strong>, e a linha de comando não pode ser alterada no boot. O próprio preset da ana já mostra o caminho, comentado:</p>
+<pre class="file" data-file="/etc/mkinitcpio.d/linux.preset (linha comentada)">#default_uki="/efi/EFI/Linux/arch-linux.efi"
+</pre>
+<p>Descomentando essa linha (e escrevendo a linha de comando em <code>/etc/kernel/cmdline</code>), o <code>mkinitcpio -P</code> passa a gerar a UKI. A ana usa GRUB com initramfs separado, o caminho mais comum, e não muda para UKI neste guia. Se quiser ir por esse caminho, comece por <a href="bootloader.html">Bootloader (GRUB e systemd-boot)</a> e pela página da Wiki no fim.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"ERROR: Hook '…' cannot be found"</strong>
+<pre class="term">==&gt; ERROR: Hook 'filesytems' cannot be found
+…
+==&gt; WARNING: errors were encountered during the build. The image may not be complete.</pre>
+<p><strong>O que aconteceu:</strong> o nome está errado, ou o hook é de um pacote que não está instalado (o <code>lvm2</code> vem do pacote <code>lvm2</code>; o <code>btrfs</code>, do <code>btrfs-progs</code>).</p>
+<p><strong>Como confirmar:</strong> <code>ls /usr/lib/initcpio/install/</code> lista os hooks existentes; <code>pacman -Qo /usr/lib/initcpio/install/lvm2</code> diz de que pacote vem.</p>
+<p><strong>Como resolver:</strong> corrija o <code>HOOKS</code> (ou instale o pacote) e rode <code>sudo mkinitcpio -P</code> de novo, até sair sem <code>ERROR</code>. <strong>Não reinicie antes.</strong></p>
+</div>
+
+<div class="cenario">
+<strong>"WARNING: Possibly missing firmware for module"</strong>
+<p><strong>O que aconteceu:</strong> um módulo incluído pode usar um firmware que não está instalado. Quase sempre é de um hardware que você nem tem.</p>
+<p><strong>Como resolver:</strong> ignore, a menos que o módulo citado seja de um aparelho seu (aí, procure o firmware com <code>pacman -F nome</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"WARNING: sd-vconsole: "/etc/vconsole.conf" not found"</strong>
+<p><strong>O que aconteceu:</strong> a imagem foi feita antes de você configurar o teclado. O initramfs fica com o teclado americano (importa para digitar a senha de um disco criptografado).</p>
+<p><strong>Como resolver:</strong> crie o <code>/etc/vconsole.conf</code> (<code>KEYMAP=br-abnt2</code>) e rode <code>sudo mkinitcpio -P</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudei os HOOKS e o boot para logo no começo</strong>
+<p><strong>O que aconteceu:</strong> a imagem nova não tem algo de que a raiz precisa (um hook faltando ou fora de ordem). Como os dois kernels usam o mesmo <code>/etc/mkinitcpio.conf</code>, escolher o LTS no GRUB provavelmente não resolve.</p>
+<p><strong>Como resolver:</strong> inicie pelo pendrive do Arch, monte o sistema, entre com <code>arch-chroot</code>, corrija o arquivo e rode <code>mkinitcpio -P</code> lá dentro (veja <a href="chroot-resgate.html">Resgate com chroot</a>). Para ter um plano B no próprio menu, ative o preset <code>fallback</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / arquivo</th><th>Descrição</th></tr>
+<tr><td><code>/etc/mkinitcpio.conf</code></td><td>Configuração (<code>MODULES</code>, <code>BINARIES</code>, <code>FILES</code>, <code>HOOKS</code>)</td></tr>
+<tr><td><code>/etc/mkinitcpio.d/*.preset</code></td><td>Um por kernel: qual kernel, qual imagem</td></tr>
+<tr><td><code>sudo mkinitcpio -P</code></td><td>Gera as imagens de todos os kernels</td></tr>
+<tr><td><code>sudo mkinitcpio -p linux</code></td><td>Só de um preset</td></tr>
+<tr><td><code>mkinitcpio -c conf -k versão -g arq.img</code></td><td>Imagem de teste, fora do <code>/boot</code></td></tr>
+<tr><td><code>mkinitcpio -H hook</code></td><td>Ajuda de um hook</td></tr>
+<tr><td><code>ls /usr/lib/initcpio/install/</code></td><td>Hooks disponíveis</td></tr>
+<tr><td><code>lsinitcpio -a /boot/initramfs-linux.img</code></td><td>Resumo da imagem</td></tr>
+<tr><td><code>lsinitcpio arq.img | grep algo</code></td><td>Procura um arquivo dentro da imagem</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Todas as imagens</h3>
+<p>Você mudou o <code>/etc/mkinitcpio.conf</code>. Complete para gerar de novo as imagens de todos os kernels:</p>
+<div class="ex-code">sudo mkinitcpio <input data-answer="-P" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A ordem da criptografia</h3>
+<p>Complete o trecho do <code>HOOKS</code> para uma raiz criptografada com LUKS, no estilo systemd:</p>
+<div class="ex-code">… keyboard sd-vconsole block <input data-answer="sd-encrypt" aria-label="hook"> filesystems fsck)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Para que serve o initramfs?</p>
+<label><input type="radio" name="q3"> Guardar o menu do GRUB.</label>
+<label><input type="radio" name="q3"> Substituir o kernel quando ele falha.</label>
+<label><input type="radio" name="q3"> Levar para a memória os drivers e programas necessários para achar e montar a raiz.</label>
+<label><input type="radio" name="q3"> Guardar a swap durante a hibernação.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O <code>mkinitcpio -P</code> terminou com <code>ERROR: Hook 'lvm2' cannot be found</code>. O que fazer?</p>
+<label><input type="radio" name="q4"> Reiniciar: é só um aviso.</label>
+<label><input type="radio" name="q4"> Instalar o pacote <code>lvm2</code> (ou corrigir o nome) e rodar <code>mkinitcpio -P</code> de novo antes de reiniciar.</label>
+<label><input type="radio" name="q4"> Rodar <code>grub-mkconfig</code>.</label>
+<label><input type="radio" name="q4"> Apagar <code>/boot/initramfs-linux.img</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que o hook <code>autodetect</code> fica logo no começo?</p>
+<label><input type="radio" name="q5"> Porque só os hooks depois dele são reduzidos ao hardware desta máquina.</label>
+<label><input type="radio" name="q5"> Porque ele detecta o teclado.</label>
+<label><input type="radio" name="q5"> Porque ele monta a raiz.</label>
+<label><input type="radio" name="q5"> Tanto faz a posição.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O initramfs é o mini-sistema que o GRUB carrega com o kernel para achar e montar a raiz; o <code>mkinitcpio</code> o fabrica.</li>
+  <li>O que entra é definido pelos <code>HOOKS</code> de <code>/etc/mkinitcpio.conf</code>, em ordem; a ana usa o padrão, no estilo systemd.</li>
+  <li>Cada kernel tem um preset em <code>/etc/mkinitcpio.d/</code>; hoje só a imagem <code>default</code> é gerada.</li>
+  <li>O pacman roda o mkinitcpio sozinho; você roda <code>sudo mkinitcpio -P</code> depois de mudar a configuração, e só reinicia sem <code>ERROR</code>.</li>
+  <li>LUKS → <code>sd-encrypt</code>; LVM → <code>lvm2</code>; Btrfs de vários discos → <code>btrfs</code>. <code>lsinitcpio -a</code> mostra o que entrou.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> tudo sobre o gerador, os hooks e os presets está em <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a> (<a href="https://wiki.archlinux.org/title/Mkinitcpio_(Portugu%C3%AAs)">em português</a>); as imagens unificadas, em <a href="https://wiki.archlinux.org/title/Unified_kernel_image">Unified kernel image</a> (<a href="https://wiki.archlinux.org/title/Unified_kernel_image_(Portugu%C3%AAs)">em português</a>); os hooks de criptografia, em <a href="https://wiki.archlinux.org/title/Dm-crypt/System_configuration">dm-crypt/System configuration</a>; e o caminho do boot, em <a href="https://wiki.archlinux.org/title/Arch_boot_process">Arch boot process</a> (<a href="https://wiki.archlinux.org/title/Arch_boot_process_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

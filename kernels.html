@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch kernels — linux, linux-lts, linux-zen, linux-hardened e módulos | Guia Arch</title>
+<meta name="description" content="Os kernels oficiais do Arch Linux (linux, linux-lts, linux-zen, linux-hardened) com dados reais do pacman -Si, ter dois kernels instalados, a pegadinha real do GRUB que passou a iniciar o LTS e a correção com GRUB_TOP_LEVEL, headers e DKMS, e módulos com lsmod, modinfo e modprobe.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Kernels: <span class="hl">linux, lts, zen</span></h1>
+
+<p class="intro">O <strong>kernel</strong> é o núcleo do sistema: o programa que conversa com o processador, a memória, o disco e a placa de rede, e reparte tudo isso entre os outros programas. No Arch, ele é um pacote como outro qualquer, atualizado quase toda semana, e você pode ter <strong>mais de um</strong> instalado. A ana tem dois, e isso rendeu uma pegadinha real com o GRUB, que você vai ver nesta aula.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Descobrir qual kernel está rodando e quais estão instalados.</li>
+  <li>Os quatro kernels oficiais (<code>linux</code>, <code>linux-lts</code>, <code>linux-zen</code>, <code>linux-hardened</code>) e para quem serve cada um.</li>
+  <li>Por que manter um segundo kernel de reserva, e como escolher no GRUB.</li>
+  <li>A pegadinha: depois de instalar o LTS, o GRUB passou a iniciar o LTS. E a correção com <code>GRUB_TOP_LEVEL</code>.</li>
+  <li>Headers, DKMS e módulos (<code>lsmod</code>, <code>modinfo</code>, <code>modprobe</code>).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Onde o kernel mora</h2>
+<p>O pacote <code>linux</code> instala duas coisas principais:</p>
+<ul>
+  <li>O <strong>kernel</strong> propriamente dito, um arquivo chamado <code>vmlinuz</code> (o "z" é de comprimido). O pacote o coloca em <code>/usr/lib/modules/VERSÃO/vmlinuz</code>, e um hook do <a href="mkinitcpio.html">mkinitcpio</a> o copia para <code>/boot/vmlinuz-linux</code>, onde o bootloader o encontra.</li>
+  <li>Os <strong>módulos</strong>: milhares de drivers em <code>/usr/lib/modules/VERSÃO/kernel/</code>, carregados só quando um aparelho precisa deles.</li>
+</ul>
+<p>No boot, o bootloader (o GRUB, na ana) carrega o <code>vmlinuz</code> e o <strong>initramfs</strong>, um mini-sistema que monta o disco de verdade (assunto de <a href="mkinitcpio.html">mkinitcpio e initramfs</a>).</p>
+
+<h2>Qual kernel está rodando?</h2>
+
+<dl class="anatomy">
+  <dt>uname</dt><dd><em>Unix name</em>: informações do sistema.</dd>
+  <dt>-r</dt><dd><em>release</em>: a versão do kernel em uso <strong>agora</strong>.</dd>
+</dl>
+
+<pre class="term">$ uname -r
+7.2.10-arch1-1
+$ uname -a
+Linux notebook 7.2.10-arch1-1 #1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026 06:58:10 +0000 x86_64 GNU/Linux
+</pre>
+
+<p>Lendo <code>7.2.10-arch1-1</code>: versão <code>7.2.10</code> do kernel oficial (de <a href="https://kernel.org">kernel.org</a>), <code>arch1</code> = primeira revisão de ajustes do Arch, <code>-1</code> = primeira compilação do pacote. O <code>uname -a</code> acrescenta o nome da máquina, a data da compilação e a arquitetura (<code>x86_64</code>).</p>
+
+<h3>E quais estão instalados?</h3>
+<pre class="term">$ pacman -Q linux linux-lts
+linux 7.2.10.arch1-1
+linux-lts 6.18.57-1
+$ ls /boot
+EFI
+grub
+initramfs-linux.img                « initramfs do linux
+initramfs-linux-lts.img            « initramfs do linux-lts
+intel-ucode.img                    « microcode (veja a aula Microcode)
+vmlinuz-linux                      « kernel linux
+vmlinuz-linux-lts                  « kernel linux-lts
+$ ls /usr/lib/modules
+6.18.57-1-lts
+7.2.10-arch1-1
+</pre>
+
+<p>Repare: o pacote se chama <code>linux 7.2.10.arch1-1</code> (com ponto, porque versões de pacote não aceitam hífen), e o kernel em uso se chama <code>7.2.10-arch1-1</code>. É o mesmo. Cada kernel instalado tem seu par <code>vmlinuz-*</code> + <code>initramfs-*.img</code> em <code>/boot</code> e sua pasta de módulos.</p>
+
+<div class="try" data-goal="ran:^\s*uname\b.*-r,out:7.2.10-arch1-1" data-solucao="uname -r">
+<p class="try-task"><strong>Missão:</strong> descubra a versão do kernel que está rodando na máquina da ana (só a versão, sem o resto).</p>
+</div>
+
+<div class="try" data-goal="ran:\bpacman\b.*-Q.*linux-lts,out:6.18.57-1" data-solucao="pacman -Q linux-lts">
+<p class="try-task"><strong>Missão:</strong> o kernel em uso é o <code>linux</code>, mas a ana tem outro instalado. Mostre a versão do pacote <code>linux-lts</code>.</p>
+</div>
+
+<hr>
+
+<h2>Os kernels oficiais</h2>
+<p>Os repositórios oficiais têm quatro kernels. Todos vêm do mesmo código, com objetivos diferentes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Repositório</th><th>Versão (out/2026)</th><th>Download</th><th>Para quem</th></tr>
+<tr><td><code>linux</code></td><td>core</td><td>7.2.10.arch1-1</td><td>161,14 MiB</td><td><strong>O padrão.</strong> Sempre a versão estável mais nova, com poucas mudanças do Arch</td></tr>
+<tr><td><code>linux-lts</code></td><td>core</td><td>6.18.57-1</td><td>155,38 MiB</td><td><em>Long Term Support</em>: uma série mais antiga, que só recebe correções. O melhor <strong>kernel de reserva</strong></td></tr>
+<tr><td><code>linux-zen</code></td><td>extra</td><td>7.2.10.zen1-1</td><td>166,81 MiB</td><td>Ajustado para resposta rápida em desktop e jogos (projeto Zen)</td></tr>
+<tr><td><code>linux-hardened</code></td><td>extra</td><td>7.2.10.hardened1-2</td><td>157,18 MiB</td><td>Foco em segurança: mais proteções, alguns recursos desligados (pode quebrar programas)</td></tr>
+</table>
+</div>
+
+<p>Os números vêm do <code>pacman -Si</code> (<em>sync info</em>: informação do repositório, sem instalar). O do kernel padrão, completo:</p>
+
+<pre class="term">$ pacman -Si linux
+Repositório          : core
+Nome                 : linux
+Versão               : 7.2.10.arch1-1
+Descrição            : The Linux kernel and modules
+Arquitetura          : x86_64
+URL                  : https://github.com/archlinux/linux
+Licenças             : GPL-2.0-only
+Grupos               : Nenhum
+Provê                : KSMBD-MODULE  NTSYNC-MODULE  VIRTUALBOX-GUEST-MODULES  WIREGUARD-MODULE
+Depende de           : coreutils  initramfs  kmod
+Depend. opcionais    : linux-headers: headers and scripts for building modules
+                       linux-firmware: firmware images needed for some devices
+                       scx-scheds: to use sched-ext schedulers
+                       wireless-regdb: to set the correct wireless channels of your country
+Conflita com         : Nenhum
+Substitui            : virtualbox-guest-modules-arch  wireguard-arch
+Tamanho do download  : 161,14 MiB
+Tamanho instalado    : 161,60 MiB
+Empacotador          : Jan Alexander Steffens (heftig) &lt;heftig@archlinux.org&gt;
+Data da compilação   : seg 12 out 2026 03:58:10
+Validado por         : Soma SHA-256  Assinatura
+</pre>
+
+<ul>
+  <li><strong>Provê</strong>: o kernel já traz embutidos o WireGuard e os módulos de convidado do VirtualBox (por isso a máquina virtual da ana não precisou de pacote extra para eles).</li>
+  <li><strong>Depende de</strong> <code>initramfs</code>: qualquer pacote que gere initramfs serve; no Arch, o <code>mkinitcpio</code>.</li>
+  <li><strong>Depend. opcionais</strong>: o <code>linux-headers</code> (veja abaixo) e o <code>linux-firmware</code> (o "software" de dentro de placas Wi-Fi, de vídeo etc.).</li>
+</ul>
+
+<p>Os outros três têm as mesmas linhas, mudando o nome dos headers (<code>linux-lts-headers</code>, <code>linux-zen-headers</code>…). O <code>linux-lts</code> tem uma lista de licenças enorme, porque declara a licença de cada pedaço do código:</p>
+
+<pre class="term">$ pacman -Si linux-lts
+Repositório          : core
+Nome                 : linux-lts
+Versão               : 6.18.57-1
+Descrição            : The LTS Linux kernel and modules
+Arquitetura          : x86_64
+URL                  : https://www.kernel.org
+Licenças             : Apache-2.0 OR MIT  BSD-2-Clause OR GPL-2.0-or-later  BSD-3-Clause  …   « (corte nosso)
+…
+Tamanho do download  : 155,38 MiB
+Tamanho instalado    : 155,84 MiB
+Empacotador          : Andreas Radke &lt;andyrtr@archlinux.org&gt;
+Data da compilação   : qui 15 out 2026 10:43:34
+Validado por         : Soma SHA-256  Assinatura
+</pre>
+
+<h3>Instalar outro kernel</h3>
+<p>É um <code>pacman -S</code> comum. Resumo real da instalação do zen (respondendo "n" no fim, nada foi instalado):</p>
+<pre class="term">$ sudo pacman -S linux-zen
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) linux-zen-7.2.10.zen1-1
+
+Tamanho total download:   166,81 MiB
+Tamanho total instalado:  167,35 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+
+<p>Se você confirmar, o fim da instalação roda o mkinitcpio para gerar o initramfs do kernel novo (você vê isso no log real da instalação do LTS, logo abaixo). Mas falta um passo que o pacman <strong>não</strong> faz: avisar o GRUB.</p>
+
+<hr>
+
+<h2>Por que ter um kernel de reserva</h2>
+<p>No Arch, o kernel é atualizado com o resto do sistema. Quase sempre dá tudo certo. Mas, de vez em quando, uma versão nova tem um defeito com algum hardware específico: a tela fica preta, o Wi-Fi some, o boot para. Se você tem <strong>só um</strong> kernel, sobra o pendrive de resgate (<a href="chroot-resgate.html">Resgate com chroot</a>). Se tem dois, basta escolher o outro no menu do GRUB e corrigir com calma.</p>
+<p>O <code>linux-lts</code> é o reserva ideal: é uma série diferente, então dificilmente quebra junto com o <code>linux</code>. O custo é espaço em <code>/boot</code> (uns 31 MiB a mais: kernel + initramfs) e a instalação dos headers de cada um, se você usa DKMS.</p>
+
+<pre class="term">$ ls -lh /boot
+total 77M
+drwxr-xr-x 3 root root 4,0K 16 out 12:10 EFI
+drwxr-xr-x 6 root root 4,0K 16 out 13:03 grub
+-rwxr-xr-x 1 root root  15M 16 out 12:58 initramfs-linux.img
+-rwxr-xr-x 1 root root  15M 16 out 12:58 initramfs-linux-lts.img
+-rwxr-xr-x 1 root root  15M 25 set 19:53 intel-ucode.img
+-rwxr-xr-x 1 root root  17M 16 out 12:09 vmlinuz-linux
+-rwxr-xr-x 1 root root  16M 16 out 12:58 vmlinuz-linux-lts
+</pre>
+<p>Com a partição EFI de 1 GiB da ana, espaço não é problema. Com uma de 300 MiB, três kernels já apertam.</p>
+
+<hr>
+
+<h2>A pegadinha real: o GRUB passou a iniciar o LTS</h2>
+<p>Esta é a história da máquina da ana, tirada dos registros da instalação.</p>
+
+<h3>1. Instalou o LTS</h3>
+<p>O pacman instalou o <code>linux-lts</code> e, nos hooks do fim, gerou o initramfs dos dois kernels. Do GRUB, nenhuma palavra. (No registro real, o LTS veio junto com outros pacotes das aulas; abaixo, só o trecho que interessa.)</p>
+<pre class="term">$ sudo pacman -S linux-lts linux-lts-headers
+…
+(11/18) Updating linux initcpios...
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux-lts.preset: 'default'
+==&gt; Using default configuration file: '/etc/mkinitcpio.conf'
+  -&gt; -k /boot/vmlinuz-linux-lts -g /boot/initramfs-linux-lts.img
+==&gt; Starting build: '6.18.57-1-lts'
+…
+==&gt; Initcpio image generation successful
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+…
+==&gt; Initcpio image generation successful
+</pre>
+
+<h3>2. Atualizou o menu do GRUB</h3>
+<p>O menu do GRUB é um arquivo gerado (<code>/boot/grub/grub.cfg</code>). Para o kernel novo aparecer nele, é preciso gerá-lo de novo:</p>
+<pre class="term">$ sudo grub-mkconfig -o /boot/grub/grub.cfg
+Gerando o arquivo de configuração do grub...
+Imagem Linux encontrada: /boot/vmlinuz-linux-lts                   « o LTS veio primeiro!
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux-lts.img
+Imagem Linux encontrada: /boot/vmlinuz-linux
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux.img
+Aviso: os-prober não será executado para detectar outras partições de arranque.
+Os sistemas nelas presentes não serão adicionados à configuração de arranque do GRUB.\Veja a documentação de GRUB_DISABLE_OS_PROBER.
+A adicionar entrada de menu para UEFI Firmware Settings ...
+Aviso: os-prober is not installed; EFI BootNext entries will not be filtered against detected OSes, so non-OS entries (e.g. firmware updaters) may appear in the menu.
+Adding boot menu entry for EFI BootNext: UiApp (Boot0000)
+Adding boot menu entry for EFI BootNext: UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (Boot0002)
+Adding boot menu entry for EFI BootNext: GRUB (Boot0003)
+concluído
+</pre>
+<p>(As mensagens do GRUB misturam português de Portugal, "arranque", e inglês: as traduções dele estão incompletas.)</p>
+
+<h3>3. Reiniciou… no LTS</h3>
+<pre class="term">$ grep -n "^GRUB_DEFAULT" /etc/default/grub
+3:GRUB_DEFAULT=0
+$ uname -r
+6.18.57-1-lts
+</pre>
+<p><code>GRUB_DEFAULT=0</code> quer dizer "inicie a <strong>primeira</strong> entrada do menu". E o <code>grub-mkconfig</code> põe os kernels em ordem pelo nome do arquivo, do "maior" para o "menor": <code>vmlinuz-linux-lts</code> vem antes de <code>vmlinuz-linux</code>. A primeira entrada passou a ser o LTS. Nada quebrou, mas a ana estava rodando o kernel reserva sem saber. O registro do sistema confirma (cada boot, com <code>-b</code> negativo para os anteriores; veja <a href="journal.html">Logs</a>):</p>
+<pre class="term">$ sudo journalctl -k -b -3 -o cat | head -1
+Linux version 6.18.57-1-lts (linux-lts@archlinux) (gcc (GCC) 16.2.1 20260810, GNU ld (GNU Binutils) 2.47) #1 SMP PREEMPT_DYNAMIC Thu, 15 Oct 2026 13:43:34 +0000
+</pre>
+
+<h3>4. A correção: GRUB_TOP_LEVEL</h3>
+<p>A opção <code>GRUB_TOP_LEVEL</code>, em <code>/etc/default/grub</code>, diz qual kernel fica no topo do menu, não importa a ordem dos nomes:</p>
+
+<dl class="anatomy">
+  <dt>GRUB_TOP_LEVEL=</dt><dd>A opção do GRUB.</dd>
+  <dt>"/boot/vmlinuz-linux"</dt><dd>O caminho do kernel que deve ser a primeira entrada (e, portanto, o padrão com <code>GRUB_DEFAULT=0</code>).</dd>
+</dl>
+
+<pre class="term">$ echo 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux"' | sudo tee -a /etc/default/grub
+GRUB_TOP_LEVEL="/boot/vmlinuz-linux"
+$ sudo grub-mkconfig -o /boot/grub/grub.cfg
+Gerando o arquivo de configuração do grub...
+Imagem Linux encontrada: /boot/vmlinuz-linux                       « agora o linux é o primeiro
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux.img
+Imagem Linux encontrada: /boot/vmlinuz-linux-lts
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux-lts.img
+Aviso: os-prober não será executado para detectar outras partições de arranque.
+Os sistemas nelas presentes não serão adicionados à configuração de arranque do GRUB.\Veja a documentação de GRUB_DISABLE_OS_PROBER.
+A adicionar entrada de menu para UEFI Firmware Settings ...
+Aviso: os-prober is not installed; EFI BootNext entries will not be filtered against detected OSes, so non-OS entries (e.g. firmware updaters) may appear in the menu.
+Adding boot menu entry for EFI BootNext: UiApp (Boot0000)
+Adding boot menu entry for EFI BootNext: UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (Boot0002)
+Adding boot menu entry for EFI BootNext: GRUB (Boot0003)
+concluído
+</pre>
+<p>O <code>tee -a</code> acrescenta a linha no fim do arquivo como root (um <code>sudo echo … &gt;&gt; arquivo</code> não funcionaria: quem abre o arquivo é o seu shell, sem root). No log da instalação, a ana fez o mesmo já como root, com <code>echo … &gt;&gt; /etc/default/grub</code>. Depois do próximo boot:</p>
+<pre class="term">$ uname -r
+7.2.10-arch1-1
+</pre>
+
+<div class="warning">
+<strong>O pacman não roda o grub-mkconfig</strong>
+<p>Atualizar o <code>linux</code> não exige <code>grub-mkconfig</code> (o nome do arquivo <code>/boot/vmlinuz-linux</code> não muda). Mas <strong>instalar ou remover um kernel</strong>, ou mudar <code>/etc/default/grub</code>, exige. Esquecer depois de remover um kernel deixa no menu uma entrada que não inicia.</p>
+</div>
+
+<hr>
+
+<h2>Escolher o kernel no GRUB</h2>
+<p>O menu gerado tem a entrada principal e um submenu com todos os kernels. Listando os títulos direto do <code>grub.cfg</code>:</p>
+<pre class="term">$ sudo grep -E "^menuentry|^submenu|^\s+menuentry" /boot/grub/grub.cfg | cut -c1-90
+  menuentry_id_option="--id"
+  menuentry_id_option=""
+menuentry 'Arch Linux' --class arch --class gnu-linux --class gnu --class os $menuentry_id
+submenu 'Opções avançadas para Arch Linux' $menuentry_id_option 'gnulinux-advanced-75d167c
+	menuentry 'Arch Linux, with Linux linux' --class arch --class gnu-linux --class gnu --cla
+	menuentry 'Arch Linux, with Linux linux-lts' --class arch --class gnu-linux --class gnu -
+		menuentry 'UEFI Firmware Settings' $menuentry_id_option 'uefi-firmware' {
+  menuentry 'UiApp (EFI BootNext)' --class uiapp --class os $menuentry_id_option 'efi-boot
+  menuentry 'UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (EFI BootNext)' --class uefi --class
+  menuentry 'GRUB (EFI BootNext)' --class grub --class os $menuentry_id_option 'efi-bootne
+</pre>
+<p>Na tela do GRUB (5 segundos, <code>GRUB_TIMEOUT=5</code>): desça com as setas até <strong>Opções avançadas para Arch Linux</strong>, <kbd>Enter</kbd>, e escolha <strong>Arch Linux, with Linux linux-lts</strong>. Vale só para aquele boot.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Em <code>/etc/default/grub</code></th></tr>
+<tr><td>Sempre o <code>linux</code> como padrão, com o LTS no submenu</td><td><code>GRUB_DEFAULT=0</code> + <code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code> (o que a ana fez)</td></tr>
+<tr><td>Que o GRUB lembre o último escolhido</td><td><code>GRUB_DEFAULT=saved</code> + <code>GRUB_SAVEDEFAULT=true</code></td></tr>
+<tr><td>Todos os kernels no menu principal, sem submenu</td><td><code>GRUB_DISABLE_SUBMENU=y</code></td></tr>
+</table>
+</div>
+<p>Depois de qualquer mudança: <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code>. No <strong>systemd-boot</strong>, cada kernel é um arquivo de entrada em <code>/boot/loader/entries/</code> e o padrão fica em <code>loader.conf</code>; veja <a href="bootloader.html">Bootloader</a>.</p>
+
+<hr>
+
+<h2>Headers e DKMS</h2>
+<p>Alguns drivers não vêm com o kernel: o do VirtualBox (para rodar máquinas virtuais), drivers de placas Wi-Fi raras, o da NVIDIA em certas versões. Eles são <strong>compilados na sua máquina</strong>, para o kernel que você tem. Para isso, precisam dos <strong>headers</strong> do kernel: os arquivos de cabeçalho e scripts de compilação daquela versão exata (o pacote <code>linux-headers</code>, <code>linux-lts-headers</code>…).</p>
+<p>O <strong>DKMS</strong> (<em>Dynamic Kernel Module Support</em>) automatiza isso: a cada atualização de kernel, ele recompila esses drivers sozinho. Os pacotes que usam DKMS têm o nome terminado em <code>-dkms</code>.</p>
+
+<h3>A ana tem headers só do LTS</h3>
+<pre class="term">$ pacman -Q dkms linux-headers linux-lts-headers
+erro: o pacote "dkms" não foi encontrado
+erro: o pacote "linux-headers" não foi encontrado
+linux-lts-headers 6.18.57-1
+</pre>
+<p>Na instalação, a ana pediu <code>linux-lts linux-lts-headers</code>, mas nunca os headers do kernel principal. Se um dia ela instalar um pacote <code>-dkms</code>, o driver será compilado só para o LTS, e no <code>linux</code> ele não vai existir. A regra: <strong>um pacote de headers para cada kernel instalado</strong>.</p>
+<pre class="term">$ sudo pacman -S linux-headers
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) linux-headers-7.2.10.arch1-1
+
+Tamanho total download:    68,75 MiB
+Tamanho total instalado:  321,41 MiB
+
+:: Continuar a instalação? [S/n] n
+$ sudo pacman -S dkms
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) dkms-3.4.4-1
+
+Tamanho total download:   0,05 MiB
+Tamanho total instalado:  0,16 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+<p>(Resumos reais, respondidos com "n".) Os headers ficam em <code>/usr/lib/modules/VERSÃO/build</code>. Você não precisa instalar o <code>dkms</code> à mão: os pacotes <code>-dkms</code> o puxam como dependência. Se você <strong>não</strong> usa nenhum driver de fora, não precisa de headers.</p>
+
+<hr>
+
+<h2>Módulos: lsmod, modinfo e modprobe</h2>
+<p>A maior parte dos drivers é <strong>módulo</strong>: um pedaço do kernel que entra e sai com ele rodando. O <code>udev</code> carrega sozinho o módulo certo quando um aparelho aparece; você só mexe à mão para investigar ou para casos especiais.</p>
+
+<h3>lsmod: o que está carregado</h3>
+<pre class="term">$ lsmod | head -8
+Module                  Size  Used by
+loop                   45056  3
+tcp_diag               20480  0
+inet_diag              20480  1 tcp_diag
+rfkill                 45056  1
+vfat                   28672  1
+fat                   114688  1 vfat
+intel_rapl_msr         24576  0
+$ lsmod | wc -l
+39
+</pre>
+<p><code>Size</code> é o tamanho na memória; <code>Used by</code>, quantos usam o módulo e quais. O <code>vfat</code> (FAT32 da <code>/boot</code>) usa o <code>fat</code>. São só 38 módulos (a primeira linha é o título) porque os drivers mais comuns, como o do ext4, vêm <strong>embutidos</strong> no kernel do Arch e não aparecem aqui.</p>
+
+<h3>modinfo: o que é um módulo</h3>
+<pre class="term">$ modinfo e1000
+filename:       /lib/modules/7.2.10-arch1-1/kernel/drivers/net/ethernet/intel/e1000/e1000.ko.zst
+license:        GPL v2
+description:    Intel(R) PRO/1000 Network Driver
+…                                               « (dezenas de linhas alias: os aparelhos que ele atende)
+depends:
+intree:         Y
+name:           e1000
+vermagic:       7.2.10-arch1-1 SMP preempt mod_unload
+…
+parm:           TxDescriptors:Number of transmit descriptors (array of int)
+…
+$ modinfo -F description zram
+Compressed RAM Block Device
+$ lsmod | grep -i -e e1000 -e vbox
+e1000                 196608  0
+vboxguest              53248  0
+</pre>
+<p>O <code>e1000</code> é o driver da placa de rede que o VirtualBox simula (a <code>enp0s3</code> da ana). <code>filename</code> mostra o arquivo (<code>.ko</code> = <em>kernel object</em>, comprimido com zstd), <code>vermagic</code> o kernel para o qual foi compilado, <code>parm</code> as opções que ele aceita. <code>-F campo</code> mostra um campo só.</p>
+
+<h3>modprobe: carregar e descarregar</h3>
+<pre class="term">#> modprobe -v zram
+insmod /lib/modules/7.2.10-arch1-1/kernel/lib/lz4/lz4hc_compress.ko.zst
+insmod /lib/modules/7.2.10-arch1-1/kernel/lib/842/842_compress.ko.zst
+insmod /lib/modules/7.2.10-arch1-1/kernel/lib/842/842_decompress.ko.zst
+insmod /lib/modules/7.2.10-arch1-1/kernel/drivers/block/zram/zram.ko.zst
+#> lsmod | grep zram
+zram                   73728  0
+842_decompress         20480  1 zram
+842_compress           24576  1 zram
+lz4hc_compress         20480  1 zram
+#> modprobe -r -v zram
+rmmod zram
+rmmod lz4hc_compress
+rmmod 842_compress
+rmmod 842_decompress
+</pre>
+<p>O <code>modprobe</code> (como root) resolve as <strong>dependências</strong>: para carregar o <code>zram</code>, carregou antes três módulos de compressão (<code>-v</code> mostra cada <code>insmod</code>). Com <code>-r</code> (<em>remove</em>), tira o módulo e as dependências que ficaram sem uso. Um módulo que está sendo usado (o <code>Used by</code> do <code>lsmod</code> maior que 0) não pode ser retirado.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Use</th></tr>
+<tr><td>Carregar um módulo a cada boot</td><td>Um arquivo em <code>/etc/modules-load.d/</code> com o nome do módulo (ex.: <code>zram.conf</code> contendo <code>zram</code>)</td></tr>
+<tr><td>Passar opções a um módulo</td><td><code>/etc/modprobe.d/arquivo.conf</code> com <code>options nome parâmetro=valor</code></td></tr>
+<tr><td>Impedir um módulo de carregar</td><td><code>/etc/modprobe.d/arquivo.conf</code> com <code>blacklist nome</code></td></tr>
+</table>
+</div>
+<p>Na ana, as duas pastas em <code>/etc</code> estão vazias: nada foi personalizado. Se o módulo precisa estar no initramfs (driver do disco, por exemplo), mude também o <a href="mkinitcpio.html">mkinitcpio</a>.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Depois de instalar um segundo kernel, o sistema iniciou com ele</strong>
+<pre class="term">$ uname -r
+6.18.57-1-lts</pre>
+<p><strong>O que aconteceu:</strong> com <code>GRUB_DEFAULT=0</code>, vale a primeira entrada, e o <code>grub-mkconfig</code> colocou o <code>linux-lts</code> antes do <code>linux</code>.</p>
+<p><strong>Como resolver:</strong> acrescente <code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code> a <code>/etc/default/grub</code>, rode <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code> e reinicie (detalhes acima).</p>
+</div>
+
+<div class="cenario">
+<strong>"Module … not found in directory /lib/modules/…"</strong>
+<pre class="term">#> modprobe naoexiste
+modprobe: FATAL: Module naoexiste not found in directory /lib/modules/7.2.10-arch1-1
+#> echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> aqui, o nome está errado. Mas a mesma mensagem aparece numa situação típica do Arch: você atualizou o kernel e <strong>ainda não reiniciou</strong>. O pacman apagou a pasta de módulos da versão antiga, que é a que está rodando; um pendrive ou outro aparelho ligado agora não acha o driver.</p>
+<p><strong>Como confirmar:</strong> compare <code>uname -r</code> com <code>ls /usr/lib/modules</code>. Se a versão em uso não estiver na lista, é isso.</p>
+<p><strong>Como resolver:</strong> reinicie depois de toda atualização do kernel. Veja <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um driver -dkms não funciona num dos kernels</strong>
+<p><strong>O que aconteceu:</strong> faltam os headers daquele kernel, e o DKMS não conseguiu compilar o módulo para ele.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Q linux linux-headers linux-lts linux-lts-headers</code> e, com o <code>dkms</code> instalado, <code>dkms status</code>.</p>
+<p><strong>Como resolver:</strong> instale o pacote de headers que falta. A reinstalação do pacote <code>-dkms</code> recompila para todos os kernels.</p>
+</div>
+
+<div class="cenario">
+<strong>"Não há espaço disponível no dispositivo" ao atualizar o kernel</strong>
+<p><strong>O que aconteceu:</strong> a <code>/boot</code> (partição EFI) encheu, e o mkinitcpio não conseguiu gravar o initramfs.</p>
+<p><strong>Como confirmar:</strong> <code>df -h /boot</code> e <code>ls -lh /boot</code>.</p>
+<p><strong>Como resolver:</strong> remova um kernel que você não usa (<code>sudo pacman -Rns linux-zen</code>, depois <code>grub-mkconfig</code>) e rode <code>sudo mkinitcpio -P</code>. <strong>Não reinicie</strong> antes de o initramfs ser gerado sem erros.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>uname -r</code></td><td>Kernel em uso</td></tr>
+<tr><td><code>pacman -Q linux linux-lts</code></td><td>Kernels instalados</td></tr>
+<tr><td><code>pacman -Si linux-zen</code></td><td>Informação de um kernel do repositório</td></tr>
+<tr><td><code>sudo pacman -S linux-lts linux-lts-headers</code></td><td>Instala o LTS (com headers, se usar DKMS)</td></tr>
+<tr><td><code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code></td><td>Atualiza o menu do GRUB</td></tr>
+<tr><td><code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code></td><td>Em <code>/etc/default/grub</code>: põe o <code>linux</code> no topo</td></tr>
+<tr><td><code>lsmod</code></td><td>Módulos carregados</td></tr>
+<tr><td><code>modinfo nome</code> / <code>modinfo -F description nome</code></td><td>Informação de um módulo</td></tr>
+<tr><td><code>sudo modprobe nome</code> / <code>sudo modprobe -r nome</code></td><td>Carrega / descarrega (com dependências)</td></tr>
+<tr><td><code>/etc/modules-load.d/</code>, <code>/etc/modprobe.d/</code></td><td>Carregar no boot / opções e blacklist</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O kernel no topo</h3>
+<p>Complete a linha de <code>/etc/default/grub</code> que faz o kernel <code>linux</code> ser o padrão mesmo com o <code>linux-lts</code> instalado:</p>
+<div class="ex-code">GRUB_TOP_LEVEL="/boot/<input data-answer="vmlinuz-linux" aria-label="arquivo do kernel">"</div>
+</div>
+
+<div class="exercise">
+<h3>2. Headers do zen</h3>
+<p>Você instalou o <code>linux-zen</code> e usa o <code>virtualbox-host-dkms</code>. Qual pacote de headers falta?</p>
+<div class="ex-code">sudo pacman -S <input data-answer="linux-zen-headers" aria-label="pacote"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual kernel é o melhor "reserva" para o <code>linux</code>?</p>
+<label><input type="radio" name="q3"> Outra cópia do <code>linux</code>.</label>
+<label><input type="radio" name="q3"> O <code>linux-zen</code>, porque é mais rápido.</label>
+<label><input type="radio" name="q3"> O <code>linux-lts</code>, porque é de outra série e dificilmente quebra junto.</label>
+<label><input type="radio" name="q3"> Nenhum: o Arch não permite dois kernels.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de <code>sudo pacman -S linux-lts</code>, o que você ainda precisa fazer para ele aparecer no GRUB?</p>
+<label><input type="radio" name="q4"> <code>mkinitcpio -P</code>.</label>
+<label><input type="radio" name="q4"> <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code>.</label>
+<label><input type="radio" name="q4"> Nada: o pacman atualiza o GRUB.</label>
+<label><input type="radio" name="q4"> <code>modprobe linux-lts</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. <code>modprobe -r -v zram</code> tirou quatro módulos. Por quê?</p>
+<label><input type="radio" name="q5"> Tirou o <code>zram</code> e as dependências que ele tinha carregado e que ficaram sem uso.</label>
+<label><input type="radio" name="q5"> Porque <code>-v</code> remove tudo.</label>
+<label><input type="radio" name="q5"> Porque o kernel foi reiniciado.</label>
+<label><input type="radio" name="q5"> Foi um erro.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>uname -r</code> mostra o kernel em uso; <code>pacman -Q</code> e <code>ls /boot</code>, os instalados.</li>
+  <li>Oficiais: <code>linux</code> (padrão), <code>linux-lts</code> (reserva), <code>linux-zen</code> (desktop), <code>linux-hardened</code> (segurança).</li>
+  <li>Instalar ou remover kernel → <code>grub-mkconfig</code>. Com dois kernels, o GRUB pode escolher o LTS: <code>GRUB_TOP_LEVEL</code> resolve.</li>
+  <li>Drivers <code>-dkms</code> precisam dos headers de <strong>cada</strong> kernel.</li>
+  <li>Módulos: <code>lsmod</code>, <code>modinfo</code>, <code>modprobe</code>/<code>modprobe -r</code>. Reinicie depois de atualizar o kernel.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os kernels oficiais e não oficiais estão em <a href="https://wiki.archlinux.org/title/Kernel">Kernel</a> (<a href="https://wiki.archlinux.org/title/Kernel_(Portugu%C3%AAs)">em português</a>); módulos, <code>modprobe.d</code> e blacklist, em <a href="https://wiki.archlinux.org/title/Kernel_module">Kernel module</a> (<a href="https://wiki.archlinux.org/title/Kernel_module_(Portugu%C3%AAs)">em português</a>); o DKMS, em <a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support">Dynamic Kernel Module Support</a> (<a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support_(Portugu%C3%AAs)">em português</a>); e o menu, o <code>GRUB_TOP_LEVEL</code> e o <code>GRUB_SAVEDEFAULT</code>, em <a href="https://wiki.archlinux.org/title/GRUB">GRUB</a> (<a href="https://wiki.archlinux.org/title/GRUB_(Portugu%C3%AAs)">em português</a>). O caminho do boot inteiro está em <a href="https://wiki.archlinux.org/title/Arch_boot_process">Arch boot process</a> (<a href="https://wiki.archlinux.org/title/Arch_boot_process_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
