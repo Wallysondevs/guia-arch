@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch pacman avançado — consultas, -Qo, -Qk, -F, grupos, pactree e expac | Guia Arch</title>
+<meta name="description" content="pacman além do básico no Arch Linux: -Qe, -Qet, -Qd, -Qm, -Qo, -Qs, -Qk/-Qkk, -F/-Fx, grupos, -D --asdeps, pactree, expac, --needed, --overwrite e as opções Color, ParallelDownloads, ILoveCandy e VerbosePkgLists, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>pacman <span class="hl">Avançado</span></h1>
+
+<p class="intro">Em <a href="pacman.html">pacman: o Básico</a> você aprendeu a procurar, instalar e remover. Esta aula é sobre <strong>perguntar</strong>: o que eu instalei de propósito? De que pacote é este arquivo? Que pacote tem o comando que me falta? Algum arquivo do sistema foi alterado? E também sobre os ajustes que deixam o pacman mais confortável.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Filtrar os instalados: <code>-Qe</code>, <code>-Qet</code>, <code>-Qd</code>, <code>-Qm</code>, <code>-Qs</code>, e a opção <code>-q</code> para scripts.</li>
+  <li>Descobrir o dono de um arquivo (<code>-Qo</code>) e qual pacote tem um comando que você não tem (<code>-F</code>).</li>
+  <li>Conferir a integridade dos arquivos (<code>-Qk</code>, <code>-Qkk</code>).</li>
+  <li>Grupos, motivo da instalação (<code>-D</code>), <code>pactree</code> e <code>expac</code>.</li>
+  <li><code>--needed</code>, <code>--overwrite</code> e as opções do <code>/etc/pacman.conf</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Filtros de consulta: o que tem instalado?</h2>
+
+<p>Lembre-se: o pacman anota em cada pacote <strong>por que</strong> ele foi instalado. "Explicitamente" é o que você pediu; "como dependência" é o que veio junto. Os filtros de <code>-Q</code> usam essa anotação:</p>
+
+<dl class="anatomy">
+  <dt>-Qe</dt><dd><em>explicit</em>: só os instalados explicitamente.</dd>
+  <dt>-Qd</dt><dd><em>deps</em>: só os instalados como dependência.</dd>
+  <dt>-Qt</dt><dd><em>unrequired</em>: só os que nenhum outro pacote exige (nem como dependência opcional; <code>-Qtt</code> ignora as opcionais).</dd>
+  <dt>-Qm</dt><dd><em>foreign</em> ("estrangeiros"): os que não existem em nenhum repositório ligado, quase sempre do <a href="aur.html">AUR</a>.</dd>
+  <dt>-Qn</dt><dd><em>native</em>: o contrário, os que vêm dos repositórios.</dd>
+</dl>
+
+<pre class="term">$ pacman -Q | wc -l
+408                         « todos
+$ pacman -Qe | wc -l
+45                          « os que alguém pediu
+$ pacman -Qd | wc -l
+363                         « os que vieram como dependência (45 + 363 = 408)
+$ pacman -Qn | wc -l
+404                         « dos repositórios oficiais
+$ pacman -Qm
+downgrade 12.0.4-1          « os 4 que não estão nos repositórios: vieram do AUR
+paru-bin 2.1.0-1
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1      « símbolos de depuração que o makepkg gerou junto (veja makepkg)</pre>
+
+<p>Os filtros se combinam. <code>-Qet</code> (explícitos <strong>e</strong> que ninguém exige) é a "lista do que eu escolhi": o retrato do seu sistema, sem os pacotes que outros já puxam. Atenção a um detalhe: um <code>t</code> esconde também o que é dependência <strong>opcional</strong> de alguém. Por isso o <code>linux</code> e o <code>base-devel</code> (opcional do <code>pacman</code>) não aparecem abaixo; com <code>-Qett</code> (dois <code>t</code>, ignorando as opcionais), a lista da VM sobe de 24 para 35:</p>
+
+<pre class="term">$ pacman -Qet
+base 3-3
+cronie 1.7.2-2
+downgrade 12.0.4-1
+flatpak 1:1.18.4-1
+grub 2:2.16-1
+htop 3.5.3-1
+inetutils 2.8-1
+intel-ucode 20260925-1
+linux-lts 6.18.57-1
+man-pages 6.19-1
+namcap 3.6.0-3
+nano 9.2-1
+networkmanager 1.58.1-2
+nginx 1.30.5-1
+paru-bin 2.1.0-1
+podman 6.1.4-1
+reflector 2023-5
+snapper 0.13.2-1
+tree 2.3.2-1
+ufw 0.36.2-7
+wget 1.25.0-6
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1
+zram-generator 1.2.1-1</pre>
+
+<div class="tip">
+<strong>Guardar a lista para reinstalar em outra máquina</strong>
+<p>A opção <code>-q</code> (<em>quiet</em>) tira as versões e deixa só os nomes, perfeito para scripts: <code>pacman -Qqen &gt; pacotes.txt</code> guarda os explícitos dos repositórios. Numa instalação nova, <code>sudo pacman -S --needed - &lt; pacotes.txt</code> instala todos (o <code>-</code> diz "leia os nomes da entrada").</p>
+</div>
+
+<pre class="term">$ pacman -Qmq
+downgrade
+paru-bin
+yay-bin
+yay-bin-debug</pre>
+
+<h3>Procurar entre os instalados: -Qs</h3>
+
+<p>Funciona como o <code>-Ss</code>, mas só no que está instalado (e mostra <code>local/</code> no lugar do repositório). Lembre que a busca olha também a <strong>descrição</strong>: procurando <code>^linux</code>, aparece o <code>dbus-broker</code>, cuja descrição começa com "Linux":</p>
+
+<pre class="term">$ pacman -Qs ^linux
+local/dbus-broker 37-3
+    Linux D-Bus Message Broker               « casou pela descrição
+local/dbus-broker-units 37-3
+    Linux D-Bus Message Broker - Service units
+…                                            « (54 linhas ao todo)
+local/linux 7.2.10.arch1-1
+    The Linux kernel and modules
+…
+$ pacman -Qsq '^linux-lts'
+linux-lts
+linux-lts-headers</pre>
+
+<hr>
+
+<h2>De quem é este arquivo? -Qo</h2>
+
+<dl class="anatomy">
+  <dt>-Qo</dt><dd><em>query owns</em>: qual pacote instalado é dono do arquivo.</dd>
+  <dt>/usr/bin/ls</dt><dd>Um caminho. Também aceita só o nome de um comando que esteja no <code>PATH</code>.</dd>
+</dl>
+
+<pre class="term">$ pacman -Qo /usr/bin/ls
+/usr/bin/ls pertence a coreutils 9.12-2
+$ pacman -Qo ls
+/usr/bin/ls pertence a coreutils 9.12-2           « achou o comando no PATH
+$ pacman -Qo /etc/pacman.conf
+/etc/pacman.conf pertence a pacman 7.1.0.r9.g54d9411-3
+$ pacman -Qo /home/ana/frutas.txt
+erro: Nenhum pacote possui /home/ana/frutas.txt   « criado por você, não por um pacote
+$ echo $?
+1</pre>
+
+<p>Use para saber de onde veio um programa, quem é dono de uma configuração em <code>/etc</code>, ou se um arquivo esquecido em <code>/usr</code> é "órfão" (não pertence a ninguém).</p>
+
+<hr>
+
+<h2>Qual pacote tem o comando que me falta? -F</h2>
+
+<p>O <code>-Qo</code> só conhece o que está instalado. Para procurar arquivos em <strong>todos</strong> os pacotes dos repositórios, use <code>-F</code> (<em>files</em>). Ele precisa de um catálogo de arquivos à parte, que você baixa uma vez (e de vez em quando) com <code>-Fy</code>. Saída real na VM:</p>
+
+<pre class="term">$ sudo pacman -Fy
+:: Sincronizando a base de dados de pacotes...
+ core sendo baixado...
+ extra sendo baixado...</pre>
+
+<p>Esse catálogo é bem maior que o normal: na VM, <code>extra.files</code> tem 50 MiB, contra 8,5 MiB do <code>extra.db</code>. Agora, o caso clássico: você digita <code>hostname</code> num Arch novo e recebe <code>bash: hostname: comando não encontrado</code>. Quem tem esse arquivo?</p>
+
+<pre class="term">$ pacman -F hostname
+core/gettext 1.0-2 [instalado]
+    usr/lib/gettext/hostname                       « um arquivo com esse nome, mas não é o comando
+core/inetutils 2.8-1 [instalado]
+    usr/bin/hostname                               « este é o comando (está em usr/bin)
+extra/archiso 91-1
+    usr/share/archiso/configs/releng/airootfs/etc/hostname
+extra/gstreamer-docs 1.28.8-1
+    usr/share/doc/gstreamer/html/assets/js/search/hostname
+extra/reproducible-faketools-hostname 0.5.5-3
+    usr/lib/reproducible-faketools/bin/hostname
+extra/smolvm 1.28.1-1
+    usr/lib/smolvm/agent-rootfs/bin/hostname
+    usr/lib/smolvm/agent-rootfs/etc/hostname</pre>
+
+<p>Com o nome sozinho, aparecem todos os arquivos chamados <code>hostname</code>. Os comandos ficam em <code>usr/bin</code>: a resposta é o pacote <code>inetutils</code> (na VM ele já está instalado, por isso o <code>[instalado]</code>). Para ir direto, passe o caminho completo, ou use <code>-Fx</code> com uma expressão regular:</p>
+
+<pre class="term">$ pacman -F /usr/bin/hostname
+usr/bin/hostname pertence a core/inetutils 2.8-1
+$ pacman -Fx 'bin/(neo|fast)fetch$'
+usr/bin/fastfetch pertence a extra/fastfetch 2.70.0-1     « o neofetch não existe mais nos repositórios
+$ pacman -F xyzabc
+$ echo $?
+1                                                         « nada encontrado: sem mensagem, código 1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Comando</th></tr>
+<tr><td>De quem é este arquivo <strong>instalado</strong>?</td><td><code>pacman -Qo /caminho</code></td></tr>
+<tr><td>Que pacote do <strong>repositório</strong> tem este arquivo?</td><td><code>pacman -F nome</code> ou <code>pacman -F /caminho/completo</code></td></tr>
+<tr><td>Busca com regex nos arquivos do repositório</td><td><code>pacman -Fx 'regex'</code></td></tr>
+<tr><td>Arquivos de um pacote <strong>não</strong> instalado</td><td><code>pacman -Fl pacote</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Conferir a integridade: -Qk e -Qkk</h2>
+
+<dl class="anatomy">
+  <dt>-Qk</dt><dd><em>check</em>: confere se todos os arquivos do pacote <strong>existem</strong>.</dd>
+  <dt>-Qkk</dt><dd>Confere também as <strong>propriedades</strong> de cada arquivo: tamanho, data, permissões e a soma SHA-256 registrada no <code>mtree</code>.</dd>
+</dl>
+
+<pre class="term">$ pacman -Qk bash
+bash: total de 269 arquivos,  0 arquivo em falta
+$ pacman -Qkk bash
+bash: total de 270 arquivos, 0 arquivo alterado
+$ echo $?
+0</pre>
+
+<p>Para o sistema inteiro, <code>pacman -Qk</code> sem nome confere todos os pacotes. Mostrar só os que têm problema: <code>pacman -Qk 2&gt;/dev/null | grep -v ' 0 arquivo em falta'</code> (na VM, nada apareceu). O <code>-Qkk</code> no sistema inteiro lê todos os arquivos e demora; prefira por pacote.</p>
+
+<h3>Rode -Qkk como root</h3>
+
+<p>Como usuário comum, o pacman não consegue ler alguns arquivos protegidos e acusa um "alterado" falso:</p>
+
+<pre class="term">$ pacman -Qkk sudo
+atenção: sudo: /etc/sudoers (falha ao calcular a soma de verificação SHA256)    « sem permissão para ler
+arquivo backup: sudo: /etc/sudoers (Última modificação incorreta)
+arquivo backup: sudo: /etc/sudoers (Tamanho incorreto)
+sudo: total de 244 arquivos, 1 arquivo alterado
+$ echo $?
+1
+$ sudo pacman -Qkk sudo
+arquivo backup: sudo: /etc/sudoers (Última modificação incorreta)
+arquivo backup: sudo: /etc/sudoers (Tamanho incorreto)
+arquivo backup: sudo: /etc/sudoers (soma de verificação SHA256 incorreta)
+sudo: total de 244 arquivos, 0 arquivo alterado                         « como root: nada de errado</pre>
+
+<p>E as linhas <code>arquivo backup</code>? São arquivos de <strong>configuração</strong> que o pacote marcou como "do usuário" (a lista <code>backup</code> do pacote). É esperado que você os edite: o <code>/etc/sudoers</code> foi alterado com <code>visudo</code> na instalação. Por isso eles <strong>não</strong> contam no total de alterados. Veja quais arquivos de um pacote são desse tipo com <code>pacman -Qii</code> (dois <code>i</code>):</p>
+
+<pre class="term">$ pacman -Qii sudo | tail -6
+Validado por         : Assinatura
+Arquivos backup      : /etc/pam.d/sudo [unmodified]
+                       /etc/sudo.conf [unmodified]
+                       /etc/sudo_logsrvd.conf [unmodified]
+                       /etc/sudoers [modified]                « você mexeu
+Extended Data   : pkgtype=pkg</pre>
+
+<p>Se um arquivo que <strong>não</strong> é de configuração aparecer alterado (um <code>/usr/bin/…</code>), algo está errado: disco com defeito, um <code>make install</code> por cima, ou coisa pior. A solução costuma ser reinstalar o pacote (<code>sudo pacman -S pacote</code>).</p>
+
+<hr>
+
+<h2>Grupos de pacotes</h2>
+
+<p>Um <strong>grupo</strong> é um apelido para vários pacotes, útil para instalar um ambiente inteiro de uma vez. <code>-Sg</code> lista grupos do repositório; <code>-Qg</code>, os grupos de pacotes instalados:</p>
+
+<pre class="term">$ pacman -Sg | wc -l
+107                              « 107 grupos nos repositórios
+$ pacman -Sg xfce4
+xfce4 exo
+xfce4 garcon
+xfce4 thunar
+…                                « (14 membros)
+xfce4 xfwm4
+$ pacman -Qg
+vulkan-devel spirv-tools         « o único pacote da VM que pertence a um grupo</pre>
+
+<p>Ao instalar um grupo, o pacman deixa escolher os membros (Enter = todos):</p>
+
+<pre class="term">$ sudo pacman -S xfce4
+:: Há 14 membros no grupo xfce4:
+:: Repositório extra
+   1) exo  2) garcon  3) thunar  4) thunar-volman  5) tumbler
+   6) xfce4-appfinder  7) xfce4-panel  8) xfce4-power-manager  9) xfce4-session
+   10) xfce4-settings  11) xfce4-terminal  12) xfconf  13) xfdesktop  14) xfwm4
+
+Digite uma seleção (padrão=todos):          « ex.: "1-5 11" ou "^4" (todos menos o 4)
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (97) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+…</pre>
+
+<h3>base-devel não é mais grupo</h3>
+
+<p>Guias antigos mandam fazer <code>pacman -S base-devel</code> "escolhendo o grupo". Desde 2023, <code>base-devel</code> é um <strong>metapacote</strong>: um pacote vazio que só depende dos outros. Por isso:</p>
+
+<pre class="term">$ pacman -Sg base-devel
+erro: grupo de pacotes "base-devel" não foi encontrado
+$ pacman -Si base-devel | grep -E "^(Nome|Grupos|Depende)"
+Nome                 : base-devel
+Grupos               : Nenhum
+Depende de           : archlinux-keyring  autoconf  automake  binutils  bison  debugedit  fakeroot  file  findutils  flex  gawk  gcc  gettext  grep  groff  gzip  libtool  m4  make  pacman  patch  pkgconf  sed  sudo  texinfo  which</pre>
+
+<p>Na prática, <code>sudo pacman -S base-devel</code> continua funcionando (e é o que a aula <a href="makepkg.html">makepkg</a> usa). A diferença: grupo deixa escolher membros; metapacote instala todos e marca cada um como dependência.</p>
+
+<hr>
+
+<h2>Motivo da instalação: -D --asdeps e --asexplicit</h2>
+
+<p>Às vezes o "motivo" fica errado: você instalou à mão uma biblioteca que, na verdade, só serve a outro programa. Corrigir faz o <code>-Rs</code> e a busca de órfãos funcionarem direito. Como isso muda o banco de dados, o teste abaixo foi feito numa <strong>cópia</strong> do banco da VM (<code>--dbpath</code>), sem tocar no sistema:</p>
+
+<dl class="anatomy">
+  <dt>-D</dt><dd><em>database</em>: mexer só no banco de dados, sem instalar nem remover.</dd>
+  <dt>--asdeps</dt><dd>Marcar como "instalado como dependência".</dd>
+  <dt>--asexplicit</dt><dd>Marcar como "instalado explicitamente".</dd>
+</dl>
+
+<pre class="term">#> pacman -D --asdeps htop
+htop: motivo da instalação foi definido como "instalado como dependência"
+#> pacman -Qdt
+htop 3.5.3-1                     « agora o htop é um órfão: dependência que ninguém usa
+#> pacman -D --asexplicit htop
+htop: motivo da instalação foi definido como "instalado explicitamente"
+#> pacman -Qdt
+#> echo $?
+1                                « voltou a ser explícito: nenhum órfão</pre>
+
+<p>Também dá para escolher o motivo na hora de instalar: <code>sudo pacman -S --asdeps pacote</code>. Um nome errado dá <code>erro: não foi possível definir o motivo da instalação do pacote xyz (não foi possível ler ou escrever o pacote)</code>.</p>
+
+<hr>
+
+<h2>A árvore de dependências: pactree</h2>
+
+<p>O <code>pactree</code> (do pacote <code>pacman-contrib</code>) desenha as dependências como uma árvore. A árvore completa do <code>htop</code> tem 147 linhas (o <code>pactree -u htop</code>, sem repetições, lista 51 pacotes); limite a profundidade com <code>-d</code>:</p>
+
+<pre class="term">$ pactree -d1 htop
+htop
+├─libcap
+├─libcap provides libcap.so=2-64          « o libcap "fornece" a biblioteca que o htop pede
+├─libnl
+├─ncurses
+└─ncurses provides libncursesw.so=6-64</pre>
+
+<p>Com <code>-r</code> (<em>reverse</em>), a pergunta inversa: <strong>quem depende</strong> deste pacote?</p>
+
+<pre class="term">$ pactree -r htop
+htop                                      « ninguém depende do htop
+$ pactree -r ncurses | head -8
+ncurses
+├─bash
+│ ├─arch-install-scripts
+│ │ └─devtools
+│ ├─audit
+│ │ ├─dbus
+│ │ │ ├─avahi
+│ │ │ │ └─ostree</pre>
+
+<p>Útil antes de remover algo: <code>pactree -r</code> mostra o que seria afetado. As palavras <code>provides</code> são do próprio pactree (ele não é traduzido).</p>
+
+<hr>
+
+<h2>Consultas sob medida: expac</h2>
+
+<p>O <code>expac</code> (pacote <code>expac</code>) imprime os campos que você escolher, num formato parecido com o <code>printf</code>. Cada <code>%letra</code> é um campo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Campo</th><th>Código</th><th>Campo</th></tr>
+<tr><td><code>%n</code></td><td>nome</td><td><code>%m</code></td><td>tamanho instalado</td></tr>
+<tr><td><code>%v</code></td><td>versão</td><td><code>%k</code></td><td>tamanho do download</td></tr>
+<tr><td><code>%d</code></td><td>descrição</td><td><code>%w</code></td><td>motivo (<code>explicit</code>/<code>dependency</code>)</td></tr>
+<tr><td><code>%r</code></td><td>repositório</td><td><code>%N</code></td><td>quem depende dele</td></tr>
+</table>
+</div>
+
+<p>O uso mais famoso: <strong>os 10 maiores pacotes instalados</strong>. <code>-H M</code> mostra os tamanhos em MiB; o <code>sort -h</code> entende "MiB":</p>
+
+<pre class="term">$ expac -H M '%m\t%n' | sort -h | tail -10
+70.34 MiB	perl
+73.79 MiB	python
+82.66 MiB	podman
+103.55 MiB	linux-firmware-nvidia
+137.97 MiB	linux-firmware-intel
+155.84 MiB	linux-lts
+161.60 MiB	linux
+164.87 MiB	llvm-libs
+220.89 MiB	gcc
+273.49 MiB	linux-lts-headers             « o maior: os cabeçalhos do kernel LTS</pre>
+
+<pre class="term">$ expac '%n %v' htop pacman
+htop 3.5.3-1
+pacman 7.1.0.r9.g54d9411-3
+$ expac -Q '%n: %w' htop jq
+htop: explicit
+jq: dependency
+$ expac -S '%r/%n %v %k' fastfetch
+extra/fastfetch 2.70.0-1 680713            « -S = do repositório; %k em bytes sem o -H</pre>
+
+<p>Sem <code>-S</code>, o expac consulta os instalados (o mesmo que <code>-Q</code>). Repare que o <code>expac</code> usa ponto como separador decimal (<code>70.34</code>), enquanto o pacman usa vírgula (<code>70,34</code>).</p>
+
+<hr>
+
+<h2>--needed e --overwrite</h2>
+
+<h3>--needed: não reinstalar</h3>
+
+<pre class="term">$ sudo pacman -S --needed htop
+atenção: htop-3.5.3-1 está atualizado -- ignorando
+nada para fazer
+$ echo $?
+0</pre>
+
+<p>Use em listas e scripts (<code>pacman -S --needed git base-devel</code>): instala só o que falta, sem reinstalar o resto.</p>
+
+<h3>--overwrite: quando um arquivo "existe no sistema de arquivos"</h3>
+
+<p>O pacman se recusa a instalar um arquivo que já existe e não pertence a nenhum pacote. Para reproduzir sem risco, criamos um pacote de teste (<code>a4-ola</code>, que instala <code>/usr/bin/a4-ola</code>) e o instalamos numa <strong>raiz falsa</strong> em <code>/tmp/a4/raiz2</code> (opção <code>--root</code>), onde antes colocamos um arquivo com o mesmo nome. A saída é real:</p>
+
+<pre class="term">#> pacman -U a4-ola-1.0-1-any.pkg.tar.zst
+…
+verificando conflitos de arquivos...
+erro: falha ao efetuar a transação (arquivos conflitantes)
+a4-ola: /tmp/a4/raiz2/usr/bin/a4-ola existe no sistema de arquivos
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.
+#> echo $?
+1</pre>
+
+<p>Nada foi instalado: o pacman parou antes de mexer em qualquer coisa. A opção <code>--overwrite</code> recebe um caminho (ou um padrão com <code>*</code>) que ele pode sobrescrever. Num sistema normal, seria <code>sudo pacman -U --overwrite /usr/bin/a4-ola a4-ola-1.0-1-any.pkg.tar.zst</code> (ou <code>sudo pacman -S --overwrite /caminho pacote</code>, para um pacote do repositório). Na raiz falsa usamos o padrão <code>'*/a4-ola'</code>: a instalação passou e o arquivo antigo foi substituído pelo do pacote.</p>
+
+<div class="warning">
+<strong>--overwrite não é botão de "resolver"</strong>
+<p>Antes de usar, descubra <strong>de onde veio</strong> o arquivo: <code>pacman -Qo /caminho</code>. Se ele pertence a outro pacote, o problema é outro (conflito entre pacotes). Se não pertence a ninguém, foi instalado à mão (<code>sudo make install</code>, <code>pip</code> como root, um instalador <code>.sh</code>) e você pode estar apagando algo que usa. Use o caminho exato, nunca <code>--overwrite '*'</code>. Quando uma notícia do Arch manda usar <code>--overwrite</code>, ela diz exatamente qual caminho.</p>
+</div>
+
+<hr>
+
+<h2>Opções do /etc/pacman.conf</h2>
+
+<p>No bloco <code>[options]</code> do <code>/etc/pacman.conf</code> ficam as opções gerais. O trecho "Misc options" real da VM:</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho)"># Misc options
+#UseSyslog
+#Color
+#NoProgressBar
+CheckSpace
+#VerbosePkgLists
+ParallelDownloads = 5
+DownloadUser = alpm
+#DisableSandboxFilesystem
+#DisableSandboxSyscalls</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Padrão na VM</th><th>O que faz</th></tr>
+<tr><td><code>Color</code></td><td>desligada</td><td>Saída colorida: nomes de repositório, <code>[instalado]</code>, erros em vermelho, avisos em amarelo.</td></tr>
+<tr><td><code>ParallelDownloads = 5</code></td><td>ligada, 5</td><td>Quantos pacotes baixar ao mesmo tempo.</td></tr>
+<tr><td><code>VerbosePkgLists</code></td><td>desligada</td><td>Lista da transação em tabela, com versão antiga, nova e tamanhos.</td></tr>
+<tr><td><code>ILoveCandy</code></td><td>não aparece</td><td>Troca o <code>#</code> da barra de progresso por um Pac-Man comendo pastilhas. Não vem no arquivo: você acrescenta a linha.</td></tr>
+<tr><td><code>CheckSpace</code></td><td>ligada</td><td>Confere o espaço livre antes de instalar.</td></tr>
+<tr><td><code>DownloadUser = alpm</code></td><td>ligada</td><td>Os downloads rodam como o usuário <code>alpm</code>, sem poderes de root (segurança).</td></tr>
+<tr><td><code>IgnorePkg</code></td><td>comentada</td><td>Pacotes que o <code>-Syu</code> pula. Cuidado: é atualização parcial (veja <a href="atualizar.html">Atualizar</a>).</td></tr>
+</table>
+</div>
+
+<p>Para ligar, edite como root (<code>sudoedit /etc/pacman.conf</code>), tire o <code>#</code> e, para o ILoveCandy, acrescente uma linha:</p>
+
+<pre class="file" data-file="/etc/pacman.conf (depois)">Color
+VerbosePkgLists
+ParallelDownloads = 5
+ILoveCandy</pre>
+
+<p>Com <code>VerbosePkgLists</code>, a pergunta do <code>pacman -S fastfetch</code> vira uma tabela (saída real, com essa configuração numa cópia do arquivo):</p>
+
+<pre class="term">$ sudo pacman -S fastfetch
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacote (2)       Versão nova    Diferença  Tamanho do download
+
+extra/yyjson     0.13.0-1        0,68 MiB             0,16 MiB
+extra/fastfetch  2.70.0-1        2,01 MiB             0,65 MiB
+
+Tamanho total download:   0,81 MiB
+Tamanho total instalado:  2,68 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>E o <code>ILoveCandy</code>, no meio de um download real (o <code>C</code> é o Pac-Man; quando termina, a barra fica toda de <code>-</code>):</p>
+
+<pre class="term"> fastfetch-2.70.0...   160,0 KiB   261 KiB/s 00:01 [-----C o  o  o  o  o  ]  24%</pre>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="try" data-goal="ran:pacman +-Qo,out:coreutils" data-solucao="pacman -Qo /usr/bin/ls">
+<p class="try-task"><strong>Missão 1:</strong> descubra de que pacote é o comando <code>ls</code> (o arquivo <code>/usr/bin/ls</code>).</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Qm,out:yay-bin" data-solucao="pacman -Qm">
+<p class="try-task"><strong>Missão 2:</strong> liste os pacotes instalados que não vêm dos repositórios oficiais (os do AUR).</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Qe.*\| *wc +-l" data-solucao="pacman -Qe | wc -l">
+<p class="try-task"><strong>Missão 3:</strong> conte quantos pacotes a ana instalou explicitamente (dica: um <code>|</code> e o <code>wc -l</code>).</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-F,out:inetutils" data-solucao="pacman -F hostname">
+<p class="try-task"><strong>Missão 4:</strong> descubra qual pacote fornece o comando <code>hostname</code>, usando o catálogo de arquivos.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>pacman -F avisa "database file … does not exist"</strong>
+<pre class="term">$ pacman -F hostname
+atenção: database file for 'core' does not exist (use '-Fy' to download)
+atenção: database file for 'extra' does not exist (use '-Fy' to download)</pre>
+<p><strong>O que aconteceu:</strong> o catálogo de arquivos nunca foi baixado (esse aviso ainda não tem tradução).</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -Fy</code> e repita. Atualize-o de vez em quando, junto com o sistema.</p>
+</div>
+
+<div class="cenario">
+<strong>"grupo de pacotes … não foi encontrado"</strong>
+<pre class="term">$ pacman -Sg base-devel
+erro: grupo de pacotes "base-devel" não foi encontrado</pre>
+<p><strong>O que aconteceu:</strong> não existe grupo com esse nome. Às vezes é um metapacote (como o <code>base-devel</code>), às vezes erro de digitação.</p>
+<p><strong>Como resolver:</strong> <code>pacman -Si nome</code> para ver se é um pacote; <code>pacman -Sg</code> para listar os grupos.</p>
+</div>
+
+<div class="cenario">
+<strong>-Qkk diz "1 arquivo alterado" e "falha ao calcular a soma de verificação"</strong>
+<p><strong>O que aconteceu:</strong> você rodou como usuário comum e o pacman não pôde ler um arquivo protegido.</p>
+<p><strong>Como resolver:</strong> repita com <code>sudo</code>. As linhas <code>arquivo backup</code> são configurações que você editou: normais.</p>
+</div>
+
+<div class="cenario">
+<strong>"existe no sistema de arquivos"</strong>
+<p><strong>O que aconteceu:</strong> um arquivo do pacote já está no disco sem pertencer a nenhum pacote (ou pertence a outro).</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Qo /caminho/do/arquivo</code>.</p>
+<p><strong>Como resolver:</strong> se é sobra de instalação manual e você não precisa dele, <code>--overwrite /caminho/exato</code>. Se é de outro pacote, leia as notícias e <a href="problemas-update.html">Erros de Atualização</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>pacman -Qe</code> / <code>-Qd</code></td><td>Instalados explicitamente / como dependência</td></tr>
+<tr><td><code>pacman -Qet</code></td><td>Explícitos que nenhum pacote exige ("o que eu escolhi")</td></tr>
+<tr><td><code>pacman -Qm</code> / <code>-Qn</code></td><td>Fora dos repositórios (AUR) / dos repositórios</td></tr>
+<tr><td><code>pacman -Qq…</code></td><td>Só nomes (para scripts)</td></tr>
+<tr><td><code>pacman -Qs regex</code></td><td>Procura entre os instalados</td></tr>
+<tr><td><code>pacman -Qo arquivo</code></td><td>Dono de um arquivo instalado</td></tr>
+<tr><td><code>pacman -Qk</code> / <code>-Qkk</code></td><td>Arquivos faltando / alterados (rode <code>-Qkk</code> como root)</td></tr>
+<tr><td><code>pacman -Qii pkg</code></td><td>Ficha com a lista de arquivos de configuração</td></tr>
+<tr><td><code>pacman -Fy</code></td><td>Baixa o catálogo de arquivos</td></tr>
+<tr><td><code>pacman -F nome</code> / <code>-Fx regex</code> / <code>-Fl pkg</code></td><td>Procura arquivos nos repositórios / lista arquivos de um pacote</td></tr>
+<tr><td><code>pacman -Sg</code> / <code>-Sg grupo</code> / <code>-Qg</code></td><td>Grupos</td></tr>
+<tr><td><code>pacman -D --asdeps</code> / <code>--asexplicit</code></td><td>Muda o motivo da instalação</td></tr>
+<tr><td><code>pactree pkg</code> / <code>pactree -r pkg</code></td><td>Dependências / quem depende</td></tr>
+<tr><td><code>expac -H M '%m\t%n' | sort -h</code></td><td>Pacotes por tamanho</td></tr>
+<tr><td><code>pacman -S --needed</code></td><td>Não reinstala o que já está atualizado</td></tr>
+<tr><td><code>pacman -S --overwrite /caminho</code></td><td>Sobrescreve um arquivo em conflito (com cuidado)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O dono</h3>
+<p>Descubra a que pacote pertence <code>/etc/pacman.conf</code>:</p>
+<div class="ex-code">pacman <input data-answer="-Qo|--query --owns" aria-label="opções"> /etc/pacman.conf</div>
+</div>
+
+<div class="exercise">
+<h3>2. O comando que falta</h3>
+<p>Num Arch novo, <code>ifconfig</code> não existe. Que comando descobre o pacote que o fornece (com o catálogo de arquivos já baixado)?</p>
+<div class="ex-code">pacman <input data-answer="-F|--files" aria-label="operação"> ifconfig</div>
+</div>
+
+<div class="exercise">
+<h3>3. Só os nomes do AUR</h3>
+<p>Liste só os nomes (sem versão) dos pacotes do AUR instalados:</p>
+<div class="ex-code">pacman <input data-answer="-Qmq|-Qqm" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>pacman -Qkk sudo</code>, como ana, diz "1 arquivo alterado". Como root, "0 arquivo alterado". Por quê?</p>
+<label><input type="radio" name="q4"> O root conserta os arquivos sozinho.</label>
+<label><input type="radio" name="q4"> Como ana, o pacman não conseguiu ler <code>/etc/sudoers</code> para calcular a soma.</label>
+<label><input type="radio" name="q4"> O pacote sudo está corrompido.</label>
+<label><input type="radio" name="q4"> O <code>-Qkk</code> só funciona aos domingos.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual opção do <code>pacman.conf</code> mostra a versão antiga e a nova na lista da transação?</p>
+<label><input type="radio" name="q5"> <code>Color</code></label>
+<label><input type="radio" name="q5"> <code>ILoveCandy</code></label>
+<label><input type="radio" name="q5"> <code>ParallelDownloads</code></label>
+<label><input type="radio" name="q5"> <code>VerbosePkgLists</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>-Qe</code>, <code>-Qd</code>, <code>-Qt</code>, <code>-Qm</code> filtram os instalados pelo motivo e pela origem; <code>-q</code> deixa só os nomes.</li>
+  <li><code>-Qo</code> diz o dono de um arquivo instalado; <code>-F</code> procura em todos os pacotes (depois de <code>-Fy</code>).</li>
+  <li><code>-Qkk</code> confere a integridade; rode como root; <code>arquivo backup</code> = configuração editada, normal.</li>
+  <li><code>base-devel</code> é metapacote, não grupo. <code>-D --asdeps</code> corrige o motivo da instalação.</li>
+  <li><code>pactree -r</code> mostra quem depende; <code>expac</code> monta consultas sob medida.</li>
+  <li><code>--overwrite</code> só com caminho exato e depois de <code>pacman -Qo</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> quase tudo desta aula está em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)/Dicas_e_truques">pacman/Dicas e truques</a>). As opções do arquivo de configuração estão em <a href="https://wiki.archlinux.org/title/Pacman#Configuration">pacman – Configuration</a> e no manual <code>man pacman.conf</code>; os grupos e metapacotes, em <a href="https://wiki.archlinux.org/title/Meta_package_and_package_group">Meta package and package group</a>; o <code>pactree</code> e o <code>expac</code>, na página do <a href="https://wiki.archlinux.org/title/Pacman-contrib">pacman-contrib</a> e na do <a href="https://wiki.archlinux.org/title/Expac">expac</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
