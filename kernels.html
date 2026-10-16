@@ -272,7 +272,7 @@ concluído
 
 <h2>Escolher o kernel no GRUB</h2>
 <p>O menu gerado tem a entrada principal e um submenu com todos os kernels. Listando os títulos direto do <code>grub.cfg</code>:</p>
-<pre class="term">$ sudo grep -E "^menuentry|^submenu|^\s+menuentry" /boot/grub/grub.cfg | cut -c1-90
+<pre class="term">$ grep -E "^menuentry|^submenu|^\s+menuentry" /boot/grub/grub.cfg | cut -c1-90
   menuentry_id_option="--id"
   menuentry_id_option=""
 menuentry 'Arch Linux' --class arch --class gnu-linux --class gnu --class os $menuentry_id
