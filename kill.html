@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch kill — encerrar programas com sinais, kill, pkill e killall | Guia Arch</title>
+<meta name="description" content="Encerrar programas no Arch Linux: o que são sinais (TERM, KILL, INT, HUP, STOP e CONT), kill e kill -9, kill %1, pkill, killall (pacote psmisc, que vem no base), xkill e os erros reais, com saídas de um Arch de verdade e missões no terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Encerrar Programas (kill)</span></h1>
+
+<p class="intro">Um programa travou, não fecha pela janela ou ficou rodando esquecido no terminal. Para encerrá-lo pelo terminal existe o <code>kill</code> ("matar"). Apesar do nome, ele não mata nada sozinho: ele <strong>manda um sinal</strong> ao processo. Na maior parte das vezes, esse sinal é um pedido educado: "por favor, feche".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um sinal e a diferença entre <code>TERM</code> (15), <code>KILL</code> (9), <code>INT</code>, <code>HUP</code>, <code>STOP</code> e <code>CONT</code>.</li>
+  <li>Encerrar pelo número do processo com <code>kill</code>, e por que o <code>kill -9</code> é o último recurso.</li>
+  <li>Encerrar pelo nome com <code>pkill</code> e <code>killall</code> (que, no Arch, sempre vem instalado).</li>
+  <li>Encerrar um programa do próprio terminal com <code>kill %1</code>, e janelas gráficas com <code>xkill</code>.</li>
+  <li>As mensagens reais quando não dá certo: "Processo inexistente", "Operação não permitida", "nenhum processo localizado".</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Antes de começar</strong>
+<p>Para encerrar um processo você precisa saber o <strong>PID</strong> (o número dele) ou o <strong>nome</strong>. Como descobrir os dois está na aula anterior, <a href="processos.html">ps, pgrep, top, htop</a>. Os exemplos desta página foram feitos na VM do guia, um Arch real, com o comando <code>sleep</code> fazendo o papel do "programa travado": <code>sleep 600</code> só espera 600 segundos sem fazer nada, então é seguro encerrá-lo.</p>
+</div>
+
+<hr>
+
+<h2>Sinais: como o sistema conversa com os processos</h2>
+<p>Pense num funcionário trabalhando. Você pode <strong>pedir</strong> que ele termine o que está fazendo e vá embora (ele guarda as coisas, apaga a luz e sai); pode pedir que ele <strong>pause</strong>; ou pode chamar a segurança para <strong>tirá-lo do prédio na hora</strong>, sem deixar guardar nada. Os sinais são esses recados. Cada um tem um <strong>número</strong> e um <strong>nome</strong>, que começa com <code>SIG</code> (de <em>signal</em>, "sinal").</p>
+
+<p>O próprio <code>kill</code> mostra a lista completa com <code>-l</code> (de <em>list</em>):</p>
+
+<pre class="term">$ kill -l
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM
+16) SIGSTKFLT	17) SIGCHLD	18) SIGCONT	19) SIGSTOP	20) SIGTSTP
+21) SIGTTIN	22) SIGTTOU	23) SIGURG	24) SIGXCPU	25) SIGXFSZ
+26) SIGVTALRM	27) SIGPROF	28) SIGWINCH	29) SIGIO	30) SIGPWR
+31) SIGSYS	34) SIGRTMIN	35) SIGRTMIN+1	36) SIGRTMIN+2	37) SIGRTMIN+3
+…                                                            « continua até o 64) SIGRTMAX
+$ kill -l 9
+KILL                         « qual é o nome do sinal 9?
+$ kill -l KILL
+9                            « e o número do KILL?</pre>
+
+<p>São 64, mas no dia a dia você usa só uns seis:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Nome</th><th>O recado</th><th>Quem costuma mandar</th><th>O programa pode ignorar?</th></tr>
+<tr><td>15</td><td><code>TERM</code></td><td>"Termine, por favor." O programa salva, fecha os arquivos e sai. <strong>É o padrão do <code>kill</code>.</strong></td><td><code>kill</code>, <code>pkill</code>, <code>killall</code>, o desligamento do sistema</td><td>Sim</td></tr>
+<tr><td>9</td><td><code>KILL</code></td><td>"Fora, agora." Quem age é o <strong>kernel</strong>: o processo some na hora, sem chance de salvar nada.</td><td><code>kill -9</code></td><td><strong>Não</strong></td></tr>
+<tr><td>2</td><td><code>INT</code></td><td>"Interrompa." (<em>interrupt</em>)</td><td>As teclas <kbd>Ctrl</kbd>+<kbd>C</kbd> no terminal</td><td>Sim</td></tr>
+<tr><td>1</td><td><code>HUP</code></td><td>"O terminal desligou." (<em>hang up</em>, "desligar o telefone"). Muitos serviços entendem como "releia a configuração".</td><td>Fechar a janela do terminal</td><td>Sim</td></tr>
+<tr><td>19</td><td><code>STOP</code></td><td>"Congele." O processo fica parado, sem gastar processador.</td><td><code>kill -STOP</code> (o <kbd>Ctrl</kbd>+<kbd>Z</kbd> manda o parecido <code>TSTP</code>, 20)</td><td><strong>Não</strong></td></tr>
+<tr><td>18</td><td><code>CONT</code></td><td>"Continue." Descongela quem levou STOP.</td><td><code>kill -CONT</code>, <code>fg</code>, <code>bg</code></td><td>—</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>"Pode ignorar" é a chave da aula</strong>
+<p>Os sinais TERM, INT e HUP chegam ao <strong>programa</strong>, e ele decide o que fazer: o normal é arrumar a casa e sair, mas um programa travado pode nem conseguir "ouvir". KILL e STOP não passam pelo programa: o <strong>kernel</strong> age direto. Por isso o KILL sempre funciona, e por isso ele é perigoso.</p>
+</div>
+
+<hr>
+
+<h2>kill: encerrar pelo PID</h2>
+
+<p>A forma mais simples: o comando e o número do processo. Sem dizer qual sinal, vai o <code>TERM</code>.</p>
+
+<dl class="anatomy">
+  <dt>kill</dt><dd>Manda um sinal a um processo. No Bash, é um <strong>comando interno</strong> do shell (por isso também entende <code>%1</code>, veja adiante).</dd>
+  <dt>-TERM</dt><dd>O sinal, <strong>opcional</strong>. Pode ser escrito de vários jeitos: <code>-15</code>, <code>-TERM</code>, <code>-SIGTERM</code> ou <code>-s TERM</code>. Sem ele, é TERM.</dd>
+  <dt>23592</dt><dd>Um ou mais PIDs, separados por espaço.</dd>
+</dl>
+
+<p>Uma sessão real: três <code>sleep</code> em segundo plano (o <code>&amp;</code> no fim faz o comando rodar "por trás", devolvendo o prompt; o bash mostra <code>[número do job] PID</code>), o <code>pgrep</code> para achar os PIDs e o <code>kill</code> no primeiro:</p>
+
+<pre class="term">$ sleep 800 &amp; sleep 801 &amp; sleep 802 &amp;
+[1] 23592
+[2] 23593
+[3] 23594
+$ pgrep -a sleep
+23592 sleep 800
+23593 sleep 801
+23594 sleep 802
+$ kill 23592
+$ echo $?
+0                                          « 0 = o sinal foi entregue
+[1]   Terminado                  sleep 800   « aviso do bash: o job 1 terminou
+$ pgrep -a sleep
+23593 sleep 801                            « o 23592 sumiu
+23594 sleep 802
+$ kill 23593 23594                         « vários PIDs de uma vez
+$ pgrep -a sleep                           « não achou nenhum…
+[2]-  Terminado                  sleep 801
+[3]+  Terminado                  sleep 802
+$ echo $?
+1                                          « …por isso o código 1</pre>
+
+<p>Repare nas linhas <code>[1]   Terminado …</code>: como esses <code>sleep</code> foram iniciados neste terminal, o bash avisa que eles acabaram, <strong>logo antes do próximo prompt</strong>. Por isso o aviso às vezes aparece "atrasado", depois da saída do comando seguinte.</p>
+
+<p>Como quase todo comando do Linux, o <code>kill</code> <strong>fica quieto quando dá certo</strong>. O <code>0</code> do <code>echo $?</code> só diz que o sinal foi <em>entregue</em>, não que o programa fechou (ele podia ter ignorado o TERM). Para ter certeza, procure o processo de novo com <code>pgrep</code>.</p>
+
+<h3>As formas de escrever o sinal</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Observação</th></tr>
+<tr><td>Nada</td><td><code>kill 23592</code></td><td>TERM, o padrão. A mais usada.</td></tr>
+<tr><td>Número</td><td><code>kill -15 23592</code> · <code>kill -9 23592</code></td><td>Curta; precisa decorar os números.</td></tr>
+<tr><td>Nome</td><td><code>kill -TERM 23592</code> · <code>kill -KILL 23592</code></td><td>Mais legível; maiúsculas.</td></tr>
+<tr><td>Nome com SIG</td><td><code>kill -SIGTERM 23592</code></td><td>Igual ao anterior.</td></tr>
+<tr><td>Com <code>-s</code></td><td><code>kill -s HUP 23592</code></td><td>A forma "oficial"; boa em scripts.</td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="sleep 1000 &amp;" data-goal="ran:^\s*kill\b,outre:^1\s*$" data-solucao="kill $(pgrep sleep);;pgrep sleep; echo $?">
+<p class="try-task"><strong>Missão 1:</strong> há um <code>sleep 1000</code> rodando em segundo plano. Descubra o PID dele com <code>pgrep -a sleep</code>, encerre-o com <code>kill PID</code> e confirme com <code>pgrep sleep; echo $?</code> (tem de aparecer <code>1</code>).</p>
+</div>
+
+<hr>
+
+<h2>TERM × KILL: por que o -9 é o último recurso</h2>
+
+<p>A diferença entre os dois fica clara com dois programinhas de teste. O <code>educado.sh</code> e o <code>teimoso.sh</code> só esperam para sempre; a linha <code>trap … TERM</code> diz o que cada um faz quando recebe um TERM (o <code>trap</code> é explicado nas aulas de scripts, a partir de <a href="script-intro.html">Primeiro Script</a>):</p>
+
+<pre class="term" data-cwd="/tmp/b4">$ cat educado.sh
+#!/bin/bash
+trap 'echo "Recebi TERM: salvando e saindo..."; exit' TERM
+while true; do sleep 1; done
+$ cat teimoso.sh
+#!/bin/bash
+trap 'echo "Recebi TERM, mas não vou sair!"' TERM
+while true; do sleep 1; done</pre>
+
+<p>Mandando TERM ao educado, ele arruma a casa e sai. O teimoso <strong>ignora</strong> o TERM; só o KILL dá conta dele:</p>
+
+<pre class="term" data-cwd="/tmp/b4">$ ./educado.sh &amp;
+[1] 24657
+$ sleep 0.5; kill $!                       « $! = o PID do último comando em segundo plano
+$ sleep 1.5; jobs
+Recebi TERM: salvando e saindo...
+[1]+  Concluído                 ./educado.sh      « saiu sozinho, do jeito dele
+$ ./teimoso.sh &amp;
+[1] 24662
+$ sleep 0.5; kill $!
+$ sleep 1.5; jobs
+Recebi TERM, mas não vou sair!
+[1]+  Executando                 ./teimoso.sh &amp;  « continua rodando!
+$ kill -9 $!
+$ sleep 0.3; jobs
+[1]+  Morto                      ./teimoso.sh     « "Morto" = levou KILL</pre>
+
+<p>Um programa de verdade (um editor, o navegador, o <code>pacman</code>) faz no TERM o que o <code>educado.sh</code> fez: grava o que estava pendente, apaga arquivos temporários e de trava, e sai. Com o KILL, nada disso acontece.</p>
+
+<div class="warning">
+<strong>Comece pelo TERM; o -9 é o último recurso</strong>
+<p>O exemplo clássico no Arch: matar o <code>pacman</code> com <code>-9</code> (ou desligar o computador) no meio de uma instalação deixa para trás o arquivo de trava <code>/var/lib/pacman/db.lck</code>, e o próximo <code>pacman</code> reclama <code>erro: falha ao inicializar a transação (não foi possível travar a base de dados)</code> (veja <a href="atualizar.html">Atualizar o Sistema</a>). Pior ainda: um pacote pela metade. A regra: mande <code>kill PID</code>, espere uns 5 a 10 segundos, confira com <code>pgrep</code> e só então use <code>kill -9 PID</code>. E <strong>nunca</strong> encerre o <code>pacman</code> durante uma atualização.</p>
+</div>
+
+<div class="try" data-setup="sleep 2000 &amp;" data-goal="ran:^\s*kill\s+(-9|-KILL|-SIGKILL|-s\s+KILL)\b" data-solucao="kill -9 %1">
+<p class="try-task"><strong>Missão 2:</strong> finja que o <code>sleep 2000</code> em segundo plano ignorou o TERM. Mande a ele o sinal que <strong>não pode</strong> ser ignorado (pode usar o PID ou <code>%1</code>) e veja o bash avisar <code>Morto</code>.</p>
+</div>
+
+<hr>
+
+<h2>O que o bash conta: Terminado, Morto, Interrupção…</h2>
+<p>Quando o processo foi iniciado no <strong>seu</strong> terminal, o bash avisa, no próximo prompt (ou com <code>jobs</code>), como ele terminou. A mensagem diz qual sinal ele levou:</p>
+
+<pre class="term">$ sleep 600 &amp;
+[1] 24895
+$ kill %1
+[1]+  Terminado                  sleep 600     « TERM
+$ sleep 602 &amp;
+[1] 24897
+$ kill -HUP $!
+$ sleep 0.2; jobs
+[1]+  Desconexão                sleep 602     « HUP</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O bash mostra</th><th>Sinal</th></tr>
+<tr><td><code>Terminado</code></td><td>TERM (15)</td></tr>
+<tr><td><code>Morto</code></td><td>KILL (9)</td></tr>
+<tr><td><code>Interrupção</code></td><td>INT (2), o mesmo do <kbd>Ctrl</kbd>+<kbd>C</kbd></td></tr>
+<tr><td><code>Desconexão</code></td><td>HUP (1)</td></tr>
+<tr><td><code>Parado</code></td><td>STOP (19) ou TSTP (<kbd>Ctrl</kbd>+<kbd>Z</kbd>)</td></tr>
+<tr><td><code>Concluído</code></td><td>Nenhum: o programa saiu sozinho, com código 0</td></tr>
+</table>
+</div>
+
+<h3>kill %1: encerrar um job do terminal</h3>
+<p>Repare no <code>kill %1</code> acima: em vez do PID, o número do <strong>job</strong> (trabalho) que o bash mostrou entre colchetes (<code>[1]</code>), com um <code>%</code> na frente. Só funciona para programas iniciados <strong>neste</strong> terminal, e é por isso que o <code>kill</code> do Bash é um comando interno: o <code>/usr/bin/kill</code> (do pacote <code>util-linux</code>) não sabe o que é <code>%1</code>.</p>
+
+<pre class="term">$ type kill
+kill é um comando interno do shell</pre>
+
+<p>Jobs, <code>&amp;</code>, <code>fg</code>, <code>bg</code> e como deixar um programa rodando depois de fechar o terminal são assunto de <a href="jobs.html">Jobs, nohup, tmux</a>.</p>
+
+<div class="try" data-setup="sleep 3000 &amp;" data-goal="ran:^\s*kill\s+(-\S+\s+)?%" data-solucao="jobs;;kill %1">
+<p class="try-task"><strong>Missão 3:</strong> rode <code>jobs</code> para ver o trabalho em segundo plano e encerre-o pelo <strong>número do job</strong> (com <code>%</code>), sem usar o PID.</p>
+</div>
+
+<hr>
+
+<h2>Congelar e descongelar: STOP e CONT</h2>
+<p>Nem sempre você quer encerrar. Uma compilação do <a href="aur.html">AUR</a> está deixando o computador lento e você precisa dele por cinco minutos? Congele-a e depois continue de onde parou. Em um terminal real, com <code>ps</code> mostrando o estado (<code>STAT</code>):</p>
+
+<pre class="term">$ sleep 605 &amp;
+[1] 25069
+$ kill -STOP $!
+$ jobs
+[1]+  Parado                     sleep 605
+$ ps -o pid,stat,cmd -p $!
+    PID STAT CMD
+  25069 T    sleep 605          « T = parado (stopped)
+$ kill -CONT $!
+$ jobs
+[1]+  Executando                 sleep 605 &amp;
+$ ps -o pid,stat,cmd -p $!
+    PID STAT CMD
+  25069 S    sleep 605          « S = dormindo: voltou à vida normal
+$ kill $!</pre>
+
+<p>O processo congelado continua na memória, mas não gasta processador. O <kbd>Ctrl</kbd>+<kbd>Z</kbd> faz quase o mesmo com o programa que está na frente do terminal (manda <code>TSTP</code>), e <code>fg</code> o traz de volta.</p>
+
+<hr>
+
+<h2>pkill: encerrar pelo nome</h2>
+<p>Procurar o PID e depois matar são dois passos. O <code>pkill</code> faz os dois de uma vez: é o irmão do <code>pgrep</code> (<em>process kill</em>). Ele aceita exatamente as mesmas opções do <code>pgrep</code>, o que permite um truque de segurança: rode o <code>pgrep</code> antes, veja a lista, e troque <code>pgrep</code> por <code>pkill</code>.</p>
+
+<dl class="anatomy">
+  <dt>pkill</dt><dd>Manda um sinal (TERM, se você não disser outro) a todos os processos cujo nome <strong>contém</strong> o texto.</dd>
+  <dt>-e</dt><dd><em>echo</em>: conta cada processo encerrado. Sem ele, o <code>pkill</code> fica quieto.</dd>
+  <dt>sleep</dt><dd>O texto a procurar no nome (é uma expressão regular, como no <a href="grep.html">grep</a>).</dd>
+</dl>
+
+<pre class="term">$ sleep 800 &amp; sleep 801 &amp; sleep 802 &amp;
+[1] 25508
+[2] 25509
+[3] 25510
+$ pkill -e sleep
+sleep terminado (pid 25508)          « o pkill conta (por causa do -e)
+sleep terminado (pid 25509)
+sleep terminado (pid 25510)
+[1]   Terminado                  sleep 800     « e o bash avisa
+[2]-  Terminado                  sleep 801
+[3]+  Terminado                  sleep 802
+$ pkill sleep
+$ echo $?
+1                              « não achou nenhum; repare que ele não avisa</pre>
+
+<h3>As opções que mudam o que é encontrado</h3>
+<pre class="term">$ sleep 820 &amp; sleep 921 &amp;
+[1] 25513
+[2] 25514
+$ pgrep -af 'sleep 9'          « primeiro, veja quem seria atingido
+25514 sleep 921
+$ pkill -f 'sleep 9'           « -f: procura na linha de comando inteira
+[2]+  Terminado                  sleep 921
+$ pgrep -a sleep
+25513 sleep 820                « só o 921 foi encerrado
+$ pkill -x slee
+$ echo $?
+1                              « -x: nome exato; "slee" não é "sleep"
+$ pkill -x sleep
+[1]+  Terminado                  sleep 820
+$ echo $?
+0</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Efeito</th><th>Exemplo</th></tr>
+<tr><td>(nenhuma)</td><td>Nome curto <strong>contém</strong> o texto</td><td><code>pkill firefox</code></td></tr>
+<tr><td><code>-x</code></td><td>Nome <strong>exato</strong> (<em>exact</em>)</td><td><code>pkill -x sleep</code></td></tr>
+<tr><td><code>-f</code></td><td>Procura na linha de comando inteira (<em>full</em>): bom para scripts</td><td><code>pkill -f servidor.py</code></td></tr>
+<tr><td><code>-u ana</code></td><td>Só processos do usuário</td><td><code>pkill -u ana sleep</code></td></tr>
+<tr><td><code>-i</code></td><td>Ignora maiúsculas/minúsculas</td><td><code>pkill -i networkmanager</code></td></tr>
+<tr><td><code>-e</code></td><td>Mostra cada processo encerrado</td><td><code>pkill -e sleep</code></td></tr>
+<tr><td><code>-9</code>, <code>-KILL</code>…</td><td>Outro sinal</td><td><code>pkill -9 -e sleep</code> → <code>sleep terminado (pid 25555)</code> e o bash diz <code>Morto</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O pkill casa pedaços: confira antes com o pgrep</strong>
+<p><code>pkill ssh</code> atinge o <code>sshd</code> e todas as sessões <code>sshd-session</code>. Aconteceu de verdade na VM do guia: com <code>pkill -e sshd</code>, a ana não conseguiu encerrar os processos do root, mas encerrou <strong>as suas próprias</strong> conexões SSH, e a sessão em que o comando rodava caiu na hora:</p>
+<pre class="term">$ pkill -e sshd
+pkill: terminação de pid 310 falhou: Operação não permitida
+pkill: terminação de pid 1816 falhou: Operação não permitida
+pkill: terminação de pid 1824 falhou: Operação não permitida
+Connection to 127.0.0.1 closed by remote host.        « a própria conexão caiu</pre>
+<p>Antes de qualquer <code>pkill</code>, rode <code>pgrep -a</code> com o mesmo texto e as mesmas opções, e leia a lista.</p>
+</div>
+
+<hr>
+
+<h2>killall: pelo nome exato</h2>
+<p>O <code>killall</code> ("matar todos") encerra todos os processos com um nome <strong>exato</strong>. No Debian e no Ubuntu mínimos ele às vezes nem vem instalado; no Arch, sim: ele é do pacote <code>psmisc</code>, que faz parte do meta-pacote <code>base</code>, então existe em toda instalação.</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/killall /usr/bin/pkill /usr/bin/kill
+/usr/bin/killall pertence a psmisc 23.7-2
+/usr/bin/pkill pertence a procps-ng 4.0.7-1
+/usr/bin/kill pertence a util-linux 2.42.4-1
+$ pacman -Qi psmisc | grep 'Necessário para'
+Necessário para      : base                « vem com o base: está em todo Arch</pre>
+
+<dl class="anatomy">
+  <dt>killall</dt><dd>Manda TERM a todos os processos com esse nome exato.</dd>
+  <dt>-v</dt><dd><em>verbose</em>: conta cada processo encerrado e o sinal usado.</dd>
+  <dt>sleep</dt><dd>O nome <strong>completo</strong> do processo.</dd>
+</dl>
+
+<pre class="term">$ sleep 810 &amp; sleep 811 &amp;
+[1] 25566
+[2] 25567
+$ killall -v sleep
+sleep(25566) morto com o sinal 15      « 15 = TERM
+sleep(25567) morto com o sinal 15
+[1]-  Terminado                  sleep 810
+$ killall sleep
+sleep: nenhum processo localizado      « ao contrário do pkill, ele avisa
+[2]+  Terminado                  sleep 811      « (o aviso atrasado do bash)
+$ echo $?
+1
+$ killall sle
+sle: nenhum processo localizado        « pedaço do nome não serve</pre>
+
+<p>Outras opções úteis: <code>killall -i nome</code> pergunta antes de cada processo (<em>interactive</em>); <code>killall -w nome</code> espera (<em>wait</em>) todos morrerem antes de devolver o prompt; <code>killall -9 nome</code> manda KILL; <code>killall -u ana nome</code>, só os de um usuário.</p>
+
+<h3>pkill ou killall?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>pkill</code></th><th><code>killall</code></th></tr>
+<tr><td>Pacote no Arch</td><td><code>procps-ng</code> (no <code>base</code>)</td><td><code>psmisc</code> (no <code>base</code>)</td></tr>
+<tr><td>Como casa o nome</td><td>Pedaço (expressão regular); <code>-x</code> para exato</td><td>Nome exato</td></tr>
+<tr><td>Linha de comando inteira</td><td><code>-f</code></td><td>Não</td></tr>
+<tr><td>Quando não acha</td><td>Silêncio, código 1</td><td><code>nome: nenhum processo localizado</code>, código 1</td></tr>
+<tr><td>Mostrar o que fez</td><td><code>-e</code></td><td><code>-v</code></td></tr>
+<tr><td>Perguntar antes</td><td>Não</td><td><code>-i</code></td></tr>
+<tr><td>Melhor para</td><td>Scripts (<code>pkill -f app.py</code>), nomes genéricos</td><td>Fechar todas as cópias de um programa (<code>killall firefox</code>)</td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="sleep 1000 &amp;;;sleep 2000 &amp;" data-goal="ran:^\s*(pkill|killall)\b,outre:^1\s*$" data-solucao="pkill sleep;;pgrep sleep; echo $?">
+<p class="try-task"><strong>Missão 4:</strong> há <strong>dois</strong> <code>sleep</code> rodando. Encerre os dois de uma vez <strong>pelo nome</strong>, com <code>pkill</code> ou <code>killall</code>, e confirme com <code>pgrep sleep; echo $?</code>.</p>
+</div>
+
+<hr>
+
+<h2>Processos de outro usuário: sudo</h2>
+<p>Um usuário comum só manda sinais para os <strong>próprios</strong> processos. Para encerrar um processo do root (ou de outro usuário), é preciso o <code>sudo</code>. Na VM, com um <code>sleep</code> iniciado pelo root:</p>
+
+<pre class="term">$ ps -o user,pid,cmd -p 25995
+USER         PID CMD
+root       25995 sleep 900               « o dono é o root
+$ kill 25995
+bash: kill: (25995) - Operação não permitida
+$ sudo kill 25995
+[sudo] senha para ana:
+$ pgrep -x sleep -u root                 « algum sleep do root ainda vivo?
+$ echo $?
+1                                        « nenhum: agora sim</pre>
+
+<div class="warning">
+<strong>Serviços se param com systemctl, não com kill</strong>
+<p>Processos de serviços (<code>nginx</code>, <code>sshd</code>, <code>NetworkManager</code>) são vigiados pelo <code>systemd</code>, que pode reiniciá-los na hora ou ficar com o estado errado. Use <code>sudo systemctl stop nginx</code> ou <code>restart</code> (veja <a href="systemd.html">systemctl e Serviços</a>). E nunca rode <code>sudo kill -9 -1</code> ("todos os processos"): isso derruba o sistema inteiro.</p>
+</div>
+
+<hr>
+
+<h2>xkill: clicar na janela travada</h2>
+<p>Numa área de trabalho gráfica com X11, o <code>xkill</code> transforma o cursor do mouse numa caveira (ou num "X"): você <strong>clica na janela travada</strong> e ela é fechada à força, sem precisar descobrir PID nem nome. Ele vem no pacote <code>xorg-xkill</code>, que não faz parte do <code>base</code>. A VM do guia não tem interface gráfica, então ele não está instalado; a consulta ao repositório e o resumo da instalação abaixo são reais (a instalação foi respondida com "não"); só a última linha, a do <code>xkill</code> rodando, é <strong>ilustrativa</strong>:</p>
+
+<pre class="term">$ pacman -Qi xorg-xkill
+erro: o pacote "xorg-xkill" não foi encontrado        « não instalado
+$ pacman -Si xorg-xkill | grep -E '^(Repositório|Nome|Versão|Descrição)'
+Repositório          : extra
+Nome                 : xorg-xkill
+Versão               : 1.0.7-1
+Descrição            : Kill a client by its X resource
+$ sudo pacman -S xorg-xkill
+[sudo] senha para ana:
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (5) libice-1.1.2-1  libsm-1.2.6-1  libxmu-1.3.1-1  libxt-1.3.1-1
+            xorg-xkill-1.0.7-1
+
+Tamanho total download:   0,72 MiB
+Tamanho total instalado:  2,99 MiB
+
+:: Continuar a instalação? [S/n]                     « aqui você responderia S
+$ xkill                                              « depois clique na janela (ilustrativo)
+Select the window whose client you wish to kill with button 1….</pre>
+
+<p>Para desistir sem matar nada, clique com o botão direito. Em sessões <strong>Wayland</strong> (o padrão do GNOME e do KDE Plasma em 2026), o <code>xkill</code> só alcança programas que rodam pelo XWayland; ali, use o recurso do próprio desktop: no GNOME, a janela "não está respondendo" oferece <strong>Forçar saída</strong>; no KDE Plasma, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Esc</kbd> faz o papel do <code>xkill</code>. Instalar um desktop é assunto de <a href="desktop.html">Instalar um Desktop</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de encerrar: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Fechar a janela / <kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>—</td><td>Sempre primeiro: o programa fecha do jeito dele.</td></tr>
+<tr><td>Pelo PID</td><td><code>kill 23592</code></td><td>Você sabe exatamente qual processo (viu no <code>pgrep -a</code>).</td></tr>
+<tr><td>Pelo job</td><td><code>kill %1</code></td><td>O programa foi iniciado neste terminal com <code>&amp;</code>.</td></tr>
+<tr><td>Pelo nome exato</td><td><code>killall firefox</code></td><td>Todas as cópias de um programa.</td></tr>
+<tr><td>Por um pedaço / pela linha inteira</td><td><code>pkill -f servidor.py</code></td><td>O nome é genérico (<code>python3</code>) e você precisa casar um argumento.</td></tr>
+<tr><td>No monitor</td><td><kbd>k</kbd> no <code>top</code>, <kbd>F9</kbd> no <code>htop</code></td><td>Você está vendo quem gasta e quer agir ali mesmo (<a href="processos.html">processos</a>).</td></tr>
+<tr><td>Clicando</td><td><code>xkill</code> / "Forçar saída"</td><td>Uma janela gráfica travada.</td></tr>
+<tr><td>À força</td><td><code>kill -9 PID</code> · <code>killall -9 nome</code></td><td>Só quando o TERM não adiantou depois de alguns segundos.</td></tr>
+<tr><td>Serviço</td><td><code>sudo systemctl stop nginx</code></td><td>Processos do <code>systemd</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Processo inexistente"</strong>
+<pre class="term">$ kill 99999
+bash: kill: (99999) - Processo inexistente
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> não existe processo com esse PID. Ele já terminou, ou o número foi digitado errado.</p>
+<p><strong>Como confirmar:</strong> <code>pgrep -a nome</code> mostra os PIDs atuais.</p>
+<p><strong>Como resolver:</strong> use o PID de agora. Os PIDs mudam a cada execução: não reaproveite um número de ontem (ou de antes de reiniciar).</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida"</strong>
+<pre class="term">$ kill 1
+bash: kill: (1) - Operação não permitida</pre>
+<p><strong>O que aconteceu:</strong> o processo é de outro usuário. O PID 1 é o <code>systemd</code>, do root; a ana só pode mandar sinais aos processos dela.</p>
+<p><strong>Como confirmar:</strong> <code>ps -o user,pid,cmd -p 1</code> mostra o dono.</p>
+<p><strong>Como resolver:</strong> se é mesmo para encerrar, <code>sudo kill PID</code>; se é um serviço, <code>sudo systemctl stop/restart serviço</code>. Ao PID 1, nunca.</p>
+</div>
+
+<div class="cenario">
+<strong>"não é um identificador de processo (pid) nem é uma especificação de trabalho válida"</strong>
+<pre class="term">$ kill firefox
+bash: kill: `firefox': não é um identificador de processo (pid) nem é uma especificação de trabalho válida</pre>
+<p><strong>O que aconteceu:</strong> o <code>kill</code> só aceita números (PID) ou jobs (<code>%1</code>), nunca nomes.</p>
+<p><strong>Como resolver:</strong> <code>pkill firefox</code> ou <code>killall firefox</code>; ou descubra o PID com <code>pgrep -a firefox</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"nenhum processo localizado" (killall) ou silêncio com código 1 (pkill)</strong>
+<pre class="term">$ killall firefox
+firefox: nenhum processo localizado
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> não há processo com esse nome. O programa já fechou, ou o processo tem outro nome (um script Python, por exemplo, aparece como <code>python3</code>, não com o nome do script).</p>
+<p><strong>Como resolver:</strong> <code>pgrep -ai parte-do-nome</code> ou <code>pgrep -af parte-do-comando</code> para achar o nome real.</p>
+</div>
+
+<div class="cenario">
+<strong>"kill: uso: …"</strong>
+<pre class="term">$ kill
+kill: uso: kill [-s espec_sinal | -n num_sinal | -espec_sinal] pid | espec_job ... ou kill -l [espec_sinal]
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> faltou dizer a quem mandar o sinal. Código 2 = erro de uso.</p>
+</div>
+
+<div class="cenario">
+<strong>Mandei kill e o programa continua lá</strong>
+<p><strong>O que aconteceu:</strong> o programa ignorou o TERM (como o <code>teimoso.sh</code>) ou está travado demais para tratá-lo. Ou está no estado <code>D</code> (esperando o disco), em que nem o KILL o alcança até a espera acabar. Ou é um zumbi (<code>Z</code>): já morreu e só ocupa uma linha na tabela.</p>
+<p><strong>Como confirmar:</strong> <code>ps -o pid,ppid,stat,cmd -p PID</code> mostra o estado e o pai.</p>
+<p><strong>Como resolver:</strong> TERM ignorado → <code>kill -9 PID</code>. Estado <code>D</code> → resolva o disco/pendrive/rede que sumiu e espere. Zumbi → encerre o <strong>pai</strong> (o <code>PPID</code>). Se nada resolver, veja <a href="travamentos.html">Quando o Sistema Trava</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>kill PID</code></td><td>Manda TERM (15): "termine, por favor"</td></tr>
+<tr><td><code>kill -9 PID</code> · <code>kill -KILL PID</code></td><td>Manda KILL: encerra na hora, sem salvar</td></tr>
+<tr><td><code>kill -s HUP PID</code> · <code>kill -HUP PID</code></td><td>Manda um sinal pelo nome</td></tr>
+<tr><td><code>kill -STOP PID</code> · <code>kill -CONT PID</code></td><td>Congela · descongela</td></tr>
+<tr><td><code>kill %1</code></td><td>Encerra o job 1 deste terminal</td></tr>
+<tr><td><code>kill -l</code> · <code>kill -l 9</code></td><td>Lista os sinais · nome do sinal 9</td></tr>
+<tr><td><code>pkill nome</code></td><td>TERM a todos cujo nome contém "nome"</td></tr>
+<tr><td><code>pkill -x</code> · <code>-f</code> · <code>-u ana</code> · <code>-e</code></td><td>Nome exato · linha toda · de um usuário · mostrar o que fez</td></tr>
+<tr><td><code>killall nome</code></td><td>TERM a todos com o nome exato (<code>-v</code> mostra, <code>-i</code> pergunta, <code>-w</code> espera)</td></tr>
+<tr><td><code>sudo kill PID</code></td><td>Processo de outro usuário</td></tr>
+<tr><td><code>xkill</code></td><td>Clicar na janela a fechar (pacote <code>xorg-xkill</code>, X11)</td></tr>
+<tr><td><code>sudo systemctl stop serviço</code></td><td>Parar um serviço</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O sinal que não pode ser ignorado</h3>
+<p>Complete para mandar o sinal KILL ao processo 2210:</p>
+<div class="ex-code">kill <input data-answer="-9|-KILL|-SIGKILL|-s KILL|-s 9" aria-label="sinal"> 2210</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pelo nome</h3>
+<p>Complete para encerrar todos os processos chamados exatamente <code>firefox</code>, usando o comando do pacote <code>psmisc</code>:</p>
+<div class="ex-code"><input data-answer="killall" aria-label="comando"> firefox</div>
+</div>
+
+<div class="exercise">
+<h3>3. Pela linha de comando</h3>
+<p>O processo é um <code>python3 servidor.py</code>. Complete para encerrá-lo procurando na linha de comando inteira:</p>
+<div class="ex-code">pkill <input data-answer="-f" aria-label="opção"> servidor.py</div>
+</div>
+
+<div class="exercise">
+<h3>4. Congelar</h3>
+<p>Complete para congelar (sem encerrar) o processo 5865:</p>
+<div class="ex-code">kill <input data-answer="-STOP|-SIGSTOP|-19|-s STOP" aria-label="sinal"> 5865</div>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual sinal o <code>kill 2210</code> manda?</p>
+<label><input type="radio" name="q5"> TERM (15)</label>
+<label><input type="radio" name="q5"> KILL (9)</label>
+<label><input type="radio" name="q5"> INT (2)</label>
+<label><input type="radio" name="q5"> HUP (1)</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Por que não usar <code>kill -9</code> logo de cara?</p>
+<label><input type="radio" name="q6"> Porque ele só funciona com <code>sudo</code>.</label>
+<label><input type="radio" name="q6"> Porque ele reinicia o computador.</label>
+<label><input type="radio" name="q6"> Porque o programa não tem chance de salvar nem de apagar arquivos de trava (como o <code>db.lck</code> do pacman).</label>
+<label><input type="radio" name="q6"> Porque ele não funciona em processos travados.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">7. A ana roda <code>kill 1</code>. O que acontece?</p>
+<label><input type="radio" name="q7"> O sistema desliga.</label>
+<label><input type="radio" name="q7"> <code>bash: kill: (1) - Operação não permitida</code>: o PID 1 é do root.</label>
+<label><input type="radio" name="q7"> <code>Processo inexistente</code>.</label>
+<label><input type="radio" name="q7"> O sudo pede a senha.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">8. No Arch, <code>killall</code> dá "comando não encontrado"?</p>
+<label><input type="radio" name="q8"> Sim, é preciso instalar o <code>psmisc</code> sempre.</label>
+<label><input type="radio" name="q8"> Sim, ele só existe no AUR.</label>
+<label><input type="radio" name="q8"> Só sem interface gráfica.</label>
+<label><input type="radio" name="q8"> Não: o <code>psmisc</code> faz parte do <code>base</code>, então vem em toda instalação.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>kill</code> manda <strong>sinais</strong>. Sem opção, manda TERM (15), um pedido educado que o programa pode tratar ou ignorar.</li>
+  <li><code>kill -9</code> manda KILL: o kernel encerra na hora, sem salvar nada. Use só quando o TERM não resolver.</li>
+  <li><code>kill -STOP</code>/<code>-CONT</code> congelam e descongelam; <code>kill %1</code> usa o número do job do terminal.</li>
+  <li><code>pkill</code> encerra pelo nome (pedaço; <code>-x</code> exato, <code>-f</code> linha toda). Confira antes com <code>pgrep -a</code>.</li>
+  <li><code>killall</code> encerra pelo nome exato; no Arch vem sempre (pacote <code>psmisc</code>, no <code>base</code>).</li>
+  <li>Processos de outros usuários: <code>sudo kill</code>. Serviços: <code>systemctl</code>. Janelas gráficas: <code>xkill</code> ou "Forçar saída".</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>kill</code>, o <code>pkill</code> e o <code>killall</code> aparecem em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>); o que fazer quando o sistema inteiro para de responder está em <a href="https://wiki.archlinux.org/title/Keyboard_shortcuts">Keyboard shortcuts</a> (as teclas SysRq); e os serviços, em <a href="https://wiki.archlinux.org/title/Systemd">systemd</a> (<a href="https://wiki.archlinux.org/title/Systemd_(Portugu%C3%AAs)">em português</a>). Os pacotes: <a href="https://archlinux.org/packages/core/x86_64/procps-ng/">procps-ng</a>, <a href="https://archlinux.org/packages/core/x86_64/psmisc/">psmisc</a> e <a href="https://archlinux.org/packages/extra/x86_64/xorg-xkill/">xorg-xkill</a>. A lista completa de sinais está em <code>man 7 signal</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
