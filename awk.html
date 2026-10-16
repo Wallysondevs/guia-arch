@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch awk — colunas, filtros e contas | Guia Arch</title>
+<meta name="description" content="Aprenda awk no Arch Linux, onde o awk é o gawk 5.4: campos, -F, padrões, BEGIN e END, soma e média de notas, printf, variáveis, arrays, gensub e strftime, com saídas reais e os erros mais comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">awk</span></h1>
+
+<p class="intro">O <code>awk</code> enxerga cada linha de texto como uma linha de planilha, com colunas. Com ele você pega a terceira coluna, filtra as linhas em que uma nota passa de 8, soma uma coluna inteira ou monta um relatório. O nome vem das iniciais dos seus criadores: <strong>A</strong>ho, <strong>W</strong>einberger e <strong>K</strong>ernighan.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são registros e campos, e como o awk divide cada linha.</li>
+  <li>A estrutura <code>padrão { ação }</code>, explicada parte por parte.</li>
+  <li>A imprimir colunas, filtrar linhas, somar, tirar médias e formatar com <code>printf</code>.</li>
+  <li>A usar variáveis e arrays para contar e agrupar.</li>
+  <li>Por que o awk do Arch (gawk) é diferente do awk do Debian (mawk).</li>
+</ul>
+</div>
+
+<h2>Qual awk o Arch usa: o gawk</h2>
+<p>Existem várias versões do awk. No Arch, o comando <code>awk</code> é um atalho (link simbólico) para o <strong>gawk</strong>, o GNU awk, que vem no pacote <code>gawk</code> — dependência do <code>base</code>, presente em todo Arch:</p>
+
+<pre class="term">$ ls -l /usr/bin/awk
+lrwxrwxrwx 1 root root 4 10 jul 13:16 /usr/bin/awk -&gt; gawk     « awk é o gawk
+$ pacman -Qo /usr/bin/awk
+/usr/bin/awk pertence a gawk 5.4.1-1
+$ awk --version | head -1
+GNU Awk 5.4.1, API 4.1, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)</pre>
+
+<p>Isso importa porque tutoriais escritos para Debian e Ubuntu usam o <strong>mawk</strong>, que se comporta diferente em três pontos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ponto</th><th>gawk (Arch)</th><th>mawk (Debian/Ubuntu)</th></tr>
+<tr><td>Número com ponto (<code>9.5</code>) em português</td><td>Lê certo: <code>9.5</code></td><td>Para no ponto: lê <code>9</code> (precisa de <code>LC_NUMERIC=C</code>)</td></tr>
+<tr><td>Saída de números</td><td>Sempre com ponto: <code>8.2</code></td><td>Com vírgula em pt_BR: <code>8,2</code></td></tr>
+<tr><td><code>length("maçã")</code></td><td><code>4</code> (conta letras)</td><td><code>6</code> (conta bytes)</td></tr>
+<tr><td>Funções extras</td><td><code>gensub</code>, <code>strftime</code>, <code>PROCINFO</code>, <code>tolower</code>…</td><td>Só as do awk padrão</td></tr>
+</table>
+</div>
+
+<p>Resumo prático: no Arch, dados com ponto decimal "simplesmente funcionam". O <a href="simulador.html">terminal simulado</a> do guia também usa o comportamento do gawk, então você pode praticar aqui mesmo.</p>
+
+<hr>
+
+<h2>Registros e campos</h2>
+<p>Vamos começar com o <code>acesso.log</code> da ana, o registro de um servidor web. Cada linha é um acesso:</p>
+
+<pre class="term">$ cd Documentos
+$ cat acesso.log
+192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+192.168.0.10 - - [15/Oct/2026:09:06:44] "POST /login HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:07:02] "GET / HTTP/1.1" 200</pre>
+
+<p>Para o awk, cada linha é um <strong>registro</strong>. Cada pedaço separado por espaços é um <strong>campo</strong>, numerado a partir de 1. Vários espaços seguidos contam como um separador só.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Na linha 3 do acesso.log</th><th>Significado</th></tr>
+<tr><td><code>$1</code></td><td><code>192.168.0.10</code></td><td>Primeiro campo (o IP de quem acessou)</td></tr>
+<tr><td><code>$2</code>, <code>$3</code></td><td><code>-</code>, <code>-</code></td><td>Segundo e terceiro campos</td></tr>
+<tr><td><code>$4</code></td><td><code>[15/Oct/2026:09:02:03]</code></td><td>Quarto campo (data e hora)</td></tr>
+<tr><td><code>$6</code></td><td><code>/admin</code></td><td>Sexto campo (a página)</td></tr>
+<tr><td><code>$0</code></td><td>a linha inteira</td><td>O registro todo</td></tr>
+<tr><td><code>NF</code></td><td><code>8</code></td><td><em>Number of Fields</em>: quantos campos a linha tem</td></tr>
+<tr><td><code>$NF</code></td><td><code>403</code></td><td>O último campo (o código de resposta)</td></tr>
+<tr><td><code>NR</code></td><td><code>3</code></td><td><em>Number of Record</em>: o número da linha</td></tr>
+</table>
+</div>
+
+<h2>Imprimir uma coluna</h2>
+
+<dl class="anatomy">
+  <dt>awk</dt><dd>O programa.</dd>
+  <dt>'{</dt><dd>Abre a <strong>ação</strong>. As aspas simples protegem o <code>$1</code> do shell.</dd>
+  <dt>print $1</dt><dd>A ação: imprima o campo 1.</dd>
+  <dt>}'</dt><dd>Fecha a ação.</dd>
+  <dt>acesso.log</dt><dd>O arquivo. Sem ele, o awk lê a entrada padrão (um <a href="pipes.html">pipe</a>, por exemplo).</dd>
+</dl>
+
+<pre class="term">$ awk '{print $1}' acesso.log
+192.168.0.10
+192.168.0.23
+192.168.0.10
+192.168.0.57
+192.168.0.10
+192.168.0.23
+$ echo $?
+0</pre>
+
+<p>A ação entre chaves roda <strong>para cada linha</strong>. Por isso saíram seis IPs.</p>
+
+<h3>Várias colunas e texto junto</h3>
+<p>Separe os campos com <strong>vírgula</strong> para sair um espaço entre eles. Texto fixo vai entre aspas duplas:</p>
+
+<pre class="term">$ awk '{print $1, $NF}' acesso.log
+192.168.0.10 200                « IP e último campo (o código)
+192.168.0.23 200
+192.168.0.10 403
+192.168.0.57 404
+192.168.0.10 200
+192.168.0.23 200
+$ awk '{print NR ": " $1}' acesso.log
+1: 192.168.0.10                 « número da linha, texto ": " e o IP
+2: 192.168.0.23
+3: 192.168.0.10
+4: 192.168.0.57
+5: 192.168.0.10
+6: 192.168.0.23
+$ awk '{print NF, $NF}' acesso.log | head -2
+8 200                           « 8 campos; o último é 200
+8 200</pre>
+
+<p>Sem vírgula (<code>print $1 $NF</code>), os valores saem grudados: <code>192.168.0.10200</code>.</p>
+
+<h3>Por que não usar <code>cut</code>?</h3>
+<p>O <a href="texto.html">cut</a> separa por <strong>um</strong> caractere exato. Com vários espaços seguidos (como na saída do <code>df</code> e do <code>ls -l</code>), ele se perde. O awk não:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Melhor quando…</th></tr>
+<tr><td><code>cut -d, -f 2</code></td><td>O separador é um caractere fixo e único (CSV, <code>/etc/passwd</code>).</td></tr>
+<tr><td><code>awk '{print $2}'</code></td><td>As colunas são separadas por espaços variáveis (<code>ls -l</code>, <code>ps</code>, <code>df</code>, <code>pacman -Q</code>).</td></tr>
+<tr><td><code>awk</code> com condições</td><td>Você também quer filtrar ou calcular.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Mudar o separador: <code>-F</code></h2>
+<p>O <code>alunos.csv</code> separa as colunas com <strong>vírgula</strong>. Sem avisar o awk, ele procura espaços e se confunde:</p>
+
+<pre class="term">$ cat alunos.csv
+nome,idade,cidade,nota
+Ana,29,Recife,9.5
+Bruno,34,Curitiba,7.0
+Carla,22,Salvador,8.5
+Diego,41,Manaus,6.0
+Elisa,27,Porto Alegre,10.0
+$ awk '{print $2}' alunos.csv
+                                « vazio: a linha não tem espaço, só existe $1
+…
+Alegre,10.0                     « só "Porto Alegre" tem espaço</pre>
+
+<p>A opção <code>-F</code> (de <em>field separator</em>, "separador de campos") resolve:</p>
+
+<dl class="anatomy">
+  <dt>awk</dt><dd>O programa.</dd>
+  <dt>-F,</dt><dd>O separador de campos é a vírgula. (Para dois-pontos, <code>-F:</code>; para ponto e vírgula, <code>-F';'</code>.)</dd>
+  <dt>'{print $1, $4}'</dt><dd>Imprime o campo 1 (nome) e o 4 (nota).</dd>
+  <dt>alunos.csv</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ awk -F, '{print $1, $4}' alunos.csv
+nome nota                       « o cabeçalho também é uma linha
+Ana 9.5
+Bruno 7.0
+Carla 8.5
+Diego 6.0
+Elisa 10.0</pre>
+
+<p>Outro arquivo com separador fixo é o <code>/etc/passwd</code>, a lista de contas do sistema, que usa <code>:</code>:</p>
+
+<pre class="term">$ awk -F: '{print $1}' /etc/passwd | head -n 3
+root
+bin
+daemon
+$ awk -F: '{print $7}' /etc/passwd | sort | uniq -c
+      1 /bin/bash               « o shell da ana
+      1 /usr/bin/bash           « o do root
+      1 /usr/bin/git-shell
+     22 /usr/bin/nologin        « contas de serviço: não fazem login</pre>
+
+<p>Para mudar o separador da <strong>saída</strong>, defina a variável <code>OFS</code> (<em>Output Field Separator</em>) com <code>-v</code>:</p>
+
+<pre class="term">$ awk -F, -v OFS=';' '{print $1, $4}' alunos.csv
+nome;nota
+Ana;9.5
+Bruno;7.0
+Carla;8.5
+Diego;6.0
+Elisa;10.0</pre>
+
+<hr>
+
+<h2>Filtrar linhas: o padrão</h2>
+<p>Um programa awk completo tem a forma <code>padrão { ação }</code>. A ação só roda nas linhas em que o padrão é verdadeiro.</p>
+
+<dl class="anatomy">
+  <dt>NR &gt; 1</dt><dd>O padrão: o número da linha é maior que 1? (pula o cabeçalho)</dd>
+  <dt>{print $1, $4}</dt><dd>A ação, só para as linhas que passaram no teste.</dd>
+</dl>
+
+<pre class="term">$ awk -F, 'NR &gt; 1 {print $1, $4}' alunos.csv
+Ana 9.5
+Bruno 7.0
+Carla 8.5
+Diego 6.0
+Elisa 10.0
+$ awk -F, '$3 == "Recife"' alunos.csv
+Ana,29,Recife,9.5               « sem ação, o awk imprime a linha inteira
+$ awk '/admin/' acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403   « padrão entre barras: contém "admin"
+$ awk '$NF == 404 {print $1}' acesso.log
+192.168.0.57                    « quem pediu uma página que não existe</pre>
+
+<p>Cuidado com o cabeçalho em comparações de números:</p>
+
+<pre class="term">$ awk -F, '$4 &gt;= 8' alunos.csv
+nome,idade,cidade,nota          « ué? "nota" não é número…
+Ana,29,Recife,9.5
+Carla,22,Salvador,8.5
+Elisa,27,Porto Alegre,10.0</pre>
+
+<p>Quando um dos lados não é número, o awk compara como <strong>texto</strong>, e "nota" vem depois de "8" na ordem alfabética. A solução é pular o cabeçalho: <code>NR &gt; 1 &amp;&amp; $4 &gt;= 8</code>.</p>
+
+<p>Você pode combinar testes com <code>&amp;&amp;</code> (e), <code>||</code> (ou) e <code>!</code> (não). Exemplos: os alunos com menos de 30 anos, e os usuários "de verdade" do sistema (UID de 1000 a 59999):</p>
+
+<pre class="term">$ awk -F, 'NR &gt; 1 &amp;&amp; $2 &lt; 30 {print $1, $2}' alunos.csv
+Ana 29
+Carla 22
+Elisa 27
+$ awk -F: '$3 &gt;= 1000 &amp;&amp; $3 &lt; 60000 {print $1, $6, $7}' /etc/passwd
+ana /home/ana /bin/bash         « nome, pasta pessoal e shell</pre>
+
+<div class="try" data-setup="cd Documentos" data-goal="outre:^Diego 6\.0$,ran:\bawk\b" data-solucao="awk -F, 'NR &gt; 1 &amp;&amp; $4 &lt; 7 {print $1, $4}' alunos.csv">
+<p class="try-task"><strong>Missão:</strong> você está em <code>Documentos</code>. Mostre o <strong>nome e a nota</strong> (separados por espaço) dos alunos do <code>alunos.csv</code> com nota <strong>menor que 7</strong>. Lembre do <code>-F,</code> e de pular o cabeçalho.</p>
+</div>
+
+<hr>
+
+<h2>Calcular: somas, médias e <code>BEGIN</code>/<code>END</code></h2>
+<p>O awk tem variáveis, e elas começam valendo zero (ou texto vazio). Duas palavras especiais marcam momentos fora do "laço" de linhas:</p>
+<ul>
+  <li><code>BEGIN { … }</code> roda <strong>antes</strong> da primeira linha (para cabeçalhos e preparativos);</li>
+  <li><code>END { … }</code> roda <strong>depois</strong> da última (para totais).</li>
+</ul>
+
+<pre class="syntax">  BEGIN { … }  ──►  { … } na linha 1  ──►  { … } na linha 2  ──► … ──►  END { … }
+  (uma vez)            (uma vez por linha)                              (uma vez)</pre>
+
+<p>Somar as notas da turma:</p>
+
+<dl class="anatomy">
+  <dt>-F,</dt><dd>Colunas separadas por vírgula.</dd>
+  <dt>NR &gt; 1</dt><dd>Pula o cabeçalho.</dd>
+  <dt>{s += $4}</dt><dd>Em cada linha, soma o campo 4 (a nota) na variável <code>s</code>. <code>s += x</code> é o mesmo que <code>s = s + x</code>.</dd>
+  <dt>END</dt><dd>Quando as linhas acabarem…</dd>
+  <dt>{print "Soma:", s}</dt><dd>…imprime o total.</dd>
+</dl>
+
+<pre class="term">$ awk -F, 'NR &gt; 1 {s += $4} END {print "Soma:", s}' alunos.csv
+Soma: 41                        « 9.5 + 7.0 + 8.5 + 6.0 + 10.0
+$ awk -F, 'NR &gt; 1 {s += $4; n++} END {print "Média:", s/n}' alunos.csv
+Média: 8.2                      « 41 ÷ 5</pre>
+
+<p><code>n++</code> soma 1 em <code>n</code> a cada linha: é um contador. Também daria para usar <code>NR - 1</code> no <code>END</code> (o total de linhas menos o cabeçalho).</p>
+
+<div class="tip">
+<strong>Decimais no Arch: sem surpresa</strong>
+<p>O gawk lê <code>9.5</code> como nove e meio mesmo com o sistema em português, e escreve o resultado com ponto (<code>8.2</code>). Já a vírgula <strong>não</strong> é entendida como decimal: <code>echo "1,5 2,5" | awk '{print $1 + $2}'</code> mostra <code>3</code> (leu 1 e 2). Isso aparece na prática com o <code>pacman -Qi</code>, que em pt_BR escreve tamanhos como <code>9,59 MiB</code>. Para o gawk usar a vírgula do idioma, existe a opção <code>--use-lc-numeric</code> (<code>awk --use-lc-numeric 'BEGIN {print 17/2}'</code> mostra <code>8,5</code>), mas quase nunca você vai precisar.</p>
+</div>
+
+<div class="try" data-setup="cd Documentos" data-goal="out:8.2,ran:\bawk\b" data-solucao="awk -F, 'NR &gt; 1 {s += $4; n++} END {print s/n}' alunos.csv">
+<p class="try-task"><strong>Missão:</strong> calcule a <strong>média das notas</strong> do <code>alunos.csv</code> com um único comando awk. O resultado esperado é <code>8.2</code>.</p>
+</div>
+
+<h3>Maior nota e condições dentro da ação</h3>
+<p>Dentro da ação vale <code>if</code>/<code>else</code>, como num script:</p>
+
+<pre class="term">$ awk -F, 'NR &gt; 1 &amp;&amp; $4 &gt; max {max = $4; quem = $1} END {print quem, max}' alunos.csv
+Elisa 10.0
+$ awk -F, 'NR &gt; 1 {if ($4 &gt;= 7) print $1, "aprovado"; else print $1, "recuperação"}' alunos.csv
+Ana aprovado
+Bruno aprovado
+Carla aprovado
+Diego recuperação
+Elisa aprovado</pre>
+
+<h3>Contas no <code>BEGIN</code> (awk como calculadora)</h3>
+<p>Um programa só com <code>BEGIN</code> nem lê arquivo. Útil para contas com decimais, que o Bash não faz:</p>
+
+<pre class="term">$ awk 'BEGIN {x = 10; y = 3; print x / y, x % y, x ^ 2}'
+3.33333 1 100                   « divisão, resto, potência
+$ awk 'BEGIN {printf "%.2f\n", 10/3}'
+3.33</pre>
+
+<hr>
+
+<h2>Formatar a saída: <code>printf</code></h2>
+<p>O <code>printf</code> controla larguras e casas decimais. Diferente do <code>print</code>, ele <strong>não</strong> pula linha sozinho: você põe o <code>\n</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Significa</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>%s</code></td><td>Texto</td><td><code>"%s", "Ana"</code> → <code>Ana</code></td></tr>
+<tr><td><code>%-10s</code></td><td>Texto alinhado à esquerda em 10 posições</td><td><code>Ana       </code></td></tr>
+<tr><td><code>%d</code></td><td>Número inteiro</td><td><code>"%d", 29</code> → <code>29</code></td></tr>
+<tr><td><code>%5.1f</code></td><td>Número com 1 casa decimal, em 5 posições</td><td><code>"%5.1f", 9.5</code> → <code>  9.5</code></td></tr>
+<tr><td><code>\n</code></td><td>Pula a linha</td><td></td></tr>
+</table>
+</div>
+
+<pre class="term">$ awk -F, 'BEGIN {print "ALUNO      NOTA"} NR &gt; 1 {printf "%-10s %5.1f\n", $1, $4}' alunos.csv
+ALUNO      NOTA                 « o BEGIN imprimiu o título
+Ana          9.5
+Bruno        7.0
+Carla        8.5
+Diego        6.0
+Elisa       10.0                « colunas alinhadas
+$ awk -F, 'NR &gt; 1 {printf "%s tem %d anos\n", $1, $2}' alunos.csv
+Ana tem 29 anos
+Bruno tem 34 anos
+Carla tem 22 anos
+Diego tem 41 anos
+Elisa tem 27 anos
+$ awk -F, 'NR &gt; 1 {s += $4; n++} END {printf "Média: %.2f\n", s/n}' alunos.csv
+Média: 8.20</pre>
+
+<hr>
+
+<h2>Variáveis: as suas e as do awk</h2>
+<p>Você cria variáveis só usando (<code>s += $4</code>), ou passa valores de fora com <code>-v</code>. É o jeito certo de levar uma variável do shell para dentro do awk:</p>
+
+<pre class="term">$ awk -F, -v min=8 'NR &gt; 1 &amp;&amp; $4 &gt;= min {print $1}' alunos.csv
+Ana
+Carla
+Elisa</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável do awk</th><th>O que guarda</th></tr>
+<tr><td><code>NR</code></td><td>Número da linha atual (somando todos os arquivos)</td></tr>
+<tr><td><code>FNR</code></td><td>Número da linha dentro do arquivo atual</td></tr>
+<tr><td><code>NF</code></td><td>Quantidade de campos da linha</td></tr>
+<tr><td><code>FS</code> / <code>OFS</code></td><td>Separador de campos da entrada (o <code>-F</code>) / da saída</td></tr>
+<tr><td><code>FILENAME</code></td><td>Nome do arquivo sendo lido</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Arrays: contar e agrupar</h2>
+<p>Uma variável com colchetes, como <code>n[$1]</code>, é um <strong>array</strong>: guarda um valor para cada "chave" (aqui, cada IP). <code>n[$1]++</code> soma 1 no contador daquele IP. No <code>END</code>, o <code>for (ip in n)</code> percorre todas as chaves:</p>
+
+<dl class="anatomy">
+  <dt>{n[$1]++}</dt><dd>Em cada linha, soma 1 na "gaveta" com o nome do IP.</dd>
+  <dt>END {for (ip in n)</dt><dd>No fim, para cada chave (cada IP) do array…</dd>
+  <dt>print ip, n[ip]}</dt><dd>…imprime o IP e a contagem.</dd>
+</dl>
+
+<pre class="term">$ awk '{n[$1]++} END {for (ip in n) print ip, n[ip]}' acesso.log
+192.168.0.57 1
+192.168.0.10 3                  « o .10 fez 3 acessos
+192.168.0.23 2
+$ awk '{n[$NF]++} END {for (c in n) print c, n[c]}' acesso.log | sort
+200 4                           « quantas respostas de cada código
+403 1
+404 1</pre>
+
+<p>A ordem do <code>for … in</code> <strong>não é garantida</strong> (veja o .57 antes do .10). Ordene depois com <code>| sort</code>, ou use um recurso só do gawk, o <code>PROCINFO["sorted_in"]</code>:</p>
+
+<pre class="term">$ awk 'BEGIN {PROCINFO["sorted_in"] = "@ind_str_asc"} {n[$1]++} END {for (ip in n) print ip, n[ip]}' acesso.log
+192.168.0.10 3                  « chaves em ordem crescente de texto
+192.168.0.23 2
+192.168.0.57 1</pre>
+
+<div class="try" data-setup="cd Documentos" data-goal="outre:^200 4$,outre:^404 1$" data-solucao="awk '{n[$NF]++} END {for (c in n) print c, n[c]}' acesso.log">
+<p class="try-task"><strong>Missão:</strong> conte quantas vezes cada <strong>código de resposta</strong> (o último campo) aparece no <code>acesso.log</code>, mostrando "código quantidade" em cada linha.</p>
+</div>
+
+<hr>
+
+<h2>Funções de texto (e as extras do gawk)</h2>
+<pre class="term">$ awk -F, 'NR &gt; 1 {print toupper($1), tolower($3)}' alunos.csv | head -2
+ANA recife
+BRUNO curitiba
+$ awk -F, 'NR &gt; 1 {print substr($1, 1, 3)}' alunos.csv | head -2
+Ana                             « 3 letras a partir da 1ª
+Bru
+$ awk '{print length($0), $0}' ../frutas.txt | head -3
+6 banana
+4 maçã                          « gawk conta letras: 4 (o mawk diria 6)
+7 laranja
+$ awk -F, 'NR &gt; 1 {sub(/\./, ",", $4); print $1, $4}' alunos.csv | head -2
+Ana 9,5                         « sub troca a 1ª ocorrência dentro do campo
+Bruno 7,0</pre>
+
+<p>Duas funções que só o gawk tem (não funcionam no mawk do Debian):</p>
+
+<pre class="term">$ awk '{print gensub(/([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/, "\\4.\\3.\\2.\\1", 1, $1)}' acesso.log | head -2
+10.0.168.192                    « gensub devolve o texto trocado, com grupos \\1…\\4
+23.0.168.192
+$ awk 'BEGIN {print strftime("%A, %d de %B de %Y")}'
+sexta, 16 de outubro de 2026    « strftime formata datas (em pt_BR)</pre>
+
+<hr>
+
+<h2>awk no dia a dia do Arch</h2>
+<p>O awk brilha na saída de outros comandos, que costuma vir em colunas:</p>
+
+<pre class="term">$ pacman -Q | head -3
+aardvark-dns 2.1.0-3
+abseil-cpp 20260817.0-2
+accountsservice 26.27.3-1
+$ pacman -Q | awk '{print $1}' | head -3
+aardvark-dns                    « só os nomes dos pacotes
+abseil-cpp
+accountsservice
+$ pacman -Q | awk 'END {print NR, "pacotes"}'
+408 pacotes                     « NR no END = total de linhas
+$ df -h /
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /
+$ df -h / | awk 'NR == 2 {print $5}'
+22%                             « uso da raiz: linha 2, coluna 5
+$ ls -l ~/Downloads | awk '{s += $5} END {print s " bytes"}'
+1679199232 bytes                « soma da coluna de tamanho do ls -l
+$ pacman -Qi bash | awk -F': ' '/^Tamanho instalado/ {print $2}'
+9,59 MiB                        « separador ": " (dois-pontos e espaço)</pre>
+
+<p>Repare no último: o tamanho vem com <strong>vírgula</strong> (<code>9,59</code>), porque o pacman fala português. Somar esses valores no awk daria errado (ele leria <code>9</code>). Para contas, rode o pacman em inglês: <code>LC_ALL=C pacman -Qi bash</code>. A contagem de pacotes com <code>pacman -Q</code> também aparece em <a href="pipes.html">Pipes e xargs</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Com awk</th><th>Alternativa</th></tr>
+<tr><td>Coluna 1 de um CSV</td><td><code>awk -F, '{print $1}'</code></td><td><code>cut -d, -f1</code> (<a href="texto.html">texto</a>)</td></tr>
+<tr><td>Contar linhas</td><td><code>awk 'END {print NR}'</code></td><td><code>wc -l</code></td></tr>
+<tr><td>Linhas com um texto</td><td><code>awk '/erro/'</code></td><td><code>grep erro</code> (<a href="grep.html">grep</a>)</td></tr>
+<tr><td>Contar repetidos</td><td><code>awk '{n[$1]++} END {…}'</code></td><td><code>cut -d' ' -f1 | sort | uniq -c</code></td></tr>
+<tr><td>Trocar texto</td><td><code>awk '{gsub(/a/,"b")} 1'</code></td><td><code>sed 's/a/b/g'</code> (<a href="sed.html">sed</a>)</td></tr>
+</table>
+</div>
+<p>Regra prática: se a tarefa fala em <strong>coluna</strong> ou <strong>conta</strong>, é awk; se fala em <strong>trocar</strong>, é sed; se fala em <strong>achar</strong>, é grep.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"nova linha ou fim de string inesperado"</strong>
+<pre class="term">$ awk '{print $1' acesso.log
+awk: lin. de com.:1: {print $1
+awk: lin. de com.:1:          ^ nova linha ou fim de string inesperado
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> faltou fechar a chave da ação. "lin. de com.:1" quer dizer "linha 1 do programa passado na linha de comando"; o <code>^</code> aponta onde o gawk se perdeu.</p>
+<p><strong>Como resolver:</strong> confira se cada <code>{</code> tem seu <code>}</code> e se as aspas simples abrem e fecham.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível abrir arquivo"</strong>
+<pre class="term">$ awk '{print $1}' acesso.lg
+awk: fatal: não foi possível abrir arquivo "acesso.lg" para leitura: Arquivo ou diretório inexistente
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> o nome do arquivo está errado, ou você está em outra pasta.</p>
+<p><strong>Como resolver:</strong> use <kbd>Tab</kbd> para completar o nome e <code>pwd</code> para ver onde está.</p>
+</div>
+
+<div class="cenario">
+<strong>O awk imprimiu a linha inteira em vez da coluna</strong>
+<pre class="term">$ awk "{print $1}" notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos</pre>
+<p><strong>O que aconteceu:</strong> o programa foi escrito entre aspas <strong>duplas</strong>. O shell trocou <code>$1</code> pelo primeiro argumento do shell, que está vazio. O awk recebeu só <code>{print }</code>, que imprime a linha toda.</p>
+<p><strong>Como resolver:</strong> use sempre aspas simples no programa awk: <code>awk '{print $1}'</code>. Para levar uma variável do shell, use <code>-v</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>As colunas vieram vazias ou erradas num CSV</strong>
+<p><strong>O que aconteceu:</strong> sem <code>-F</code>, o awk separa por espaços. Num CSV, a linha inteira vira o campo 1 (ou, com "Porto Alegre", os campos "Elisa,27,Porto" e "Alegre,10.0").</p>
+<p><strong>Como resolver:</strong> informe o separador: <code>awk -F, '{print $2}' alunos.csv</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta deu número inteiro, sem os decimais</strong>
+<p><strong>O que aconteceu:</strong> os números usam <strong>vírgula</strong> (<code>9,59</code>), como na saída em português do pacman. O gawk lê só até a vírgula.</p>
+<p><strong>Como confirmar:</strong> <code>echo "1,5 2,5" | awk '{print $1 + $2}'</code> mostra <code>3</code>.</p>
+<p><strong>Como resolver:</strong> gere a saída em inglês (<code>LC_ALL=C comando</code>) ou troque a vírgula antes: <code>sed 's/,/./'</code>. (Num tutorial de Debian você verá <code>LC_NUMERIC=C awk</code>: isso é para o mawk e, no Arch, não é necessário para números com ponto.)</p>
+</div>
+
+<div class="cenario">
+<strong>Um tutorial usa <code>gensub</code> ou <code>strftime</code> e dá erro em outra máquina</strong>
+<p><strong>O que aconteceu:</strong> essas funções são do gawk. No Arch funcionam; num Debian com mawk, não existem.</p>
+<p><strong>Como resolver:</strong> num script que precisa rodar em qualquer lugar, chame <code>gawk</code> explicitamente (e instale-o lá) ou use só as funções padrão (<code>sub</code>, <code>gsub</code>, <code>substr</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-F x</code></td><td>Separador de campos da entrada</td><td><code>awk -F: '{print $1}'</code></td></tr>
+<tr><td><code>-v var=valor</code></td><td>Define uma variável antes de começar</td><td><code>awk -v min=8 '$4 &gt;= min'</code></td></tr>
+<tr><td><code>$1, $2… $NF</code></td><td>Campos; <code>$NF</code> é o último</td><td><code>{print $NF}</code></td></tr>
+<tr><td><code>$0</code></td><td>A linha inteira</td><td><code>{print NR, $0}</code></td></tr>
+<tr><td><code>NR</code> / <code>NF</code></td><td>Número da linha / quantidade de campos</td><td><code>NR &gt; 1</code> pula o cabeçalho</td></tr>
+<tr><td><code>OFS</code></td><td>Separador da saída</td><td><code>-v OFS=';'</code></td></tr>
+<tr><td><code>BEGIN {}</code> / <code>END {}</code></td><td>Antes da primeira / depois da última linha</td><td><code>END {print s}</code></td></tr>
+<tr><td><code>/regex/</code></td><td>Linhas que casam com o padrão</td><td><code>awk '/admin/'</code></td></tr>
+<tr><td><code>== != &gt; &lt; &gt;= &lt;=</code></td><td>Comparações</td><td><code>$3 == "Recife"</code></td></tr>
+<tr><td><code>&amp;&amp; || !</code></td><td>E, ou, não</td><td><code>NR &gt; 1 &amp;&amp; $4 &lt; 7</code></td></tr>
+<tr><td><code>printf</code></td><td>Saída formatada</td><td><code>printf "%-10s %5.1f\n", $1, $4</code></td></tr>
+<tr><td><code>a[chave]++</code></td><td>Array: contar por chave</td><td><code>{n[$1]++}</code></td></tr>
+<tr><td><code>length() toupper() tolower() substr()</code></td><td>Funções de texto</td><td><code>{print toupper($1)}</code></td></tr>
+<tr><td><code>sub() gsub() split()</code></td><td>Trocar (1ª / todas) e dividir</td><td><code>{gsub(/a/, "4"); print}</code></td></tr>
+<tr><td><code>gensub() strftime()</code></td><td>Só no gawk: troca com grupos; datas</td><td><code>strftime("%d/%m/%Y")</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Última coluna</h3>
+<p>Complete para imprimir o último campo de cada linha, qualquer que seja a quantidade de campos:</p>
+<div class="ex-code">awk '{print <input data-answer="$NF" aria-label="campo">}' acesso.log</div>
+</div>
+
+<div class="exercise">
+<h3>2. Separador dois-pontos</h3>
+<p>Complete para listar as pastas pessoais (campo 6) de todos os usuários do <code>/etc/passwd</code>:</p>
+<div class="ex-code">awk <input data-answer="-F:" aria-label="opção"> '{print $6}' /etc/passwd</div>
+</div>
+
+<div class="exercise">
+<h3>3. Total no fim</h3>
+<p>Complete para somar a coluna 2 (idades) do CSV e mostrar o total depois da última linha:</p>
+<div class="ex-code">awk -F, 'NR &gt; 1 {s += $2} <input data-answer="END" aria-label="palavra"> {print s}' alunos.csv</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual comando mostra só as linhas do CSV cujo campo 3 é "Manaus"?</p>
+<label><input type="radio" name="q4"> <code>awk -F, '{print $3 == "Manaus"}' alunos.csv</code></label>
+<label><input type="radio" name="q4"> <code>awk -F, '$3 == "Manaus"' alunos.csv</code></label>
+<label><input type="radio" name="q4"> <code>awk -F Manaus '{print}' alunos.csv</code></label>
+<label><input type="radio" name="q4"> <code>awk "$3 == Manaus" alunos.csv</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No Arch em português, <code>echo "1.5 2.5" | awk '{print $1 + $2}'</code> mostra:</p>
+<label><input type="radio" name="q5"> <code>3</code>, porque o awk para no ponto.</label>
+<label><input type="radio" name="q5"> <code>4,0</code>, com vírgula.</label>
+<label><input type="radio" name="q5"> <code>4</code>: o gawk lê o ponto decimal normalmente.</label>
+<label><input type="radio" name="q5"> Um erro de sintaxe.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. <code>awk -F, '$4 &gt;= 8' alunos.csv</code> mostrou também o cabeçalho <code>nome,idade,cidade,nota</code>. Por quê?</p>
+<label><input type="radio" name="q6"> Porque faltou o <code>print</code>.</label>
+<label><input type="radio" name="q6"> Porque o separador está errado.</label>
+<label><input type="radio" name="q6"> Porque o awk sempre imprime a primeira linha.</label>
+<label><input type="radio" name="q6"> Porque "nota" não é número, então foi comparado como texto com "8"; use <code>NR &gt; 1 &amp;&amp;</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No Arch, <code>awk</code> é o <strong>gawk</strong> 5.4: lê números com ponto, conta letras, tem <code>gensub</code> e <code>strftime</code>.</li>
+  <li>O awk divide cada linha em campos: <code>$1</code>, <code>$2</code>… <code>$NF</code>; <code>$0</code> é a linha toda.</li>
+  <li>Um programa é <code>padrão { ação }</code>; sem ação, imprime a linha; sem padrão, roda em todas.</li>
+  <li><code>-F</code> muda o separador; <code>BEGIN</code> e <code>END</code> rodam antes e depois das linhas; <code>NR &gt; 1</code> pula cabeçalho.</li>
+  <li>Arrays (<code>n[$1]++</code>) contam e agrupam; a ordem do <code>for … in</code> não é garantida.</li>
+  <li>Use sempre aspas simples no programa; variáveis do shell entram com <code>-v</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o awk aparece em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>), e muitos comandos da Wiki usam <code>awk</code> para filtrar a saída do pacman (por exemplo em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>). O manual completo do gawk é <a href="https://www.gnu.org/software/gawk/manual/">gnu.org/software/gawk/manual</a> (no seu Arch: <code>info gawk</code>), e o pacote está em <a href="https://archlinux.org/packages/core/x86_64/gawk/">archlinux.org/packages/core/x86_64/gawk</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

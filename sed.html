@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch sed — substituir e editar texto | Guia Arch</title>
+<meta name="description" content="Aprenda sed no Arch Linux (GNU sed 4.10): o comando s/procurar/trocar/ parte por parte, flags g e I, endereços, apagar e imprimir linhas, -i com backup, -E, erros reais e o exemplo clássico de ligar o Color no pacman.conf.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">sed</span></h1>
+
+<p class="intro">O <code>sed</code> (de <em>stream editor</em>, "editor de fluxo") edita texto <strong>sem abrir</strong> o arquivo num editor. Você descreve a mudança, como "troque <code>#Color</code> por <code>Color</code>", e ele aplica em todas as linhas. É a ferramenta para mudar configurações em scripts e fazer substituições em massa — e aparece o tempo todo na Arch Wiki.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o sed processa o texto, linha por linha.</li>
+  <li>A ler e escrever o comando <code>s/procurar/trocar/</code> parte por parte, com as flags <code>g</code> e <code>I</code>.</li>
+  <li>A diferença entre mostrar o resultado e alterar o arquivo (<code>-i</code>), e como fazer backup antes (<code>-i.bak</code>).</li>
+  <li>A escolher linhas (endereços), apagar (<code>d</code>), imprimir (<code>-n … p</code>) e inserir linhas.</li>
+  <li>A ler as mensagens de erro do GNU sed 4.10 do Arch (que têm um defeito de tradução curioso).</li>
+</ul>
+</div>
+
+<h2>O sed no Arch</h2>
+<p>O sed vem no pacote <code>sed</code>, que é dependência do meta-pacote <code>base</code>: todo Arch tem. É o <strong>GNU sed</strong>, a mesma família do sed do Debian e do Ubuntu, só que mais novo (o Arch acompanha as versões do projeto GNU de perto):</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/sed
+/usr/bin/sed pertence a sed 4.10-2          « pacote sed, versão 4.10, lançamento 2
+$ sed --version | head -1
+sed (GNU sed) 4.10</pre>
+
+<p>Nos exemplos, vamos usar os arquivos da ana: <code>frutas.txt</code> (na pasta pessoal) e, dentro de <code>Documentos</code>, <code>notas.txt</code>, <code>alunos.csv</code> e <code>acesso.log</code>. E, para o exemplo "de verdade", uma <strong>cópia</strong> do <code>/etc/pacman.conf</code> (veja <a href="ver-arquivos.html">cat, less, head, tail</a> se ainda não conhece o <code>cat</code>):</p>
+
+<pre class="term">$ cat frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana
+$ cat Documentos/notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+$ cp /etc/pacman.conf ~/pacman.conf          « uma cópia para treinar sem risco</pre>
+
+<hr>
+
+<h2>Como o sed trabalha</h2>
+<p>O sed lê o texto <strong>uma linha por vez</strong>. Para cada linha, aplica os seus comandos e escreve o resultado na saída. Depois passa para a próxima linha.</p>
+
+<pre class="syntax">  arquivo ──► [ lê a linha ] ──► [ aplica os comandos ] ──► [ escreve na tela ] ──┐
+                   ▲                                                              │
+                   └────────────────────── próxima linha ◄────────────────────────┘</pre>
+
+<p>Duas consequências importantes:</p>
+<ul>
+  <li>Por padrão, o resultado vai para a <strong>tela</strong> (a saída padrão). O arquivo original <strong>não muda</strong>.</li>
+  <li>O sed funciona com arquivos de qualquer tamanho, porque nunca carrega o arquivo inteiro na memória.</li>
+</ul>
+
+<p>Ele também lê da entrada de um <a href="pipes.html">pipe</a>: <code>comando | sed '…'</code>. Por isso aparece tanto no meio de outros comandos.</p>
+
+<hr>
+
+<h2>Substituir texto: o comando <code>s</code></h2>
+<p>O uso mais comum do sed é substituir. Primeiro, a linha inteira:</p>
+
+<dl class="anatomy">
+  <dt>sed</dt><dd>O programa.</dd>
+  <dt>'s/banana/BANANA/'</dt><dd>O <strong>script</strong>, ou seja, a instrução para o sed. Fica entre <strong>aspas simples</strong> para o shell não mexer nos símbolos (<code>$</code>, <code>*</code>, espaços).</dd>
+  <dt>frutas.txt</dt><dd>O arquivo a ler. Sem ele, o sed lê a entrada padrão (por exemplo, de um pipe).</dd>
+</dl>
+
+<p>Agora, o script por dentro. As barras <code>/</code> separam as partes:</p>
+
+<dl class="anatomy">
+  <dt>s</dt><dd>O comando: <em>substitute</em>, "substituir".</dd>
+  <dt>/banana</dt><dd>O que <strong>procurar</strong>. Pode ser um texto fixo ou uma expressão regular.</dd>
+  <dt>/BANANA</dt><dd>Pelo que <strong>trocar</strong>.</dd>
+  <dt>/</dt><dd>Fim. Depois da última barra vêm as <strong>flags</strong> (opcionais), como <code>g</code> e <code>I</code>.</dd>
+</dl>
+
+<pre class="term">$ sed 's/banana/BANANA/' frutas.txt
+BANANA                 « trocou
+maçã
+laranja
+BANANA                 « trocou
+uva
+maçã
+BANANA                 « trocou
+$ echo $?
+0                      « 0 = deu certo
+$ cat frutas.txt
+banana                 « o arquivo continua igual
+maçã
+laranja
+banana
+uva
+maçã
+banana</pre>
+
+<p>O código de saída <code>0</code> quer dizer "o sed rodou sem erro". Atenção: ele é <code>0</code> <strong>mesmo que nada tenha sido trocado</strong>. O sed não avisa quando o padrão não aparece (o <a href="grep.html">grep</a> avisa, com o código 1).</p>
+
+<h3>Todas as ocorrências da linha: flag <code>g</code></h3>
+<p>Sem flag, o sed troca só a <strong>primeira</strong> ocorrência de cada linha. A flag <code>g</code> (de <em>global</em>) troca todas. Um número troca só aquela ocorrência:</p>
+
+<pre class="term">$ echo "a a a" | sed 's/a/X/'
+X a a                  « só a primeira
+$ echo "a a a" | sed 's/a/X/g'
+X X X                  « todas
+$ echo "a a a" | sed 's/a/X/2'
+a X a                  « só a 2ª ocorrência</pre>
+
+<h3>Ignorar maiúsculas e minúsculas: flag <code>I</code></h3>
+<pre class="term">$ echo "Olá Mundo" | sed 's/mundo/Arch/'
+Olá Mundo              « não achou: "mundo" ≠ "Mundo"
+$ echo "Olá Mundo" | sed 's/mundo/Arch/I'
+Olá Arch</pre>
+
+<p>Dá para juntar flags: <code>s/a/X/gI</code> troca todas, ignorando maiúsculas.</p>
+
+<div class="try" data-goal="outre:^BANANA$,outre:^MAÇÃ$" data-solucao="sed 's/banana/BANANA/; s/maçã/MAÇÃ/' frutas.txt">
+<p class="try-task"><strong>Missão:</strong> mostre o <code>frutas.txt</code> com <strong>banana</strong> e <strong>maçã</strong> em maiúsculas (<code>BANANA</code> e <code>MAÇÃ</code>). Dica: dois comandos <code>s</code> separados por <code>;</code>, ou duas opções <code>-e</code>.</p>
+</div>
+
+<hr>
+
+<h2>Alterar o arquivo de verdade: <code>-i</code></h2>
+<p>A opção <code>-i</code> (de <em>in-place</em>, "no lugar") grava o resultado no próprio arquivo, em vez de mostrar na tela. O exemplo clássico do Arch: o <code>/etc/pacman.conf</code> vem com a opção <code>Color</code> <strong>comentada</strong> (desligada), e muita gente liga para ver o pacman colorido. Vamos treinar na cópia.</p>
+
+<p><strong>Passo 1 — teste sem <code>-i</code>.</strong> Primeiro veja onde está a linha, depois veja o resultado da troca:</p>
+
+<pre class="term">$ grep -n '^#Color' pacman.conf
+33:#Color                       « linha 33, desligada pelo #
+$ sed 's/^#Color/Color/' pacman.conf | grep -n '^Color'
+33:Color                        « a troca funcionaria</pre>
+
+<p>O <code>^</code> quer dizer "começo da linha": só troca o <code>#Color</code> que está logo no início. Os padrões estão explicados mais abaixo.</p>
+
+<p><strong>Passo 2 — aplique com backup.</strong></p>
+
+<dl class="anatomy">
+  <dt>sed</dt><dd>O programa.</dd>
+  <dt>-i.bak</dt><dd>Edita o arquivo <strong>e</strong> guarda uma cópia do original com a extensão <code>.bak</code>. Sem espaço entre <code>-i</code> e <code>.bak</code>!</dd>
+  <dt>'s/^#Color/Color/'</dt><dd>A substituição: tira o <code>#</code> do começo da linha <code>#Color</code>.</dd>
+  <dt>pacman.conf</dt><dd>O arquivo que será alterado.</dd>
+</dl>
+
+<pre class="term">$ sed -i.bak 's/^#Color/Color/' pacman.conf
+$ echo $?
+0                               « nada na tela, código 0: deu certo
+$ ls
+'Área de trabalho'   Downloads    Modelos       pacman.conf.bak    « o .bak apareceu
+ aur                 frutas.txt   Música        Público
+ Documentos          Imagens      pacman.conf   Vídeos
+$ grep -n 'Color' pacman.conf pacman.conf.bak
+pacman.conf:33:Color            « o arquivo mudou
+pacman.conf.bak:33:#Color       « a cópia guarda o original
+$ diff pacman.conf.bak pacman.conf
+33c33                           « a linha 33 foi trocada (c = change)
+&lt; #Color
+---
+&gt; Color</pre>
+
+<p>No seu Arch de verdade, o arquivo é do root, então o comando leva <code>sudo</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). O resultado é o mesmo da cópia:</p>
+
+<pre class="term">$ sudo sed -i.bak 's/^#Color/Color/' /etc/pacman.conf
+[sudo] senha para ana:
+$ grep -n 'Color' /etc/pacman.conf /etc/pacman.conf.bak
+/etc/pacman.conf:33:Color
+/etc/pacman.conf.bak:33:#Color</pre>
+<p class="tip">Esta última sessão é <strong>ilustrativa</strong>: no laboratório o <code>/etc/pacman.conf</code> é compartilhado, então a troca foi feita na cópia (com saída idêntica). Para desfazer: <code>sudo mv /etc/pacman.conf.bak /etc/pacman.conf</code>.</p>
+
+<div class="warning">
+<strong>Teste antes de usar <code>-i</code></strong>
+<p>Rode primeiro <strong>sem</strong> <code>-i</code> e confira a saída. Só depois acrescente o <code>-i</code>. Com <code>-i</code> sozinho (sem <code>.bak</code>), não existe "desfazer". Em arquivos do sistema (<code>/etc/…</code>), use sempre <code>-i.bak</code> — um <code>pacman.conf</code> estragado impede o pacman de funcionar.</p>
+</div>
+
+<div class="try" data-setup="cp /etc/pacman.conf ~/pacman.conf" data-goal="file:~/pacman.conf.bak,contains:~/pacman.conf=&#10;Color&#10;" data-solucao="sed -i.bak 's/^#Color/Color/' pacman.conf">
+<p class="try-task"><strong>Missão:</strong> há uma cópia do <code>pacman.conf</code> na sua pasta. Ligue a opção <code>Color</code> nela (tire o <code>#</code>), <strong>editando o arquivo</strong> e guardando o original como <code>pacman.conf.bak</code>. Confira com <code>grep -n Color pacman.conf*</code>.</p>
+</div>
+
+<h3>Formas diferentes de salvar o resultado</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Só olhar</td><td><code>sed 's/a/b/' arq</code></td><td>Sempre, primeiro, para testar.</td></tr>
+<tr><td>Novo arquivo</td><td><code>sed 's/a/b/' arq &gt; novo</code></td><td>Quer manter o original intacto.</td></tr>
+<tr><td>No lugar, com backup</td><td><code>sed -i.bak 's/a/b/' arq</code></td><td>Mudança em configuração: dá para voltar.</td></tr>
+<tr><td>No lugar, sem backup</td><td><code>sed -i 's/a/b/' arq</code></td><td>Scripts testados, arquivos que você pode recriar.</td></tr>
+<tr><td>Arquivo do root</td><td><code>sudo sed -i.bak 's/a/b/' /etc/arq</code></td><td>Configurações do sistema.</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Nunca use <code>sed … arq &gt; arq</code></strong>
+<p>O <code>&gt;</code> esvazia o arquivo <strong>antes</strong> de o sed ler, e você perde tudo. Veja <a href="redirecionamento.html">Redirecionamento</a>. Para editar o próprio arquivo, use <code>-i</code>.</p>
+</div>
+
+<hr>
+
+<h2>Caminhos com barras: troque o separador</h2>
+<p>Para trocar <code>/home/ana</code> por <code>/home/bia</code>, as barras do caminho se misturam com as barras do comando:</p>
+
+<pre class="term">$ sed 's//home/ana//home/bia/' frutas.txt
+sed: -e expressão #1, carácter 9opção desconhecida para "s"</pre>
+
+<p>O sed entendeu <code>s//home/</code> como "troque nada por home" e achou que <code>ana</code> eram flags. O sed aceita <strong>qualquer</strong> caractere como separador: é o primeiro que aparece depois do <code>s</code>. Use <code>|</code> ou <code>#</code>. No <code>pacman.conf</code>:</p>
+
+<pre class="term">$ sed 's|/etc/pacman.d/mirrorlist|/etc/pacman.d/espelhos|' pacman.conf | grep '^Include'
+Include = /etc/pacman.d/espelhos
+Include = /etc/pacman.d/espelhos</pre>
+
+<p>Outra forma é "escapar" cada barra com <code>\</code>: <code>sed 's/\/etc\/pacman.d/\/opt/'</code>. Funciona, mas é bem mais difícil de ler.</p>
+
+<hr>
+
+<h2>Padrões: expressões regulares</h2>
+<p>O que você procura pode ser um <strong>padrão</strong>, e não só um texto fixo. São as mesmas expressões regulares do <a href="grep.html">grep</a>. Os símbolos mais usados:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Símbolo</th><th>Significa</th><th>Exemplo</th></tr>
+<tr><td><code>.</code></td><td>Qualquer caractere</td><td><code>c.sa</code> casa com "casa" e "cosa"</td></tr>
+<tr><td><code>*</code></td><td>O anterior, zero ou mais vezes</td><td><code>Color.*</code> = "Color" e qualquer coisa depois</td></tr>
+<tr><td><code>^</code></td><td>Começo da linha</td><td><code>^#</code> = linha que começa com #</td></tr>
+<tr><td><code>$</code></td><td>Fim da linha</td><td><code>^$</code> = linha vazia</td></tr>
+<tr><td><code>[0-9]</code></td><td>Um caractere da lista</td><td><code>[0-9]</code> = um dígito</td></tr>
+<tr><td><code>[^,]</code></td><td>Um caractere <strong>fora</strong> da lista</td><td><code>[^,]*</code> = tudo até a próxima vírgula</td></tr>
+<tr><td><code>\+</code></td><td>O anterior, uma ou mais vezes</td><td><code>[0-9]\+</code> = um número</td></tr>
+<tr><td><code>&amp;</code></td><td>Na troca: o texto encontrado</td><td><code>s/[0-9]\+/[&amp;]/</code> põe o número entre colchetes</td></tr>
+</table>
+</div>
+
+<p>Com o <code>alunos.csv</code> da ana:</p>
+
+<pre class="term">$ cd Documentos
+$ sed 's/,/;/g' alunos.csv
+nome;idade;cidade;nota          « todas as vírgulas viraram ponto e vírgula
+Ana;29;Recife;9.5
+Bruno;34;Curitiba;7.0
+Carla;22;Salvador;8.5
+Diego;41;Manaus;6.0
+Elisa;27;Porto Alegre;10.0
+$ sed 's/[0-9]\+/[&amp;]/' alunos.csv
+nome,idade,cidade,nota
+Ana,[29],Recife,9.5             « &amp; repetiu o primeiro número encontrado
+Bruno,[34],Curitiba,7.0
+Carla,[22],Salvador,8.5
+Diego,[41],Manaus,6.0
+Elisa,[27],Porto Alegre,10.0</pre>
+
+<p>O ponto é um caractere especial. Quando você quer o ponto <strong>de verdade</strong>, escape com <code>\.</code>:</p>
+
+<pre class="term">$ sed 's/1.0/X/g' &lt;&lt;&lt; "versão 1.0 e 150"
+versão X e X                    « o ponto casou com o "5" de 150!
+$ sed 's/1\.0/X/g' &lt;&lt;&lt; "versão 1.0 e 150"
+versão X e 150                  « agora só o "1.0"</pre>
+
+<p>(O <code>&lt;&lt;&lt;</code> manda um texto como entrada; veja <a href="redirecionamento.html">Redirecionamento</a>.)</p>
+
+<h3>Grupos e expressões estendidas: <code>-E</code></h3>
+<p>No modo normal (básico), <code>+</code>, <code>?</code>, <code>(</code> e <code>|</code> são letras comuns; para serem especiais, precisam de barra (<code>\+</code>, <code>\(</code>). Com <code>-E</code> (de <em>extended</em>, "estendida"), eles já são especiais. Veja a diferença:</p>
+
+<pre class="term">$ sed 's/[0-9]+/N/' alunos.csv | head -2
+nome,idade,cidade,nota
+Ana,29,Recife,9.5               « nada mudou: procurou um dígito seguido de "+"
+$ sed -E 's/[0-9]+/N/' alunos.csv | head -2
+nome,idade,cidade,nota
+Ana,N,Recife,9.5                « com -E, o + quer dizer "um ou mais"</pre>
+
+<p>Com <code>-E</code>, os parênteses <strong>guardam</strong> partes do que foi encontrado, e você as devolve com <code>\1</code>, <code>\2</code>… Exemplo: trocar o ponto decimal das notas por vírgula (como as planilhas em português esperam):</p>
+
+<dl class="anatomy">
+  <dt>-E</dt><dd>Expressões estendidas.</dd>
+  <dt>([0-9]+)</dt><dd>Grupo 1: a parte inteira da nota.</dd>
+  <dt>\.</dt><dd>Um ponto de verdade.</dd>
+  <dt>([0-9]+)$</dt><dd>Grupo 2: a parte decimal, no fim da linha.</dd>
+  <dt>\1,\2</dt><dd>Na troca: grupo 1, vírgula, grupo 2.</dd>
+</dl>
+
+<pre class="term">$ sed -E 's/([0-9]+)\.([0-9]+)$/\1,\2/' alunos.csv
+nome,idade,cidade,nota
+Ana,29,Recife,9,5
+Bruno,34,Curitiba,7,0
+Carla,22,Salvador,8,5
+Diego,41,Manaus,6,0
+Elisa,27,Porto Alegre,10,0
+$ sed -E 's/^([^,]+),([^,]+),.*/\2 anos: \1/' alunos.csv
+idade anos: nome                « o cabeçalho também "casou"
+29 anos: Ana
+34 anos: Bruno
+22 anos: Carla
+41 anos: Diego
+27 anos: Elisa</pre>
+
+<p>No segundo exemplo, <code>([^,]+)</code> guardou o nome (grupo 1) e o segundo <code>([^,]+)</code> guardou a idade (grupo 2); na troca, eles foram escritos em outra ordem. Um exemplo maior, com o <code>acesso.log</code> (um registro de servidor web), que guarda só IP, método, página e código:</p>
+
+<pre class="term">$ sed -E 's/^([0-9.]+) .*"(GET|POST) ([^ ]+) .* ([0-9]{3})$/\1 \2 \3 \4/' acesso.log
+192.168.0.10 GET / 200
+192.168.0.23 GET /contato 200
+192.168.0.10 GET /admin 403
+192.168.0.57 GET /fotos 404
+192.168.0.10 POST /login 200
+192.168.0.23 GET / 200</pre>
+
+<p>Separar colunas assim funciona, mas é trabalhoso; para colunas, o <a href="awk.html">awk</a> costuma ser mais simples.</p>
+
+<hr>
+
+<h2>Escolher linhas: endereços</h2>
+<p>Antes de um comando, você pode dizer <strong>em quais linhas</strong> ele vale. Isso se chama <strong>endereço</strong>. Sem endereço, o comando vale para todas as linhas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Endereço</th><th>Linhas</th><th>Exemplo</th></tr>
+<tr><td><code>3</code></td><td>Só a linha 3</td><td><code>sed '3s/a/b/'</code></td></tr>
+<tr><td><code>2,4</code></td><td>Da 2 à 4</td><td><code>sed '2,4d'</code></td></tr>
+<tr><td><code>$</code></td><td>A última</td><td><code>sed '$d'</code></td></tr>
+<tr><td><code>/padrão/</code></td><td>As que contêm o padrão</td><td><code>sed '/banana/d'</code></td></tr>
+<tr><td><code>/ini/,/fim/</code></td><td>De uma linha com "ini" até uma com "fim"</td><td><code>sed -n '/^\[options\]/,/^$/p'</code></td></tr>
+<tr><td><code>endereço!</code></td><td>Todas, <strong>menos</strong> essas</td><td><code>sed '1!s/,/;/g'</code></td></tr>
+</table>
+</div>
+
+<h3>Apagar linhas: <code>d</code></h3>
+<p>O comando <code>d</code> (de <em>delete</em>) não escreve a linha. Lembre: "apagar" é só da <strong>saída</strong>; o arquivo continua igual (sem <code>-i</code>).</p>
+
+<pre class="term">$ sed '2,4d' frutas.txt
+banana                 « as linhas 2, 3 e 4 sumiram
+uva
+maçã
+banana
+$ sed '$d' frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã                   « a última linha (banana) sumiu
+$ sed '/banana/d' frutas.txt
+maçã                   « toda linha com "banana" sumiu
+laranja
+uva
+maçã
+$ sed '1d' Documentos/alunos.csv
+Ana,29,Recife,9.5      « sem o cabeçalho
+Bruno,34,Curitiba,7.0
+Carla,22,Salvador,8.5
+Diego,41,Manaus,6.0
+Elisa,27,Porto Alegre,10.0</pre>
+
+<p>Um uso muito comum é ver uma configuração <strong>sem comentários nem linhas vazias</strong>. O <code>pacman.conf</code> tem 100 linhas, mas só umas poucas valem de verdade:</p>
+
+<dl class="anatomy">
+  <dt>sed</dt><dd>O programa.</dd>
+  <dt>'/^#/d</dt><dd>Apaga as linhas que começam com <code>#</code>…</dd>
+  <dt>;</dt><dd>…e depois (o ponto e vírgula separa comandos)…</dd>
+  <dt>/^$/d'</dt><dd>…apaga as linhas vazias.</dd>
+  <dt>/etc/pacman.conf</dt><dd>O arquivo (só leitura: qualquer usuário pode ler).</dd>
+</dl>
+
+<pre class="term">$ sed -n '$=' /etc/pacman.conf
+100                             « o arquivo tem 100 linhas
+$ sed '/^#/d; /^$/d' /etc/pacman.conf
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+CheckSpace
+ParallelDownloads = 5
+DownloadUser = alpm
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+[core]
+Include = /etc/pacman.d/mirrorlist
+[extra]
+Include = /etc/pacman.d/mirrorlist</pre>
+
+<p>Doze linhas: isso é tudo o que o seu pacman está usando. O que cada uma faz está em <a href="pacman-avancado.html">pacman Avançado</a>.</p>
+
+<h3>Imprimir só algumas linhas: <code>-n</code> + <code>p</code></h3>
+<p>A opção <code>-n</code> (de <em>no autoprint</em>) desliga a impressão automática. O comando <code>p</code> (de <em>print</em>) imprime a linha. Juntos, mostram só o que você escolheu. Veja por que os dois andam juntos:</p>
+
+<pre class="term">$ sed 'p' frutas.txt | head -4
+banana                 « sem -n: o p imprime…
+banana                 « …e a impressão automática imprime de novo
+maçã
+maçã
+$ sed -n '2,4p' frutas.txt
+maçã                   « com -n: só as linhas 2 a 4
+laranja
+banana
+$ sed -n '/ 404$/p' Documentos/acesso.log
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+$ sed -n '/maçã/=' frutas.txt
+2                      « o comando = mostra o NÚMERO da linha
+6</pre>
+
+<p>Com uma faixa de padrões, você recorta um "bloco". A seção <code>[options]</code> do <code>pacman.conf</code> vai do título até a primeira linha vazia (encurtado):</p>
+
+<pre class="term">$ sed -n '/^\[options\]/,/^$/p' /etc/pacman.conf
+[options]
+# The following paths are commented out with their default values listed.
+# If you wish to use different paths, uncomment and update the paths.
+#RootDir     = /
+…
+HoldPkg     = pacman glibc
+#XferCommand = /usr/bin/curl -L -C - -f -o %o %u
+#XferCommand = /usr/bin/wget --passive-ftp -c -O %o %u
+#CleanMethod = KeepInstalled
+Architecture = auto
+                                « a linha vazia que fecha a faixa</pre>
+
+<p>Os colchetes têm barra (<code>\[</code>) porque, sozinhos, seriam uma lista de caracteres.</p>
+
+<div class="try" data-setup="cd Documentos" data-goal="out:/fotos,ran:^\s*sed\b" data-solucao="sed -n '/404$/p' acesso.log">
+<p class="try-task"><strong>Missão:</strong> você está em <code>Documentos</code>. Com o <strong>sed</strong>, mostre só as linhas do <code>acesso.log</code> que terminam com o código <code>404</code> (página não encontrada).</p>
+</div>
+
+<h3>Inserir, acrescentar e trocar linhas: <code>i</code>, <code>a</code> e <code>c</code></h3>
+<pre class="term">$ cd Documentos
+$ sed '1i # lista de compras' notas.txt
+# lista de compras              « i = insert: antes da linha 1
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+$ sed '$a Pagar a internet' notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+Pagar a internet                « a = append: depois da última
+$ sed '2c Ligar para a Bia' notas.txt
+Comprar café
+Ligar para a Bia                « c = change: troca a linha 2 inteira
+Estudar Bash
+Fazer backup das fotos</pre>
+
+<h3>Vários comandos de uma vez</h3>
+<p>Separe com <code>;</code> ou repita a opção <code>-e</code> (de <em>expression</em>). O resultado é o mesmo:</p>
+<pre class="term">$ sed 's/café/chá/; /backup/d' notas.txt
+Comprar chá
+Ligar para o João
+Estudar Bash
+$ sed -e 's/café/chá/' -e '/backup/d' notas.txt
+Comprar chá
+Ligar para o João
+Estudar Bash</pre>
+
+<hr>
+
+<h2>Formas diferentes de ver um arquivo sem comentários</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Observação</th></tr>
+<tr><td><code>sed '/^#/d; /^$/d' arq</code></td><td>Um programa só, dois comandos.</td></tr>
+<tr><td><code>grep -v '^#' arq | grep -v '^$'</code></td><td>Mais fácil de ler para iniciantes.</td></tr>
+<tr><td><code>grep -Ev '^(#|$)' arq</code></td><td>O mais curto. Veja <a href="grep.html">grep</a>.</td></tr>
+<tr><td><code>awk '!/^#/ &amp;&amp; NF' arq</code></td><td>Com awk: não começa com # e tem algum campo. Veja <a href="awk.html">awk</a>.</td></tr>
+</table>
+</div>
+
+<h3>Qual usar: sed, grep ou awk?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Só <strong>achar</strong> linhas</td><td><a href="grep.html">grep</a> (mais rápido de escrever, e o código de saída diz se achou)</td></tr>
+<tr><td><strong>Trocar</strong> texto, apagar ou inserir linhas, editar arquivos</td><td><strong>sed</strong></td></tr>
+<tr><td>Trabalhar com <strong>colunas</strong>, fazer contas</td><td><a href="awk.html">awk</a></td></tr>
+<tr><td>Mudar o arquivo à mão, olhando</td><td>Um editor: <a href="editores.html">nano ou vim</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<p>Antes dos erros, uma curiosidade do Arch: a tradução pt_BR do GNU sed 4.10 junta o número do caractere com a mensagem, <strong>sem os dois-pontos</strong>: <code>carácter 15comando "s" não terminado</code>. Leia como "no caractere 15: comando s não terminado". (E é "carácter", com acento, como em Portugal.) Os códigos de saída do sed: <code>0</code> deu certo, <code>1</code> comando inválido, <code>2</code> algum arquivo não pôde ser aberto, <code>4</code> erro de leitura ou escrita.</p>
+
+<div class="cenario">
+<strong>"comando "s" não terminado"</strong>
+<pre class="term">$ sed 's/banana/BANANA' frutas.txt
+sed: -e expressão #1, carácter 15comando "s" não terminado
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> faltou a última barra. O comando <code>s</code> precisa de três: <code>s/a/b/</code>.</p>
+<p><strong>Como resolver:</strong> <code>sed 's/banana/BANANA/' frutas.txt</code>. O número do "carácter" diz onde o sed se perdeu (o 15º caractere do script é o fim dele).</p>
+</div>
+
+<div class="cenario">
+<strong>"opção desconhecida para "s""</strong>
+<pre class="term">$ sed 's/banana/BANANA/x' frutas.txt
+sed: -e expressão #1, carácter 17opção desconhecida para "s"</pre>
+<p><strong>O que aconteceu:</strong> depois da última barra só podem vir flags válidas (<code>g</code>, <code>I</code>, <code>p</code>, um número…). Aqui, o <code>x</code> não é flag. O mesmo erro aparece quando o texto tem barras <code>/</code>, como um caminho, e o sed acha que o comando acabou antes.</p>
+<p><strong>Como resolver:</strong> confira as flags; com caminhos, troque o separador: <code>sed 's|/opt/app|/srv/app|'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" com <code>-i</code></strong>
+<pre class="term">$ sed -i 's/notebook/estudio/' /etc/hostname
+sed: não foi possível abrir o arquivo temporário /etc/seds8yaHC: Permissão negada
+$ echo $?
+4</pre>
+<p><strong>O que aconteceu:</strong> o <code>-i</code> cria um arquivo temporário na <strong>mesma pasta</strong> e depois troca pelo original. Em <code>/etc</code>, só o root pode criar arquivos. O nome do temporário (<code>seds8yaHC</code>) é sorteado a cada vez.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l /etc/hostname</code> mostra o dono <code>root</code> (veja <a href="permissoes.html">Permissões</a>).</p>
+<p><strong>Como resolver:</strong> teste sem <code>-i</code>; depois rode com <code>sudo</code> e backup: <code>sudo sed -i.bak 's/notebook/estudio/' /etc/hostname</code>. (Para trocar o nome da máquina, o jeito certo no Arch é <code>sudo hostnamectl hostname estudio</code>.)</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível ler"</strong>
+<pre class="term">$ sed 's/a/b/' naoexiste.txt
+sed: não foi possível ler naoexiste.txt: Arquivo ou diretório inexistente
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não existe na pasta atual (ou o nome está diferente: maiúsculas, acentos).</p>
+<p><strong>Como resolver:</strong> confira com <code>ls</code> e <code>pwd</code>; use <kbd>Tab</kbd> para completar o nome.</p>
+</div>
+
+<div class="cenario">
+<strong>Não deu erro, mas não trocou nada</strong>
+<p><strong>O que aconteceu:</strong> o padrão não casou — e o sed devolve <code>0</code> mesmo assim. As causas mais comuns são maiúsculas diferentes ("Mundo" × "mundo"), espaços a mais, <code>+</code> sem <code>-E</code>, ou o <code>^</code> exigindo começo de linha.</p>
+<p><strong>Como confirmar:</strong> procure o padrão com <code>grep</code> antes: <code>grep -n 'mundo' arquivo</code>. Se o grep não acha, o sed também não vai achar.</p>
+<p><strong>Como resolver:</strong> use a flag <code>I</code> para ignorar maiúsculas, <code>-E</code> para <code>+ ? ( ) |</code>, e escape símbolos especiais com <code>\</code>: <code>s/1\.0/2.0/</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma variável não foi trocada pelo valor</strong>
+<pre class="term">$ novo=Arch
+$ sed 's/Bash/$novo/' notas.txt | grep Estudar
+Estudar $novo
+$ sed "s/Bash/$novo/" notas.txt | grep Estudar
+Estudar Arch</pre>
+<p><strong>O que aconteceu:</strong> dentro de aspas simples, o shell não troca variáveis (veja <a href="sintaxe.html">Sintaxe dos Comandos</a>).</p>
+<p><strong>Como resolver:</strong> use aspas duplas: <code>sed "s/Bash/$novo/" notas.txt</code>. Cuidado: se o valor tiver <code>/</code>, troque o separador.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<h3>Opções</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-n</code></td><td>Não imprime automaticamente (use com <code>p</code>)</td><td><code>sed -n '5p' arq</code></td></tr>
+<tr><td><code>-i</code></td><td>Edita o próprio arquivo</td><td><code>sed -i 's/a/b/' arq</code></td></tr>
+<tr><td><code>-i.bak</code></td><td>Edita e guarda o original como <code>.bak</code></td><td><code>sed -i.bak 's/a/b/' arq</code></td></tr>
+<tr><td><code>-E</code></td><td>Expressões regulares estendidas (<code>+ ? ( ) | {}</code> sem barra)</td><td><code>sed -E 's/(a|b)+/X/'</code></td></tr>
+<tr><td><code>-e</code></td><td>Acrescenta um comando (pode repetir)</td><td><code>sed -e 's/a/b/' -e '/^$/d'</code></td></tr>
+<tr><td><code>-s</code></td><td>Trata cada arquivo separadamente (o <code>$</code> é a última linha de <strong>cada</strong> um)</td><td><code>sed -s '$d' a.txt b.txt</code></td></tr>
+</table>
+</div>
+<h3>Comandos</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>s/a/b/</code></td><td>Substitui a primeira ocorrência por linha</td><td><code>sed 's/http/https/'</code></td></tr>
+<tr><td><code>s/a/b/g</code></td><td>Substitui todas</td><td><code>sed 's/ /_/g'</code></td></tr>
+<tr><td><code>s/a/b/I</code></td><td>Ignora maiúsculas</td><td><code>sed 's/erro/ERRO/I'</code></td></tr>
+<tr><td><code>s/a/b/2</code></td><td>Só a 2ª ocorrência</td><td><code>sed 's/,/;/2'</code></td></tr>
+<tr><td><code>d</code></td><td>Apaga a linha</td><td><code>sed '/^#/d'</code></td></tr>
+<tr><td><code>p</code></td><td>Imprime a linha</td><td><code>sed -n '/erro/p'</code></td></tr>
+<tr><td><code>i texto</code></td><td>Insere antes</td><td><code>sed '1i Título'</code></td></tr>
+<tr><td><code>a texto</code></td><td>Acrescenta depois</td><td><code>sed '$a Fim'</code></td></tr>
+<tr><td><code>c texto</code></td><td>Troca a linha inteira</td><td><code>sed '2c Nova linha'</code></td></tr>
+<tr><td><code>=</code></td><td>Mostra o número da linha</td><td><code>sed -n '$='</code> (conta as linhas)</td></tr>
+<tr><td><code>q</code></td><td>Sai (para de ler)</td><td><code>sed '3q'</code> (como <code>head -3</code>)</td></tr>
+<tr><td><code>y/abc/ABC/</code></td><td>Troca caractere por caractere</td><td><code>sed 'y/aeiou/AEIOU/'</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ sed '3q' frutas.txt
+banana
+maçã
+laranja
+$ sed 'y/aeiou/AEIOU/' Documentos/notas.txt
+COmprAr cAfé                    « o "é" com acento não estava na lista
+LIgAr pArA O JOãO
+EstUdAr BAsh
+FAzEr bAckUp dAs fOtOs</pre>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Trocar todas</h3>
+<p>Complete para trocar <strong>todos</strong> os espaços de cada linha por <code>_</code>:</p>
+<div class="ex-code">sed 's/ /_/<input data-answer="g" aria-label="flag">' notas.txt</div>
+</div>
+
+<div class="exercise">
+<h3>2. Editar com segurança</h3>
+<p>Complete para ligar o <code>VerbosePkgLists</code> no <code>pacman.conf</code>, guardando uma cópia <code>.bak</code>:</p>
+<div class="ex-code">sudo sed <input data-answer="-i.bak" aria-label="opção"> 's/^#VerbosePkgLists/VerbosePkgLists/' /etc/pacman.conf</div>
+</div>
+
+<div class="exercise">
+<h3>3. Só as linhas de erro</h3>
+<p>Complete para mostrar <strong>só</strong> as linhas que contêm <code>403</code>:</p>
+<div class="ex-code">sed <input data-answer="-n" aria-label="opção"> '/403/<input data-answer="p" aria-label="comando">' acesso.log</div>
+</div>
+
+<div class="exercise">
+<h3>4. Sem cabeçalho</h3>
+<p>Complete para mostrar o <code>alunos.csv</code> sem a primeira linha:</p>
+<div class="ex-code">sed '<input data-answer="1d" aria-label="endereço e comando">' alunos.csv</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Você rodou <code>sed 's/^#Color/Color/' pacman.conf</code> e a tela mostrou "Color". O que aconteceu com o arquivo?</p>
+<label><input type="radio" name="q5"> Foi alterado: agora tem "Color".</label>
+<label><input type="radio" name="q5"> Nada: sem <code>-i</code>, o sed só mostra o resultado na tela.</label>
+<label><input type="radio" name="q5"> Foi criado um <code>pacman.conf.bak</code>.</label>
+<label><input type="radio" name="q5"> Foi apagado.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual comando troca o caminho <code>/var/www</code> por <code>/srv/http</code> (a pasta web padrão do Arch) sem dar erro?</p>
+<label><input type="radio" name="q6"> <code>sed 's//var/www//srv/http/'</code></label>
+<label><input type="radio" name="q6"> <code>sed 's/var/www/srv/http/'</code></label>
+<label><input type="radio" name="q6"> <code>sed 's|/var/www|/srv/http|'</code></label>
+<label><input type="radio" name="q6"> <code>sed '/var/www/d'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. O sed mostrou <code>sed: -e expressão #1, carácter 15comando "s" não terminado</code>. O que fazer?</p>
+<label><input type="radio" name="q7"> Conferir se o <code>s</code> tem as três barras (<code>s/a/b/</code>).</label>
+<label><input type="radio" name="q7"> Instalar o pacote sed.</label>
+<label><input type="radio" name="q7"> Rodar com <code>sudo</code>.</label>
+<label><input type="radio" name="q7"> Trocar o sed pelo awk.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O sed lê linha por linha e mostra o resultado; o arquivo só muda com <code>-i</code>.</li>
+  <li><code>s/procurar/trocar/</code> troca a primeira ocorrência por linha; <code>g</code> troca todas; <code>I</code> ignora maiúsculas.</li>
+  <li>Teste sem <code>-i</code>, depois use <code>-i.bak</code> para ter como voltar; em <code>/etc</code>, com <code>sudo</code>.</li>
+  <li>Com barras no texto, troque o separador: <code>s|a|b|</code>. Para <code>+ ( ) |</code>, use <code>-E</code>.</li>
+  <li>Endereços escolhem linhas; <code>d</code> apaga, <code>-n … p</code> imprime só o que você quer.</li>
+  <li>No Arch (GNU sed 4.10), os erros aparecem como "carácter 15comando…": o número é a posição do problema.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> não há uma página só do sed; ele aparece em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>), e a Wiki o usa o tempo todo em comandos como o de <a href="https://wiki.archlinux.org/title/Pacman#Enabling_parallel_downloads">ligar opções do pacman.conf</a>. O manual completo é o do GNU (<code>info sed</code>, ou <a href="https://www.gnu.org/software/sed/manual/">gnu.org/software/sed/manual</a>), e o pacote está em <a href="https://archlinux.org/packages/core/x86_64/sed/">archlinux.org/packages/core/x86_64/sed</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
