@@ -300,6 +300,7 @@ Error: crun: executable file `httpd` not found in $PATH: No such file or directo
 $ podman rm casa-web                         « o container foi criado mesmo assim: apague antes de tentar de novo
 casa-web
 $ podman run -d --name casa-web -p 8081:8080 -v ~/a9/www:/www:ro docker.io/library/alpine busybox httpd -f -v -p 8080 -h /www
+…
 a707d7016d5a218f7d2e9267b95fdd22c9dd5b4089081bd94bdd7d77012df878
 $ podman ps
 CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES        « não ficou ligado!
