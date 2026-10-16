@@ -21,7 +21,9 @@ var NIVEIS = [
     { grupo: "Instalação", itens: [
       ["preparar.html", "Baixar e Verificar a ISO"],
       ["ambiente-live.html", "O Ambiente Live"],
-      ["internet-live.html", "Internet no Live (Wi-Fi, cabo, celular)"],
+      ["internet-live.html", "Internet no Live: Cabo e Wi-Fi (iwctl)"],
+      ["wifi-problemas-live.html", "Wi-Fi que Não Funciona (rfkill, drivers)"],
+      ["celular-modem-live.html", "Celular por USB e Modem 4G"],
       ["particionar.html", "Particionar o Disco"],
       ["formatar-montar.html", "Formatar e Montar"],
       ["pacstrap.html", "Espelhos e pacstrap"],
