@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Variáveis e Argumentos — shell script | Guia Arch</title>
+<meta name="description" content="Variáveis em shell script no Arch Linux: criar e ler, aspas simples e duplas, guardar a saída do pacman com $( ), contas com $(( )), read, argumentos $1 $# $@, shift, valores padrão, recortes de texto e arrays, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Variáveis e Argumentos</span></h1>
+
+<p class="intro">Uma <strong>variável</strong> é um nome que guarda um valor: um texto, um número, o resultado de um comando. Com variáveis, um script deixa de fazer sempre a mesma coisa e passa a se adaptar: ao pacote que você pediu, à data de hoje, à quantidade de pacotes do AUR que a máquina tem agora.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Criar e ler variáveis, e a regra de ouro: sem espaços em volta do <code>=</code>.</li>
+  <li>A diferença entre aspas simples, duplas e nenhuma aspa.</li>
+  <li>Guardar a saída de um comando (<code>pacman -Qm</code>, <code>uname -r</code>) com <code>$( )</code> e fazer contas com <code>$(( ))</code>.</li>
+  <li>Ler o que o usuário digita (<code>read</code>) e os argumentos do script (<code>$1</code>, <code>$#</code>, <code>$@</code>).</li>
+  <li>Valores padrão, recortes de texto (tirar a versão do nome de um pacote) e listas (arrays).</li>
+</ul>
+</div>
+
+<p>Antes, leia <a href="script-intro.html">Primeiro Script</a>. Os exemplos rodam na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>; as saídas vêm de um Arch Linux real.</p>
+
+<hr>
+
+<h2>Criar e ler uma variável</h2>
+<p>Pense numa variável como uma <strong>caixa com etiqueta</strong>: a etiqueta é o nome, e dentro está o valor. Você guarda uma vez e usa o nome quantas vezes quiser.</p>
+
+<dl class="anatomy">
+  <dt>pacote</dt><dd>O nome da variável. Use letras, números e <code>_</code>; não pode começar com número.</dd>
+  <dt>=</dt><dd>Atribui o valor. <strong>Sem espaços</strong> antes nem depois.</dd>
+  <dt>"firefox"</dt><dd>O valor. Aqui as aspas são opcionais (não há espaço), mas são um bom hábito.</dd>
+</dl>
+
+<pre class="term">$ pacote="firefox"
+$ echo $pacote
+firefox
+$ echo "Vou instalar o $pacote"
+Vou instalar o firefox</pre>
+
+<p>Para <strong>ler</strong> a variável, coloque <code>$</code> antes do nome. O Bash troca <code>$pacote</code> pelo valor <strong>antes</strong> de rodar o comando: o <code>echo</code> nem fica sabendo que ali havia uma variável. Criar a variável não mostra nada: silêncio, como sempre, é sucesso.</p>
+
+<h3>Chaves: onde o nome termina</h3>
+<p>Quando o nome da variável fica colado em outro texto, o Bash não sabe onde ele termina. Veja com o nome do arquivo que o <code>makepkg</code> baixou para o <code>yay-bin</code>:</p>
+
+<pre class="term">$ arquivo=yay
+$ echo "$arquivo_13.0.1.tar.gz"
+.0.1.tar.gz                                « procurou a variável "arquivo_13", que não existe
+$ echo "${arquivo}_13.0.1.tar.gz"
+yay_13.0.1.tar.gz</pre>
+
+<p>O <code>_</code> e os números podem fazer parte de um nome de variável, então o Bash leu <code>arquivo_13</code>. Com <code>${arquivo}</code>, as chaves marcam o fim do nome. Um <code>-</code> ou um <code>.</code> já encerram o nome sozinhos (<code>"$arquivo-bin"</code> funciona), mas usar chaves nunca atrapalha.</p>
+
+<div class="tip">
+<strong>Convenção de nomes</strong>
+<p>Variáveis do sistema são MAIÚSCULAS (<code>HOME</code>, <code>PATH</code>, <code>USER</code>). Nos seus scripts, prefira minúsculas (<code>pasta_destino</code>, <code>qtd_aur</code>) para não sobrescrever uma variável do sistema sem querer.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*pacote=,ran:echo.*\$\{?pacote" data-solucao="pacote=htop;;echo &quot;Vou instalar o $pacote&quot;;;pacote = htop">
+<p class="try-task"><strong>Missão:</strong> crie uma variável <code>pacote</code> com o nome de um programa (por exemplo, <code>htop</code>) e mostre a frase <code>Vou instalar o …</code> usando <code>echo</code> e <code>$pacote</code>. Depois tente <code>pacote = htop</code>, com espaços, e leia o erro.</p>
+</div>
+
+<hr>
+
+<h2>Aspas: simples, duplas ou nenhuma</h2>
+<p>As aspas mudam o que o Bash faz com o texto. Esta é a parte mais importante da aula:</p>
+
+<pre class="term">$ echo "Pacote: $pacote"                   « duplas: troca as variáveis
+Pacote: firefox
+$ echo 'Pacote: $pacote'                   « simples: tudo literal
+Pacote: $pacote
+$ echo Pacote:     $pacote                 « sem aspas: espaços extras somem
+Pacote: firefox</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th><code>$variável</code> é trocada?</th><th>Espaços preservados?</th><th>Use para</th></tr>
+<tr><td><code>"texto $var"</code></td><td>Sim</td><td>Sim</td><td>Quase tudo. É o padrão seguro.</td></tr>
+<tr><td><code>'texto $var'</code></td><td>Não</td><td>Sim</td><td>Texto que deve sair exatamente como está (como a linha do PATH que você pôs no <code>.bashrc</code> na aula anterior).</td></tr>
+<tr><td><code>texto $var</code></td><td>Sim</td><td>Não: o valor é quebrado em palavras</td><td>Evite com variáveis.</td></tr>
+</table>
+</div>
+
+<h3>Por que sempre usar aspas em volta de variáveis</h3>
+<p>Sem aspas, um valor com espaço vira <strong>vários</strong> argumentos. Veja o que acontece ao criar um arquivo:</p>
+
+<pre class="term" data-cwd="~/teste">$ arquivo="Meu Relatório.pdf"
+$ touch $arquivo
+$ ls
+Meu  Relatório.pdf                         « dois arquivos: "Meu" e "Relatório.pdf"!</pre>
+
+<pre class="term" data-cwd="~/teste2">$ arquivo="Meu Relatório.pdf"
+$ touch "$arquivo"
+$ ls
+'Meu Relatório.pdf'                        « um arquivo, como esperado</pre>
+
+<p>(O <code>ls</code> põe aspas simples em volta de nomes com espaço só para você enxergar onde o nome começa e termina; elas não fazem parte do nome.) Regra prática: escreva <code>"$variável"</code>, com aspas duplas, sempre que usá-la como argumento.</p>
+
+<hr>
+
+<h2>Guardar a saída de um comando: <code>$( )</code></h2>
+<p>A <strong>substituição de comando</strong> roda o comando de dentro e coloca a saída dele no lugar. Combinada com uma variável, guarda o resultado para usar depois. É o que mais se usa em scripts de administração do Arch.</p>
+
+<dl class="anatomy">
+  <dt>total=</dt><dd>A variável que vai receber o resultado.</dd>
+  <dt>$(</dt><dd>Abre a substituição: "rode o que vem a seguir".</dd>
+  <dt>pacman -Qq | wc -l</dt><dd>O comando: lista os pacotes instalados só pelo nome (<code>-q</code>, <em>quiet</em>) e conta as linhas.</dd>
+  <dt>)</dt><dd>Fecha a substituição.</dd>
+</dl>
+
+<pre class="term">$ kernel=$(uname -r)
+$ echo "Kernel: $kernel"
+Kernel: 7.2.10-arch1-1
+$ total=$(pacman -Qq | wc -l)
+$ echo "Há $total pacotes instalados"
+Há 408 pacotes instalados
+$ hoje=$(date +%F)
+$ echo "Backup de $hoje"
+Backup de 2026-10-16</pre>
+
+<h3>Saída com várias linhas: as aspas de novo</h3>
+<p>O <code>pacman -Qqm</code> devolve um pacote do AUR por linha. A variável guarda as quebras de linha, mas só as aspas as mostram:</p>
+
+<pre class="term">$ aur=$(pacman -Qqm)
+$ echo $aur                                « sem aspas: as linhas viram espaços
+downgrade paru-bin yay-bin yay-bin-debug
+$ echo "$aur"                              « com aspas: o valor exato
+downgrade
+paru-bin
+yay-bin
+yay-bin-debug</pre>
+
+<p>Em scripts antigos você vai ver a forma com crases: <code>hoje=`date +%F`</code>. Ela funciona, mas a forma <code>$( )</code> é mais legível e pode ser aninhada (uma dentro da outra).</p>
+
+<div class="try" data-goal="dir:~/2026-10-16" data-solucao="pasta=$(date +%F);;mkdir &quot;$pasta&quot;;;ls">
+<p class="try-task"><strong>Missão:</strong> guarde a data de hoje numa variável chamada <code>pasta</code>, usando <code>$(date +%F)</code>, e crie uma pasta com esse nome usando <code>mkdir "$pasta"</code>. Confira com <code>ls</code>. (Experimente também <code>aur=$(pacman -Qqm)</code> e compare <code>echo $aur</code> com <code>echo "$aur"</code>.)</p>
+</div>
+
+<hr>
+
+<h2>Contas: <code>$(( ))</code></h2>
+<p>Para o Bash, tudo é texto. Para fazer contas com números <strong>inteiros</strong>, use dois parênteses:</p>
+
+<pre class="term">$ echo $((7 / 2)) $((7 % 2)) $((2 ** 10))
+3 1 1024                                   « divisão inteira, resto, potência
+$ n=5
+$ ((n++))                                  « soma 1 em n
+$ echo $n
+6</pre>
+
+<p>Um exemplo de verdade: que porcentagem dos pacotes foi você quem pediu? O <code>pacman -Qqe</code> lista os <strong>explícitos</strong> (<code>-e</code>, os que você instalou de propósito; os outros vieram como dependência):</p>
+
+<pre class="term">$ total=$(pacman -Qq | wc -l)
+$ explicitos=$(pacman -Qqe | wc -l)
+$ echo $explicitos
+45
+$ echo $(( explicitos * 100 / total ))
+11                                         « 45 de 408 ≈ 11%
+$ echo $(( 4 * 100 / total ))
+0                                          « 4 do AUR: 0,98%… vira 0!</pre>
+
+<p>Dentro de <code>$(( ))</code> não precisa do <code>$</code> antes das variáveis. E repare no último: a divisão <strong>corta</strong> as casas decimais. Multiplique antes de dividir (como acima) e, para números com vírgula, use outra ferramenta:</p>
+
+<pre class="term">$ echo "scale=1; 45 * 100 / 408" | bc
+bash: bc: comando não encontrado            « no Arch, o bc não vem instalado
+$ awk 'BEGIN { printf "%.1f\n", 45 * 100 / 408 }'
+11.0</pre>
+
+<p>O <code>awk</code> (no Arch, o <strong>gawk</strong>) já vem no <code>base</code>; o <code>bc</code> é o pacote <code>extra/bc</code> (<code>sudo pacman -S bc</code>). Repare que o awk escreve <code>11.0</code>, com ponto (veja <a href="awk.html">awk</a>).</p>
+
+<div class="note">
+<strong>Formas de fazer contas</strong>
+<p><code>$(( ))</code> é a forma moderna e não precisa de nenhum pacote. Você também pode ver <code>let "n = n + 1"</code> e <code>expr 7 + 2</code>, que são mais antigas e fazem o mesmo. Para decimais: <code>awk</code> (já instalado) ou <code>bc</code> (instale antes).</p>
+</div>
+
+<div class="tryscript" data-file="porcentagem.sh" data-goal="out:11% dos pacotes,src:\$\(\(">
+<p class="try-task"><strong>Missão:</strong> o script já conta os pacotes. Complete a última linha para mostrar <code>11% dos pacotes foram instalados por você</code>, calculando a porcentagem com <code>$(( ))</code> (lembre: multiplique por 100 <strong>antes</strong> de dividir).</p>
+<pre class="script">#!/usr/bin/env bash
+total=$(pacman -Qq | wc -l)
+explicitos=$(pacman -Qqe | wc -l)
+echo "Instalados: $total; explícitos: $explicitos"
+echo "?% dos pacotes foram instalados por você"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+total=$(pacman -Qq | wc -l)
+explicitos=$(pacman -Qqe | wc -l)
+echo "Instalados: $total; explícitos: $explicitos"
+echo "$(( explicitos * 100 / total ))% dos pacotes foram instalados por você"
+</pre>
+</div>
+
+<hr>
+
+<h2>Ler o que o usuário digita: <code>read</code></h2>
+<p>O <code>read</code> pausa o script, espera o usuário digitar e apertar <kbd>Enter</kbd>, e guarda o texto numa variável.</p>
+
+<dl class="anatomy">
+  <dt>read</dt><dd>O comando que lê do teclado.</dd>
+  <dt>-r</dt><dd>(<em>raw</em>) Lê as barras invertidas <code>\</code> literalmente. Use sempre.</dd>
+  <dt>-p "Qual pacote…? "</dt><dd>(<em>prompt</em>) Mostra uma pergunta antes. Repare no espaço no fim, para a resposta não grudar.</dd>
+  <dt>pacote</dt><dd>A variável que vai receber a resposta (sem <code>$</code>: aqui você está <strong>criando</strong>).</dd>
+</dl>
+
+<pre class="file" data-file="pergunta.sh">#!/usr/bin/env bash
+read -rp "Qual pacote você quer conferir? " pacote
+echo "Você digitou: $pacote"
+pacman -Q "$pacote"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./pergunta.sh
+Qual pacote você quer conferir? htop       « você digita "htop" e Enter
+Você digitou: htop
+htop 3.5.3-1</pre>
+
+<p>Para senhas, acrescente <code>-s</code> (<em>silent</em>): o que você digita não aparece. Depois de um <code>read -s</code>, dê um <code>echo</code> vazio, porque o Enter também não aparece:</p>
+
+<pre class="file" data-file="senha.sh">#!/usr/bin/env bash
+read -rsp "Uma senha: " senha
+echo                               # pula a linha depois da senha
+echo "Sua senha tem ${#senha} caracteres."</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./senha.sh
+Uma senha:                         « -s: o que você digita não aparece
+Sua senha tem 8 caracteres.</pre>
+
+<p>O <code>${#senha}</code> é o <strong>tamanho</strong> do valor, em caracteres (mais sobre isso em "Recortar texto").</p>
+
+<hr>
+
+<h2>Argumentos: o que vem depois do nome do script</h2>
+<p>Em vez de perguntar com <code>read</code>, o script pode receber informações na própria linha de comando, como o <code>pacman -Q bash</code> recebe <code>bash</code>. Cada palavra depois do nome é um <strong>argumento</strong>, guardado em variáveis numeradas:</p>
+
+<pre class="file" data-file="args.sh">#!/usr/bin/env bash
+echo "Script: $0"
+echo "Primeiro: $1"
+echo "Segundo: $2"
+echo "Quantidade: $#"
+echo "Todos: $@"</pre>
+
+<dl class="anatomy">
+  <dt>./args.sh</dt><dd>O script: fica em <code>$0</code>.</dd>
+  <dt>bash</dt><dd>O 1º argumento: <code>$1</code>.</dd>
+  <dt>"Meu Relatório.pdf"</dt><dd>O 2º argumento: <code>$2</code>. Com aspas, é um argumento só.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./args.sh bash "Meu Relatório.pdf"
+Script: ./args.sh
+Primeiro: bash
+Segundo: Meu Relatório.pdf
+Quantidade: 2
+Todos: bash Meu Relatório.pdf</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Contém</th></tr>
+<tr><td><code>$0</code></td><td>O nome do script, como foi chamado</td></tr>
+<tr><td><code>$1</code> … <code>$9</code></td><td>Os argumentos 1 a 9 (do 10 em diante: <code>${10}</code>)</td></tr>
+<tr><td><code>$#</code></td><td>Quantos argumentos foram passados</td></tr>
+<tr><td><code>"$@"</code></td><td>Todos os argumentos, cada um separado, mesmo com espaços. Use este.</td></tr>
+<tr><td><code>$*</code></td><td>Todos juntos num texto só. Raramente é o que você quer.</td></tr>
+<tr><td><code>$?</code></td><td>Código de saída do último comando</td></tr>
+<tr><td><code>$$</code></td><td>O PID (número do processo) do próprio script</td></tr>
+<tr><td><code>$RANDOM</code></td><td>Um número aleatório de 0 a 32767</td></tr>
+</table>
+</div>
+
+<p>O <code>"$@"</code> é perfeito para repassar tudo a outro comando. O <code>pacman -Q</code> aceita vários pacotes de uma vez:</p>
+
+<div class="tryscript" data-file="versoes.sh" data-args="bash pacman linux" data-goal="out:Você pediu 3 pacote(s),out:linux 7.2.10.arch1-1,src:\$@">
+<p class="try-task"><strong>Missão:</strong> este script só mostra o primeiro pacote. Mude-o para dizer <code>Você pediu 3 pacote(s)</code> usando <code>$#</code> e para mostrar a versão de <strong>todos</strong> os pacotes passados, usando <code>pacman -Q "$@"</code>. Os argumentos estão no campo ao lado do botão: troque-os à vontade.</p>
+<pre class="script">#!/usr/bin/env bash
+# Mostra a versão instalada dos pacotes passados como argumento
+echo "Primeiro pacote: $1"
+pacman -Q "$1"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+# Mostra a versão instalada dos pacotes passados como argumento
+echo "Você pediu $# pacote(s)"
+pacman -Q "$@"
+</pre>
+</div>
+
+<h3>shift: andar pela lista de argumentos</h3>
+<p>O <code>shift</code> descarta o <code>$1</code> e "puxa" os outros: o <code>$2</code> vira <code>$1</code>, e assim por diante. É útil quando o primeiro argumento é especial e o resto é uma lista:</p>
+
+<pre class="file" data-file="grupo.sh">#!/usr/bin/env bash
+titulo="$1"
+shift                                  # tira o título; agora "$@" tem só os pacotes
+echo "== $titulo =="
+pacman -Q "$@"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./grupo.sh "Editores de texto" nano vim
+== Editores de texto ==
+nano 9.2-1
+vim 9.2.1178-1</pre>
+
+<hr>
+
+<h2>Valores padrão e argumentos obrigatórios</h2>
+<p>E se o usuário não passar um argumento? O Bash tem atalhos para isso:</p>
+
+<dl class="anatomy">
+  <dt>${1</dt><dd>O primeiro argumento…</dd>
+  <dt>:-</dt><dd>…mas, se ele estiver vazio ou não existir…</dd>
+  <dt>linux}</dt><dd>…use <code>linux</code> no lugar.</dd>
+</dl>
+
+<pre class="file" data-file="versao.sh">#!/usr/bin/env bash
+pacote="${1:-linux}"
+echo "Versão instalada de $pacote:"
+pacman -Q "$pacote"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./versao.sh
+Versão instalada de linux:
+linux 7.2.10.arch1-1                       « sem argumento: usou o padrão
+$ ./versao.sh pacman
+Versão instalada de pacman:
+pacman 7.1.0.r9.g54d9411-3</pre>
+
+<p>(Repare que a versão do <em>pacote</em> <code>linux</code> é <code>7.2.10.arch1-1</code>, com ponto, enquanto o <code>uname -r</code> mostra <code>7.2.10-arch1-1</code>: o pacman não permite <code>-</code> dentro da versão.)</p>
+
+<p>Quando o argumento é obrigatório, use <code>:?</code>. O script para com a mensagem que você escolher e código 1:</p>
+
+<pre class="file" data-file="obrigatorio.sh">#!/usr/bin/env bash
+pacote="${1:?informe o nome de um pacote}"
+pacman -Qi "$pacote"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./obrigatorio.sh
+./obrigatorio.sh: linha 2: 1: informe o nome de um pacote
+$ echo $?
+1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Significa</th></tr>
+<tr><td><code>${var:-padrão}</code></td><td>Usa "padrão" se <code>var</code> estiver vazia (não altera <code>var</code>)</td></tr>
+<tr><td><code>${var:=padrão}</code></td><td>Igual, mas também guarda "padrão" em <code>var</code></td></tr>
+<tr><td><code>${var:?mensagem}</code></td><td>Para o script com a mensagem se <code>var</code> estiver vazia</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Recortar e transformar texto</h2>
+<p>O Bash consegue mexer no valor da variável sem chamar outros programas. Um bom treino são os nomes de pacotes, que seguem a forma <code>nome-versão-lançamento-arquitetura.pkg.tar.zst</code>:</p>
+
+<pre class="term">$ arq="yay-bin-13.0.1-1-x86_64.pkg.tar.zst"
+$ echo ${#arq}                              « tamanho do texto
+35
+$ echo ${arq%.pkg.tar.zst}                  « tira um final exato
+yay-bin-13.0.1-1-x86_64
+$ echo ${arq##*.}                           « só a última extensão
+zst
+$ echo ${arq%%.*}                           « tira tudo a partir do PRIMEIRO ponto
+yay-bin-13                                  « cuidado: a versão também tem pontos
+$ echo ${arq%-*-*-*}                        « tira os 3 últimos "-pedaços": versão, lançamento, arquitetura
+yay-bin
+$ echo ${arq/yay/paru}                      « troca um trecho
+paru-bin-13.0.1-1-x86_64.pkg.tar.zst
+$ echo ${arq^^}                             « tudo maiúsculo
+YAY-BIN-13.0.1-1-X86_64.PKG.TAR.ZST
+$ caminho=/var/cache/pacman/pkg/bash-5.3.20-1-x86_64.pkg.tar.zst
+$ echo ${caminho##*/}                       « só o nome do arquivo
+bash-5.3.20-1-x86_64.pkg.tar.zst
+$ echo ${caminho%/*}                        « só a pasta
+/var/cache/pacman/pkg</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Lembrete</th></tr>
+<tr><td><code>${#var}</code></td><td>Quantos caracteres o valor tem</td></tr>
+<tr><td><code>${var#padrão}</code> / <code>${var##padrão}</code></td><td>Tira do <strong>começo</strong> (<code>#</code> = o menor trecho que casa, <code>##</code> = o maior)</td></tr>
+<tr><td><code>${var%padrão}</code> / <code>${var%%padrão}</code></td><td>Tira do <strong>fim</strong> (<code>%</code> = o menor, <code>%%</code> = o maior)</td></tr>
+<tr><td><code>${var/de/para}</code></td><td>Troca a primeira ocorrência; <code>${var//de/para}</code> troca todas</td></tr>
+<tr><td><code>${var^^}</code> / <code>${var,,}</code></td><td>Tudo maiúsculo / tudo minúsculo</td></tr>
+</table>
+</div>
+
+<p>Essas formas também têm equivalentes com comandos externos: <code>basename caminho</code> (= <code>${caminho##*/}</code>) e <code>dirname caminho</code> (= <code>${caminho%/*}</code>). Os padrões são os mesmos <a href="curingas.html">curingas</a> do terminal (<code>*</code>, <code>?</code>).</p>
+
+<hr>
+
+<h2>Listas: arrays</h2>
+<p>Um <strong>array</strong> guarda vários valores numa variável só. As posições começam em 0. Uma lista de serviços para conferir:</p>
+
+<pre class="term">$ servicos=(sshd NetworkManager nginx)
+$ echo ${servicos[1]}                       « posição 1 = o segundo item
+NetworkManager
+$ echo ${#servicos[@]}                      « quantos itens
+3
+$ servicos+=(cronie)                        « acrescenta no fim
+$ echo "${servicos[@]}"
+sshd NetworkManager nginx cronie
+$ systemctl is-active "${servicos[@]}"      « passa a lista inteira a um comando
+active
+active
+inactive
+inactive</pre>
+
+<p>Você também pode encher um array com a saída de um comando: <code>aur=($(pacman -Qqm))</code> dá <code>${#aur[@]}</code> = 4 e <code>${aur[0]}</code> = <code>downgrade</code>. Isso funciona porque nomes de pacotes nunca têm espaço; com nomes de arquivos, não faça assim. Você vai percorrer arrays com <code>for</code> em <a href="script-lacos.html">Laços</a>.</p>
+
+<hr>
+
+<h2>Um script completo: guardar a lista dos seus pacotes</h2>
+<p>Juntando tudo: um script muito útil no Arch. Ele salva, com a data no nome, a lista dos pacotes que <strong>você</strong> instalou. Se um dia precisar reinstalar o sistema, essa lista recria tudo de uma vez.</p>
+
+<pre class="file" data-file="~/.local/bin/lista-pacotes">#!/usr/bin/env bash
+# lista-pacotes — guarda a lista dos pacotes que você instalou, com a data
+set -euo pipefail
+
+destino="${1:-$HOME/backups}"
+hoje=$(date +%F)
+repo="$destino/pacotes-$hoje.txt"
+aur="$destino/aur-$hoje.txt"
+
+mkdir -p "$destino"
+pacman -Qqen &gt; "$repo"
+pacman -Qqem &gt; "$aur"
+
+qtd_repo=$(wc -l &lt; "$repo")
+qtd_aur=$(wc -l &lt; "$aur")
+echo "Salvei $qtd_repo pacotes dos repositórios em $repo"
+echo "Salvei $qtd_aur pacotes do AUR em $aur"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>destino="${1:-$HOME/backups}"</code></td><td>A pasta vem do 1º argumento ou, se não houver, é <code>~/backups</code>.</td></tr>
+<tr><td><code>hoje=$(date +%F)</code></td><td>A data no formato <code>2026-10-16</code>, que fica em ordem certa quando o <code>ls</code> ordena.</td></tr>
+<tr><td><code>pacman -Qqen</code></td><td><code>-Q</code> instalados, <code>q</code> só o nome, <code>e</code> explícitos, <code>n</code> nativos (dos repositórios). O <code>&gt;</code> grava no arquivo.</td></tr>
+<tr><td><code>pacman -Qqem</code></td><td>O mesmo, mas <code>m</code>: os de fora dos repositórios (AUR).</td></tr>
+<tr><td><code>wc -l &lt; "$repo"</code></td><td>Conta as linhas. Com <code>&lt;</code>, o <code>wc</code> mostra só o número, sem o nome do arquivo.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ lista-pacotes
+Salvei 41 pacotes dos repositórios em /home/ana/backups/pacotes-2026-10-16.txt
+Salvei 4 pacotes do AUR em /home/ana/backups/aur-2026-10-16.txt
+$ head -3 ~/backups/pacotes-2026-10-16.txt
+arch-install-scripts
+base
+base-devel
+$ cat ~/backups/aur-2026-10-16.txt
+downgrade
+paru-bin
+yay-bin
+yay-bin-debug</pre>
+
+<p>Para reinstalar a partir da lista, o pacman lê os nomes da entrada padrão com <code>-</code>: <code>sudo pacman -S --needed - &lt; pacotes-2026-10-16.txt</code> (veja <a href="pacman-avancado.html">pacman Avançado</a>). Os do AUR você reinstala com o seu ajudante (<a href="yay-paru.html">yay e paru</a>).</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"comando não encontrado" ao criar a variável</strong>
+<pre class="term">$ pacote = htop
+bash: pacote: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> com espaços, o Bash acha que <code>pacote</code> é um comando e que <code>=</code> e <code>htop</code> são argumentos dele.</p>
+<p><strong>Como resolver:</strong> <code>pacote=htop</code>, tudo junto.</p>
+</div>
+
+<div class="cenario">
+<strong>A variável aparece vazia</strong>
+<pre class="term">$ echo "Arquivo: $arqivo"
+Arquivo:</pre>
+<p><strong>O que aconteceu:</strong> o nome foi digitado errado (<code>arqivo</code>), ou a variável foi criada em outro terminal, ou dentro de um script que já terminou. Para o Bash, uma variável que não existe vale "vazio", sem erro.</p>
+<p><strong>Como resolver:</strong> confira o nome. Em scripts, <code>set -u</code> transforma isso em erro: <code>linha 3: arqivo: variável não associada</code> (veja <a href="script-intro.html">Primeiro Script</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Arquivo com espaço virou dois</strong>
+<p><strong>O que aconteceu:</strong> faltaram aspas: <code>cp $arquivo ~/backups</code> com <code>arquivo="Meu Relatório.pdf"</code> vira <code>cp Meu Relatório.pdf ~/backups</code>, e o <code>cp</code> procura dois arquivos.</p>
+<p><strong>Como resolver:</strong> <code>cp "$arquivo" ~/backups</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"$variavel" aparece literalmente na tela</strong>
+<pre class="term">$ echo 'Pacote: $pacote'
+Pacote: $pacote</pre>
+<p><strong>O que aconteceu:</strong> aspas simples desligam a troca de variáveis.</p>
+<p><strong>Como resolver:</strong> use aspas duplas: <code>echo "Pacote: $pacote"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A conta deu 0 (ou perdeu as casas decimais)</strong>
+<pre class="term">$ echo $(( 4 * 100 / 408 ))
+0</pre>
+<p><strong>O que aconteceu:</strong> <code>$(( ))</code> só trabalha com inteiros: 0,98 vira 0.</p>
+<p><strong>Como resolver:</strong> para decimais, <code>awk 'BEGIN { printf "%.1f\n", 4 * 100 / 408 }'</code> (mostra <code>1.0</code>). O <code>bc</code> também serve, mas no Arch precisa ser instalado: <code>bash: bc: comando não encontrado</code> é só isso.</p>
+</div>
+
+<div class="cenario">
+<strong>"a variável permite somente leitura" e "divisão por 0"</strong>
+<pre class="term">$ readonly PI=3
+$ PI=4
+bash: PI: a variável permite somente leitura
+$ echo $((10 / 0))
+bash: 10 / 0: divisão por 0 (token de erro é "0")</pre>
+<p><strong>O que aconteceu:</strong> <code>readonly</code> trava a variável, e divisão por zero é proibida. Os dois param o comando com erro. Num script de contagem, a divisão por zero aparece quando o total veio vazio ou 0 (um <code>pacman -Qqm</code> numa máquina sem AUR, por exemplo): teste antes com um <code>if</code> (próxima aula).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th></tr>
+<tr><td><code>nome=valor</code></td><td>Cria a variável (sem espaços)</td></tr>
+<tr><td><code>$nome</code> / <code>${nome}</code></td><td>Lê o valor</td></tr>
+<tr><td><code>"…$nome…"</code> / <code>'…'</code></td><td>Aspas duplas trocam variáveis; simples, não</td></tr>
+<tr><td><code>x=$(comando)</code></td><td>Guarda a saída do comando</td></tr>
+<tr><td><code>$(( a * 100 / b ))</code></td><td>Conta com inteiros</td></tr>
+<tr><td><code>read -rp "Pergunta: " var</code></td><td>Lê do teclado (<code>-s</code> esconde)</td></tr>
+<tr><td><code>$0 $1 $# "$@"</code></td><td>Nome do script, 1º argumento, quantidade, todos</td></tr>
+<tr><td><code>shift</code></td><td>Descarta o <code>$1</code> e puxa os outros</td></tr>
+<tr><td><code>${1:-padrão}</code> / <code>${1:?msg}</code></td><td>Valor padrão / argumento obrigatório</td></tr>
+<tr><td><code>${#v} ${v%…} ${v#…} ${v/a/b}</code></td><td>Tamanho, cortar fim, cortar começo, trocar</td></tr>
+<tr><td><code>lista=(a b c)</code>, <code>"${lista[@]}"</code></td><td>Array e todos os itens</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar e usar</h3>
+<p>Complete para criar a variável <code>editor</code> com o valor <code>nano</code>:</p>
+<div class="ex-code"><input data-answer="editor=nano|editor=&quot;nano&quot;|editor='nano'" aria-label="atribuição"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Saída de comando</h3>
+<p>Complete para guardar a versão do kernel na variável <code>kernel</code>:</p>
+<div class="ex-code">kernel=<input data-answer="$(uname -r)|`uname -r`" aria-label="substituição"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Quantidade de argumentos</h3>
+<p>Complete para o script mostrar quantos argumentos recebeu:</p>
+<div class="ex-code">echo "Recebi <input data-answer="$#" aria-label="variável"> pacotes"</div>
+</div>
+
+<div class="exercise">
+<h3>4. Valor padrão</h3>
+<p>Complete para usar <code>bash</code> quando o primeiro argumento não for informado:</p>
+<div class="ex-code">pacote="${1<input data-answer=":-bash" aria-label="padrão">}"</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Com <code>pacote="htop"</code>, o que mostra <code>echo 'Instalar $pacote'</code>?</p>
+<label><input type="radio" name="q5"> <code>Instalar htop</code></label>
+<label><input type="radio" name="q5"> <code>Instalar $pacote</code></label>
+<label><input type="radio" name="q5"> <code>Instalar</code></label>
+<label><input type="radio" name="q5"> Um erro.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. <code>echo $(( 4 * 100 / 408 ))</code> mostra <code>0</code>. Por quê?</p>
+<label><input type="radio" name="q6"> Porque o pacman não respondeu.</label>
+<label><input type="radio" name="q6"> Porque faltou o <code>$</code> nos números.</label>
+<label><input type="radio" name="q6"> Porque <code>$(( ))</code> só faz contas com inteiros e corta as casas decimais.</label>
+<label><input type="radio" name="q6"> Porque o <code>bc</code> não está instalado.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>nome=valor</code> cria (sem espaços); <code>$nome</code> ou <code>${nome}</code> lê.</li>
+  <li>Aspas duplas trocam variáveis e preservam espaços; simples deixam tudo literal. Use <code>"$var"</code> sempre.</li>
+  <li><code>$(comando)</code> guarda a saída de um comando (<code>total=$(pacman -Qq | wc -l)</code>); <code>$(( ))</code> faz contas inteiras; decimais com <code>awk</code>.</li>
+  <li><code>read -rp</code> pergunta ao usuário; <code>$1</code>, <code>$#</code> e <code>"$@"</code> trazem os argumentos; <code>shift</code> anda na lista.</li>
+  <li><code>${1:-padrão}</code> dá um valor padrão; <code>${1:?msg}</code> torna obrigatório; <code>${arq%.pkg.tar.zst}</code> corta o final; arrays guardam listas.</li>
+</ul>
+
+<p><strong>Para ir mais fundo:</strong> no Guia Bash, veja <a href="https://wallysondevs.github.io/guia-bash/variaveis-intro.html">variáveis</a>, <a href="https://wallysondevs.github.io/guia-bash/aspas.html">aspas</a>, <a href="https://wallysondevs.github.io/guia-bash/substituicao-comando.html">substituição de comando</a>, <a href="https://wallysondevs.github.io/guia-bash/aritmetica.html">aritmética</a>, <a href="https://wallysondevs.github.io/guia-bash/read.html">read</a>, <a href="https://wallysondevs.github.io/guia-bash/argumentos.html">argumentos</a>, <a href="https://wallysondevs.github.io/guia-bash/expansao-parametros.html">expansão de parâmetros</a> e <a href="https://wallysondevs.github.io/guia-bash/arrays.html">arrays</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Bash">Bash</a> traz dicas de uso e links para o manual; <a href="https://wiki.archlinux.org/title/Environment_variables">Environment variables</a> explica variáveis de ambiente como <code>PATH</code>, <code>EDITOR</code> e <code>HOME</code>, e a diferença entre uma variável comum e uma exportada; e <a href="https://wiki.archlinux.org/title/Migrate_installation_to_new_hardware">Migrate installation to new hardware</a> mostra como usar a lista de pacotes (a do <code>lista-pacotes</code>) para recriar o sistema.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
