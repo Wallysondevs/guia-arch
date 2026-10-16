@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Bootloader — GRUB e systemd-boot no UEFI | Guia Arch</title>
+<meta name="description" content="O que é um bootloader e o firmware UEFI, as entradas de boot do efibootmgr, instalar o GRUB com grub-install e grub-mkconfig (saídas reais), o /etc/default/grub, o systemd-boot como alternativa, dual boot com os-prober e os erros comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Bootloader</span></h1>
+
+<p class="intro">O sistema está no disco e configurado, mas ainda falta quem o ligue. Quando você aperta o botão de ligar, o firmware do computador não sabe abrir um Linux sozinho: ele chama um programa pequeno, o <strong>bootloader</strong> (carregador de inicialização), que encontra o kernel e o põe para rodar. Nesta aula você instala o <strong>GRUB</strong>, o bootloader usado na VM do guia, entende cada linha que ele imprime e conhece a alternativa mais simples, o <strong>systemd-boot</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O caminho do botão de ligar até a tela de login, e o papel do firmware UEFI.</li>
+  <li>Ler as entradas de boot do firmware com <code>efibootmgr</code>.</li>
+  <li>Instalar o GRUB com <code>grub-install</code> e gerar o menu com <code>grub-mkconfig</code>, com as saídas reais explicadas.</li>
+  <li>Ajustar o <code>/etc/default/grub</code> (tempo do menu, opções do kernel).</li>
+  <li>Quando escolher o systemd-boot, e os erros mais comuns nesta etapa.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Do botão de ligar ao login</h2>
+<p>Ligar um computador é uma corrida de revezamento: cada etapa passa o bastão para a próxima.</p>
+
+<ol class="passo">
+  <li><strong>Firmware (UEFI).</strong> O programa gravado na placa-mãe testa o hardware e consulta sua lista de <strong>entradas de boot</strong>, guardadas numa memória da placa (a NVRAM). Cada entrada aponta para um arquivo <code>.efi</code> na partição EFI.</li>
+  <li><strong>Bootloader.</strong> O firmware executa esse arquivo: no nosso caso, <code>\EFI\GRUB\grubx64.efi</code>. O GRUB mostra o menu e carrega o kernel e o initramfs para a memória.</li>
+  <li><strong>Kernel + initramfs.</strong> O kernel (<code>/boot/vmlinuz-linux</code>) liga os drivers; o initramfs (aula <a href="configurar.html">Configurar o Sistema</a>) acha e monta a partição raiz.</li>
+  <li><strong>systemd.</strong> O primeiro programa do sistema de verdade monta o resto (pelo fstab), liga os serviços ativados (NetworkManager, sshd) e abre a tela de login.</li>
+</ol>
+
+<p>Esta aula cuida das etapas 1 e 2. A partição EFI (a <strong>ESP</strong>, <em>EFI System Partition</em>) é a <code>/dev/sda1</code> de 1 GiB em FAT32 que você criou em <a href="particionar.html">Particionar o Disco</a> e montou em <code>/boot</code>. O firmware só sabe ler FAT; por isso o bootloader mora nela.</p>
+
+<div class="note">
+<strong>UEFI ou BIOS?</strong>
+<p>Computadores de antes de ~2012 usam <strong>BIOS</strong> (o firmware antigo, também chamado <em>legacy</em> ou CSM), que não tem entradas de boot nem partição EFI: ele lê o começo do disco. Este guia instala em <strong>UEFI</strong>, o padrão atual. Você conferiu isso no live com <code>cat /sys/firmware/efi/fw_platform_size</code>, que respondeu <code>64</code> (veja <a href="ambiente-live.html">O Ambiente Live</a>). Se esse arquivo não existe, você bootou em modo BIOS.</p>
+</div>
+
+<hr>
+
+<h2>As entradas de boot do firmware: efibootmgr</h2>
+<p>O <code>efibootmgr</code> (<em>EFI boot manager</em>) lê e altera a lista de entradas da NVRAM. Ele foi instalado pelo <code>pacstrap</code> (está na lista de pacotes) e o <code>grub-install</code> precisa dele. Sem opções, ele só mostra a lista. Esta é a saída real logo depois do <code>grub-install</code>, ainda no live:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> efibootmgr
+BootCurrent: 0001
+Timeout: 0 seconds
+BootOrder: 0003,0000,0001,0002
+Boot0000* UiApp	FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(462caa21-7614-4503-836e-8ab6f4662331)
+Boot0001* UEFI VBOX CD-ROM VB1-1a2b3c4d 	PciRoot(0x0)/Pci(0xd,0x0)/Sata(1,65535,0){auto_created_boot_option}
+Boot0002* UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b 	PciRoot(0x0)/Pci(0xd,0x0)/Sata(0,65535,0){auto_created_boot_option}
+Boot0003* GRUB	HD(1,GPT,42528876-2401-45ed-aa76-555fea61a03e,0x800,0x200000)/\EFI\GRUB\grubx64.efi
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que diz</th></tr>
+<tr><td><code>BootCurrent: 0001</code></td><td>A entrada usada para ligar <strong>agora</strong>: a 0001, o CD-ROM virtual, ou seja, a ISO do Arch (o live).</td></tr>
+<tr><td><code>Timeout: 0 seconds</code></td><td>Quanto tempo o próprio firmware espera numa tela de escolha (0 = não mostra).</td></tr>
+<tr><td><code>BootOrder: 0003,0000,0001,0002</code></td><td>A ordem de tentativa no próximo boot. O <code>grub-install</code> criou a 0003 e a colocou em <strong>primeiro</strong> lugar.</td></tr>
+<tr><td><code>Boot0000* UiApp</code></td><td>O programa de configuração do firmware (no VirtualBox, a tela de "setup"). O caminho <code>FvVol/FvFile</code> aponta para dentro do próprio firmware, não para um disco.</td></tr>
+<tr><td><code>Boot0001* UEFI VBOX CD-ROM …</code></td><td>O drive de CD. <code>{auto_created_boot_option}</code>: o firmware criou sozinho, ao ver o dispositivo.</td></tr>
+<tr><td><code>Boot0002* UEFI VBOX HARDDISK …</code></td><td>O disco inteiro, também automática. Quando escolhida, o firmware procura o arquivo padrão <code>\EFI\BOOT\BOOTX64.EFI</code> no disco (veja <code>--removable</code>, mais abaixo).</td></tr>
+<tr><td><code>Boot0003* GRUB</code></td><td>A entrada que o <code>grub-install</code> criou. O nome <code>GRUB</code> veio do <code>--bootloader-id</code>.</td></tr>
+</table>
+</div>
+
+<p>O <code>*</code> depois do número quer dizer que a entrada está <strong>ativa</strong>. O caminho da entrada GRUB se lê assim:</p>
+
+<dl class="anatomy">
+  <dt>HD(1,</dt><dd>Partição número 1 do disco...</dd>
+  <dt>GPT,</dt><dd>...numa tabela de partições GPT...</dd>
+  <dt>42528876-…-555fea61a03e,</dt><dd>...com este PARTUUID (o identificador da partição na tabela GPT, diferente do UUID do sistema de arquivos <code>C509-6CB1</code>)...</dd>
+  <dt>0x800,</dt><dd>...que começa no setor 0x800 = 2048 (o mesmo <code>Start</code> do fdisk)...</dd>
+  <dt>0x200000)</dt><dd>...e tem 0x200000 = 2.097.152 setores de 512 bytes = 1 GiB.</dd>
+  <dt>/\EFI\GRUB\grubx64.efi</dt><dd>O arquivo a executar, com barras invertidas (o jeito do UEFI). No Linux, ele é <code>/boot/EFI/GRUB/grubx64.efi</code>.</dd>
+</dl>
+
+<p>Depois do primeiro boot, sem a ISO, a lista muda. Na VM do guia (o <code>efibootmgr</code> só leitura funciona até como ana):</p>
+
+<pre class="term">$ efibootmgr
+BootCurrent: 0003                         « ligou pelo GRUB
+Timeout: 0 seconds
+BootOrder: 0003,0000,0002                 « o CD-ROM sumiu
+Boot0000* UiApp	FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(462caa21-7614-4503-836e-8ab6f4662331)
+Boot0002* UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b 	PciRoot(0x0)/Pci(0xd,0x0)/Sata(0,65535,0){auto_created_boot_option}
+Boot0003* GRUB	HD(1,GPT,42528876-2401-45ed-aa76-555fea61a03e,0x800,0x200000)/\EFI\GRUB\grubx64.efi</pre>
+
+<p>A entrada 0001 era automática: quando o CD virtual foi ejetado, o firmware a apagou. A do GRUB fica, porque foi gravada de propósito.</p>
+
+<hr>
+
+<h2>Instalar o GRUB, passo 1: grub-install</h2>
+<p>O <strong>GRUB</strong> (<em>GRand Unified Bootloader</em>) é o bootloader mais usado no Linux: funciona em UEFI e BIOS, acha outros sistemas, tem menu com submenus e um terminal de emergência. Os pacotes <code>grub</code> e <code>efibootmgr</code> já vieram no <code>pacstrap</code>. A instalação tem dois comandos, e o primeiro coloca o GRUB na partição EFI. Dentro do chroot:</p>
+
+<dl class="anatomy">
+  <dt>grub-install</dt><dd>Instala os arquivos do GRUB e registra a entrada no firmware.</dd>
+  <dt>--target=x86_64-efi</dt><dd>Para qual plataforma: PC de 64 bits com UEFI. (Em BIOS seria <code>i386-pc</code>, com o disco no lugar da pasta.)</dd>
+  <dt>--efi-directory=/boot</dt><dd>Onde a partição EFI está montada. No guia, <code>/boot</code>.</dd>
+  <dt>--bootloader-id=GRUB</dt><dd>O nome da entrada no firmware e da pasta em <code>/boot/EFI/</code>.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+Installing for x86_64-efi platform.             « confirma o --target
+Installation finished. No error reported.       « o que você quer ver
+#> echo $?
+0
+</pre>
+
+<p>Na VM do guia, o coordenador rodou o mesmo comando como <code>arch-chroot /mnt grub-install …</code>, com a mesma saída. Em silêncio, ele fez três coisas:</p>
+<ol>
+  <li>Copiou o programa do GRUB para <code>/boot/EFI/GRUB/grubx64.efi</code>.</li>
+  <li>Copiou os módulos e as traduções para <code>/boot/grub/</code>.</li>
+  <li>Criou a entrada <code>Boot0003* GRUB</code> no firmware e a pôs no começo do <code>BootOrder</code> (por isso o <code>efibootmgr</code> acima).</li>
+</ol>
+
+<pre class="term" data-user="root">#> ls /boot /boot/EFI/GRUB
+/boot:
+EFI
+grub
+initramfs-linux.img
+initramfs-linux-lts.img           « estes dois -lts vieram depois (aula Kernels)
+intel-ucode.img
+vmlinuz-linux
+vmlinuz-linux-lts
+
+/boot/EFI/GRUB:
+grubx64.efi</pre>
+
+<hr>
+
+<h2>Passo 2: grub-mkconfig, o menu</h2>
+<p>O GRUB instalado ainda não sabe <strong>o que</strong> ligar. O menu dele fica num arquivo, <code>/boot/grub/grub.cfg</code>, que você não escreve à mão: o <code>grub-mkconfig</code> procura os kernels em <code>/boot</code> e o gera.</p>
+
+<dl class="anatomy">
+  <dt>grub-mkconfig</dt><dd>Gera a configuração do menu (<em>make config</em>).</dd>
+  <dt>-o /boot/grub/grub.cfg</dt><dd><em>output</em>: onde gravar. Sem o <code>-o</code>, o resultado só aparece na tela e nada é salvo.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> grub-mkconfig -o /boot/grub/grub.cfg
+Generating grub configuration file ...
+Found linux image: /boot/vmlinuz-linux                              « achou o kernel
+Found initrd image: /boot/intel-ucode.img /boot/initramfs-linux.img « microcode + initramfs
+Warning: os-prober will not be executed to detect other bootable partitions.
+Systems on them will not be added to the GRUB boot configuration.
+Check GRUB_DISABLE_OS_PROBER documentation entry.
+Adding boot menu entry for UEFI Firmware Settings ...
+Warning: os-prober is not installed; EFI BootNext entries will not be filtered against detected OSes, so non-OS entries (e.g. firmware updaters) may appear in the menu.
+Adding boot menu entry for EFI BootNext: UiApp (Boot0000)
+Adding boot menu entry for EFI BootNext: UEFI VBOX CD-ROM VB1-1a2b3c4d  (Boot0001)
+Adding boot menu entry for EFI BootNext: UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (Boot0002)
+Adding boot menu entry for EFI BootNext: GRUB (Boot0003)
+done
+</pre>
+
+<p>Linha por linha:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que significa</th></tr>
+<tr><td><code>Found linux image</code></td><td>Achou um kernel em <code>/boot</code>. Se esta linha não aparece, não haverá Arch no menu: confira se o kernel está instalado e o <code>/boot</code> montado.</td></tr>
+<tr><td><code>Found initrd image: /boot/intel-ucode.img /boot/initramfs-linux.img</code></td><td>Os arquivos que serão carregados junto com o kernel: primeiro o <strong>microcode</strong> da Intel (correções do processador, pacote <code>intel-ucode</code>), depois o initramfs. Veja <a href="microcode.html">Microcode</a>.</td></tr>
+<tr><td><code>Warning: os-prober will not be executed…</code></td><td><strong>Só um aviso.</strong> Por segurança, o GRUB não procura outros sistemas (Windows, outro Linux) a menos que você peça. Com um sistema só, ignore. Dual boot: veja abaixo.</td></tr>
+<tr><td><code>Adding boot menu entry for UEFI Firmware Settings</code></td><td>Criou um item que reinicia direto na configuração do firmware (o "setup").</td></tr>
+<tr><td><code>Warning: os-prober is not installed; EFI BootNext entries…</code></td><td>Outro aviso: sem o <code>os-prober</code>, o GRUB não consegue separar entradas de sistemas de entradas como "atualizador de firmware", então copia todas.</td></tr>
+<tr><td><code>Adding boot menu entry for EFI BootNext: …</code></td><td>Um item de menu para cada entrada do <code>efibootmgr</code> (repare nos mesmos números <code>Boot0000</code>…<code>Boot0003</code>). Escolher um deles grava a variável <strong>BootNext</strong> ("no próximo boot, use esta entrada") e reinicia. Quem cria esses itens é o script <code>31_efi_bootnext</code>, e o item do firmware vem do <code>30_uefi-firmware</code>, ambos em <code>/etc/grub.d/</code> (o <code>grub-mkconfig</code> roda, em ordem, todos os scripts dessa pasta). Guias mais antigos não mostram essas linhas porque o recurso é recente.</td></tr>
+<tr><td><code>done</code></td><td>Arquivo gravado. Código de saída 0.</td></tr>
+</table>
+</div>
+
+<h3>O menu que saiu</h3>
+<p>Na VM do guia, hoje (com dois kernels, depois da aula <a href="kernels.html">Kernels</a>), os itens do <code>grub.cfg</code> são estes:</p>
+
+<pre class="term" data-user="root">#> grep -o "^\s*\(menuentry\|submenu\) '[^']*'" /boot/grub/grub.cfg
+menuentry 'Arch Linux'                                       « o padrão (primeiro item)
+submenu 'Opções avançadas para Arch Linux'
+	menuentry 'Arch Linux, with Linux linux'
+	menuentry 'Arch Linux, with Linux linux-lts'
+		menuentry 'UEFI Firmware Settings'
+  menuentry 'UiApp (EFI BootNext)'
+  menuentry 'UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (EFI BootNext)'
+  menuentry 'GRUB (EFI BootNext)'</pre>
+
+<p>E o item <code>Arch Linux</code> por dentro (trecho do <code>grub.cfg</code>):</p>
+
+<pre class="file" data-file="/boot/grub/grub.cfg (trecho)">	search --no-floppy --fs-uuid --set=root C509-6CB1
+	echo	'Carregando o Linux linux...'
+	linux	/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw  loglevel=3 quiet
+	echo	'Carregando o ramdisk inicial...'
+	initrd	/intel-ucode.img /initramfs-linux.img
+</pre>
+
+<dl class="anatomy">
+  <dt>search … C509-6CB1</dt><dd>Acha a partição EFI pelo UUID (a mesma do fstab). Os caminhos seguintes são relativos a ela, por isso <code>/vmlinuz-linux</code> sem o <code>/boot</code>.</dd>
+  <dt>linux /vmlinuz-linux</dt><dd>O kernel a carregar.</dd>
+  <dt>root=UUID=75d1…</dt><dd>Diz ao kernel qual é a partição raiz (a ext4).</dd>
+  <dt>rw loglevel=3 quiet</dt><dd>Montar a raiz para escrita; mostrar só mensagens de erro; boot "silencioso". Os dois últimos vêm do <code>/etc/default/grub</code>.</dd>
+  <dt>initrd /intel-ucode.img /initramfs-linux.img</dt><dd>O microcode <strong>como um initrd</strong>, antes do initramfs: o processador é corrigido antes de qualquer outra coisa.</dd>
+</dl>
+
+<div class="warning">
+<strong>Nunca edite o grub.cfg</strong>
+<p>Ele é <strong>gerado</strong>: o próximo <code>grub-mkconfig</code> apaga suas mudanças. Mude o <code>/etc/default/grub</code> e gere de novo. E lembre: no Arch, o <code>pacman</code> <strong>não</strong> roda o <code>grub-mkconfig</code> sozinho. Instalou ou removeu um kernel? Rode-o você.</p>
+</div>
+
+<hr>
+
+<h2>/etc/default/grub: as opções do menu</h2>
+<p>Este é o arquivo que você edita (como root, com <code>nano /etc/default/grub</code>). As linhas mais importantes do arquivo da VM do guia:</p>
+
+<pre class="file" data-file="/etc/default/grub (trecho)">GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="Arch"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet"
+GRUB_CMDLINE_LINUX=""
+…
+GRUB_TIMEOUT_STYLE=menu
+…
+GRUB_DISABLE_RECOVERY=true
+…
+#GRUB_DISABLE_OS_PROBER=false
+GRUB_TOP_LEVEL="/boot/vmlinuz-linux"
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Valor no guia</th><th>O que faz</th></tr>
+<tr><td><code>GRUB_DEFAULT</code></td><td><code>0</code></td><td>O item escolhido sozinho: <code>0</code> = o primeiro. <code>saved</code> = o último usado (junto com <code>GRUB_SAVEDEFAULT=true</code>).</td></tr>
+<tr><td><code>GRUB_TIMEOUT</code></td><td><code>5</code></td><td>Segundos que o menu espera antes de ligar o padrão. <code>0</code> = não espera; <code>-1</code> = espera para sempre.</td></tr>
+<tr><td><code>GRUB_TIMEOUT_STYLE</code></td><td><code>menu</code></td><td><code>menu</code> mostra o menu; <code>hidden</code> esconde (aperte <kbd>Esc</kbd> para ver).</td></tr>
+<tr><td><code>GRUB_CMDLINE_LINUX_DEFAULT</code></td><td><code>"loglevel=3 quiet"</code></td><td>Opções do kernel para o boot normal. Tire o <code>quiet</code> para ver todas as mensagens do boot.</td></tr>
+<tr><td><code>GRUB_CMDLINE_LINUX</code></td><td><code>""</code></td><td>Opções do kernel para <strong>todos</strong> os itens, inclusive recuperação.</td></tr>
+<tr><td><code>GRUB_DISABLE_RECOVERY</code></td><td><code>true</code></td><td>Não cria itens de "modo de recuperação".</td></tr>
+<tr><td><code>GRUB_DISABLE_OS_PROBER</code></td><td>comentada</td><td>Descomentada com <code>false</code>, liga a busca por outros sistemas (dual boot).</td></tr>
+<tr><td><code>GRUB_TOP_LEVEL</code></td><td><code>"/boot/vmlinuz-linux"</code></td><td>Qual kernel fica no item principal. Esta linha foi <strong>acrescentada</strong> na VM para resolver a pegadinha dos dois kernels; veja <a href="kernels.html">Kernels</a>.</td></tr>
+</table>
+</div>
+
+<p>Você confere o que o kernel recebeu de verdade em <code>/proc/cmdline</code>:</p>
+
+<pre class="term">$ cat /proc/cmdline
+BOOT_IMAGE=/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet</pre>
+
+<p>Mudou alguma opção? Gere o menu de novo. No sistema instalado, o <code>grub-mkconfig</code> fala português (de Portugal: "arranque", "A adicionar"), mas algumas linhas continuam em inglês. Saída real da VM:</p>
+
+<pre class="term" data-user="root">#> nano /etc/default/grub
+#> grub-mkconfig -o /boot/grub/grub.cfg
+Gerando o arquivo de configuração do grub...
+Imagem Linux encontrada: /boot/vmlinuz-linux
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux.img
+Imagem Linux encontrada: /boot/vmlinuz-linux-lts
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux-lts.img
+Aviso: os-prober não será executado para detectar outras partições de arranque.
+Os sistemas nelas presentes não serão adicionados à configuração de arranque do GRUB.\Veja a documentação de GRUB_DISABLE_OS_PROBER.
+A adicionar entrada de menu para UEFI Firmware Settings ...
+Aviso: os-prober is not installed; EFI BootNext entries will not be filtered against detected OSes, so non-OS entries (e.g. firmware updaters) may appear in the menu.
+Adding boot menu entry for EFI BootNext: UiApp (Boot0000)
+Adding boot menu entry for EFI BootNext: UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (Boot0002)
+Adding boot menu entry for EFI BootNext: GRUB (Boot0003)
+concluído</pre>
+
+<p>(O <code>\Veja</code> com barra é um defeito da tradução, não do seu sistema.) O <code>grub-mkconfig</code> precisa de root; como ana, ele recusa:</p>
+
+<pre class="term">$ grub-mkconfig -o /tmp/x.cfg
+grub-mkconfig: você deve executar isto como root
+$ echo $?
+1</pre>
+
+<div class="try" data-goal="out:GRUB_TIMEOUT=5" data-solucao="grep GRUB_TIMEOUT /etc/default/grub">
+<p class="try-task"><strong>Missão:</strong> descubra quantos segundos o menu do GRUB espera, procurando a linha <code>GRUB_TIMEOUT</code> no arquivo de configuração (dica: <code>grep</code>).</p>
+</div>
+
+<hr>
+
+<h2>A alternativa: systemd-boot</h2>
+<p>O <strong>systemd-boot</strong> é um bootloader só para UEFI que já vem dentro do pacote <code>systemd</code> (nada a instalar). Ele é bem mais simples que o GRUB: não tem scripts, não gera configuração e não lê ext4. Cada item do menu é um arquivo de texto pequeno, e os kernels precisam estar na partição EFI (no guia, estão: <code>/boot</code> <strong>é</strong> a partição EFI).</p>
+
+<p>Em vez dos dois comandos do GRUB, você roda <code>bootctl install</code> no chroot. A saída abaixo é real, de um teste na VM do guia numa partição EFI de mentira (um arquivo-imagem montado em <code>/var/tmp/a3/esp</code>, com <code>--no-variables</code> para não mexer no firmware da VM); numa instalação de verdade os caminhos começam com <code>/boot</code>:</p>
+
+<pre class="term" data-user="root">#> bootctl --esp-path=/var/tmp/a3/esp --no-variables install
+Created directory "/var/tmp/a3/esp/EFI".
+Created directory "/var/tmp/a3/esp/EFI/systemd".
+Created directory "/var/tmp/a3/esp/EFI/BOOT".
+Created directory "/var/tmp/a3/esp/loader".
+Created directory "/var/tmp/a3/esp/loader/keys".
+Created directory "/var/tmp/a3/esp/loader".
+Created directory "/var/tmp/a3/esp/loader/entries".
+Created directory "/var/tmp/a3/esp/EFI".
+Created directory "/var/tmp/a3/esp/EFI/Linux".
+Copied "/usr/lib/systemd/boot/efi/systemd-bootx64.efi" to "/var/tmp/a3/esp/EFI/systemd/systemd-bootx64.efi".   « o bootloader
+Copied "/usr/lib/systemd/boot/efi/systemd-bootx64.efi" to "/var/tmp/a3/esp/EFI/BOOT/BOOTX64.EFI".              « cópia no caminho padrão
+ Mount point '/var/tmp/a3/esp' which backs the random seed file is world accessible, which is a security hole!
+Random seed file '/var/tmp/a3/esp/loader/.#bootctlrandom-seed0f69ee084556ea13' is world accessible, which is a security hole!
+Random seed file /var/tmp/a3/esp/loader/random-seed successfully written (32 bytes).</pre>
+
+<ul>
+  <li>Ele cria as pastas, copia o bootloader para <code>EFI/systemd/</code> e, de reserva, para o caminho padrão <code>EFI/BOOT/BOOTX64.EFI</code>.</li>
+  <li>Os dois avisos <em>world accessible</em> ("qualquer um pode ler") aparecem porque a partição EFI está montada com <code>fmask=0022</code> (as opções que o <code>genfstab</code> copiou). Para calar o aviso, troque no fstab por <code>fmask=0077,dmask=0077</code>.</li>
+  <li>Sem o <code>--no-variables</code>, ele também cria a entrada <code>Linux Boot Manager</code> no firmware (não mostrado aqui: na VM isso mexeria no firmware de verdade).</li>
+</ul>
+
+<p>Depois você escreve dois arquivos. O <code>bootctl</code> cria o <code>loader/loader.conf</code> só com comentários (<code>#timeout 3</code> e <code>#console-mode keep</code>); um exemplo de configuração:</p>
+
+<pre class="file" data-file="/boot/loader/loader.conf">default arch.conf
+timeout 3
+</pre>
+
+<p>E um arquivo por item de menu em <code>loader/entries/</code>. O do guia ficaria assim (testado na mesma imagem):</p>
+
+<pre class="file" data-file="/boot/loader/entries/arch.conf">title   Arch Linux
+linux   /vmlinuz-linux
+initrd  /intel-ucode.img
+initrd  /initramfs-linux.img
+options root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet
+</pre>
+
+<dl class="anatomy">
+  <dt>title</dt><dd>O texto do item no menu.</dd>
+  <dt>linux</dt><dd>O kernel, com caminho relativo à partição EFI.</dd>
+  <dt>initrd (1)</dt><dd>O microcode, sempre primeiro.</dd>
+  <dt>initrd (2)</dt><dd>O initramfs. Uma linha <code>initrd</code> por arquivo.</dd>
+  <dt>options</dt><dd>As opções do kernel: a raiz pelo UUID (descubra o seu com <code>lsblk -f</code> ou <code>blkid</code>), <code>rw</code> e as mesmas do GRUB.</dd>
+</dl>
+
+<p>O <code>bootctl list</code> mostra como o systemd-boot vai enxergar o item (saída real do teste):</p>
+
+<pre class="term" data-user="root">#> bootctl --esp-path=/var/tmp/a3/esp --no-variables list
+         type: Boot Loader Specification Type #1 (.conf)
+        title: Arch Linux (default) (not reported/new)
+           id: arch.conf
+       source: /var/tmp/a3/esp//loader/entries/arch.conf (on the EFI System Partition)
+        linux: /var/tmp/a3/esp//vmlinuz-linux
+       initrd: /var/tmp/a3/esp//intel-ucode.img
+               /var/tmp/a3/esp//initramfs-linux.img
+      options: root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet</pre>
+
+<p><code>(default)</code> = é o item padrão; <code>(not reported/new)</code> = o firmware ainda não ligou por ele.</p>
+
+<h3>GRUB ou systemd-boot: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>GRUB</th><th>systemd-boot</th></tr>
+<tr><td>Firmware</td><td>UEFI e BIOS</td><td>Só UEFI</td></tr>
+<tr><td>Instalar</td><td>pacote <code>grub</code> + <code>grub-install</code> + <code>grub-mkconfig</code></td><td>já vem no systemd; <code>bootctl install</code></td></tr>
+<tr><td>Configuração</td><td>gerada por scripts a partir de <code>/etc/default/grub</code></td><td>arquivos de texto curtos, escritos à mão</td></tr>
+<tr><td>Kernel novo</td><td>rodar <code>grub-mkconfig</code></td><td>escrever um arquivo em <code>entries/</code></td></tr>
+<tr><td>Onde o kernel pode ficar</td><td>qualquer partição que o GRUB leia (ext4, Btrfs…)</td><td>só na partição EFI (ou numa XBOOTLDR)</td></tr>
+<tr><td>Outros sistemas</td><td><code>os-prober</code> acha sozinho</td><td>acha o Windows sozinho se ele estiver na mesma partição EFI</td></tr>
+<tr><td>Atualização do próprio bootloader</td><td><code>grub-install</code> de novo (manual)</td><td><code>bootctl update</code> ou o serviço <code>systemd-boot-update</code></td></tr>
+<tr><td>Recomendado para</td><td>BIOS, dual boot com vários discos, Btrfs com snapshots no menu, quem segue este guia</td><td>UEFI com só o Arch (ou Arch + Windows no mesmo disco), quem quer simplicidade</td></tr>
+</table>
+</div>
+
+<p>Escolha <strong>um</strong>. Este guia usa o GRUB porque é o que funciona em qualquer máquina e o que você mais vai encontrar em tutoriais. O <code>archinstall</code>, por exemplo, sugere o systemd-boot em UEFI (veja <a href="archinstall.html">archinstall</a>).</p>
+
+<hr>
+
+<h2>Dual boot: os-prober (ilustrativo)</h2>
+<p>A VM do guia só tem o Arch, então esta seção não foi executada; os passos seguem a Arch Wiki. Se o computador também tem Windows (ou outro Linux), o GRUB pode colocá-lo no menu com a ajuda do <code>os-prober</code>, um pacote pequeno (resumo real do <code>pacman</code> na VM, respondendo "não"):</p>
+
+<pre class="term" data-user="root">#> pacman -S os-prober
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) os-prober-1.85-1
+
+Tamanho total download:   0,02 MiB
+Tamanho total instalado:  0,06 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<ol class="passo">
+  <li><strong>Instale</strong> o <code>os-prober</code> (acima, respondendo <kbd>S</kbd>).</li>
+  <li><strong>Libere a busca:</strong> no <code>/etc/default/grub</code>, descomente a última linha: <code>GRUB_DISABLE_OS_PROBER=false</code>.</li>
+  <li><strong>Monte</strong> a partição do outro sistema, se ela não estiver montada (o Windows UEFI costuma estar na mesma partição EFI, então já está).</li>
+  <li><strong>Gere o menu:</strong> <code>grub-mkconfig -o /boot/grub/grub.cfg</code>. Procure uma linha como <code>Found Windows Boot Manager on …</code>; o aviso "os-prober will not be executed" deixa de aparecer.</li>
+</ol>
+
+<div class="warning">
+<strong>Dual boot com Windows: dois cuidados</strong>
+<p>Desligue a <strong>inicialização rápida</strong> do Windows (ela deixa o disco "meio montado") e combine o relógio (o Windows usa hora local, o Linux UTC; veja <a href="configurar.html">Configurar o Sistema</a>). E faça backup antes de particionar.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"EFI variables are not supported on this system." (ilustrativo)</strong>
+<p><strong>O que aconteceu:</strong> o <code>grub-install --target=x86_64-efi</code> não achou as variáveis do firmware porque o live foi iniciado em modo <strong>BIOS</strong>, não UEFI. (Na VM do guia isso não aconteceu; a mensagem é a que o GRUB mostra nesse caso.)</p>
+<p><strong>Como confirmar:</strong> <code>ls /sys/firmware/efi</code> responde que não existe; <code>cat /sys/firmware/efi/fw_platform_size</code> também.</p>
+<p><strong>Como resolver:</strong> reinicie o pendrive escolhendo a opção "UEFI" no menu de boot do computador (ou desligue o CSM/Legacy no firmware). No VirtualBox: <em>Configurações → Sistema → Habilitar EFI</em>. Não precisa refazer a instalação: monte as partições, <code>arch-chroot /mnt</code> e rode o <code>grub-install</code> de novo. Se o computador é realmente só BIOS, use <code>grub-install --target=i386-pc /dev/sda</code> (e uma tabela de partições adequada; veja a Arch Wiki).</p>
+</div>
+
+<div class="cenario">
+<strong>Ligou e caiu num prompt <code>grub&gt;</code> (ilustrativo)</strong>
+<p><strong>O que aconteceu:</strong> o GRUB carregou, mas não achou o <code>grub.cfg</code>: você esqueceu o <code>grub-mkconfig</code> ou esqueceu o <code>-o /boot/grub/grub.cfg</code> (sem o <code>-o</code>, a configuração saiu na tela e nada foi gravado).</p>
+<p><strong>Como resolver:</strong> ligue o pendrive, monte a raiz em <code>/mnt</code> e a EFI em <code>/mnt/boot</code>, <code>arch-chroot /mnt</code> e rode <code>grub-mkconfig -o /boot/grub/grub.cfg</code>. O passo a passo está em <a href="chroot-resgate.html">Resgate com chroot</a> e <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Reiniciei e o computador não acha o GRUB (VirtualBox e algumas placas)</strong>
+<p><strong>O que aconteceu:</strong> alguns firmwares ignoram ou apagam as entradas gravadas na NVRAM e só procuram o caminho padrão <code>\EFI\BOOT\BOOTX64.EFI</code>, o mesmo que um pendrive usa. O sintoma é cair na tela do firmware ou no shell UEFI.</p>
+<p><strong>Como resolver:</strong> instale o GRUB <strong>também</strong> nesse caminho, com <code>--removable</code> (de "mídia removível"). Esta opção não mexe nas entradas do firmware. Saída real, num teste com uma partição EFI em arquivo-imagem na VM:</p>
+<pre class="term" data-user="root">#> grub-install --target=x86_64-efi --efi-directory=/var/tmp/a3/esp --boot-directory=/var/tmp/a3/esp --removable --no-nvram
+Installing for x86_64-efi platform.
+Installation finished. No error reported.
+#> ls /var/tmp/a3/esp/EFI/BOOT
+BOOTX64.EFI</pre>
+<p>Na sua instalação, dentro do chroot, basta: <code>grub-install --target=x86_64-efi --efi-directory=/boot --removable</code>. (No teste, <code>--boot-directory</code> e <code>--no-nvram</code> só serviram para não tocar no <code>/boot</code> nem no firmware da VM.)</p>
+</div>
+
+<div class="cenario">
+<strong>"grub-mkconfig: você deve executar isto como root"</strong>
+<p><strong>O que aconteceu:</strong> você rodou como usuária comum.</p>
+<p><strong>Como resolver:</strong> <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Instalei um segundo kernel e o GRUB passou a ligar o outro</strong>
+<p><strong>O que aconteceu:</strong> com dois kernels, o primeiro item do menu é o que vem primeiro na ordem do <code>grub-mkconfig</code>, e na VM do guia ele virou o <strong>LTS</strong>. É a "pegadinha dos dois kernels".</p>
+<p><strong>Como resolver:</strong> <code>GRUB_TOP_LEVEL</code> no <code>/etc/default/grub</code>, explicado com a saída real em <a href="kernels.html">Kernels (linux, lts, zen)</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>efibootmgr</code></td><td>Lista as entradas de boot do firmware UEFI.</td></tr>
+<tr><td><code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code></td><td>Instala o GRUB na partição EFI e cria a entrada no firmware.</td></tr>
+<tr><td><code>grub-install … --removable</code></td><td>Instala no caminho padrão <code>EFI/BOOT/BOOTX64.EFI</code> (firmwares teimosos).</td></tr>
+<tr><td><code>grub-mkconfig -o /boot/grub/grub.cfg</code></td><td>Gera o menu. Rode depois de mudar <code>/etc/default/grub</code> ou instalar/remover kernel.</td></tr>
+<tr><td><code>nano /etc/default/grub</code></td><td>Opções do GRUB (tempo, kernel padrão, opções do kernel).</td></tr>
+<tr><td><code>cat /proc/cmdline</code></td><td>As opções que o kernel recebeu no boot atual.</td></tr>
+<tr><td><code>bootctl install</code></td><td>Instala o systemd-boot.</td></tr>
+<tr><td><code>bootctl list</code> / <code>bootctl status</code></td><td>Itens do systemd-boot / estado do bootloader e do firmware.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O GRUB na partição EFI</h3>
+<p>Complete o comando que instala o GRUB para UEFI, com a partição EFI em <code>/boot</code>:</p>
+<div class="ex-code">grub-install --target=<input data-answer="x86_64-efi" aria-label="plataforma" size="10"> --efi-directory=<input data-answer="/boot" aria-label="pasta da EFI" size="6"> --bootloader-id=GRUB</div>
+</div>
+
+<div class="exercise">
+<h3>2. Gerar o menu</h3>
+<p>Complete para gerar e <strong>gravar</strong> o menu do GRUB:</p>
+<div class="ex-code">grub-mkconfig <input data-answer="-o /boot/grub/grub.cfg" aria-label="saída" size="24"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Na saída do <code>efibootmgr</code>, o que significa <code>BootCurrent: 0001</code>?</p>
+<label><input type="radio" name="q3"> Que a entrada 0001 será a primeira no próximo boot.</label>
+<label><input type="radio" name="q3"> Que o boot atual foi feito pela entrada 0001.</label>
+<label><input type="radio" name="q3"> Que existe só uma entrada.</label>
+<label><input type="radio" name="q3"> Que a entrada 0001 está desativada.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Você mudou <code>GRUB_TIMEOUT=5</code> para <code>GRUB_TIMEOUT=2</code> e reiniciou, mas o menu continua esperando 5 segundos. Por quê?</p>
+<label><input type="radio" name="q4"> O GRUB não aceita menos de 5 segundos.</label>
+<label><input type="radio" name="q4"> Faltou rodar <code>mkinitcpio -P</code>.</label>
+<label><input type="radio" name="q4"> Faltou rodar <code>grub-install</code>.</label>
+<label><input type="radio" name="q4"> Faltou rodar <code>grub-mkconfig -o /boot/grub/grub.cfg</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O aviso <code>os-prober will not be executed to detect other bootable partitions</code> numa máquina só com o Arch quer dizer que...</p>
+<label><input type="radio" name="q5"> ...a instalação do GRUB falhou.</label>
+<label><input type="radio" name="q5"> ...o Arch não vai aparecer no menu.</label>
+<label><input type="radio" name="q5"> ...nada: o GRUB só avisa que não vai procurar outros sistemas.</label>
+<label><input type="radio" name="q5"> ...falta instalar o <code>efibootmgr</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>intel-ucode.img</code> aparece antes de <code>initramfs-linux.img</code> na linha <code>initrd</code>?</p>
+<label><input type="radio" name="q6"> Porque o microcode do processador precisa ser carregado primeiro.</label>
+<label><input type="radio" name="q6"> Por ordem alfabética, sem motivo.</label>
+<label><input type="radio" name="q6"> Porque o initramfs é opcional.</label>
+<label><input type="radio" name="q6"> Porque o GRUB só lê o primeiro arquivo.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Firmware UEFI → bootloader (na partição EFI) → kernel + initramfs → systemd → login.</li>
+  <li><code>efibootmgr</code> mostra as entradas do firmware: <code>BootCurrent</code> (agora), <code>BootOrder</code> (próximas tentativas).</li>
+  <li>GRUB: <code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code> e depois <code>grub-mkconfig -o /boot/grub/grub.cfg</code>.</li>
+  <li>Os avisos de <code>os-prober</code> são normais. O microcode entra como o primeiro <code>initrd</code>.</li>
+  <li>Mude o <code>/etc/default/grub</code>, nunca o <code>grub.cfg</code>, e rode o <code>grub-mkconfig</code> de novo.</li>
+  <li>systemd-boot: <code>bootctl install</code> + arquivos em <code>/boot/loader/</code>; mais simples, só UEFI.</li>
+  <li>Firmware que não acha o GRUB: <code>--removable</code>. Próximo passo: <a href="primeiro-boot.html">Primeiro Boot</a>.</li>
+</ul>
+
+<h2>Na Arch Wiki</h2>
+<p>O ponto de partida é <a href="https://wiki.archlinux.org/title/Arch_boot_process">Arch boot process</a> (com a tabela de recursos de cada bootloader). Depois: <a href="https://wiki.archlinux.org/title/GRUB">GRUB</a> (há <a href="https://wiki.archlinux.org/title/GRUB_(Portugu%C3%AAs)">GRUB (Português)</a>), <a href="https://wiki.archlinux.org/title/Systemd-boot">systemd-boot</a>, <a href="https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface">Unified Extensible Firmware Interface</a> (com o <code>efibootmgr</code>), <a href="https://wiki.archlinux.org/title/EFI_system_partition">EFI system partition</a>, <a href="https://wiki.archlinux.org/title/Kernel_parameters">Kernel parameters</a>, <a href="https://wiki.archlinux.org/title/Microcode">Microcode</a> e <a href="https://wiki.archlinux.org/title/Dual_boot_with_Windows">Dual boot with Windows</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
