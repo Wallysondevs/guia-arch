@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto: Btrfs com Snapshots Automáticos — snapper, timeline e rollback | Guia Arch</title>
+<meta name="description" content="Projeto passo a passo: criar um Btrfs com subvolumes, configurar o snapper com timeline e limpeza automática, simular um estrago, voltar com undochange e com rollback do subvolume, e como ficaria no sistema real com snap-pac e grub-btrfs. Saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Btrfs com Snapshots Automáticos</span></h1>
+
+<p class="intro">Neste laboratório você monta, do zero, o esquema que transforma o Arch num sistema que "volta no tempo": um Btrfs com o layout de subvolumes da Arch Wiki, o snapper tirando fotos de hora em hora e limpando as velhas, e dois jeitos de desfazer um estrago: arquivo por arquivo e trocando o sistema inteiro por um snapshot. Tudo num disco de mentira (um arquivo-imagem), com saídas reais. No fim, o mapa para fazer o mesmo no seu sistema de verdade.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li><code>mkfs.btrfs</code>, subvolumes <code>@</code>, <code>@home</code>, <code>@snapshots</code> e montagem com <code>subvol=</code> (aula <a href="btrfs.html">Btrfs</a>).</li>
+  <li>snapper com o <code>@snapshots</code> separado, <code>set-config</code>, timers de timeline e limpeza (aula <a href="snapshots.html">Snapshots</a>).</li>
+  <li><code>status</code>, <code>diff</code>, <code>undochange</code> e o rollback "à mão" do subvolume <code>@</code>.</li>
+  <li>Desmontar tudo sem deixar lixo.</li>
+</ul>
+<p><strong>Precisa de:</strong> root, os pacotes <code>btrfs-progs</code> e <code>snapper</code>, uns 3 GiB livres em <code>/var/tmp</code> (o arquivo é esparso: ocupa bem menos). <strong>Tempo:</strong> 30 a 40 minutos, mais uma espera de até uma hora se quiser ver a foto automática.</p>
+</div>
+
+<div class="warning">
+<strong>Antes de começar</strong>
+<p>Confira o número do loop que o <code>losetup</code> devolver e use <strong>esse</strong> em todos os comandos. Errar o dispositivo num <code>mkfs</code> apaga um disco de verdade. Aqui foi <code>/dev/loop0</code>; no seu computador pode ser outro.</p>
+</div>
+
+<hr>
+
+<h2>Parte 1: o disco e os subvolumes</h2>
+
+<ol class="passo">
+<li><strong>Crie a imagem e ligue-a a um loop:</strong>
+<pre class="term">#> mkdir -p /var/tmp/a8 /mnt/a8
+#> truncate -s 3G /var/tmp/a8/projeto.img
+#> losetup -f --show /var/tmp/a8/projeto.img
+/dev/loop0</pre>
+</li>
+
+<li><strong>Formate e crie os três subvolumes no topo.</strong> O <code>-q</code> deixa o <code>mkfs.btrfs</code> calado; o <code>subvolume create</code> aceita vários caminhos de uma vez:
+<pre class="term">#> mkfs.btrfs -q -L projeto /dev/loop0
+#> mount /dev/loop0 /mnt/a8
+#> btrfs subvolume create /mnt/a8/@ /mnt/a8/@home /mnt/a8/@snapshots
+Create subvolume '/mnt/a8/@'
+Create subvolume '/mnt/a8/@home'
+Create subvolume '/mnt/a8/@snapshots'
+#> umount /mnt/a8</pre>
+</li>
+
+<li><strong>Monte como se fosse uma instalação</strong>: <code>@</code> na "raiz" (<code>/mnt/a8</code>) e <code>@home</code> na home. A variável <code>D</code> evita repetir o dispositivo:
+<pre class="term">#> D=/dev/loop0
+#> mount -o subvol=@,compress=zstd $D /mnt/a8
+#> mount --mkdir -o subvol=@home,compress=zstd $D /mnt/a8/home</pre>
+</li>
+
+<li><strong>Ponha um "sistema" de brinquedo dentro:</strong> alguns arquivos de configuração copiados do <code>/etc</code> de verdade e uma nota na home.
+<pre class="term">#> mkdir -p /mnt/a8/etc /mnt/a8/home/ana
+#> cp /etc/pacman.conf /etc/fstab /etc/hostname /etc/locale.conf /mnt/a8/etc/
+#> printf 'Comprar café\nEstudar snapper\n' &gt; /mnt/a8/home/ana/notas.txt
+#> tree /mnt/a8
+/mnt/a8
+├── etc
+│   ├── fstab
+│   ├── hostname
+│   ├── locale.conf
+│   └── pacman.conf
+└── home
+    └── ana
+        └── notas.txt
+
+4 directories, 5 files</pre>
+</li>
+</ol>
+
+<hr>
+
+<h2>Parte 2: o snapper com @snapshots separado</h2>
+
+<ol class="passo">
+<li><strong>Crie a configuração</strong> para a "raiz" do projeto. O snapper cria sozinho um subvolume <code>.snapshots</code> <strong>dentro</strong> do <code>@</code>:
+<pre class="term">#> snapper -c projeto create-config /mnt/a8
+#> btrfs subvolume list /mnt/a8
+ID 256 gen 9 top level 5 path @
+ID 257 gen 9 top level 5 path @home
+ID 258 gen 9 top level 5 path @snapshots
+ID 259 gen 10 top level 256 path .snapshots     « dentro do @ (top level 256)</pre>
+</li>
+
+<li><strong>Troque esse <code>.snapshots</code> pelo <code>@snapshots</code>.</strong> É o passo que a Arch Wiki recomenda: se os snapshots morassem dentro do <code>@</code>, trocar o <code>@</code> por um snapshot (o rollback da Parte 4) levaria os snapshots junto. Apague o subvolume criado pelo snapper, recrie a pasta e monte o <code>@snapshots</code> ali:
+<pre class="term">#> btrfs subvolume delete /mnt/a8/.snapshots
+Delete subvolume 259 (no-commit): '/mnt/a8/.snapshots'
+#> mkdir /mnt/a8/.snapshots
+#> mount -o subvol=@snapshots,compress=zstd $D /mnt/a8/.snapshots
+#> chmod 750 /mnt/a8/.snapshots
+#> findmnt -R /mnt/a8 -o TARGET,SOURCE
+TARGET               SOURCE
+/mnt/a8              /dev/loop0[/@]
+├─/mnt/a8/home       /dev/loop0[/@home]
+└─/mnt/a8/.snapshots /dev/loop0[/@snapshots]
+#> snapper -c projeto list
+# │ Tipo   │ Pre # │ Data │ Usuário │ Limpeza │ Descrição │ Dados de usuário
+──┼────────┼───────┼──────┼─────────┼─────────┼───────────┼─────────────────
+0 │ single │       │      │ root    │         │ current   │</pre>
+<p>O <code>chmod 750</code> impede que usuários comuns entrem nos snapshots (eles têm cópias de arquivos de todo mundo). No sistema real, essa montagem vira uma linha no <code>fstab</code>.</p>
+</li>
+
+<li><strong>Ajuste os limites</strong> da limpeza: 5 fotos de hora em hora, 7 diárias, nenhuma semanal, mensal ou anual, e até 10 snapshots "numerados":
+<pre class="term">#> snapper -c projeto set-config TIMELINE_LIMIT_HOURLY=5 TIMELINE_LIMIT_DAILY=7 TIMELINE_LIMIT_WEEKLY=0 TIMELINE_LIMIT_MONTHLY=0 TIMELINE_LIMIT_YEARLY=0 NUMBER_LIMIT=10
+#> snapper -c projeto get-config | grep -E 'TIMELINE|NUMBER_LIMIT'
+NUMBER_LIMIT             │ 10
+NUMBER_LIMIT_IMPORTANT   │ 10
+TIMELINE_CLEANUP         │ yes
+TIMELINE_CREATE          │ yes             « o timer vai fotografar esta configuração
+TIMELINE_LIMIT_DAILY     │ 7
+TIMELINE_LIMIT_HOURLY    │ 5
+TIMELINE_LIMIT_MONTHLY   │ 0
+TIMELINE_LIMIT_QUARTERLY │ 0
+TIMELINE_LIMIT_WEEKLY    │ 0
+TIMELINE_LIMIT_YEARLY    │ 0
+TIMELINE_MIN_AGE         │ 3600</pre>
+<p>Com isso, num dia qualquer você terá as 5 últimas horas e um snapshot por dia da última semana: umas 12 fotos, sempre renovadas.</p>
+</li>
+</ol>
+
+<hr>
+
+<h2>Parte 3: fotos automáticas</h2>
+
+<ol class="passo">
+<li><strong>Conheça os dois timers.</strong> Um cria (timeline), o outro limpa (cleanup):
+<pre class="term">#> systemctl cat snapper-timeline.timer | grep -E '^On|^Description'
+Description=Timeline of Snapper Snapshots
+OnCalendar=hourly                                « de hora em hora, na hora cheia
+#> systemctl cat snapper-timeline.service | grep -E '^Exec|^Description'
+Description=Timeline of Snapper Snapshots
+ExecStart=/usr/lib/snapper/systemd-helper --timeline
+#> systemctl cat snapper-cleanup.timer | grep -E '^On|^Description'
+Description=Hourly Cleanup of Snapper Snapshots
+OnBootSec=10m                                    « 10 min depois do boot...
+OnUnitActiveSec=1h                               « ...e depois a cada hora
+#> systemctl cat snapper-cleanup.service | grep -E '^Exec'
+ExecStart=/usr/lib/snapper/systemd-helper --cleanup</pre>
+<p>Os dois rodam para <strong>todas</strong> as configurações listadas em <code>/etc/conf.d/snapper</code> que tenham <code>TIMELINE_CREATE</code>/<code>*_CLEANUP</code> ligados.</p>
+</li>
+
+<li><strong>Ligue os timers.</strong> Na máquina do guia, o <code>snapper-timeline.timer</code> já estava ligado por outra aula; ligamos o de limpeza para ver a saída (e o desligamos logo depois, para devolver a máquina como estava; o comando está na Parte 5):
+<pre class="term">#> systemctl enable --now snapper-cleanup.timer
+Created symlink '/etc/systemd/system/timers.target.wants/snapper-cleanup.timer' → '/usr/lib/systemd/system/snapper-cleanup.timer'.
+#> systemctl list-timers "snapper-*" --no-pager
+NEXT                         LEFT LAST                          PASSED UNIT                   ACTIVATES
+Fri 2026-10-16 14:00:00 -03 18min -                                  - snapper-timeline.timer snapper-timeline.service
+-                               - Fri 2026-10-16 13:41:15 -03 28ms ago snapper-cleanup.timer  snapper-cleanup.service
+
+2 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+<p>No seu sistema: <code>systemctl enable --now snapper-timeline.timer snapper-cleanup.timer</code>. O cleanup rodou na hora (o boot tinha sido havia mais de 10 minutos) e não apagou nada, porque nada tinha mais de uma hora.</p>
+</li>
+
+<li><strong>Tire as fotos manuais</strong> que vamos usar: uma marcada como <code>timeline</code> (igual às do timer) e a de referência, "sistema limpo":
+<pre class="term">#> snapper -c projeto create -c timeline -d timeline
+#> snapper -c projeto create -c number -d "sistema limpo"
+#> snapper -c projeto list
+# │ Tipo   │ Pre # │ Data                     │ Usuário │ Limpeza  │ Descrição     │ Dados de usuário
+──┼────────┼───────┼──────────────────────────┼─────────┼──────────┼───────────────┼─────────────────
+0 │ single │       │                          │ root    │          │ current       │
+1 │ single │       │ sex 16 out 2026 13:40:56 │ root    │ timeline │ timeline      │
+2 │ single │       │ sex 16 out 2026 13:40:57 │ root    │ number   │ sistema limpo │
+#> ls -a /mnt/a8/.snapshots/2/snapshot /mnt/a8/.snapshots/2/snapshot/home
+/mnt/a8/.snapshots/2/snapshot:
+.
+..
+etc
+home
+.snapshots
+
+/mnt/a8/.snapshots/2/snapshot/home:
+.
+..                                                « vazio!</pre>
+<p>A <code>home</code> do snapshot está <strong>vazia</strong>: o <code>@home</code> é outro subvolume e não entra na foto do <code>@</code>. É exatamente o que queremos: restaurar o sistema não desfaz os seus arquivos pessoais.</p>
+</li>
+
+<li><strong>Espere a hora cheia</strong> (opcional). Às 14:00, o timer fotografou sozinho:
+<pre class="term">#> journalctl -u snapper-timeline.service --since "-40min" --no-pager -o short | tail -3
+out 16 14:00:00 notebook systemd[1]: Started Timeline of Snapper Snapshots.
+out 16 14:00:00 notebook systemd-helper[101368]: Running timeline for 'projeto'.
+out 16 14:00:01 notebook systemd[1]: snapper-timeline.service: Deactivated successfully.</pre>
+<p>Ele aparece como o snapshot 4 na lista do fim da Parte 4.</p>
+</li>
+</ol>
+
+<hr>
+
+<h2>Parte 4: o estrago e a volta</h2>
+
+<ol class="passo">
+<li><strong>Estrague o "sistema":</strong> apague dois arquivos, altere um e crie lixo. Depois, uma foto do estrago (para comparar):
+<pre class="term">#> rm /mnt/a8/etc/pacman.conf /mnt/a8/etc/fstab
+#> echo "configuração estragada" &gt; /mnt/a8/etc/hostname
+#> echo "lixo" &gt; /mnt/a8/etc/arquivo-novo.conf
+#> ls /mnt/a8/etc
+arquivo-novo.conf
+hostname
+locale.conf
+#> snapper -c projeto create -c number -d "depois do estrago"</pre>
+</li>
+
+<li><strong>Veja o que mudou</strong> entre o "sistema limpo" (2) e o estrago (3):
+<pre class="term">#> snapper -c projeto status 2..3
++..... /mnt/a8/etc/arquivo-novo.conf
+-..... /mnt/a8/etc/fstab
+c..... /mnt/a8/etc/hostname
+-..... /mnt/a8/etc/pacman.conf
+#> snapper -c projeto diff 2..3 /mnt/a8/etc/hostname
+--- /mnt/a8/.snapshots/2/snapshot/etc/hostname	2026-10-16 13:40:46.442003144 -0300
++++ /mnt/a8/.snapshots/3/snapshot/etc/hostname	2026-10-16 13:41:22.913750324 -0300
+@@ -1 +1 @@
+-notebook
++configuração estragada</pre>
+</li>
+
+<li><strong>Volte com <code>undochange</code>.</strong> <code>2..0</code> = "desfaça tudo o que mudou do snapshot 2 até agora":
+<pre class="term">#> snapper -c projeto undochange 2..0
+criar:2 modificar:1 remover:1        « recriou 2, consertou 1, apagou o lixo
+#> echo $?
+0
+#> ls /mnt/a8/etc
+fstab
+hostname
+locale.conf
+pacman.conf
+#> cat /mnt/a8/etc/hostname
+notebook
+#> snapper -c projeto status 2..0
+#>                                    « nenhuma diferença: igual ao "sistema limpo"</pre>
+<p>O <code>undochange</code> é ótimo para estragos parciais, com o sistema funcionando. Quando o estrago é grande (o sistema nem liga), a saída é trocar o subvolume inteiro.</p>
+</li>
+
+<li><strong>Tente o <code>rollback</code> do snapper:</strong>
+<pre class="term">#> snapper -c projeto rollback 2
+O comando 'rollback' não pode ser usado num subvolume não-root /mnt/a8.
+#> echo $?
+1</pre>
+<p>O <code>snapper rollback</code> só funciona na configuração do <code>/</code> de verdade (ele muda o subvolume padrão do Btrfs para o próximo boot). No projeto, fazemos o mesmo "à mão", que é também o que você faria pelo pendrive de resgate.</p>
+</li>
+
+<li><strong>Estrague de vez</strong> (apague o <code>/etc</code> inteiro) e faça o <strong>rollback manual</strong>: monte o topo do Btrfs (<code>subvolid=5</code>), renomeie o <code>@</code> quebrado e crie um <code>@</code> novo a partir do snapshot 2:
+<pre class="term">#> rm -r /mnt/a8/etc
+#> ls /mnt/a8
+home
+#> umount -R /mnt/a8
+#> mount -o subvolid=5 /dev/loop0 /mnt/a8
+#> ls /mnt/a8
+@
+@home
+@snapshots
+#> mv /mnt/a8/@ /mnt/a8/@quebrado
+#> btrfs subvolume snapshot /mnt/a8/@snapshots/2/snapshot /mnt/a8/@
+Create snapshot of '/mnt/a8/@snapshots/2/snapshot' in '/mnt/a8/@'
+#> btrfs subvolume list /mnt/a8
+ID 256 gen 13 top level 5 path @quebrado
+ID 257 gen 12 top level 5 path @home
+ID 258 gen 13 top level 5 path @snapshots
+ID 260 gen 10 top level 258 path @snapshots/1/snapshot
+ID 261 gen 11 top level 258 path @snapshots/2/snapshot
+ID 262 gen 12 top level 258 path @snapshots/3/snapshot
+ID 263 gen 14 top level 5 path @                      « o @ novo, gravável</pre>
+<dl class="anatomy">
+  <dt>mount -o subvolid=5</dt><dd>Monta o topo do Btrfs, onde os subvolumes aparecem como pastas.</dd>
+  <dt>mv @ @quebrado</dt><dd>Renomear um subvolume é instantâneo. Guarde o quebrado até ter certeza.</dd>
+  <dt>btrfs subvolume snapshot (sem -r)</dt><dd>Cria um snapshot <strong>gravável</strong> do snapshot 2 (que é só leitura) com o nome <code>@</code>.</dd>
+</dl>
+</li>
+
+<li><strong>Monte de novo como antes e confira:</strong>
+<pre class="term">#> umount /mnt/a8
+#> mount -o subvol=@,compress=zstd /dev/loop0 /mnt/a8
+#> ls /mnt/a8 /mnt/a8/etc
+/mnt/a8:
+etc
+home
+
+/mnt/a8/etc:
+fstab
+hostname
+locale.conf
+pacman.conf
+#> btrfs subvolume show /mnt/a8 | head -4
+@
+	Name: 			@
+	UUID: 			02480418-748e-3743-8d0f-9a6da3bc8301
+	Parent UUID: 		f9dfea4a-8f24-6646-974c-3bee9eca93e5     « nasceu de um snapshot
+#> mount -o subvol=@home,compress=zstd /dev/loop0 /mnt/a8/home
+#> mount -o subvol=@snapshots,compress=zstd /dev/loop0 /mnt/a8/.snapshots
+#> cat /mnt/a8/home/ana/notas.txt
+Comprar café
+Estudar snapper                                          « a home não foi afetada
+#> snapper -c projeto list
+# │ Tipo   │ Pre # │ Data                     │ Usuário │ Limpeza  │ Descrição         │ Dados de usuário
+──┼────────┼───────┼──────────────────────────┼─────────┼──────────┼───────────────────┼─────────────────
+0 │ single │       │                          │ root    │          │ current           │
+1 │ single │       │ sex 16 out 2026 13:40:56 │ root    │ timeline │ timeline          │
+2 │ single │       │ sex 16 out 2026 13:40:57 │ root    │ number   │ sistema limpo     │
+3 │ single │       │ sex 16 out 2026 13:41:22 │ root    │ number   │ depois do estrago │
+4 │ single │       │ sex 16 out 2026 14:00:00 │ root    │ timeline │ timeline          │   « o automático</pre>
+<p>Os snapshots sobreviveram à troca porque moram no <code>@snapshots</code>, fora do <code>@</code>. Como o <code>fstab</code> real monta por <code>subvol=/@</code> (o <code>genfstab</code> não grava o <code>subvolid</code>), o <code>@</code> novo seria usado no próximo boot sem mexer em nada.</p>
+</li>
+
+<li><strong>Quando tiver certeza, apague o quebrado</strong> (de um ponto de montagem do topo):
+<pre class="term">#> mount -o subvolid=5 /dev/loop0 /var/tmp/a8/topo --mkdir
+#> btrfs subvolume delete /var/tmp/a8/topo/@quebrado
+Delete subvolume 256 (no-commit): '/var/tmp/a8/topo/@quebrado'
+#> umount /var/tmp/a8/topo &amp;&amp; rmdir /var/tmp/a8/topo</pre>
+</li>
+</ol>
+
+<hr>
+
+<h2>Parte 5: desmontar sem deixar lixo</h2>
+<p>Aqui o projeto ensinou uma lição de verdade. O jeito óbvio falhou:</p>
+<pre class="term">#> snapper -c projeto delete-config
+Falha ao excluir a configuração (deleting snapshot failed).
+#> echo $?
+1</pre>
+<p>O <code>delete-config</code> quer apagar o subvolume <code>.snapshots</code> que ele mesmo criou, mas no nosso layout ali está montado o <code>@snapshots</code>. Refizemos o teste numa imagem menor (configuração <code>t2</code>, mesmo layout) para achar a ordem que funciona: apagar os snapshots, desmontar o <code>@snapshots</code>, recolocar um subvolume <code>.snapshots</code> vazio e só então apagar a configuração:</p>
+<pre class="term">#> snapper -c t2 delete 1-2
+#> umount /mnt/a8/.snapshots
+#> snapper -c t2 delete-config
+Erro de E/S (.snapshots is not a btrfs subvolume).      « ainda falta um passo
+#> rmdir /mnt/a8/.snapshots
+#> btrfs subvolume create /mnt/a8/.snapshots
+Create subvolume '/mnt/a8/.snapshots'
+#> snapper -c t2 delete-config
+#> echo $?
+0
+#> snapper list-configs
+Configuração │ Subvolume
+─────────────┼──────────
+#> grep SNAPPER_CONFIGS /etc/conf.d/snapper
+SNAPPER_CONFIGS=""</pre>
+<p>Por fim, desmonte, solte o loop, apague a imagem e devolva o timer ao estado original:</p>
+<pre class="term">#> umount -R /mnt/a8
+#> losetup -d /dev/loop0
+#> rm /var/tmp/a8/projeto.img
+#> systemctl disable --now snapper-cleanup.timer
+Removed '/etc/systemd/system/timers.target.wants/snapper-cleanup.timer'.</pre>
+<div class="warning">
+<strong>Apague a configuração antes da imagem</strong>
+<p>Se você apagar a imagem com a configuração ainda registrada, o timer do snapper vai tentar fotografar uma pasta que não é mais Btrfs, toda hora, e o <code>delete-config</code> passa a responder <code>Erro de E/S (query default id failed, subvolume is not a btrfs subvolume).</code> Aí a limpeza é manual: apagar <code>/etc/snapper/configs/NOME</code>, tirar o nome de <code>SNAPPER_CONFIGS</code> em <code>/etc/conf.d/snapper</code> e reiniciar o serviço <code>snapperd</code>. (Aconteceu na primeira tentativa deste projeto.)</p>
+</div>
+
+<hr>
+
+<h2>Como ficaria no sistema real</h2>
+<p>Esta parte é <strong>ilustrativa</strong>: é o mesmo projeto, mas com a raiz de verdade. Exige instalar o Arch com Btrfs (a máquina do guia usa ext4) e mexe no boot, então faça com calma e com backup.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>No projeto</th><th>No sistema real</th></tr>
+<tr><td>Instalação</td><td>Imagem + loop</td><td><code>mkfs.btrfs</code> na partição da raiz, subvolumes <code>@</code>, <code>@home</code>, <code>@var_log</code>, <code>@snapshots</code>, montagem com <code>subvol=</code> e <code>genfstab</code> (aula <a href="btrfs.html">Btrfs</a>); <code>pacstrap</code> com <code>btrfs-progs</code></td></tr>
+<tr><td>Configuração</td><td><code>snapper -c projeto create-config /mnt/a8</code></td><td><code>snapper -c root create-config /</code>, a mesma troca do <code>.snapshots</code> pelo <code>@snapshots</code>, e a linha do <code>/.snapshots</code> no fstab</td></tr>
+<tr><td>Fotos automáticas</td><td>Timers + <code>TIMELINE_*</code></td><td>Igual: <code>systemctl enable --now snapper-timeline.timer snapper-cleanup.timer</code></td></tr>
+<tr><td>Foto a cada pacman</td><td><code>create -t pre/post</code> à mão</td><td><code>pacman -S snap-pac</code>: um par pre/post por transação, sozinho</td></tr>
+<tr><td>Boot num snapshot</td><td>—</td><td><code>pacman -S grub-btrfs inotify-tools</code>, <code>systemctl enable --now grub-btrfsd</code>, e o hook <code>grub-btrfs-overlayfs</code> no fim do <code>HOOKS=</code> + <code>mkinitcpio -P</code></td></tr>
+<tr><td>Desfazer arquivos</td><td><code>undochange 2..0</code></td><td>Igual (com <code>-c root</code>, que é o padrão)</td></tr>
+<tr><td>Voltar o sistema</td><td><code>mv @ @quebrado</code> + snapshot gravável</td><td>O mesmo <code>mv @ @quebrado</code> + snapshot gravável, pelo <a href="chroot-resgate.html">pendrive</a> ou com o sistema ligado num snapshot pelo GRUB. (O <code>snapper rollback</code> só funciona se a raiz for montada pelo subvolume padrão, e não com <code>subvol=/@</code> no fstab)</td></tr>
+</table>
+</div>
+
+<p>Com <code>snap-pac</code> e <code>grub-btrfs</code>, o dia a dia fica assim:</p>
+<ol>
+  <li>Você roda <code>sudo pacman -Syu</code>. O hook <code>05-snap-pac-pre.hook</code> cria o snapshot <code>pre</code> antes de qualquer arquivo mudar; o <code>zz-snap-pac-post.hook</code> cria o <code>post</code> no fim (o conteúdo dos hooks está na aula <a href="snapshots.html">Snapshots</a>).</li>
+  <li>O <code>grub-btrfsd</code> percebe os snapshots novos em <code>/.snapshots</code> e atualiza o submenu "Arch Linux snapshots" do GRUB.</li>
+  <li>A atualização quebrou o boot? No GRUB, escolha o snapshot <code>pre</code> da atualização. O sistema liga como era (só leitura, com a camada gravável temporária do overlayfs).</li>
+  <li>Já dentro, monte o topo do Btrfs (<code>mount -o subvolid=5 /dev/sda3 /mnt</code>), troque o <code>@</code> como na Parte 4 (<code>mv /mnt/@ /mnt/@quebrado</code> e <code>btrfs subvolume snapshot /mnt/@snapshots/N/snapshot /mnt/@</code>) e reinicie. Depois, com calma, descubra o que quebrou antes de atualizar de novo (as <a href="manutencao.html">notícias</a> costumam explicar).</li>
+</ol>
+
+<div class="warning">
+<strong>Cuidados do rollback no sistema real</strong>
+<ul>
+  <li>O <code>/boot</code> (partição EFI, FAT32) <strong>não</strong> entra nos snapshots. Se você voltar a raiz para antes de uma atualização do kernel, os módulos em <code>/usr/lib/modules</code> voltam, mas o kernel no <code>/boot</code> continua o novo: reinstale o kernel (<code>pacman -S linux</code>) depois do rollback, ou use o <a href="kernels.html">LTS</a> para ligar.</li>
+  <li>O banco de dados do pacman volta junto com o <code>@</code> (ele fica em <code>/var/lib/pacman</code>, dentro do <code>@</code>), o que é bom: pacotes e banco continuam combinando.</li>
+  <li>Os logs ficam no <code>@var_log</code> e não voltam: você consegue ler o que deu errado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Confira o que você fez</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Como conferir</th></tr>
+<tr><td>Subvolumes no topo</td><td><code>btrfs subvolume list</code> mostra <code>@</code>, <code>@home</code>, <code>@snapshots</code> com <code>top level 5</code></td></tr>
+<tr><td>Snapshots fora do <code>@</code></td><td><code>findmnt -R</code> mostra <code>[/@snapshots]</code> em <code>.snapshots</code></td></tr>
+<tr><td>Limites ajustados</td><td><code>snapper -c NOME get-config</code></td></tr>
+<tr><td>Fotos automáticas</td><td>Snapshot <code>timeline</code> na hora cheia; <code>journalctl -u snapper-timeline.service</code></td></tr>
+<tr><td>undochange</td><td><code>snapper status 2..0</code> sem saída</td></tr>
+<tr><td>Rollback manual</td><td><code>btrfs subvolume show</code> do <code>@</code> com <code>Parent UUID</code> preenchido</td></tr>
+<tr><td>Limpeza</td><td><code>snapper list-configs</code> vazio, <code>losetup -a</code> sem a imagem, timer no estado original</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Desafios</h2>
+<div class="exercise">
+<h3>1. Pre e post à mão</h3>
+<p>Antes de editar <code>/mnt/a8/etc/pacman.conf</code>, crie um par pre/post com o atalho que roda um comando entre os dois:</p>
+<div class="ex-code">snapper -c projeto create <input data-answer="--command" aria-label="opção"> "sed -i 's/^#Color/Color/' /mnt/a8/etc/pacman.conf" -d "ligar cores"</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Por que o snapshot do <code>@</code> tinha a pasta <code>home</code> vazia?</p>
+<label><input type="radio" name="q2"> Porque a compressão apagou os arquivos.</label>
+<label><input type="radio" name="q2"> Porque <code>@home</code> é outro subvolume, e snapshots não entram em subvolumes de dentro.</label>
+<label><input type="radio" name="q2"> Porque o snapper ignora pastas chamadas home.</label>
+<label><input type="radio" name="q2"> Porque o snapshot é só leitura.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. No rollback manual, por que criar o <code>@</code> novo com <code>btrfs subvolume snapshot</code> <strong>sem</strong> <code>-r</code>?</p>
+<label><input type="radio" name="q3"> Para economizar espaço.</label>
+<label><input type="radio" name="q3"> Porque o <code>-r</code> não existe no Btrfs.</label>
+<label><input type="radio" name="q3"> Para apagar o snapshot 2.</label>
+<label><input type="radio" name="q3"> Porque o sistema precisa gravar no <code>@</code>; o snapshot 2 é só leitura e continua guardado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Num sistema real com snapper, o que <strong>não</strong> volta num rollback da raiz?</p>
+<label><input type="radio" name="q4"> O kernel na partição EFI (<code>/boot</code>), que não é Btrfs.</label>
+<label><input type="radio" name="q4"> O <code>/etc</code>.</label>
+<label><input type="radio" name="q4"> O banco de dados do pacman.</label>
+<label><input type="radio" name="q4"> Os programas em <code>/usr/bin</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Layout: <code>@</code>, <code>@home</code> e <code>@snapshots</code> no topo; o <code>.snapshots</code> do snapper trocado pelo <code>@snapshots</code>.</li>
+  <li><code>set-config</code> define quantas fotos manter; os timers <code>snapper-timeline</code> e <code>snapper-cleanup</code> criam e limpam sozinhos.</li>
+  <li>Estrago pequeno: <code>status</code>, <code>diff</code>, <code>undochange N..0</code>. Estrago grande: trocar o <code>@</code> por um snapshot gravável (ou <code>snapper rollback</code> na raiz real).</li>
+  <li>Para desmontar o laboratório: apagar snapshots, recolocar o subvolume <code>.snapshots</code>, <code>delete-config</code>, só então a imagem.</li>
+  <li>No sistema real, <code>snap-pac</code> + <code>grub-btrfs</code> fecham o ciclo: foto a cada pacman e boot direto num snapshot.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o roteiro completo, incluindo o layout com <code>@snapshots</code> e a restauração, está em <a href="https://wiki.archlinux.org/title/Snapper">Snapper</a> (<a href="https://wiki.archlinux.org/title/Snapper_(Portugu%C3%AAs)">em português</a>), com o layout em <a href="https://wiki.archlinux.org/title/Snapper#Suggested_filesystem_layout">Suggested filesystem layout</a> e a volta do sistema em <a href="https://wiki.archlinux.org/title/Snapper#Restoring_/_to_its_previous_snapshot">Restoring / to its previous snapshot</a>; os subvolumes e snapshots do Btrfs em <a href="https://wiki.archlinux.org/title/Btrfs">Btrfs</a> (<a href="https://wiki.archlinux.org/title/Btrfs_(Portugu%C3%AAs)">em português</a>); e o boot nos snapshots na página do <a href="https://github.com/Antynea/grub-btrfs">grub-btrfs</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

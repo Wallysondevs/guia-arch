@@ -397,6 +397,7 @@ No suitable TPM2 devices found.
 #> systemd-cryptenroll --fido2-device=list
 Shared library 'libfido2.so.1' is not available: libfido2.so.1: cannot open shared object file: No such file or directory</pre>
 <p>A máquina do guia é uma máquina virtual sem TPM, e o suporte a FIDO2 precisa do pacote <code>libfido2</code>. Num computador com TPM2, o cadastro seria <code>systemd-cryptenroll --tpm2-device=auto /dev/sda3</code> e o <code>/etc/crypttab.initramfs</code> (ou o parâmetro <code>rd.luks.options=tpm2-device=auto</code>) ensinaria o <code>sd-encrypt</code> a usá-lo. Mantenha sempre a senha num slot: se a placa-mãe for trocada, o TPM não abre mais.</p>
+<p>Antes de atualizar um sistema que destrava pelo TPM2, leia as notícias: em 22/09/2026 o Arch publicou <code>Mkinitcpio &gt;=42 requires manual intervention for TPM2-based unlocking of LUKS devices</code> (veja <a href="manutencao.html">Manutenção Periódica</a>).</p>
 
 <hr>
 

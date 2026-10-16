@@ -486,16 +486,16 @@ Tamanho total instalado:  122,39 MiB
 <tr><th>Problema</th><th>Como restaurar</th></tr>
 <tr><td>Apaguei/estraguei <strong>um arquivo</strong></td><td>Copie de <code>/.snapshots/N/snapshot/caminho</code>, ou <code>snapper undochange N..0 /caminho/arquivo</code>.</td></tr>
 <tr><td>Uma <strong>atualização</strong> estragou algo, mas o sistema liga</td><td><code>snapper status PRE..POST</code> para ver o que mudou e <code>snapper undochange PRE..POST</code>. Cuidado: a base de dados do pacman também volta; confira com <code>pacman -Qkk</code>.</td></tr>
-<tr><td>O sistema <strong>não liga</strong></td><td>Boot no snapshot pelo <code>grub-btrfs</code> e <code>snapper rollback</code>; ou, do <a href="chroot-resgate.html">pendrive</a>, troque o subvolume <code>@</code> por um snapshot (passo a passo no <a href="projeto-snapshots.html">projeto</a>).</td></tr>
+<tr><td>O sistema <strong>não liga</strong></td><td>Boot no snapshot pelo <code>grub-btrfs</code> para voltar a trabalhar; depois, troque o subvolume <code>@</code> por um snapshot gravável (pelo <a href="chroot-resgate.html">pendrive</a> ou pelo topo do Btrfs; passo a passo no <a href="projeto-snapshots.html">projeto</a>).</td></tr>
 </table>
 </div>
-<p>O <code>snapper rollback</code> só existe para a configuração da raiz: ele cria um snapshot gravável do escolhido e o torna o subvolume padrão do próximo boot. Na configuração de teste, ele se recusa (veja abaixo).</p>
+<p>O <code>snapper rollback</code> só existe para a configuração da raiz: ele cria um snapshot gravável do escolhido e o torna o <strong>subvolume padrão</strong> do Btrfs. Isso só tem efeito se a raiz for montada pelo subvolume padrão (o layout do openSUSE). No layout do Arch, com <code>subvol=/@</code> no fstab e no GRUB, o padrão é ignorado, e a Arch Wiki recomenda a troca manual do <code>@</code>. Na configuração de teste, ele nem chega a tentar (veja abaixo).</p>
 
 <hr>
 
 <h2>Experimente</h2>
-<div class="try" data-goal="ran:pacman +-Ql +snapper,out:snapper-timeline.timer" data-solucao="pacman -Ql snapper | grep timer">
-<p class="try-task"><strong>Missão:</strong> descubra quais timers do systemd o pacote <code>snapper</code> instala. Dica: <code>pacman -Ql snapper</code> lista os arquivos; filtre com <code>grep timer</code>.</p>
+<div class="try" data-goal="ran:systemctl +status +snapper-timeline,out:Timeline of Snapper Snapshots" data-solucao="systemctl status snapper-timeline.timer">
+<p class="try-task"><strong>Missão:</strong> o timer que tira as fotos de hora em hora é o <code>snapper-timeline.timer</code>. Veja o estado dele na máquina do guia com <code>systemctl status</code>. Ele está ligado (<em>enabled</em>)?</p>
 </div>
 
 <hr>
@@ -538,6 +538,7 @@ Instantâneo inválido.</pre>
 
 <div class="cenario">
 <strong>rollback num subvolume que não é a raiz</strong>
+<p>(Exemplo da configuração <code>projeto</code>, do <a href="projeto-snapshots.html">projeto</a>, montada em <code>/mnt/a8</code>.)</p>
 <pre class="term">#> snapper -c projeto rollback 2
 O comando 'rollback' não pode ser usado num subvolume não-root /mnt/a8.</pre>
 <p><strong>O que aconteceu:</strong> o <code>rollback</code> só funciona na configuração de <code>/</code>. Para outros subvolumes, use <code>undochange</code> ou troque o subvolume à mão (no <a href="projeto-snapshots.html">projeto</a>).</p>
@@ -566,7 +567,7 @@ O comando 'rollback' não pode ser usado num subvolume não-root /mnt/a8.</pre>
 <tr><td><code>snapper -c NOME diff A..B [arquivo]</code></td><td>Diferenças de conteúdo</td></tr>
 <tr><td><code>snapper -c NOME undochange A..B [arquivo]</code></td><td>Desfaz as mudanças de A até B</td></tr>
 <tr><td><code>snapper -c NOME delete N</code> / <code>N-M</code></td><td>Apaga snapshots</td></tr>
-<tr><td><code>snapper rollback [N]</code></td><td>Volta a raiz para o snapshot N (próximo boot)</td></tr>
+<tr><td><code>snapper rollback [N]</code></td><td>Torna o snapshot N o subvolume padrão (só no layout com subvolume padrão)</td></tr>
 <tr><td><code>snapper -c NOME delete-config</code></td><td>Apaga a configuração e seus snapshots</td></tr>
 </table>
 </div>

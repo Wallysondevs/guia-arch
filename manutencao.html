@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Manutenção Periódica — o checklist semanal e mensal | Guia Arch</title>
+<meta name="description" content="Checklist de manutenção do Arch Linux: notícias, pacman -Syu, .pacnew, órfãos, cache (paccache), systemctl --failed, journalctl -p 3, espaço em disco, AUR (yay -Ps), backups, snapshots e kernel de reserva, com saídas reais e tabela semanal × mensal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Manutenção Periódica</span></h1>
+
+<p class="intro">O Arch não tem "versão nova" a cada dois anos: ele muda um pouco toda semana (<a href="rolling-release.html">rolling release</a>). Em troca, pede um pouco de cuidado regular. Quinze minutos por semana evitam quase todos os problemas das aulas de recuperação. Esta aula é o <strong>checklist</strong>, com o que cada comando mostra numa máquina saudável.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que conferir antes de atualizar e como atualizar com segurança.</li>
+  <li>Cuidar de <code>.pacnew</code>, órfãos e cache de pacotes.</li>
+  <li>Procurar serviços com falha e erros no journal.</li>
+  <li>Acompanhar espaço em disco, pacotes do AUR, backups e o kernel de reserva.</li>
+  <li>Juntar tudo num script de checagem e numa tabela semanal × mensal.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O checklist</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quando</th><th>Tarefa</th><th>Comando</th></tr>
+<tr><td rowspan="5"><strong>Toda semana</strong> (ou a cada atualização)</td><td>Ler as notícias</td><td><a href="https://archlinux.org/news/">archlinux.org/news</a> ou <code>yay -Pw</code></td></tr>
+<tr><td>Atualizar tudo</td><td><code>sudo pacman -Syu</code> (ou <code>yay</code>)</td></tr>
+<tr><td>Resolver <code>.pacnew</code></td><td><code>pacdiff -o</code>, depois <code>sudo pacdiff</code></td></tr>
+<tr><td>Serviços com falha</td><td><code>systemctl --failed</code></td></tr>
+<tr><td>Reiniciar se o kernel mudou</td><td><code>uname -r</code> × <code>pacman -Q linux</code></td></tr>
+<tr><td rowspan="6"><strong>Todo mês</strong></td><td>Órfãos</td><td><code>pacman -Qdt</code></td></tr>
+<tr><td>Cache de pacotes</td><td><code>paccache -dk2</code> → <code>sudo paccache -rk2</code></td></tr>
+<tr><td>Erros no journal</td><td><code>journalctl -p 3 -b</code></td></tr>
+<tr><td>Espaço em disco</td><td><code>df -h</code>, <code>du -sh</code></td></tr>
+<tr><td>Pacotes do AUR</td><td><code>yay -Ps</code>, <code>pacman -Qm</code></td></tr>
+<tr><td>Backup testado</td><td>Restaurar um arquivo de verdade</td></tr>
+<tr><td><strong>Sempre ter</strong></td><td>Kernel de reserva, pendrive do Arch, snapshots (se Btrfs)</td><td><code>pacman -Q linux-lts</code></td></tr>
+</table>
+</div>
+<p>Cada linha está explicada abaixo, com a saída real da máquina do guia (que está saudável: a maioria das respostas é "nada a fazer", e é isso que você quer ver).</p>
+
+<hr>
+
+<h2>1. Notícias</h2>
+<p>Quando uma atualização exige ação manual, o Arch publica uma notícia <strong>antes</strong>. Ler antes de atualizar é a regra número um. Pelo navegador, em <a href="https://archlinux.org/news/">archlinux.org/news</a> (há RSS e a lista de e-mail <em>arch-announce</em>), ou pelo <a href="yay-paru.html">yay</a>:</p>
+<pre class="term">$ yay -Pw
+$ echo $?
+0</pre>
+<p><code>-Pw</code> (<em>print news</em>) mostra só as notícias mais novas que os seus pacotes. Nenhuma saída = nada novo desde a última atualização. Com <code>-Pww</code>, ele mostra todas as recentes; um trecho real (a lista vai da mais antiga para a mais nova):</p>
+<pre class="term">$ yay -Pww | head -12
+2025-11-05 waydroid &gt;= 1.5.4-3 update may require manual intervention
+The waydroid package prior to version 1.5.4-2 (including aur/waydroid) creates Python byte-code files (.pyc) at runtime which were untracked by pacman. This issue has been fixed in 1.5.4-3, where byte-compiling these files is now done during the packaging process.
+
+As a result, the upgrade may conflict with the unowned files created in previous versions. If you encounter errors like the following during the update:
+
+
+error: failed to commit transaction (conflicting files)
+
+waydroid: /usr/lib/waydroid/tools/__pycache__/__init__.cpython-313.pyc exists in filesystem
+
+waydroid: /usr/lib/waydroid/tools/actions/__pycache__/__init__.cpython-313.pyc exists in filesystem</pre>
+<p>A notícia continua com a solução exata: <code>pacman -Syu --overwrite /usr/lib/waydroid/tools/\*__pycache__/\*</code>. É o erro de <a href="problemas-update.html">arquivos conflitantes</a> com a receita pronta. Os títulos mais recentes, em outubro de 2026, eram <code>2026-06-12 Active AUR malicious packages incident</code>, <code>2026-07-21 virtualbox-ext-vnc &gt;= 7.2.12-2 requires manual intervention</code> e <code>2026-09-22 Mkinitcpio &gt;=42 requires manual intervention for TPM2-based unlocking of LUKS devices</code>: se você usa o que o título cita, leia antes de atualizar.</p>
+
+<hr>
+
+<h2>2. Atualizar</h2>
+<p>O comando é sempre o mesmo: <code>sudo pacman -Syu</code> (ou <code>yay</code>, que inclui o AUR). Tudo sobre ler a transação está em <a href="atualizar.html">Atualizar o Sistema</a>. Para só <strong>saber</strong> se há atualizações, sem mexer na base do sistema, use o <code>checkupdates</code> (pacote <code>pacman-contrib</code>), que baixa as bases numa pasta temporária:</p>
+<pre class="term">$ checkupdates
+$ echo $?
+2                         « 2 = nenhuma atualização; 0 = há (e ele lista)</pre>
+<div class="warning">
+<strong>Nunca <code>pacman -Sy</code> sozinho</strong>
+<p>Para "ver se tem atualização", não rode <code>pacman -Sy</code>: ele atualiza a base sem atualizar os pacotes, e o próximo <code>pacman -S algo</code> vira uma atualização parcial. Use <code>checkupdates</code>.</p>
+</div>
+<p><strong>Com que frequência?</strong> Uma vez por semana é um bom ritmo. Ficar meses sem atualizar é o que mais dá trabalho (chaveiro velho, várias notícias acumuladas). E não atualize logo antes de uma apresentação ou viagem: atualize quando tiver tempo de reiniciar e conferir.</p>
+
+<h3>Depois de atualizar: precisa reiniciar?</h3>
+<pre class="term">$ pacman -Q linux linux-lts; uname -r
+linux 7.2.10.arch1-1
+linux-lts 6.18.57-1
+7.2.10-arch1-1           « o que roda = o instalado: não precisa</pre>
+<p>Se o <code>uname -r</code> mostrar uma versão diferente da do pacote <code>linux</code>, o kernel foi atualizado e os módulos antigos já sumiram: reinicie logo (veja o item 8 de <a href="problemas-update.html">Erros de Atualização</a>). Atualizações de <code>systemd</code>, <code>glibc</code> e drivers de vídeo também pedem um reboot.</p>
+
+<hr>
+
+<h2>3. Arquivos .pacnew</h2>
+<pre class="term">$ pacdiff -o
+$ echo $?
+0</pre>
+<p><code>pacdiff -o</code> (<em>output</em>) só lista os <code>.pacnew</code> e <code>.pacsave</code> pendentes; nenhuma linha = nada a fazer. Quando houver, <code>sudo pacdiff</code> mostra cada um e pergunta o que fazer. Como juntar as versões está em <a href="pacnew.html">.pacnew e .pacsave</a>.</p>
+
+<hr>
+
+<h2>4. Órfãos</h2>
+<p><strong>Órfãos</strong> são pacotes que entraram como dependência de algo que você já removeu, e que ninguém mais usa:</p>
+<pre class="term">$ pacman -Qdt
+$ echo $?
+1                         « 1 = nenhum órfão (o pacman não achou nada)</pre>
+<dl class="anatomy">
+  <dt>pacman -Q</dt><dd>Consulta pacotes instalados.</dd>
+  <dt>-d</dt><dd>Só os instalados como dependência.</dd>
+  <dt>-t</dt><dd>Só os que nenhum outro pacote exige (<em>unrequired</em>).</dd>
+</dl>
+<p>Quando houver órfãos, revise a lista e remova com <code>pacman -Qdtq | sudo pacman -Rns -</code> (<code>-q</code> imprime só os nomes; o <code>-</code> no fim lê a lista da entrada). Sem órfãos, esse comando reclama:</p>
+<pre class="term">#> pacman -Qdtq | pacman -Rns -
+erro: argumento "-" especificado com entrada padrão vazia
+#> echo $?
+1</pre>
+<div class="warning">
+<strong>Leia a lista antes de remover</strong>
+<p>Um pacote que você usa, mas que entrou como dependência (por exemplo, um programa instalado junto com outro e depois o "outro" foi removido), aparece como órfão. Se quiser mantê-lo, marque-o como explícito: <code>sudo pacman -D --asexplicit pacote</code>. Mais em <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+</div>
+
+<hr>
+
+<h2>5. Cache de pacotes</h2>
+<p>Todo pacote baixado fica em <code>/var/cache/pacman/pkg/</code>, inclusive as versões antigas. É útil para voltar uma versão (<a href="downgrade.html">downgrade</a>), mas cresce sem parar:</p>
+<pre class="term">$ du -sh /var/cache/pacman/pkg
+1,3G	/var/cache/pacman/pkg
+$ ls /var/cache/pacman/pkg | wc -l
+820
+$ paccache -d
+==&gt; no candidate packages found for pruning
+$ paccache -dk1
+==&gt; no candidate packages found for pruning
+$ paccache -du
+==&gt; no candidate packages found for pruning</pre>
+<dl class="anatomy">
+  <dt>paccache</dt><dd>O limpador de cache (pacote <code>pacman-contrib</code>).</dd>
+  <dt>-d</dt><dd><em>dry run</em>: só mostra o que apagaria. Troque por <code>-r</code> (<em>remove</em>) para apagar de fato (com <code>sudo</code>).</dd>
+  <dt>-k1</dt><dd><em>keep</em>: quantas versões manter de cada pacote (o padrão é 3).</dd>
+  <dt>-u</dt><dd>Só os pacotes que não estão mais instalados (<em>uninstalled</em>).</dd>
+</dl>
+<p>Nenhum candidato porque a máquina do guia é nova: só existe uma versão de cada pacote no cache (os 820 arquivos são os pacotes e as assinaturas <code>.sig</code>). Num sistema com meses de uso, o mesmo <code>-d</code> lista dezenas de arquivos e o espaço a liberar.</p>
+<p>O próprio <code>pacman-contrib</code> traz um timer semanal que faz isso sozinho (<code>paccache -r</code>, mantendo 3 versões). Ele vem desligado:</p>
+<pre class="term">$ systemctl cat paccache.timer | grep -E "^On|^Desc|^Persistent"
+Description=Discard unused packages weekly
+OnCalendar=weekly
+Persistent=true
+$ systemctl cat paccache.service | grep -E "^Exec"
+ExecStart=/usr/bin/paccache -r $PACCACHE_ARGS</pre>
+<p>Para ligar: <code>sudo systemctl enable --now paccache.timer</code> (veja <a href="timers.html">Timers e Tarefas</a>).</p>
+
+<hr>
+
+<h2>6. Serviços com falha</h2>
+<pre class="term">$ systemctl --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.             « tudo certo
+$ systemctl --user --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.</pre>
+<p>Se aparecer alguma unidade, investigue com <code>systemctl status NOME</code> e <code>journalctl -u NOME -b</code> (veja <a href="systemd.html">systemctl e Serviços</a>). O <code>--user</code> confere os serviços da sua sessão (som, por exemplo).</p>
+
+<hr>
+
+<h2>7. Erros no journal</h2>
+<p><code>journalctl -p 3 -b</code> mostra as mensagens de prioridade "erro" ou pior (<code>-p 3</code>) deste boot (<code>-b</code>). Na máquina do guia, as primeiras são estas:</p>
+<pre class="term">$ journalctl -b -p 3 --no-pager | head -5
+out 16 13:06:28 archlinux kernel: virt/tdx: TDX not supported by the host platform
+out 16 13:06:28 archlinux kernel: ata1.00: Read log 0x00 page 0x00 failed, Emask 0x1
+out 16 13:06:28 archlinux kernel: vmwgfx 0000:00:02.0: [drm] *ERROR* vmwgfx seems to be running on an unsupported hypervisor.
+out 16 13:06:28 archlinux kernel: vmwgfx 0000:00:02.0: [drm] *ERROR* This configuration is likely broken.
+out 16 13:06:28 archlinux kernel: vmwgfx 0000:00:02.0: [drm] *ERROR* Please switch to a supported graphics device to avoid problems.</pre>
+<p>Parecem graves, mas são normais <strong>nesta máquina</strong>: é uma máquina virtual, e o kernel reclama do processador virtual (TDX), do disco virtual e da placa de vídeo virtual. (O nome <code>archlinux</code> nas primeiras linhas é de antes de o sistema ler o <code>/etc/hostname</code>.) A manutenção não é zerar essa lista, e sim <strong>notar o que é novo</strong>: um erro de disco (<code>I/O error</code>, <code>csum failed</code>), de sistema de arquivos ou de um serviço que você usa. Mais filtros em <a href="journal.html">Logs (journalctl)</a>.</p>
+<p>O próprio journal ocupa espaço, mas é limitado sozinho (por padrão, até 10% do sistema de arquivos, no máximo 4 GiB):</p>
+<pre class="term">#> journalctl --disk-usage
+Archived and active journals take up 56M in the file system.</pre>
+
+<hr>
+
+<h2>8. Espaço em disco</h2>
+<pre class="term">$ df -h / /boot
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  5,2G   19G  23% /
+/dev/sda1      1022M   93M  930M  10% /boot</pre>
+<p>Fique de olho principalmente no <code>/boot</code>: cada kernel com o seu initramfs ocupa dezenas de MiB e, se ele encher, a próxima atualização do kernel falha no meio. A partir de ~80% em <code>/</code>, comece a limpar: cache (item 5), journal, <code>~/.cache</code> (<code>du -sh ~/.cache</code> deu <code>11M</code> aqui), e snapshots velhos se a raiz for Btrfs. Para achar o que ocupa espaço, <code>du -sh pasta/*</code> (veja <a href="discos.html">lsblk, df, du</a>).</p>
+
+<hr>
+
+<h2>9. Pacotes do AUR</h2>
+<p>O <code>pacman -Syu</code> não atualiza o AUR. Veja o que veio de fora e o resumo do <code>yay</code>:</p>
+<pre class="term">$ pacman -Qm
+downgrade 12.0.4-1
+paru-bin 2.1.0-1
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1
+$ yay -Ps
+==&gt; Versão do Yay v13.0.1
+===========================================
+==&gt; Total de pacotes instalados: 408
+==&gt; Pacotes externos instalados: 4
+==&gt; Pacotes explicitamente instalados: 45
+==&gt; Espaço total ocupado por pacotes: 3.2 GiB
+==&gt; Tamanho da cache do pacman /var/cache/pacman/pkg/: 1.3 GiB
+==&gt; Tamanho da cache do yay /home/ana/.cache/yay: 2.6 MiB
+===========================================
+==&gt; Dez maiores pacotes:
+linux-lts-headers: 273.5 MiB
+gcc: 220.9 MiB
+llvm-libs: 164.9 MiB
+linux: 161.6 MiB
+linux-lts: 155.8 MiB
+linux-firmware-intel: 138.0 MiB
+linux-firmware-nvidia: 103.5 MiB
+podman: 82.7 MiB
+python: 73.8 MiB
+perl: 70.3 MiB
+===========================================
+ -&gt; Pacotes AUR marcados como desatualizados: paru-bin   « atenção a esta linha</pre>
+<p>A última linha é a mais importante: alguém marcou o <code>paru-bin</code> como <strong>desatualizado</strong> no site do AUR (o mantenedor ainda não publicou a versão nova). Um pacote do AUR abandonado por muito tempo pode parar de funcionar quando as bibliotecas do Arch avançam. Rotina: <code>yay -Syu</code> (atualiza repositórios e AUR), e de vez em quando conferir se você ainda usa cada pacote de <code>pacman -Qm</code>. Depois de uma atualização grande do Python ou de uma biblioteca, pacotes do AUR compilados podem precisar ser recompilados (veja <a href="aur-seguranca.html">AUR com Segurança</a>).</p>
+
+<hr>
+
+<h2>10. Backups, snapshots e o kernel de reserva</h2>
+<ul>
+  <li><strong>Backup em outro disco</strong> (externo ou nuvem) dos seus arquivos e de <code>/etc</code>. Uma lista dos pacotes ajuda a reinstalar: <code>pacman -Qqe &gt; pacotes.txt</code>. E, uma vez por mês, <strong>teste</strong> restaurar um arquivo: backup que nunca foi restaurado é só esperança.</li>
+  <li><strong>Snapshots</strong>, se a raiz for Btrfs: <code>sudo snapper list</code> para ver se os automáticos estão sendo criados e limpos (<a href="snapshots.html">Snapshots</a>).</li>
+  <li><strong>Kernel de reserva</strong>: <code>linux-lts</code> instalado (a saída do item 2 mostra que a máquina do guia tem) e aparecendo no GRUB (veja <a href="recuperar-boot.html">Recuperar o Boot</a>).</li>
+  <li><strong>Um pendrive do Arch</strong> recente na gaveta, para o <a href="chroot-resgate.html">resgate com chroot</a>.</li>
+</ul>
+
+<hr>
+
+<h2>Tudo junto: um script de checagem</h2>
+<p>Um script que só <strong>consulta</strong> (não muda nada), para rodar como usuária comum antes ou depois de atualizar:</p>
+<pre class="file" data-file="~/a8/checagem.sh">#!/usr/bin/env bash
+# checagem.sh — revisão rápida do Arch (só consulta, não muda nada)
+echo "== Atualizações pendentes"
+checkupdates || echo "(nenhuma)"
+echo "== Órfãos"
+pacman -Qdtq || echo "(nenhum)"
+echo "== Arquivos .pacnew"
+pacdiff -o
+echo "== Serviços com falha"
+systemctl --failed --no-legend
+echo "== Erros neste boot"
+journalctl -p 3 -b --no-pager | wc -l
+echo "== Espaço"
+df -h / /boot
+echo "== Cache do pacman"
+du -sh /var/cache/pacman/pkg
+echo "== Kernel"
+echo "rodando: $(uname -r) | instalado: $(pacman -Q linux)"
+</pre>
+<pre class="term" data-cwd="~/a8">$ ./checagem.sh
+== Atualizações pendentes
+(nenhuma)
+== Órfãos
+(nenhum)
+== Arquivos .pacnew
+== Serviços com falha
+== Erros neste boot
+112
+== Espaço
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  5,2G   19G  23% /
+/dev/sda1      1022M   93M  930M  10% /boot
+== Cache do pacman
+1,3G	/var/cache/pacman/pkg
+== Kernel
+rodando: 7.2.10-arch1-1 | instalado: linux 7.2.10.arch1-1
+$ echo $?
+0</pre>
+<p>O <code>|| echo "(nenhuma)"</code> aproveita o código de saída: <code>checkupdates</code> e <code>pacman -Qdtq</code> devolvem diferente de 0 quando não acham nada. O número de erros (112) é a contagem de linhas do item 7, inflada pelos testes de outras aulas nesta máquina; o que importa é comparar com a semana anterior. Salve a saída de cada semana (<code>./checagem.sh &gt; checagem-$(date +%F).txt</code>) e use <code>diff</code> entre duas para ver o que mudou.</p>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:systemctl +--failed" data-solucao="systemctl --failed">
+<p class="try-task"><strong>Missão:</strong> faça a checagem de serviços da semana: liste as unidades do systemd que falharam.</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Qdt" data-solucao="pacman -Qdt">
+<p class="try-task"><strong>Missão:</strong> agora a checagem do mês: procure pacotes órfãos.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"no candidate packages found for pruning"</strong>
+<p><strong>O que aconteceu:</strong> não é erro: o <code>paccache</code> não achou nada para apagar com os critérios dados (poucas versões no cache).</p>
+<p><strong>Como resolver:</strong> nada. Se o cache está grande mesmo assim, veja quantas versões você mantém (<code>-k</code>) e os pacotes desinstalados (<code>-u</code>). Para apagar tudo, existe o <code>sudo pacman -Scc</code>, mas aí o <a href="downgrade.html">downgrade</a> pelo cache deixa de funcionar.</p>
+</div>
+
+<div class="cenario">
+<strong>"argumento "-" especificado com entrada padrão vazia"</strong>
+<p><strong>O que aconteceu:</strong> o <code>pacman -Qdtq | pacman -Rns -</code> não recebeu nenhum nome: não havia órfãos.</p>
+<p><strong>Como resolver:</strong> nada; rode <code>pacman -Qdt</code> antes para ver se há algo.</p>
+</div>
+
+<div class="cenario">
+<strong>"XML syntax error" no yay -Pw</strong>
+<pre class="term">$ yay -Pww
+ -&gt; XML syntax error on line 6: element &lt;hr&gt; closed by &lt;/body&gt;</pre>
+<p><strong>O que aconteceu:</strong> o site do Arch respondeu com uma página de erro em vez da lista de notícias (sobrecarga ou manutenção). Aconteceu de verdade durante a escrita desta aula.</p>
+<p><strong>Como resolver:</strong> abra <a href="https://archlinux.org/news/">archlinux.org/news</a> no navegador, ou tente mais tarde. Não pule a leitura só porque o yay falhou.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>yay -Pw</code> / <code>yay -Pww</code></td><td>Notícias novas / recentes</td></tr>
+<tr><td><code>checkupdates</code></td><td>Há atualizações? (sem mexer na base)</td></tr>
+<tr><td><code>sudo pacman -Syu</code> / <code>yay -Syu</code></td><td>Atualizar (repositórios / + AUR)</td></tr>
+<tr><td><code>pacdiff -o</code> / <code>sudo pacdiff</code></td><td>Listar / resolver <code>.pacnew</code></td></tr>
+<tr><td><code>pacman -Qdt</code></td><td>Órfãos</td></tr>
+<tr><td><code>paccache -dk2</code> / <code>sudo paccache -rk2</code></td><td>Ver / limpar versões antigas do cache</td></tr>
+<tr><td><code>sudo systemctl enable --now paccache.timer</code></td><td>Limpeza semanal automática</td></tr>
+<tr><td><code>systemctl --failed</code></td><td>Serviços com falha</td></tr>
+<tr><td><code>journalctl -p 3 -b</code></td><td>Erros deste boot</td></tr>
+<tr><td><code>df -h</code>; <code>du -sh pasta</code></td><td>Espaço</td></tr>
+<tr><td><code>pacman -Qm</code>; <code>yay -Ps</code></td><td>Pacotes do AUR e estatísticas</td></tr>
+<tr><td><code>uname -r</code>; <code>pacman -Q linux linux-lts</code></td><td>Precisa reiniciar? Tem reserva?</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Simular a limpeza do cache</h3>
+<p>Mostre o que seria apagado mantendo só a última versão de cada pacote, <strong>sem</strong> apagar nada:</p>
+<div class="ex-code">paccache <input data-answer="-dk1|-d -k1|-k1 -d|-dk 1" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Erros do boot atual</h3>
+<div class="ex-code">journalctl -p <input data-answer="3|err" aria-label="prioridade"> <input data-answer="-b" aria-label="boot"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você quer só saber se há atualizações, sem instalar nada. Qual comando?</p>
+<label><input type="radio" name="q3"> <code>sudo pacman -Sy</code></label>
+<label><input type="radio" name="q3"> <code>checkupdates</code></label>
+<label><input type="radio" name="q3"> <code>pacman -Qdt</code></label>
+<label><input type="radio" name="q3"> <code>paccache -r</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O <code>yay -Ps</code> termina com "Pacotes AUR marcados como desatualizados: paru-bin". O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> O paru-bin foi removido do seu sistema.</label>
+<label><input type="radio" name="q4"> Você precisa rodar <code>pacman -Syu</code>.</label>
+<label><input type="radio" name="q4"> O paru-bin tem um vírus.</label>
+<label><input type="radio" name="q4"> Alguém sinalizou no AUR que o pacote está atrás da versão oficial; acompanhe e atualize quando sair.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual é a primeira tarefa antes de cada atualização?</p>
+<label><input type="radio" name="q5"> Ler as notícias do Arch.</label>
+<label><input type="radio" name="q5"> Limpar o cache.</label>
+<label><input type="radio" name="q5"> Remover os órfãos.</label>
+<label><input type="radio" name="q5"> Reiniciar.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Toda semana: notícias, <code>pacman -Syu</code>, <code>.pacnew</code>, <code>systemctl --failed</code>, reiniciar se o kernel mudou.</li>
+  <li>Todo mês: órfãos, cache (<code>paccache</code>), <code>journalctl -p 3 -b</code>, espaço em disco, AUR, teste de backup.</li>
+  <li>Sempre: kernel de reserva, pendrive do Arch, snapshots se usar Btrfs.</li>
+  <li>Use as ferramentas que só consultam (<code>checkupdates</code>, <code>-d</code> do <code>paccache</code>, <code>pacdiff -o</code>) antes das que mudam.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o checklist oficial está em <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a> (<a href="https://wiki.archlinux.org/title/System_maintenance_(Portugu%C3%AAs)">em português</a>); limpeza do cache e órfãos em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">Pacman/Tips and tricks</a>; os <code>.pacnew</code> em <a href="https://wiki.archlinux.org/title/Pacman/Pacnew_and_Pacsave">Pacman/Pacnew and Pacsave</a>; e o journal em <a href="https://wiki.archlinux.org/title/Systemd/Journal">Systemd/Journal</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

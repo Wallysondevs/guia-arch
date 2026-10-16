@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Recuperar o Boot — firmware, GRUB, kernel, initramfs e fstab | Guia Arch</title>
+<meta name="description" content="Recuperar o boot do Arch Linux camada por camada: entrada UEFI sumida (efibootmgr, grub-install --removable), grub rescue, kernel panic e Failed to mount /sysroot, initramfs quebrado, emergency mode por fstab, kernel LTS de reserva e fsck.fat na EFI.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Recuperar o Boot</span></h1>
+
+<p class="intro">Entre apertar o botão e ver a tela de login, o computador passa por uma corrida de revezamento: firmware, GRUB, kernel, initramfs, systemd. Quando o boot falha, a <strong>tela onde ele parou</strong> diz qual corredor derrubou o bastão. Esta aula ensina a reconhecer cada tela e a consertar a camada certa, sem reinstalar nada.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As camadas do boot e como saber em qual delas o problema está.</li>
+  <li>Recriar a entrada UEFI com <code>grub-install</code> (e o <code>--removable</code>) e ler o <code>efibootmgr</code>.</li>
+  <li>Sair do <code>grub rescue&gt;</code> e dar boot "na mão" pelo GRUB.</li>
+  <li>Kernel panic, <code>Failed to mount /sysroot</code>, initramfs quebrado e o kernel LTS de reserva.</li>
+  <li>O <em>emergency mode</em> por fstab errado e o <code>fsck.fat</code> na partição EFI.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>As camadas do boot</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>#</th><th>Camada</th><th>O que faz</th><th>Se ela falha, você vê…</th></tr>
+<tr><td>1</td><td>Firmware UEFI</td><td>Lê as entradas de boot (NVRAM) e carrega o <code>grubx64.efi</code> da partição EFI</td><td>A tela de configuração do firmware, "No bootable device", ou outro sistema (Windows) ligando direto</td></tr>
+<tr><td>2</td><td>GRUB</td><td>Lê o <code>/boot/grub/grub.cfg</code>, mostra o menu, carrega kernel e initramfs</td><td><code>grub rescue&gt;</code>, um prompt <code>grub&gt;</code> sem menu, <code>error: file not found</code></td></tr>
+<tr><td>3</td><td>Kernel + initramfs</td><td>O initramfs carrega drivers, abre LUKS/LVM e monta a raiz</td><td><code>Kernel panic</code>, <code>Failed to mount /sysroot</code>, <code>Timed out waiting for device</code>, um shell de emergência do initramfs</td></tr>
+<tr><td>4</td><td>systemd</td><td>Monta o resto do <code>fstab</code>, sobe serviços, mostra o login</td><td><code>You are in emergency mode</code>, serviços em vermelho (<code>[FAILED]</code>)</td></tr>
+</table>
+</div>
+<p>As camadas 1 e 2 quase sempre se consertam com o <a href="chroot-resgate.html">resgate com chroot</a>; a 3, com o <strong>kernel LTS</strong> ou o chroot; a 4, de dentro do próprio emergency mode. Nesta aula, o que não dá para provocar na máquina do guia sem desligá-la é marcado como <strong>ilustrativo</strong>; o resto tem saída real.</p>
+
+<hr>
+
+<h2>Camada 1: o firmware não acha o GRUB</h2>
+<p>O firmware UEFI guarda na NVRAM da placa-mãe uma lista de entradas, cada uma apontando para um arquivo <code>.efi</code> numa partição EFI. O <code>efibootmgr</code> mostra essa lista (na máquina do guia, hoje):</p>
+<pre class="term">#> efibootmgr
+BootCurrent: 0003                     « a entrada usada neste boot
+Timeout: 0 seconds
+BootOrder: 0003,0000,0002              « a ordem de tentativa
+Boot0000* UiApp	FvVol(7cb8bdc9-f8eb-4f34-aaea-3ee4af6516a1)/FvFile(462caa21-7614-4503-836e-8ab6f4662331)
+Boot0002* UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b 	PciRoot(0x0)/Pci(0xd,0x0)/Sata(0,65535,0){auto_created_boot_option}
+Boot0003* GRUB	HD(1,GPT,42528876-2401-45ed-aa76-555fea61a03e,0x800,0x200000)/\EFI\GRUB\grubx64.efi
+#> ls /boot/EFI /boot/EFI/GRUB
+/boot/EFI:
+GRUB
+
+/boot/EFI/GRUB:
+grubx64.efi</pre>
+
+<dl class="anatomy">
+  <dt>Boot0003*</dt><dd>Número da entrada; o <code>*</code> quer dizer ativa.</dd>
+  <dt>GRUB</dt><dd>O nome (o <code>--bootloader-id</code> do <code>grub-install</code>).</dd>
+  <dt>HD(1,GPT,42528876-…)</dt><dd>Partição 1 do disco GPT com esse identificador (a EFI).</dd>
+  <dt>\EFI\GRUB\grubx64.efi</dt><dd>O arquivo, com barras do Windows: é o <code>/boot/EFI/GRUB/grubx64.efi</code>.</dd>
+</dl>
+
+<p>A entrada some quando: uma atualização do firmware (BIOS) zera a NVRAM, o Windows "toma" o boot, a bateria da placa acaba, ou a partição EFI foi recriada. O arquivo ainda está lá; só o ponteiro sumiu.</p>
+
+<h3>Conserto: grub-install de novo</h3>
+<p>Do <a href="chroot-resgate.html">resgate com chroot</a>, com a EFI montada em <code>/mnt/boot</code>, repita o <code>grub-install</code> da instalação: ele copia o <code>grubx64.efi</code> e recria a entrada. Saída real da instalação:</p>
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+Installing for x86_64-efi platform.
+Installation finished. No error reported.</pre>
+
+<h3>O caminho de reserva: --removable</h3>
+<p>Alguns firmwares "esquecem" entradas novas ou só procuram o caminho padrão <code>\EFI\BOOT\BOOTX64.EFI</code> (o mesmo que os pendrives usam). O <code>--removable</code> instala o GRUB nesse caminho, que funciona mesmo sem entrada na NVRAM. Para mostrar sem tocar a EFI da máquina, instalamos numa partição FAT de teste (um arquivo-imagem), com <code>--no-nvram</code> para não criar entrada:</p>
+<pre class="term">#> mkfs.fat -F 32 -n EFITESTE /dev/loop0
+mkfs.fat 4.2 (2021-01-31)
+#> mount --mkdir /dev/loop0 /tmp/a8/efi
+#> grub-install --target=x86_64-efi --efi-directory=/tmp/a8/efi --boot-directory=/tmp/a8/efi --removable --no-nvram
+Instalando para a plataforma x86_64-efi.
+Instalação terminada. Sem erros reportados.
+#> echo $?
+0
+#> ls -R /tmp/a8/efi/EFI
+/tmp/a8/efi/EFI:
+BOOT
+
+/tmp/a8/efi/EFI/BOOT:
+BOOTX64.EFI                    « o nome que todo firmware UEFI procura
+#> ls /tmp/a8/efi/grub
+fonts
+grubenv
+locale
+themes
+x86_64-efi</pre>
+<p>No resgate de verdade: <code>arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --removable</code>. Pode ter as duas instalações ao mesmo tempo (a normal e a removível). Depois de qualquer <code>grub-install</code>, rode também <code>grub-mkconfig -o /boot/grub/grub.cfg</code>.</p>
+
+<h3>Mexer na lista à mão (ilustrativo)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>efibootmgr -o 0003,0000</code></td><td>Muda a ordem de boot (<code>BootOrder</code>)</td></tr>
+<tr><td><code>efibootmgr -n 0002</code></td><td>Só no próximo boot, usa a 0002 (<code>BootNext</code>)</td></tr>
+<tr><td><code>efibootmgr --create --disk /dev/sda --part 1 --loader '\EFI\GRUB\grubx64.efi' --label GRUB</code></td><td>Cria uma entrada sem reinstalar o GRUB</td></tr>
+<tr><td><code>efibootmgr -b 0005 -B</code></td><td>Apaga a entrada 0005</td></tr>
+</table>
+</div>
+<div class="warning">
+<strong>Modo do pendrive</strong>
+<p>O <code>efibootmgr</code> e o <code>grub-install</code> UEFI só funcionam se o pendrive deu boot em <strong>UEFI</strong>. Confira no live: <code>cat /sys/firmware/efi/fw_platform_size</code> deve responder <code>64</code>. Se o arquivo não existe, o pendrive ligou no modo antigo (BIOS/CSM): reinicie e escolha a opção "UEFI: …" no menu do firmware.</p>
+</div>
+
+<hr>
+
+<h2>Camada 2: o GRUB não acha os arquivos</h2>
+
+<h3>grub rescue&gt; (ilustrativo)</h3>
+<p>O <code>grubx64.efi</code> carregou, mas não achou a pasta <code>/boot/grub</code> (com os módulos e o <code>grub.cfg</code>): a partição mudou de número, foi formatada ou o UUID mudou. Ele cai num modo mínimo, que só entende <code>ls</code>, <code>set</code>, <code>insmod</code> e pouco mais. Uma sessão típica:</p>
+<pre class="file" data-file="Tela do GRUB (ilustrativo)">error: no such partition.
+Entering rescue mode...
+grub rescue&gt; ls
+(hd0) (hd0,gpt3) (hd0,gpt2) (hd0,gpt1)
+grub rescue&gt; ls (hd0,gpt1)/
+EFI/ grub/ initramfs-linux.img vmlinuz-linux …
+grub rescue&gt; set prefix=(hd0,gpt1)/grub
+grub rescue&gt; set root=(hd0,gpt1)
+grub rescue&gt; insmod normal
+grub rescue&gt; normal
+</pre>
+<dl class="anatomy">
+  <dt>ls</dt><dd>Lista discos e partições como o GRUB os vê: <code>(hd0,gpt1)</code> = disco 0, partição GPT 1.</dd>
+  <dt>ls (hd0,gpt1)/</dt><dd>Olha dentro de uma partição: procure a que tem <code>grub/</code> (na máquina do guia, a EFI, porque o <code>/boot</code> é a EFI).</dd>
+  <dt>set prefix=…</dt><dd>Onde está a pasta <code>grub</code> com os módulos.</dd>
+  <dt>set root=…</dt><dd>A partição padrão para os caminhos seguintes.</dd>
+  <dt>insmod normal</dt><dd>Carrega o módulo do modo normal (menu, comandos completos).</dd>
+  <dt>normal</dt><dd>Entra no modo normal: o menu aparece.</dd>
+</dl>
+<p>Isso é só para ligar <strong>uma vez</strong>. Já dentro do Arch (ou do chroot), conserte de vez com <code>grub-install …</code> e <code>grub-mkconfig -o /boot/grub/grub.cfg</code>.</p>
+
+<h3>grub&gt; sem menu: boot à mão (ilustrativo)</h3>
+<p>Se aparece só <code>grub&gt;</code> (modo normal, mas sem <code>grub.cfg</code>), dá para digitar o que o menu faria. Os valores abaixo são os <strong>reais</strong> da entrada do LTS no <code>grub.cfg</code> da máquina do guia:</p>
+<pre class="term">#> sed -n '147,163p' /boot/grub/grub.cfg
+	menuentry 'Arch Linux, with Linux linux-lts' --class arch --class gnu-linux --class gnu --class os $menuentry_id_option 'gnulinux-linux-lts-advanced-75d167c8-1dad-4d0a-a0ae-b063058a18e9' {
+		load_video
+		set gfxpayload=keep
+		insmod gzio
+		insmod part_gpt
+		insmod fat
+		set root='hd0,gpt1'
+		if [ x$feature_platform_search_hint = xy ]; then
+		  search --no-floppy --fs-uuid --set=root --hint-bios=hd0,gpt1 --hint-efi=hd0,gpt1 --hint-baremetal=ahci0,gpt1  C509-6CB1
+		else
+		  search --no-floppy --fs-uuid --set=root C509-6CB1
+		fi
+		echo	'Carregando o Linux linux-lts...'
+		linux	/vmlinuz-linux-lts root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw  loglevel=3 quiet
+		echo	'Carregando o ramdisk inicial...'
+		initrd	/intel-ucode.img /initramfs-linux-lts.img
+	}</pre>
+<p>No <code>grub&gt;</code>, as três linhas essenciais seriam <code>set root=(hd0,gpt1)</code>, <code>linux /vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw</code>, <code>initrd /intel-ucode.img /initramfs-linux.img</code> e, por fim, <code>boot</code>. A tecla <kbd>Tab</kbd> completa nomes de arquivos ali. Repare: <code>root=</code> do kernel é a <strong>raiz</strong> (<code>sda3</code>, ext4), enquanto o <code>root</code> do GRUB é onde estão kernel e initramfs (<code>sda1</code>, a EFI).</p>
+
+<hr>
+
+<h2>Camada 3: kernel e initramfs</h2>
+
+<h3>As telas (ilustrativo)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Causa provável</th></tr>
+<tr><td><code>Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)</code></td><td>O kernel subiu <strong>sem initramfs</strong> (faltou a linha <code>initrd</code>, ou o arquivo não existe/está corrompido).</td></tr>
+<tr><td><code>Timed out waiting for device /dev/disk/by-uuid/…</code> seguido de <code>Failed to mount /sysroot</code></td><td>O <code>root=UUID=</code> não existe (disco trocado, partição reformatada, UUID digitado errado), ou o initramfs não tem o driver/hook para enxergá-lo (LUKS, LVM, NVMe, RAID).</td></tr>
+<tr><td>Cai num shell do initramfs (<code>emergency shell</code>) com <code>Cannot open access to console, the root account is locked</code></td><td>Mesmas causas; o initramfs do systemd não abre shell sem senha de root no initramfs.</td></tr>
+<tr><td><code>error: file '/vmlinuz-linux' not found</code> (ainda no GRUB)</td><td>Kernel apagado (atualização interrompida) ou EFI não montada durante a atualização.</td></tr>
+</table>
+</div>
+
+<h3>Primeiro socorro: o kernel LTS</h3>
+<p>Se só o kernel principal quebrou, o <code>linux-lts</code> liga. No menu do GRUB, entre em <strong>Opções avançadas para Arch Linux</strong>:</p>
+<pre class="term">#> grep -n "menuentry \|submenu " /boot/grub/grub.cfg | cut -c1-110
+112:menuentry 'Arch Linux' --class arch --class gnu-linux --class gnu --class os $menuentry_id_option 'gnulinu
+129:submenu 'Opções avançadas para Arch Linux' $menuentry_id_option 'gnulinux-advanced-75d167c8-1dad-4d0a-a0ae
+130:	menuentry 'Arch Linux, with Linux linux' --class arch --class gnu-linux --class gnu --class os $menuentry
+147:	menuentry 'Arch Linux, with Linux linux-lts' --class arch --class gnu-linux --class gnu --class os $menue
+187:		menuentry 'UEFI Firmware Settings' $menuentry_id_option 'uefi-firmware' {
+196:  menuentry 'UiApp (EFI BootNext)' --class uiapp --class os $menuentry_id_option 'efi-bootnext-0000' {
+204:  menuentry 'UEFI VBOX HARDDISK VB2b8dff56-b1fc8c1b  (EFI BootNext)' --class uefi --class os $menuentry_id
+212:  menuentry 'GRUB (EFI BootNext)' --class grub --class os $menuentry_id_option 'efi-bootnext-0003' {</pre>
+<p>Ligado no LTS, <code>uname -r</code> mostra <code>6.18.57-1-lts</code> (como no registro real da instalação), e você conserta o kernel principal de dentro do sistema, sem pendrive: <code>pacman -S linux</code> e <code>mkinitcpio -P</code>. Para que o padrão do menu seja o kernel principal e não o LTS, a máquina do guia usa <code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code> no <code>/etc/default/grub</code> (detalhes em <a href="kernels.html">Kernels</a>). Ter um segundo kernel instalado é o seguro mais barato do Arch.</p>
+
+<h3>Conferir o UUID da raiz</h3>
+<p>O UUID que o kernel recebe tem que ser o da raiz:</p>
+<pre class="term">#> cat /proc/cmdline
+BOOT_IMAGE=/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet
+#> lsblk -f /dev/sda
+NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+sda
+├─sda1 vfat   FAT32       C509-6CB1                             929,2M     9% /boot
+├─sda2 swap   1           02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+└─sda3 ext4   1.0         75d167c8-1dad-4d0a-a0ae-b063058a18e9   18,1G    21% /     « bate</pre>
+<p>Se não bater (no pendrive, compare o <code>root=</code> do <code>/mnt/boot/grub/grub.cfg</code> com o <code>lsblk -f</code>), regere o menu com <code>grub-mkconfig</code> de dentro do chroot: ele lê o UUID atual.</p>
+
+<h3>Initramfs quebrado</h3>
+<p>O initramfs fica incompleto quando o <code>mkinitcpio</code> falha no meio (falta de espaço no <code>/boot</code>, hook com nome errado, atualização interrompida). Um <code>mkinitcpio</code> com problema avisa, com código de saída diferente de 0. Exemplo real, com um hook de nome errado numa configuração de teste:</p>
+<pre class="term">#> mkinitcpio -c /tmp/a8/mkinitcpio-errado.conf -g /tmp/a8/initramfs-errado.img
+…
+==&gt; ERROR: Hook 'lvm' cannot be found
+  -&gt; Running build hook: [filesystems]
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/tmp/a8/initramfs-errado.img'
+==&gt; WARNING: errors were encountered during the build. The image may not be complete.
+#> echo $?
+1</pre>
+<p>Conserto: corrigir o <code>/etc/mkinitcpio.conf</code> e rodar <code>mkinitcpio -P</code> até terminar com <code>Initcpio image generation successful</code> para todos os kernels (do LTS, se ele liga; senão, do chroot). Mais em <a href="mkinitcpio.html">mkinitcpio e initramfs</a>.</p>
+
+<hr>
+
+<h2>Camada 4: emergency mode por fstab errado</h2>
+<p>A raiz montou, mas uma linha do <code>/etc/fstab</code> aponta para algo que não existe (um HD externo removido, um UUID digitado errado). O systemd espera 90 segundos pelo dispositivo e desiste, caindo no modo de emergência. A tela (ilustrativa; o texto do systemd é em inglês) termina assim:</p>
+<pre class="file" data-file="Tela do emergency mode (ilustrativo)">[ TIME ] Timed out waiting for device /dev/disk/by-uuid/1234abcd-0000-4000-8000-000000000000.
+[DEPEND] Dependency failed for /mnt/dados.
+[DEPEND] Dependency failed for Local File Systems.
+You are in emergency mode. After logging in, type "journalctl -xb" to view
+system logs, "systemctl reboot" to reboot, or "exit" to continue bootup.
+Give root password for maintenance
+(or press Control-D to continue):
+</pre>
+<p>Dá para reproduzir o diagnóstico com segurança numa <strong>cópia</strong> do fstab, com uma linha de propósito errada:</p>
+<pre class="term">#> cp /etc/fstab /tmp/a8/fstab
+#> echo 'UUID=1234abcd-0000-4000-8000-000000000000  /tmp/a8/dados  ext4  defaults  0 2' &gt;&gt; /tmp/a8/fstab
+#> findmnt --verify --tab-file /tmp/a8/fstab
+
+0 erro de análise, 2 erros, 0 aviso
+/tmp/a8/dados
+   [E] alvo não alcançável na inicialização: Arquivo ou diretório inexistente
+   [E] fonte não alcançável na inicialização: UUID=1234abcd-0000-4000-8000-000000000000   « o culpado
+#> echo $?
+1
+#> mount --mkdir --fstab /tmp/a8/fstab /tmp/a8/dados
+mount: /tmp/a8/dados: não foi possível localizar UUID=1234abcd-0000-4000-8000-000000000000.
+#> echo $?
+1</pre>
+<p><code>findmnt --verify</code> confere cada linha do fstab (por padrão, o <code>/etc/fstab</code>; aqui, a cópia com <code>--tab-file</code>). Rode-o <strong>sempre</strong> depois de editar o fstab, antes de reiniciar.</p>
+
+<h3>Consertar de dentro do emergency mode</h3>
+<ol class="passo">
+<li><strong>Digite a senha de root.</strong> (Sem senha de root definida, o systemd não deixa entrar: use o <a href="chroot-resgate.html">resgate</a>.)</li>
+<li><strong>Veja o motivo:</strong> <code>journalctl -xb -p 3</code> mostra os erros deste boot (veja <a href="journal.html">Logs</a>).</li>
+<li><strong>Libere a escrita, se precisar:</strong> se a raiz estiver só leitura, <code>mount -o remount,rw /</code>.</li>
+<li><strong>Corrija o fstab:</strong> <code>nano /etc/fstab</code> (ou <code>vim</code>): conserte o UUID, comente a linha com <code>#</code>, ou acrescente <code>nofail</code>.</li>
+<li><strong>Confira e continue:</strong> <code>findmnt --verify</code>, <code>systemctl daemon-reload</code> e <code>exit</code> (continua o boot) ou <code>systemctl reboot</code>.</li>
+</ol>
+<p>Para discos que nem sempre estão ligados, use <code>nofail</code> (o boot não espera por ele) e, de preferência, um tempo curto:</p>
+<pre class="term">#> tail -1 /tmp/a8/fstab
+UUID=1234abcd-0000-4000-8000-000000000000  /tmp/a8/dados  ext4  defaults,nofail,x-systemd.device-timeout=5s  0 2</pre>
+<p>O <code>findmnt --verify</code> continua apontando o UUID inexistente (ele confere, não perdoa), mas o boot não para mais por causa dele. Mais opções em <a href="fstab.html">mount e fstab</a>.</p>
+
+<hr>
+
+<h2>A partição EFI "suja": fsck.fat</h2>
+<p>Depois de um desligamento forçado, a partição EFI (FAT32) fica marcada como "não desmontada corretamente". O kernel avisa ao montá-la. Reproduzimos isso copiando uma partição FAT de teste <strong>enquanto ela estava montada</strong> (a cópia fica igual a um disco de um computador que desligou da tomada) e montando a cópia:</p>
+<pre class="term">#> sync
+#> cp --sparse=always /var/tmp/a8/efi.img /var/tmp/a8/efi-desligada.img   « cópia "com o computador ligado"
+#> umount /tmp/a8/efi
+#> losetup -d /dev/loop0
+#> losetup -f --show /var/tmp/a8/efi-desligada.img
+/dev/loop0
+#> mount /dev/loop0 /tmp/a8/efi
+#> journalctl -k -n 2 --no-pager -o short
+out 16 13:39:27 notebook kernel: loop0: detected capacity change from 0 to 614400
+out 16 13:39:34 notebook kernel: FAT-fs (loop0): Volume was not properly unmounted. Some data may be corrupt. Please run fsck.</pre>
+
+<p>A verificação se faz com a partição <strong>desmontada</strong>, com o <code>fsck.fat</code> (pacote <code>dosfstools</code>, que não vem no <code>base</code>). Primeiro só olhando (<code>-n</code>), depois consertando (<code>-a</code>):</p>
+<pre class="term">#> umount /tmp/a8/efi
+#> fsck.fat -n /dev/loop0
+fsck.fat 4.2 (2021-01-31)
+There are differences between boot sector and its backup.
+This is mostly harmless. Differences: (offset:original/backup)
+  65:01/00
+  Not automatically fixing this.
+Dirty bit is set. Fs was not properly unmounted and some data may be corrupt.
+ Automatically removing dirty bit.
+
+Leaving filesystem unchanged.               « -n: não grava nada
+/dev/loop0: 405 files, 4175/76643 clusters
+#> echo $?
+1
+#> fsck.fat -a /dev/loop0
+fsck.fat 4.2 (2021-01-31)
+There are differences between boot sector and its backup.
+This is mostly harmless. Differences: (offset:original/backup)
+  65:01/00
+  Not automatically fixing this.
+Dirty bit is set. Fs was not properly unmounted and some data may be corrupt.
+ Automatically removing dirty bit.
+
+*** Filesystem was changed ***
+Writing changes.
+/dev/loop0: 405 files, 4175/76643 clusters
+#> echo $?
+1                                            « 1 = encontrou e corrigiu algo
+#> fsck.fat -n /dev/loop0
+fsck.fat 4.2 (2021-01-31)
+/dev/loop0: 405 files, 4175/76643 clusters
+#> echo $?
+0                                            « limpo</pre>
+
+<p>A "diferença entre o setor de boot e a cópia" (<code>65:01/00</code>) é o próprio indicador de sujeira: o byte 65 vale 1 no original e 0 na cópia de segurança. Depois do <code>-a</code>, ela some junto. Na máquina do guia, isso aconteceu de verdade na EFI depois de um desligamento forçado; o conserto foi:</p>
+<pre class="term">#> umount /boot &amp;&amp; fsck.fat -a -w /dev/sda1; mount /boot; echo montado
+fsck.fat 4.2 (2021-01-31)
+There are differences between boot sector and its backup.
+This is mostly harmless. Differences: (offset:original/backup)
+  65:01/00
+  Not automatically fixing this.
+Dirty bit is set. Fs was not properly unmounted and some data may be corrupt.
+ Automatically removing dirty bit.
+/dev/sda1: 410 files, 23743/261627 clusters
+montado</pre>
+<p><code>-w</code> grava as mudanças na hora. O <code>umount /boot</code> antes é obrigatório: nunca rode <code>fsck</code> num sistema de arquivos montado. É um problema leve (os arquivos estavam intactos), mas vale consertar: um FAT sujo pode, com o tempo, perder arquivos como o initramfs.</p>
+
+<hr>
+
+<h2>Qual camada atacar primeiro?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você vê…</th><th>Tente primeiro</th><th>Se não der</th></tr>
+<tr><td>Tela do firmware / outro sistema liga</td><td>Menu de boot do firmware (F12, F8, Esc…) → "GRUB"</td><td>Chroot + <code>grub-install</code> (+ <code>--removable</code>)</td></tr>
+<tr><td><code>grub rescue&gt;</code></td><td><code>ls</code>, <code>set prefix/root</code>, <code>insmod normal</code>, <code>normal</code></td><td>Chroot + <code>grub-install</code> + <code>grub-mkconfig</code></td></tr>
+<tr><td><code>grub&gt;</code> sem menu</td><td><code>linux</code>, <code>initrd</code>, <code>boot</code> à mão</td><td>Chroot + <code>grub-mkconfig</code></td></tr>
+<tr><td>Kernel panic / <code>/sysroot</code></td><td>Kernel LTS no menu avançado</td><td>Chroot + <code>pacman -S linux</code> + <code>mkinitcpio -P</code></td></tr>
+<tr><td><code>You are in emergency mode</code></td><td>Senha de root, <code>journalctl -xb</code>, corrigir fstab</td><td>Chroot e editar <code>/mnt/etc/fstab</code></td></tr>
+<tr><td><code>Volume was not properly unmounted</code></td><td><code>umount /boot</code>, <code>fsck.fat -a</code>, <code>mount /boot</code></td><td>—</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:\bls\b.*boot,out:initramfs-linux-lts.img" data-solucao="ls /boot">
+<p class="try-task"><strong>Missão:</strong> confira se a máquina tem um kernel de reserva: liste <code>/boot</code> e procure o <code>vmlinuz-linux-lts</code> e o <code>initramfs-linux-lts.img</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"EFI variables are not supported on this system"</strong>
+<p><strong>O que aconteceu</strong> (ilustrativo): o <code>grub-install</code> ou o <code>efibootmgr</code> não acharam as variáveis UEFI. O pendrive deu boot em modo BIOS, ou você usou <code>chroot</code> puro (sem o <code>efivarfs</code> que o <code>arch-chroot</code> monta).</p>
+<p><strong>Como resolver:</strong> confira <code>/sys/firmware/efi/fw_platform_size</code> no live, reinicie o pendrive em UEFI, use <code>arch-chroot</code>. Se ainda assim não der, <code>grub-install --removable</code> não depende da NVRAM.</p>
+</div>
+
+<div class="cenario">
+<strong>O GRUB liga, mas o menu não tem o Arch (ou tem kernel velho)</strong>
+<p><strong>O que aconteceu:</strong> o <code>grub.cfg</code> não foi regerado. O pacman <strong>não</strong> roda <code>grub-mkconfig</code> sozinho.</p>
+<p><strong>Como resolver:</strong> <code>grub-mkconfig -o /boot/grub/grub.cfg</code> e confira as linhas <code>Imagem Linux encontrada</code> (veja <a href="bootloader.html">Bootloader</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>O fsck.fat diz "comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>fsck.fat</code> vem no pacote <code>dosfstools</code>, que não faz parte do <code>base</code>. No pendrive do Arch ele já existe.</p>
+<p><strong>Como resolver:</strong> <code>pacman -S dosfstools</code>, ou rode o conserto pelo live.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>efibootmgr</code></td><td>Ver as entradas UEFI e a ordem</td></tr>
+<tr><td><code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code></td><td>Reinstalar o GRUB e recriar a entrada</td></tr>
+<tr><td><code>grub-install … --removable</code></td><td>Instalar em <code>\EFI\BOOT\BOOTX64.EFI</code></td></tr>
+<tr><td><code>grub-mkconfig -o /boot/grub/grub.cfg</code></td><td>Regerar o menu</td></tr>
+<tr><td><code>ls</code>, <code>set prefix=</code>, <code>set root=</code>, <code>insmod normal</code>, <code>normal</code></td><td>Sair do <code>grub rescue&gt;</code></td></tr>
+<tr><td><code>linux … root=UUID=… rw</code>, <code>initrd …</code>, <code>boot</code></td><td>Boot à mão no <code>grub&gt;</code></td></tr>
+<tr><td><code>mkinitcpio -P</code></td><td>Refazer os initramfs</td></tr>
+<tr><td><code>cat /proc/cmdline</code>; <code>lsblk -f</code></td><td>Conferir o <code>root=</code></td></tr>
+<tr><td><code>findmnt --verify</code></td><td>Conferir o fstab</td></tr>
+<tr><td><code>fsck.fat -a /dev/sda1</code> (desmontada)</td><td>Consertar a EFI</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O caminho de reserva</h3>
+<p>Complete para instalar o GRUB no caminho padrão que todo firmware procura:</p>
+<div class="ex-code">grub-install --target=x86_64-efi --efi-directory=/boot <input data-answer="--removable" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Conferir o fstab</h3>
+<div class="ex-code">findmnt <input data-answer="--verify|-x" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Aparece <code>Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)</code>. A causa mais provável é:</p>
+<label><input type="radio" name="q3"> A senha de root errada.</label>
+<label><input type="radio" name="q3"> O kernel subiu sem initramfs (falta ou está estragado).</label>
+<label><input type="radio" name="q3"> O fstab tem um HD externo.</label>
+<label><input type="radio" name="q3"> A entrada UEFI sumiu.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O kernel principal não liga depois de uma atualização. Qual é o caminho mais rápido?</p>
+<label><input type="radio" name="q4"> Reinstalar o Arch.</label>
+<label><input type="radio" name="q4"> Formatar a EFI.</label>
+<label><input type="radio" name="q4"> Ligar pelo kernel LTS nas "Opções avançadas" do GRUB e consertar de dentro.</label>
+<label><input type="radio" name="q4"> Apagar o <code>grub.cfg</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que fazer antes de rodar <code>fsck.fat</code> na partição EFI?</p>
+<label><input type="radio" name="q5"> Desmontá-la (<code>umount /boot</code>).</label>
+<label><input type="radio" name="q5"> Formatá-la.</label>
+<label><input type="radio" name="q5"> Rodar <code>grub-mkconfig</code>.</label>
+<label><input type="radio" name="q5"> Nada; pode rodar montada.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Identifique a camada pela tela: firmware, GRUB, kernel/initramfs ou systemd.</li>
+  <li>Entrada UEFI sumida: <code>grub-install</code> de novo (e <code>--removable</code> como reserva); confira com <code>efibootmgr</code>.</li>
+  <li><code>grub rescue&gt;</code>: <code>set prefix</code>, <code>set root</code>, <code>insmod normal</code>, <code>normal</code>; depois conserte de vez.</li>
+  <li>Kernel/initramfs: kernel LTS primeiro; depois <code>pacman -S linux</code> e <code>mkinitcpio -P</code>; confira o <code>root=UUID</code>.</li>
+  <li>Emergency mode: senha de root, <code>journalctl -xb</code>, corrigir o fstab, <code>findmnt --verify</code>. EFI suja: <code>fsck.fat -a</code> desmontada.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a sequência de boot está em <a href="https://wiki.archlinux.org/title/Arch_boot_process">Arch boot process</a> (<a href="https://wiki.archlinux.org/title/Arch_boot_process_(Portugu%C3%AAs)">em português</a>); os problemas do GRUB em <a href="https://wiki.archlinux.org/title/GRUB#Troubleshooting">GRUB: Troubleshooting</a> e <a href="https://wiki.archlinux.org/title/GRUB/Tips_and_tricks">GRUB/Tips and tricks</a>; as entradas UEFI em <a href="https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface">UEFI</a>; e um roteiro geral em <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> (<a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

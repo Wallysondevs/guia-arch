@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Erros de Atualização — as mensagens do pacman e como resolver | Guia Arch</title>
+<meta name="description" content="Os erros clássicos do pacman -Syu no Arch Linux com a mensagem real e a solução: base de dados travada (db.lck), chaves e assinaturas, arquivos conflitantes, dependências, espelho com 404, disco cheio, atualização interrompida, módulos do kernel e .pacnew.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Erros de Atualização</span></h1>
+
+<p class="intro">Quase todo problema de atualização no Arch começa com uma mensagem do pacman que diz exatamente o que está errado, mas em linguagem de máquina. Esta aula é um dicionário: para cada erro clássico, a <strong>mensagem real</strong>, a <strong>causa</strong>, como <strong>confirmar</strong> e como <strong>resolver</strong> sem piorar as coisas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A ler a mensagem antes de procurar a solução (e onde procurar: as notícias do Arch).</li>
+  <li>Destravar a base de dados com segurança (<code>db.lck</code>).</li>
+  <li>Resolver chaves e assinaturas (<code>archlinux-keyring</code> primeiro).</li>
+  <li>Tratar arquivos conflitantes, dependências, espelho fora do ar e disco cheio.</li>
+  <li>O que fazer depois de uma atualização interrompida e quando o kernel novo "some" com os módulos.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>De onde vêm estas saídas</strong>
+<p>A máquina do guia é compartilhada e não pode ser estragada de verdade. Por isso, cada erro foi provocado num <strong>ambiente de teste</strong>: o pacman de verdade, mas apontando para pastas descartáveis em <code>/tmp/a8</code> (com <code>--root</code>, <code>--dbpath</code>, <code>--cachedir</code>, <code>--gpgdir</code> e <code>--config</code>). As mensagens são as mesmas que você veria no sistema; só os caminhos mudam (onde aparece <code>/tmp/a8/…</code>, no seu computador seria <code>/var/lib/pacman/…</code>, <code>/usr/bin/…</code> etc.). O primeiro erro é da instalação real da máquina. Nos testes, o <code>…</code> substitui opções repetidas e linhas sem importância, e foram omitidos os avisos <code>database file for 'core' does not exist</code>, que só existem no ambiente de teste (lá, a raiz de mentira não tem as bases dos repositórios; por isso também se usou <code>-dd</code>, para pular dependências).</p>
+</div>
+
+<hr>
+
+<h2>Antes de tudo: três regras</h2>
+<ol>
+  <li><strong>Leia as notícias</strong> em <a href="https://archlinux.org/news/">archlinux.org/news</a> antes de atualizar. Quando uma atualização exige intervenção manual (um <code>--overwrite</code>, um pacote trocado), a receita está lá.</li>
+  <li><strong>Sempre <code>pacman -Syu</code> completo.</strong> Nunca <code>pacman -Sy pacote</code> (atualização parcial: um pacote novo com bibliotecas velhas é a receita do "não liga mais"). Veja <a href="atualizar.html">Atualizar o Sistema</a>.</li>
+  <li><strong>Leia a mensagem inteira</strong>, principalmente a linha que começa com <code>erro:</code> e as que vêm logo depois. Copie-a exatamente se for pesquisar.</li>
+</ol>
+
+<hr>
+
+<h2>1. "não foi possível travar a base de dados"</h2>
+<p>Este aconteceu de verdade na máquina do guia, logo depois de ela ser desligada à força no meio de um uso do pacman:</p>
+<pre class="term">#> pacman -Syu --noconfirm --needed base-devel git … linux-lts linux-lts-headers
+:: Sincronizando a base de dados de pacotes...
+erro: falha ao sincronizar todas as bases de dados (não foi possível travar a base de dados)
+#> pgrep -a pacman; ls -l /var/lib/pacman/db.lck
+---------- 1 root root 0 16 out 12:40 /var/lib/pacman/db.lck
+#> rm /var/lib/pacman/db.lck
+#> pacman -Syu --noconfirm --needed base-devel git … linux-lts linux-lts-headers
+:: Sincronizando a base de dados de pacotes...
+ core sendo baixado...
+ extra sendo baixado...
+:: Iniciando atualização completa do sistema...</pre>
+
+<p>Num <code>-S</code> ou <code>-R</code>, a mensagem é mais explicativa (ambiente de teste):</p>
+<pre class="term">#> pacman --dbpath /tmp/a8/db -S htop
+erro: falha ao iniciar a transação (não foi possível travar a base de dados)
+erro: não foi possível travar a base de dados: Arquivo existe
+  se tiver certeza de que um gerenciador de pacotes não esteja
+  em execução, você pode remover /tmp/a8/db/db.lck
+#> echo $?
+1</pre>
+
+<p><strong>Causa:</strong> enquanto trabalha, o pacman cria o arquivo vazio <code>/var/lib/pacman/db.lck</code> (a <strong>trava</strong>) para que dois pacman não mexam nos pacotes ao mesmo tempo. Se ele é interrompido (desligamento forçado, terminal fechado, <code>kill -9</code>), a trava fica para trás.</p>
+<p><strong>Como confirmar:</strong> <code>pgrep -a pacman</code> não deve mostrar nada (código de saída 1). Lembre também do <code>yay</code>/<code>paru</code>, de um "Discover"/"GNOME Software" aberto e de outro terminal.</p>
+<p><strong>Como resolver:</strong> se nada está rodando, <code>sudo rm /var/lib/pacman/db.lck</code> e repita.</p>
+
+<div class="warning">
+<strong>Nunca apague a trava com outro pacman rodando</strong>
+<p>Dois pacman ao mesmo tempo podem corromper a base de dados local. Se o <code>pgrep</code> mostrar um pacman, espere ele terminar. E se a trava sobrou de uma atualização <strong>interrompida</strong>, depois de apagá-la siga o item 7.</p>
+</div>
+
+<hr>
+
+<h2>2. Chaves e assinaturas</h2>
+<p>Cada pacote é assinado pelo empacotador, e o pacman confere a assinatura com o chaveiro do Arch (pacote <code>archlinux-keyring</code>). Se o seu chaveiro está velho (máquina meses sem atualizar) e um empacotador novo assinou o pacote, aparece (ambiente de teste com um chaveiro que conhece a chave mas não confia nela):</p>
+<pre class="term">#> pacman … --gpgdir /tmp/a8/gnupg -Sdd nano
+procurando pacotes conflitantes...
+
+Pacotes (1) nano-9.2-1
+
+Tamanho total instalado:  2,71 MiB
+
+:: Continuar a instalação? [S/n]
+:: Obtendo pacotes...
+ nano-9.2-1-x86_64 sendo baixado...
+verificando chaveiro...
+verificando integridade de pacotes...
+erro: nano: a assinatura de "Andreas Radke &lt;andyrtr@archlinux.org&gt;" tem confiança desconhecida
+:: Arquivo /tmp/a8/cache/nano-9.2-1-x86_64.pkg.tar.zst está corrompido (pacote inválido ou corrompido (assinatura PGP)).
+Deseja apagá-lo? [S/n] erro: falha ao efetuar a transação (pacote inválido ou corrompido (assinatura PGP))
+
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.</pre>
+
+<p>Outras formas da mesma doença: <code>assinatura … é inválida</code>, <code>chave "…" é desconhecida</code> seguida de <code>:: Importar a chave PGP …? [S/n]</code>, e <code>pacote inválido ou corrompido (assinatura PGP)</code>.</p>
+<p><strong>Causa:</strong> quase sempre o chaveiro desatualizado. Mais raramente, o download veio estragado de um espelho ruim, ou o relógio do computador está muito errado (assinaturas "do futuro").</p>
+<p><strong>Como resolver:</strong> atualize <strong>primeiro</strong> o chaveiro e depois o resto:</p>
+<pre class="term">#> pacman -Sy archlinux-keyring &amp;&amp; pacman -Su</pre>
+<p>É a única exceção aceita à regra do "nunca <code>-Sy</code> pacote": o <code>-Su</code> vem logo em seguida, no mesmo comando. Responder <code>S</code> para apagar o arquivo "corrompido" é seguro: ele é baixado de novo. O <code>archlinux-keyring</code> também se atualiza sozinho pela internet, pelo timer <code>archlinux-keyring-wkd-sync.timer</code> (ativo na máquina do guia: o próximo disparo aparecia em <code>systemctl list-timers</code> como <code>Tue 2026-10-20 10:34:32 -03</code>). Se ainda assim falhar, confira o relógio (<code>timedatectl</code>) e veja <a href="chaves.html">Chaves e Assinaturas</a> para <code>pacman-key --populate</code>.</p>
+<p>Reinstalar o chaveiro do jeito certo mostra o aviso de "reinstalando" (resumo real, respondido com "não"):</p>
+<pre class="term">#> pacman -S archlinux-keyring
+atenção: archlinux-keyring-20260909-1 está atualizado -- reinstalando
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) archlinux-keyring-20260909-1
+
+Tamanho total instalado:  1,73 MiB
+Alteração no tamanho:     0,00 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<div class="warning">
+<strong>Não desligue a verificação</strong>
+<p>Trocar <code>SigLevel</code> para <code>Never</code> no <code>/etc/pacman.conf</code> "resolve" a mensagem tirando a única proteção contra pacotes adulterados. Nunca faça isso.</p>
+</div>
+
+<hr>
+
+<h2>3. "existe no sistema de arquivos" (arquivos conflitantes)</h2>
+<pre class="term">#> pacman --root /tmp/a8/raiz … -Udd htop-3.5.3-1-x86_64.pkg.tar.zst
+…
+:: Continuar a instalação? [S/n]
+verificando chaveiro...
+verificando integridade de pacotes...
+carregando arquivos do pacote...
+verificando conflitos de arquivos...
+erro: falha ao efetuar a transação (arquivos conflitantes)
+htop: /tmp/a8/raiz/usr/bin/htop existe no sistema de arquivos
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.
+#> echo $?
+1</pre>
+<p><strong>Causa:</strong> o pacote quer instalar um arquivo que já existe e que <strong>não pertence a nenhum pacote</strong> (no teste, um <code>htop</code> "feito à mão"). Na vida real: algo instalado com <code>make install</code>, <code>pip install</code> como root, um script de instalação de fora, ou um arquivo que mudou de pacote numa atualização (aí as notícias avisam). O pacman se recusa a sobrescrever o que não é dele, e não instala nada.</p>
+<p><strong>Como confirmar:</strong> pergunte de quem é o arquivo:</p>
+<pre class="term">#> pacman -Qo /usr/bin/htop
+/usr/bin/htop pertence a htop 3.5.3-1          « no sistema: pertence a um pacote, tudo certo</pre>
+<p>Se a resposta for <code>erro: Nenhum pacote possui /caminho</code>, o arquivo é "órfão" e é ele que atrapalha.</p>
+<p><strong>Como resolver:</strong> se o arquivo é lixo de uma instalação manual, apague-o (ou desinstale o que o criou) e repita. Se as notícias do Arch mandarem sobrescrever, use <code>--overwrite</code> com o caminho <strong>exato</strong> ou um padrão:</p>
+<pre class="term">#> pacman --root /tmp/a8/raiz … -Udd --overwrite /tmp/a8/raiz/usr/bin/htop htop-3.5.3-1-x86_64.pkg.tar.zst
+…
+verificando conflitos de arquivos...
+verificando espaço em disco disponível...
+:: Processando alterações do pacote...
+instalando htop...
+#> echo $?
+0</pre>
+<p>No sistema normal, seria <code>pacman -Syu --overwrite /usr/bin/htop</code> (no teste, o caminho inclui a raiz de mentira). Para vários arquivos de uma vez, um padrão. Um exemplo real das notícias do Arch (05/11/2025): versões antigas do pacote <code>waydroid</code> criavam arquivos <code>.pyc</code> que o pacman não conhecia, e a atualização parava com <code>waydroid: /usr/lib/waydroid/tools/__pycache__/__init__.cpython-313.pyc exists in filesystem</code>. A própria notícia trazia a receita: <code>pacman -Syu --overwrite /usr/lib/waydroid/tools/\*__pycache__/\*</code> (as barras protegem os <code>*</code> do shell, para que o padrão chegue inteiro ao pacman). Veja como ler as notícias em <a href="manutencao.html">Manutenção Periódica</a>.</p>
+<div class="warning">
+<strong>Nunca <code>--overwrite '*'</code></strong>
+<p>Isso sobrescreve qualquer arquivo de qualquer pacote sem perguntar e pode esconder o problema de verdade (dois pacotes brigando pelo mesmo arquivo). Use só o caminho que a mensagem citou, e só quando entender de onde ele veio.</p>
+</div>
+
+<hr>
+
+<h2>4. "não foi possível satisfazer as dependências"</h2>
+<pre class="term">#> pacman --root /tmp/a8/raiz … -U htop-3.5.3-1-x86_64.pkg.tar.zst
+carregando pacotes...
+resolvendo dependências...
+atenção: não é possível resolver "libcap", uma dependência de "htop"
+atenção: não é possível resolver "libcap.so=2-64", uma dependência de "htop"
+atenção: não é possível resolver "libnl", uma dependência de "htop"
+atenção: não é possível resolver "ncurses", uma dependência de "htop"
+atenção: não é possível resolver "libncursesw.so=6-64", uma dependência de "htop"
+:: O seguinte pacote não pode ser atualizado devido a dependências não resolvidas:
+      htop
+
+:: Deseja ignorar o pacote acima para esta atualização? [s/N] erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+
+:: não foi possível satisfazer a dependência "libcap" necessária por htop
+:: não foi possível satisfazer a dependência "libcap.so=2-64" necessária por htop
+:: não foi possível satisfazer a dependência "libnl" necessária por htop
+:: não foi possível satisfazer a dependência "ncurses" necessária por htop
+:: não foi possível satisfazer a dependência "libncursesw.so=6-64" necessária por htop</pre>
+<p><strong>Causa:</strong> o pacote precisa de algo que não existe nos repositórios configurados, ou numa versão que não existe. No teste, a raiz estava vazia e sem repositórios. Na vida real, os culpados mais comuns são:</p>
+<ul>
+  <li>um pacote do <a href="aur.html">AUR</a> que exige a versão <strong>antiga</strong> de uma biblioteca (ex.: <code>libfoo.so=1</code> quando o Arch já está na 2);</li>
+  <li>um pacote travado em <code>IgnorePkg</code> no <code>pacman.conf</code> ou "segurado" com <a href="downgrade.html">downgrade</a>;</li>
+  <li>uma atualização parcial anterior, ou espelho atrasado (parte dos pacotes novos ainda não chegou).</li>
+</ul>
+<p><strong>Como confirmar:</strong> a linha <code>necessária por PACOTE</code> diz quem está pedindo. <code>pacman -Qi PACOTE</code> mostra se ele é do AUR (<code>pacman -Qm</code> lista os de fora).</p>
+<p><strong>Como resolver:</strong> faça um <code>pacman -Syu</code> completo; se o culpado é do AUR, atualize-o ou recompile (<code>yay -Syu</code>, ou <code>yay -S pacote --rebuild</code>), ou remova-o temporariamente. Nunca use <code>-d</code>/<code>-dd</code> (pular dependências) para "passar": o pacote instala, mas não funciona.</p>
+
+<hr>
+
+<h2>5. Espelho fora do ar ou com 404</h2>
+<p>Um espelho que respondeu "não existe" (ambiente de teste com um endereço de propósito errado):</p>
+<pre class="term">#> pacman --config /tmp/a8/pacman-404.conf --dbpath /tmp/a8/db404 -Sy
+:: Sincronizando a base de dados de pacotes...
+ core sendo baixado...
+erro: falha ao obter o arquivo "core.db" de geo.mirror.pkgbuild.com : The requested URL returned error: 404
+erro: falha ao sincronizar todas as bases de dados (falha ao obter alguns arquivos)
+#> echo $?
+1</pre>
+<p>E um espelho cujo nome não existe (ou sem internet/DNS):</p>
+<pre class="term">#> pacman --config /tmp/a8/pacman-404.conf --dbpath /tmp/a8/db404 -Sy
+:: Sincronizando a base de dados de pacotes...
+erro: falha ao obter o arquivo "extra.db" de espelho.exemplo.invalid : Could not resolve host: espelho.exemplo.invalid
+ extra sendo baixado...
+atenção: erro fatal de espelho.exemplo.invalid, ignorando o restante desta transação
+erro: falha ao sincronizar todas as bases de dados (url inválida para o servidor)</pre>
+<p><strong>Causa:</strong> o primeiro espelho da lista está fora do ar, atrasado, ou foi desativado. Um <code>404</code> ao baixar um <strong>pacote</strong> (não a base) costuma ser outra coisa: a sua base de dados está velha e pede uma versão que o espelho já apagou.</p>
+<p><strong>Como confirmar:</strong> <code>ping -c 3 archlinux.org</code> (internet), e olhe a primeira linha <code>Server =</code> de <code>/etc/pacman.d/mirrorlist</code>. Quando há vários servidores, o pacman tenta o próximo sozinho; o erro só aparece se todos falharem.</p>
+<p><strong>Como resolver:</strong> para o 404 de pacote, <code>pacman -Syu</code> (base nova). Para espelho ruim, gere uma lista nova com o <code>reflector</code> (veja <a href="espelhos.html">Espelhos</a>) e force o download das bases com <code>pacman -Syyu</code> (dois <code>y</code> = baixa mesmo que pareçam atualizadas).</p>
+
+<hr>
+
+<h2>6. Disco cheio</h2>
+<p>Antes de mexer em qualquer arquivo, o pacman confere se cabe (<code>CheckSpace</code> no <code>pacman.conf</code>). Ambiente de teste com uma "partição" de 20 MiB e o pacote <code>linux-lts</code> (156 MiB instalado):</p>
+<pre class="term">#> pacman --root /tmp/a8/mini … -Udd linux-lts-6.18.57-1-x86_64.pkg.tar.zst
+…
+Tamanho total instalado:  155,84 MiB
+
+:: Continuar a instalação? [S/n]
+verificando chaveiro...
+verificando integridade de pacotes...
+carregando arquivos do pacote...
+verificando conflitos de arquivos...
+verificando espaço em disco disponível...
+erro: Partição /tmp/a8/mini cheia demais: 43377 blocos necessários, 5119 blocos livres
+erro: espaço livre em disco insuficiente
+erro: falha ao efetuar a transação (não há espaço livre suficiente em disco)
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.</pre>
+<p>Ainda bem: nada foi instalado pela metade. Se o disco enche <strong>durante o download</strong>, o erro aparece ao gravar o arquivo no cache.</p>
+<p><strong>Como confirmar:</strong> <code>df -h / /boot</code>. O cache de pacotes costuma ser o maior culpado:</p>
+<pre class="term">#> df -h / /boot
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  5,2G   19G  23% /
+/dev/sda1      1022M   93M  930M  10% /boot
+#> du -sh /var/cache/pacman/pkg
+1,3G	/var/cache/pacman/pkg</pre>
+<p><strong>Como resolver:</strong> limpe versões antigas do cache com <code>paccache -rk1</code> (mantém só a última de cada pacote) ou <code>paccache -ruk0</code> (apaga as de pacotes desinstalados); o <code>pacman -Sc</code> também serve (veja <a href="cache-orfaos.html">Cache e Órfãos</a>). Depois, logs (<code>journalctl --vacuum-size=200M</code>) e, com Btrfs, <a href="snapshots.html">snapshots</a> velhos. A partição <code>/boot</code> pequena (de 300 MiB, em instalações antigas) enche com dois kernels e seus initramfs: aí só ajuda remover um kernel ou aumentar a partição.</p>
+
+<hr>
+
+<h2>7. Atualização interrompida (falta de energia)</h2>
+<p>Se o computador desligou no meio do <code>pacman -Syu</code>, alguns pacotes ficaram com arquivos novos, outros com velhos, e a trava ficou para trás. O sistema pode nem ligar (aí, faça os passos de dentro do <a href="chroot-resgate.html">resgate com chroot</a>).</p>
+<ol class="passo">
+<li><strong>Destrave e complete a atualização:</strong> <code>rm /var/lib/pacman/db.lck</code> (item 1) e <code>pacman -Syu</code>. O pacman reinstala o que estava pendente.</li>
+<li><strong>Procure arquivos que sumiram</strong> com <code>pacman -Qk</code> (<em>check</em>). Num sistema saudável:
+<pre class="term">#> pacman -Qk pacman bash
+pacman: total de 426 arquivos,  0 arquivo em falta
+bash: total de 269 arquivos,  0 arquivo em falta</pre>
+Num ambiente de teste, com um arquivo do pacote <code>tree</code> apagado:
+<pre class="term">#> pacman $R -Qk tree
+atenção: tree: /tmp/a8/raiz/usr/share/man/man1/tree.1.gz (Arquivo ou diretório inexistente)
+tree: total de 7 arquivos,  1 arquivo em falta
+#> echo $?
+1</pre>
+</li>
+<li><strong>Procure arquivos estragados</strong> com <code>-Qkk</code> (dois <code>k</code>: confere tamanho, data e soma SHA256 de cada arquivo). No teste, o executável foi "cortado" para 100 bytes, como numa gravação interrompida:
+<pre class="term">#> pacman $R -Qkk tree
+atenção: tree: /tmp/a8/raiz/usr/bin/tree (Última modificação incorreta)
+atenção: tree: /tmp/a8/raiz/usr/bin/tree (Tamanho incorreto)
+atenção: tree: /tmp/a8/raiz/usr/bin/tree (soma de verificação SHA256 incorreta)
+atenção: tree: /tmp/a8/raiz/usr/share/man/man1/tree.1.gz (Arquivo ou diretório inexistente)
+tree: total de 7 arquivos, 2 arquivos alterados</pre>
+(<code>$R</code> guardava as opções <code>--root</code>/<code>--dbpath</code> do teste.) Para o sistema inteiro: <code>pacman -Qkk 2&gt;&amp;1 | grep -v ' 0 arquivo alterado'</code>. Demora (lê todos os arquivos), e arquivos de configuração que você editou também aparecem; o que importa são os de <code>/usr</code>.</li>
+<li><strong>Reinstale os pacotes atingidos:</strong> <code>pacman -S tree</code>. No teste:
+<pre class="term">#> pacman $P --noconfirm -Udd tree-2.3.2-1-x86_64.pkg.tar.zst 2&gt;&amp;1 | tail -3
+atenção: não foi possível obter informações do arquivo usr/share/man/man1/tree.1.gz
+:: Processando alterações do pacote...
+reinstalando tree...
+#> pacman $R -Qkk tree
+tree: total de 7 arquivos, 0 arquivo alterado          « consertado</pre>
+</li>
+<li><strong>Refaça o initramfs</strong> (<code>mkinitcpio -P</code>) se o kernel estava na transação, e confira o GRUB.</li>
+</ol>
+
+<hr>
+
+<h2>8. Atualizei o kernel e os módulos não carregam</h2>
+<p>Depois de uma atualização do <code>linux</code>, sem reiniciar, um pendrive não monta, a rede de uma placa USB não sobe, ou o <code>modprobe</code> reclama assim (simulado com <code>-S</code>, que faz o <code>modprobe</code> agir como se outro kernel estivesse rodando):</p>
+<pre class="term">#> modprobe -n -v -S 7.2.11-arch1-1 vfat
+modprobe: FATAL: Module vfat not found in directory /lib/modules/7.2.11-arch1-1
+#> echo $?
+1
+#> uname -r
+7.2.10-arch1-1
+#> ls /usr/lib/modules
+6.18.57-1-lts
+7.2.10-arch1-1</pre>
+<p><strong>Causa:</strong> o pacman <strong>troca</strong> os módulos: a pasta do kernel antigo (o que está rodando) é apagada e entra a do novo. Até reiniciar, o kernel em memória procura os módulos numa pasta que não existe mais.</p>
+<p><strong>Como confirmar:</strong> compare <code>uname -r</code> (o que roda) com <code>pacman -Q linux</code> e <code>ls /usr/lib/modules</code> (o que está instalado). Repare que o pacote mostra <code>7.2.10.arch1-1</code> (com ponto) e o <code>uname</code>, <code>7.2.10-arch1-1</code> (com hífen): é a mesma versão.</p>
+<p><strong>Como resolver:</strong> <strong>reinicie</strong>. É por isso que atualizações do kernel pedem reboot logo. Ter o <code>linux-lts</code> instalado também ajuda: se o kernel novo não ligar, o LTS liga (veja <a href="kernels.html">Kernels</a>).</p>
+
+<hr>
+
+<h2>9. Arquivos .pacnew</h2>
+<p>Não é erro, mas aparece na atualização: <code>atenção: /etc/pacman.conf instalado como /etc/pacman.conf.pacnew</code>. O pacman não sobrescreve um arquivo de configuração que você editou; ele deixa a versão nova ao lado, com <code>.pacnew</code>, para você comparar e juntar. Para listar os pendentes:</p>
+<pre class="term">#> pacdiff -o
+#> echo $?
+0                     « nada pendente na máquina do guia</pre>
+<p>Como comparar e juntar está em <a href="pacnew.html">.pacnew e .pacsave</a>. Ignorar um <code>.pacnew</code> por meses é uma causa comum de "atualizei e quebrou".</p>
+
+<hr>
+
+<h2>Formas diferentes de "forçar" (e por que quase nunca)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>--overwrite CAMINHO</code></td><td>Sobrescreve arquivos conflitantes que casam com o caminho</td><td>Só quando as notícias mandarem, ou o arquivo for comprovadamente lixo seu</td></tr>
+<tr><td><code>-Syy</code></td><td>Baixa as bases mesmo que pareçam atuais</td><td>Depois de trocar de espelho</td></tr>
+<tr><td><code>-Sy archlinux-keyring &amp;&amp; -Su</code></td><td>Atualiza o chaveiro antes do resto</td><td>Erros de assinatura</td></tr>
+<tr><td><code>-d</code> / <code>-dd</code></td><td>Ignora dependências</td><td>Praticamente nunca numa atualização</td></tr>
+<tr><td><code>-Sy pacote</code></td><td>Atualização parcial</td><td><strong>Nunca</strong></td></tr>
+<tr><td><code>SigLevel = Never</code></td><td>Desliga a verificação de assinaturas</td><td><strong>Nunca</strong></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:db\.lck,err:inexistente" data-solucao="ls -l /var/lib/pacman/db.lck">
+<p class="try-task"><strong>Missão:</strong> confira se existe uma trava do pacman esquecida na máquina, listando <code>/var/lib/pacman/db.lck</code>. (O esperado num sistema parado é a mensagem de que o arquivo não existe.)</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (trecho)</th><th>Primeira coisa a fazer</th></tr>
+<tr><td><code>não foi possível travar a base de dados</code></td><td><code>pgrep -a pacman</code>; se vazio, <code>rm /var/lib/pacman/db.lck</code></td></tr>
+<tr><td><code>tem confiança desconhecida</code> / <code>assinatura PGP</code> / <code>chave … desconhecida</code></td><td><code>pacman -Sy archlinux-keyring &amp;&amp; pacman -Su</code></td></tr>
+<tr><td><code>existe no sistema de arquivos</code></td><td><code>pacman -Qo arquivo</code>; notícias; <code>--overwrite</code> só no caminho citado</td></tr>
+<tr><td><code>não foi possível satisfazer a dependência</code></td><td>Ver quem pede; <code>-Syu</code> completo; atualizar/remover o pacote do AUR</td></tr>
+<tr><td><code>The requested URL returned error: 404</code></td><td><code>pacman -Syu</code>; trocar espelho (<code>reflector</code>) e <code>-Syyu</code></td></tr>
+<tr><td><code>Could not resolve host</code></td><td>Internet/DNS (<code>ping archlinux.org</code>)</td></tr>
+<tr><td><code>cheia demais</code> / <code>espaço livre em disco insuficiente</code></td><td><code>df -h</code>; <code>paccache -rk1</code></td></tr>
+<tr><td>Arquivos faltando/alterados (<code>-Qk</code>/<code>-Qkk</code>)</td><td>Reinstalar os pacotes citados</td></tr>
+<tr><td><code>Module … not found in directory /lib/modules/…</code></td><td>Reiniciar</td></tr>
+<tr><td><code>instalado como … .pacnew</code></td><td><code>pacdiff</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quem é o dono?</h3>
+<p>Antes de usar <code>--overwrite</code>, descubra a qual pacote pertence <code>/usr/lib/libfoo.so</code>:</p>
+<div class="ex-code">pacman <input data-answer="-Qo" aria-label="opção"> /usr/lib/libfoo.so</div>
+</div>
+
+<div class="exercise">
+<h3>2. Chaveiro primeiro</h3>
+<p>Complete o comando que resolve erros de assinatura:</p>
+<div class="ex-code">pacman -Sy <input data-answer="archlinux-keyring" aria-label="pacote"> &amp;&amp; pacman <input data-answer="-Su" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Aparece "não foi possível travar a base de dados". Qual é o primeiro passo?</p>
+<label><input type="radio" name="q3"> Apagar <code>/var/lib/pacman/db.lck</code> na hora.</label>
+<label><input type="radio" name="q3"> Reinstalar o pacman.</label>
+<label><input type="radio" name="q3"> Conferir com <code>pgrep -a pacman</code> se outro pacman (ou yay, ou loja de apps) está rodando.</label>
+<label><input type="radio" name="q3"> Rodar <code>pacman -Syy</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de atualizar o kernel, o pendrive não monta e o <code>modprobe</code> diz "Module vfat not found in directory /lib/modules/…". O que fazer?</p>
+<label><input type="radio" name="q4"> Reinstalar o <code>dosfstools</code>.</label>
+<label><input type="radio" name="q4"> Reiniciar o computador.</label>
+<label><input type="radio" name="q4"> Formatar o pendrive.</label>
+<label><input type="radio" name="q4"> Rodar <code>mkinitcpio -P</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Faltou energia no meio do <code>pacman -Syu</code>. Qual comando encontra arquivos de pacotes que ficaram estragados?</p>
+<label><input type="radio" name="q5"> <code>pacman -Qdt</code></label>
+<label><input type="radio" name="q5"> <code>pacman -Sc</code></label>
+<label><input type="radio" name="q5"> <code>pacman -Qm</code></label>
+<label><input type="radio" name="q5"> <code>pacman -Qkk</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Leia as notícias, use sempre <code>-Syu</code> completo e leia a linha <code>erro:</code> inteira.</li>
+  <li>Trava: confirme que nada roda, apague <code>db.lck</code>. Assinatura: <code>archlinux-keyring</code> primeiro.</li>
+  <li>Conflito de arquivos: <code>pacman -Qo</code>, notícias, <code>--overwrite</code> só no caminho citado.</li>
+  <li>Dependências: quase sempre um pacote do AUR ou uma atualização parcial.</li>
+  <li>Interrupção: destravar, <code>-Syu</code>, <code>-Qkk</code>, reinstalar os citados, <code>mkinitcpio -P</code>. Kernel novo sem módulos: reinicie.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os erros do pacman e suas soluções estão em <a href="https://wiki.archlinux.org/title/Pacman#Troubleshooting">Pacman: Troubleshooting</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>); o que fazer antes e depois de atualizar em <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a> (<a href="https://wiki.archlinux.org/title/System_maintenance_(Portugu%C3%AAs)">em português</a>); as assinaturas em <a href="https://wiki.archlinux.org/title/Pacman/Package_signing">Pacman/Package signing</a>; e a lista de espelhos em <a href="https://wiki.archlinux.org/title/Mirrors">Mirrors</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
