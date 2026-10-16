@@ -65,7 +65,7 @@ acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt
 - `$ ` vira `[ana@notebook ~]$` — o prompt padrão do Arch (`PS1='[\u@\h \W]\$ '`): entre colchetes, só o **nome** da pasta atual (`[ana@notebook Documentos]$`). `#> ` vira `[root@notebook ~]#`.
 - `> ` logo depois de um comando = linha de continuação. `«` = anotação (não é copiada).
 - O prompt acompanha `cd`, `cd -`, `pushd/popd`, aspas e variáveis da sessão; um `cd` seguido de `bash: cd: …` não muda a pasta.
-- `data-cwd="~/aur"`, `data-user="root"`, `data-host="archiso"` (para o ambiente live da instalação: lá o prompt é `root@archiso ~ #` — use `data-host="archiso" data-user="root"` e `#> `), `data-title`.
+- `data-cwd="~/aur"`, `data-user="root"`, `data-title`. **Ambiente live:** `data-host="archiso" data-user="root"` com `#> ` desenha o prompt real do zsh do live (`root@archiso ~ #`, caminho completo). **Dentro do `arch-chroot`:** acrescente `data-cwd="/"` e o prompt vira o do Bash (`[root@archiso /]#`). `data-shell="zsh|bash"` força um dos dois.
 - Dentro de `<pre>`: `&lt; &gt; &amp;`. Uma linha de saída que começa com `$` **sem espaço** (`$HOME`) é saída.
 - `pre.file data-file="/etc/pacman.conf"` mostra arquivos.
 
@@ -127,6 +127,7 @@ $V -u root 'previa -Rns htop'           # idem para remoção
 | Versões | kernel 7.2.10-arch1-1, linux-lts 6.18.57-1, bash 5.3.20, pacman/libalpm 16.0.1, GRUB (UEFI), yay 13.0.1, paru 2.1.0 |
 | Base | `base` não traz editor, `sudo`, `man`, `fsck.fat` (dosfstools), `hostname` (inetutils): cada um é um pacote à parte |
 | Home | `useradd -m` cria a pasta com modo **700** e `.bashrc`, `.bash_profile`, `.bash_logout` |
+| NTP | **desligado** depois da instalação (`timedatectl`: `System clock synchronized: no`, `NTP service: inactive`); liga-se com `timedatectl set-ntp true` (systemd-timesyncd) |
 | GRUB | com dois kernels, o padrão vira o que vier primeiro na ordem (o **LTS**); `GRUB_TOP_LEVEL` resolve; o pacman **não** roda `grub-mkconfig` sozinho |
 
 ## 6. Escrita
