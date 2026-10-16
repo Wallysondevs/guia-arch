@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch rede — NetworkManager, nmcli, iwd, IP fixo, DNS, ip e ss | Guia Arch</title>
+<meta name="description" content="Rede no Arch Linux com NetworkManager: nmcli general, device, connection, Wi-Fi, nmtui, IP fixo, DNS e /etc/resolv.conf, ip a, ip route, ping, ss -tulpn, e as alternativas iwd e systemd-networkd, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">NetworkManager</span> e iwd</h1>
+
+<p class="intro">No Arch, a rede não "simplesmente funciona" sozinha: alguém precisa pedir um endereço ao roteador, escolher o Wi-Fi e configurar o DNS. Esse "alguém" é um <strong>gerenciador de rede</strong>, e você escolhe qual na instalação. O mais comum, e o da VM do guia, é o <strong>NetworkManager</strong>, controlado pelo comando <code>nmcli</code>. Nesta aula você aprende a usá-lo, a conferir a rede com <code>ip</code>, <code>ping</code> e <code>ss</code>, e conhece as alternativas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ver o estado da rede com <code>nmcli general</code>, <code>nmcli device</code> e <code>nmcli connection</code>.</li>
+  <li>Conectar a um Wi-Fi com <code>nmcli</code> e com o <code>nmtui</code>.</li>
+  <li>Configurar IP fixo e DNS (e de onde vem o <code>/etc/resolv.conf</code>).</li>
+  <li>Diagnosticar com <code>ip a</code>, <code>ip route</code>, <code>ping</code> e <code>ss -tulpn</code>.</li>
+  <li>Quando usar iwd ou systemd-networkd em vez do NetworkManager.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Quem cuida da rede no Arch</h2>
+<p>Conectar à rede envolve várias tarefas: ligar a placa, se associar ao Wi-Fi (com a senha), pedir um endereço IP por <strong>DHCP</strong> (<em>Dynamic Host Configuration Protocol</em>: o roteador "empresta" um endereço), definir a rota para a internet e os servidores de <strong>DNS</strong> (que traduzem <code>archlinux.org</code> em números). O Arch não vem com nada disso ligado; na instalação você instala e habilita um gerenciador. A VM do guia recebeu o NetworkManager, como mostra o log da instalação:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt systemctl enable NetworkManager sshd</pre>
+
+<pre class="term">$ pacman -Q networkmanager wpa_supplicant
+networkmanager 1.58.1-2
+wpa_supplicant 2:2.12-1
+$ systemctl is-active NetworkManager systemd-networkd systemd-resolved
+active                 « o NetworkManager
+inactive               « o systemd-networkd (vem no pacote systemd, desligado)
+inactive               « o systemd-resolved (idem)</pre>
+
+<div class="warning">
+<strong>Um gerenciador por vez</strong>
+<p>Nunca deixe dois gerenciadores ligados ao mesmo tempo (NetworkManager + systemd-networkd, ou NetworkManager + dhcpcd): eles brigam pela placa e a conexão cai e volta. Se trocar de um para outro, faça <code>disable --now</code> no antigo antes de ligar o novo.</p>
+</div>
+
+<hr>
+
+<h2>nmcli: o estado da rede</h2>
+<p><code>nmcli</code> = <em>NetworkManager command-line interface</em>. Ele fala português quando o sistema está em português.</p>
+
+<h3>nmcli general</h3>
+<pre class="term">$ nmcli general
+STATE      CONNECTIVITY  WIFI-HW   WIFI        WWAN-HW   WWAN        METERED
+conectado  completa      faltando  habilitado  faltando  habilitado  não (adivinhado)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Valor</th><th>Significado</th></tr>
+<tr><td><code>STATE</code></td><td>conectado</td><td>Há uma conexão ativa</td></tr>
+<tr><td><code>CONNECTIVITY</code></td><td>completa</td><td>Chega à internet. O NetworkManager testa baixando um arquivo de <code>ping.archlinux.org</code>; <code>limitada</code> = rede local sem internet; <code>portal</code> = Wi-Fi de hotel pedindo login.</td></tr>
+<tr><td><code>WIFI-HW</code> / <code>WIFI</code></td><td>faltando / habilitado</td><td>Não há placa Wi-Fi (é uma VM com cabo); o Wi-Fi, em software, está habilitado</td></tr>
+<tr><td><code>WWAN</code></td><td>…</td><td>Modem de celular (4G/5G)</td></tr>
+<tr><td><code>METERED</code></td><td>não (adivinhado)</td><td>Se a conexão é "tarifada" (dados móveis)</td></tr>
+</table>
+</div>
+
+<h3>nmcli device: as placas</h3>
+<pre class="term">$ nmcli device
+DEVICE  TYPE      STATE                     CONNECTION
+enp0s3  ethernet  conectado                 Conexão cabeada 1
+lo      loopback  conectado (externamente)  lo</pre>
+
+<p>Um <strong>dispositivo</strong> é uma placa de rede. <code>enp0s3</code> é o nome da placa com fio da VM: <code>en</code> = ethernet, <code>p0s3</code> = a posição dela no barramento PCI (barramento 0, slot 3). Placas Wi-Fi costumam se chamar <code>wlan0</code> ou <code>wlp2s0</code>. O <code>lo</code> (<em>loopback</em>) é a rede interna do próprio computador (<code>127.0.0.1</code>).</p>
+
+<h3>nmcli connection: os perfis</h3>
+<p>Uma <strong>conexão</strong> (perfil) é um conjunto de configurações: "esta rede Wi-Fi, com esta senha, IP automático". Um dispositivo usa um perfil por vez. Você pode ter vários perfis (casa, trabalho) para a mesma placa.</p>
+
+<pre class="term">$ nmcli connection show
+NAME               UUID                                  TYPE      DEVICE
+Conexão cabeada 1  5c85cc50-5b40-34c6-9635-e7b2db0c9e02  ethernet  enp0s3
+lo                 baf8cb5c-c5ea-4179-aecc-b7ff5ef1e7c2  loopback  lo</pre>
+
+<p>O perfil "Conexão cabeada 1" foi criado sozinho pelo NetworkManager quando viu o cabo. Os detalhes (com <code>-f</code> você escolhe os campos; sem ele, são mais de 100 linhas):</p>
+
+<pre class="term">$ nmcli -f connection.id,connection.type,connection.interface-name,connection.autoconnect,ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns,ipv6.method connection show 'Conexão cabeada 1'
+connection.id:                          Conexão cabeada 1
+connection.type:                        802-3-ethernet        « 802.3 = o padrão do cabo de rede
+connection.interface-name:              enp0s3
+connection.autoconnect:                 sim                   « conecta sozinho no boot
+ipv4.method:                            auto                  « auto = DHCP
+ipv4.addresses:                         --                    « nenhum endereço fixo
+ipv4.gateway:                           --
+ipv4.dns:                               --
+ipv6.method:                            auto</pre>
+
+<p>E o que o DHCP entregou de fato, visto pelo dispositivo:</p>
+
+<pre class="term">$ nmcli -f GENERAL.DEVICE,GENERAL.TYPE,GENERAL.HWADDR,GENERAL.STATE,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS,IP6.ADDRESS device show enp0s3
+GENERAL.DEVICE:                         enp0s3
+GENERAL.TYPE:                           ethernet
+GENERAL.HWADDR:                         08:00:27:74:B2:03         « endereço físico (MAC) da placa
+GENERAL.STATE:                          100 (conectado)
+IP4.ADDRESS[1]:                         10.0.2.15/24              « o IP da máquina
+IP4.GATEWAY:                            10.0.2.2                  « o "roteador"
+IP4.DNS[1]:                             10.0.2.3                  « o servidor de DNS
+IP6.ADDRESS[1]:                         fd17:625c:f037:2:3074:376a:4fe9:621c/64
+IP6.ADDRESS[2]:                         fe80::9c83:cf89:6133:11ca/64</pre>
+
+<p>Os endereços <code>10.0.2.x</code> são da rede virtual do VirtualBox; no seu computador, provavelmente serão <code>192.168.0.x</code> ou <code>192.168.1.x</code>.</p>
+
+<h3>Onde os perfis ficam</h3>
+<p>Perfis que você cria ou modifica são gravados em <code>/etc/NetworkManager/system-connections/</code> (só o root lê: guardam senhas de Wi-Fi). O perfil automático do cabo, enquanto ninguém mexe nele, existe só na memória, em <code>/run</code>:</p>
+
+<pre class="term">$ sudo nmcli -f NAME,FILENAME connection show
+NAME               FILENAME
+Conexão cabeada 1  /run/NetworkManager/system-connections/Conexão cabeada 1.nmconnection
+lo                 /run/NetworkManager/system-connections/lo.nmconnection
+$ sudo ls -l /etc/NetworkManager/system-connections/
+total 0</pre>
+<hr>
+
+<h2>Wi-Fi com nmcli</h2>
+<p>A VM do guia não tem placa Wi-Fi, então a lista de redes volta vazia (e com código 0, sem erro):</p>
+
+<pre class="term">$ nmcli radio
+WIFI-HW   WIFI        WWAN-HW   WWAN
+faltando  habilitado  faltando  habilitado
+$ nmcli device wifi list
+$ echo $?
+0</pre>
+
+<p>Num notebook, os comandos são estes. <strong>Ilustrativo</strong> (sem Wi-Fi na VM, as saídas não puderam ser conferidas; a rede "CasaDaAna" é inventada):</p>
+
+<pre class="term">$ nmcli device wifi list                          « redes visíveis: SSID, sinal, segurança
+$ nmcli device wifi rescan                        « procura de novo
+$ nmcli device wifi connect CasaDaAna --ask       « pergunta a senha sem deixá-la no histórico
+$ nmcli device wifi connect CasaDaAna password 'minha senha'
+$ nmcli connection show                           « o perfil "CasaDaAna" foi criado e fica salvo
+$ nmcli connection down CasaDaAna                 « desconectar
+$ nmcli connection up CasaDaAna                   « reconectar
+$ nmcli connection delete CasaDaAna               « esquecer a rede
+$ nmcli radio wifi off                            « desligar o Wi-Fi (modo avião)</pre>
+
+<dl class="anatomy">
+  <dt>nmcli device wifi connect</dt><dd>Procura a rede, cria um perfil com o nome dela e conecta.</dd>
+  <dt>CasaDaAna</dt><dd>O SSID (nome da rede). Com espaços, entre aspas: <code>'Casa da Ana'</code>.</dd>
+  <dt>password '…'</dt><dd>A senha. Ela fica no histórico do Bash; o <code>--ask</code> evita isso.</dd>
+</dl>
+
+<p>Na primeira conexão, por ser uma mudança no sistema, o polkit pode pedir a senha de administrador (usuários do <code>wheel</code> numa sessão local costumam ser liberados). Depois, o perfil reconecta sozinho sempre que a rede estiver ao alcance.</p>
+
+<h3>nmtui: menus no terminal</h3>
+<p>Se você prefere menus, o <code>nmtui</code> (<em>text user interface</em>, instalado junto com o NetworkManager) abre uma tela azul com três opções: <strong>Editar uma conexão</strong>, <strong>Ativar uma conexão</strong> (lista as redes Wi-Fi; Enter conecta e pede a senha) e <strong>Definir nome de máquina do sistema</strong>. Use as setas, Tab e Enter; Esc volta. É o jeito mais fácil de conectar ao Wi-Fi logo depois da instalação, num TTY sem interface gráfica. (Descrição ilustrativa; na VM o <code>nmtui</code> está em <code>/usr/bin/nmtui</code>, mas a tela não foi capturada.)</p>
+
+<p>Com um desktop instalado, o ícone de rede do GNOME ou do KDE conversa com o mesmo NetworkManager: perfis criados no <code>nmcli</code> aparecem lá, e vice-versa.</p>
+
+<hr>
+
+<h2>IP fixo</h2>
+<p>Um servidor em casa (veja <a href="projeto-servidor.html">Servidor Caseiro</a>) costuma precisar de um endereço que não muda. Com o NetworkManager, você muda o <strong>perfil</strong>: método <code>manual</code>, o endereço, o gateway e o DNS.</p>
+
+<div class="warning">
+<strong>Ilustrativo: não foi aplicado na VM</strong>
+<p>Mudar o IP da VM derrubaria o SSH de todos os autores. Os comandos abaixo são os corretos, mas a sessão não foi rodada. Faça isso no seu computador com acesso físico (ou um segundo caminho de acesso), nunca por SSH na única conexão.</p>
+</div>
+
+<pre class="term">$ sudo nmcli connection modify 'Conexão cabeada 1' \
+>     ipv4.method manual \
+>     ipv4.addresses 192.168.0.50/24 \
+>     ipv4.gateway 192.168.0.1 \
+>     ipv4.dns '1.1.1.1 9.9.9.9'
+$ sudo nmcli connection up 'Conexão cabeada 1'      « aplica (reconecta)</pre>
+
+<dl class="anatomy">
+  <dt>connection modify 'Conexão cabeada 1'</dt><dd>Muda o perfil (depois disso ele passa a ser gravado em <code>/etc/NetworkManager/system-connections/</code>).</dd>
+  <dt>ipv4.method manual</dt><dd>Sem DHCP: você informa tudo. <code>auto</code> volta ao DHCP.</dd>
+  <dt>ipv4.addresses 192.168.0.50/24</dt><dd>O IP e o tamanho da rede (<code>/24</code> = os 3 primeiros números identificam a rede, a máscara <code>255.255.255.0</code>). Escolha um endereço <strong>fora</strong> da faixa que o roteador distribui.</dd>
+  <dt>ipv4.gateway</dt><dd>O roteador.</dd>
+  <dt>ipv4.dns</dt><dd>Os servidores de DNS, separados por espaço.</dd>
+</dl>
+
+<p>Para voltar ao automático:</p>
+<pre class="term">$ sudo nmcli connection modify 'Conexão cabeada 1' ipv4.method auto ipv4.addresses '' ipv4.gateway '' ipv4.dns ''
+$ sudo nmcli connection up 'Conexão cabeada 1'</pre>
+
+<div class="tip">
+<strong>Alternativa: reserva no roteador</strong>
+<p>Muitas vezes é mais simples deixar o Arch em DHCP e configurar no roteador uma "reserva de DHCP" para o MAC da placa (o <code>GENERAL.HWADDR</code>): o roteador sempre entrega o mesmo IP, e nada muda no Linux.</p>
+</div>
+
+<hr>
+
+<h2>DNS: quem traduz os nomes</h2>
+<p>Os programas descobrem qual servidor de DNS usar lendo o <code>/etc/resolv.conf</code>. Na VM, quem escreve esse arquivo é o próprio NetworkManager, com o que recebeu do DHCP:</p>
+
+<pre class="term">$ ls -l /etc/resolv.conf
+-rw-r--r-- 1 root root 92 16 out 13:06 /etc/resolv.conf     « arquivo comum, não um link
+$ cat /etc/resolv.conf
+# Generated by NetworkManager
+search lan
+nameserver 10.0.2.3
+nameserver fd17:625c:f037:2::3
+$ getent hosts archlinux.org
+2604:cac0:a104:d::3 archlinux.org             « a tradução funcionando</pre>
+
+<p>Não edite esse arquivo à mão: o NetworkManager o reescreve a cada conexão. Para escolher o DNS, use <code>ipv4.dns</code> no perfil (como no IP fixo) e, para ignorar o DNS do roteador, <code>ipv4.ignore-auto-dns yes</code>.</p>
+
+<h3>E o resolvectl?</h3>
+<p>Em muitos tutoriais aparece o <code>resolvectl</code>, do <strong>systemd-resolved</strong> (um serviço de DNS com cache). No Arch ele vem no pacote <code>systemd</code>, mas <strong>desligado</strong>, e por isso o comando falha:</p>
+
+<pre class="term">$ resolvectl status
+Failed to connect to service /run/systemd/resolve/io.systemd.Resolve: Arquivo ou diretório inexistente
+$ echo $?
+1</pre>
+
+<p>Para usá-lo com o NetworkManager (<strong>ilustrativo</strong>; não foi feito na VM): <code>sudo systemctl enable --now systemd-resolved</code> e trocar o arquivo por um link, <code>sudo ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf</code>. O NetworkManager percebe o link e passa a entregar o DNS ao resolved. Vantagens: cache, DNS por conexão (útil com VPN), DNS-over-TLS. Para uso doméstico, o padrão (sem resolved) funciona bem.</p>
+
+<h3>O nome da máquina</h3>
+<pre class="term">$ cat /etc/hostname /etc/hosts
+notebook
+# Static table lookup for hostnames.
+# See hosts(5) for details.
+127.0.0.1        localhost
+::1              localhost</pre>
+<p>O <code>/etc/hosts</code> é uma "agenda" consultada antes do DNS: uma linha <code>192.168.0.50  servidor</code> faz <code>ping servidor</code> funcionar na sua rede. Mudar o nome da máquina: <code>sudo hostnamectl hostname novo-nome</code> (ou pelo <code>nmtui</code>).</p>
+
+<hr>
+
+<h2>Diagnóstico: ip, ping, ss</h2>
+
+<h3>ip a: endereços</h3>
+<p>O comando <code>ip</code> (pacote <code>iproute2</code>) mostra o que o kernel sabe, independentemente do gerenciador. <code>ip a</code> = <code>ip address</code>:</p>
+
+<pre class="term">$ ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute
+       valid_lft forever preferred_lft forever
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
+    altname enx08002774b203
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3
+       valid_lft 83747sec preferred_lft 83747sec
+    inet6 fd17:625c:f037:2:3074:376a:4fe9:621c/64 scope global dynamic noprefixroute
+       valid_lft 86301sec preferred_lft 14301sec
+    inet6 fe80::9c83:cf89:6133:11ca/64 scope link noprefixroute
+       valid_lft forever preferred_lft forever</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedaço</th><th>Significado</th></tr>
+<tr><td><code>2: enp0s3:</code></td><td>Número e nome da placa</td></tr>
+<tr><td><code>&lt;…,UP,LOWER_UP&gt;</code></td><td><code>UP</code> = ligada; <code>LOWER_UP</code> = cabo conectado / Wi-Fi associado. Sem <code>LOWER_UP</code>: cabo solto.</td></tr>
+<tr><td><code>state UP</code></td><td>Estado do enlace</td></tr>
+<tr><td><code>link/ether 08:00:27:…</code></td><td>Endereço MAC</td></tr>
+<tr><td><code>altname enx08002774b203</code></td><td>Outro nome da mesma placa (baseado no MAC)</td></tr>
+<tr><td><code>inet 10.0.2.15/24</code></td><td>O IPv4 e a rede</td></tr>
+<tr><td><code>dynamic</code> / <code>valid_lft 83747sec</code></td><td>Veio por DHCP, "emprestado" por mais ~23 horas (renova sozinho)</td></tr>
+<tr><td><code>inet6 fe80::…</code> <code>scope link</code></td><td>IPv6 local, só vale na rede local</td></tr>
+</table>
+</div>
+
+<p>Para uma visão de uma linha por placa, <code>-br</code> (<em>brief</em>):</p>
+<pre class="term">$ ip -br a
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621c/64 fe80::9c83:cf89:6133:11ca/64</pre>
+
+<div class="try" data-goal="out:enp0s3" data-solucao="ip a">
+<p class="try-task"><strong>Missão:</strong> mostre os endereços IP da máquina e descubra o nome da placa com fio.</p>
+</div>
+
+<h3>ip route: o caminho</h3>
+<pre class="term">$ ip route
+default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100
+10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15 metric 100</pre>
+
+<dl class="anatomy">
+  <dt>default via 10.0.2.2</dt><dd>A <strong>rota padrão</strong>: tudo que não é da rede local vai para o roteador 10.0.2.2. Sem essa linha, não há internet.</dd>
+  <dt>dev enp0s3 proto dhcp</dt><dd>Pela placa enp0s3; a rota veio do DHCP.</dd>
+  <dt>10.0.2.0/24 … scope link</dt><dd>A rede local: endereços 10.0.2.x são alcançados direto, sem roteador.</dd>
+  <dt>metric 100</dt><dd>Prioridade (menor ganha), quando há duas rotas (cabo e Wi-Fi juntos).</dd>
+</dl>
+
+<h3>ping: tem alguém aí?</h3>
+<pre class="term">$ ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes de dados.
+64 bytes de 209.126.35.79: icmp_seq=1 ttl=64 tempo=41.6 ms
+64 bytes de 209.126.35.79: icmp_seq=2 ttl=64 tempo=40.9 ms
+64 bytes de 209.126.35.79: icmp_seq=3 ttl=64 tempo=41.7 ms
+
+--- archlinux.org estatísticas de ping ---
+3 pacotes transmitidos, 3 recebidos, 0% packet loss, time 2384ms
+rtt min/avg/max/mdev = 40.864/41.369/41.660/0.358 ms
+$ echo $?
+0</pre>
+
+<p><code>-c 3</code> manda 3 pacotes e para (sem ele, o <code>ping</code> continua até <kbd>Ctrl</kbd>+<kbd>C</kbd>). A primeira linha mostra que o DNS funcionou (o nome virou <code>209.126.35.79</code>); cada resposta mostra o tempo de ida e volta. Os três resultados possíveis, com códigos de saída diferentes:</p>
+
+<pre class="term">$ ping -c 2 -W 2 10.0.2.99
+PING 10.0.2.99 (10.0.2.99) 56(84) bytes de dados.
+
+--- 10.0.2.99 estatísticas de ping ---
+2 pacotes transmitidos, 0 recebidos, 100% packet loss, time 1555ms
+
+$ echo $?
+1                                « ninguém respondeu (máquina desligada, ou bloqueia ping)
+$ ping -c 1 nao-existe.invalid
+ping: nao-existe.invalid: Nome ou serviço desconhecido
+$ echo $?
+2                                « o nome não foi traduzido: problema de DNS (ou de digitação)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste, nesta ordem</th><th>Se falhar, o problema é…</th></tr>
+<tr><td><code>ip -br a</code> mostra um IP na placa?</td><td>Cabo/Wi-Fi ou DHCP</td></tr>
+<tr><td><code>ping -c 3 IP-do-gateway</code> (o <code>default via</code>)</td><td>A rede local / o roteador</td></tr>
+<tr><td><code>ping -c 3 1.1.1.1</code></td><td>A saída para a internet</td></tr>
+<tr><td><code>ping -c 3 archlinux.org</code></td><td>O DNS (se o anterior funcionou)</td></tr>
+</table>
+</div>
+
+<h3>ss -tulpn: quem está escutando</h3>
+<p><code>ss</code> (<em>socket statistics</em>) mostra as portas abertas. É o que você confere antes de mexer no firewall (veja <a href="firewall.html">Firewall</a>).</p>
+
+<dl class="anatomy">
+  <dt>-t / -u</dt><dd>TCP / UDP.</dd>
+  <dt>-l</dt><dd>Só quem está <em>listening</em> (esperando conexões).</dd>
+  <dt>-p</dt><dd>Mostra o processo (precisa de sudo para os de outros usuários).</dd>
+  <dt>-n</dt><dd>Números (porta 22) em vez de nomes (ssh).</dd>
+</dl>
+
+<pre class="term">$ sudo ss -tulpn
+Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+tcp   LISTEN 0      511          0.0.0.0:8080      0.0.0.0:*    users:(("nginx",pid=97069,fd=5),("nginx",pid=97068,fd=5))
+tcp   LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=97069,fd=6),("nginx",pid=97068,fd=6))
+tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))
+tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
+
+<p>Leia assim: o <code>sshd</code> espera conexões na porta 22, em todos os endereços IPv4 (<code>0.0.0.0</code>) e IPv6 (<code>[::]</code>); naquele momento outro autor estava com o <code>nginx</code> ligado, nas portas 80 e 8080. Um endereço <code>127.0.0.1:porta</code> quer dizer "só aceita conexões da própria máquina". Sem <code>sudo</code>, a coluna <code>Process</code> sai vazia para serviços do root.</p>
+
+<hr>
+
+<h2>Alternativas ao NetworkManager</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>O que é</th><th>Wi-Fi</th><th>Bom para</th></tr>
+<tr><td><strong>NetworkManager</strong> (<code>networkmanager</code>)</td><td>Gerenciador completo: cabo, Wi-Fi, VPN, celular; <code>nmcli</code>, <code>nmtui</code> e ícone no desktop</td><td>Sim (usa <code>wpa_supplicant</code> ou <code>iwd</code> por baixo)</td><td>Desktops e notebooks; o padrão do GNOME e do KDE</td></tr>
+<tr><td><strong>iwd</strong> (<code>iwd</code>)</td><td>O "daemon de Wi-Fi" da Intel, leve e moderno; comando <code>iwctl</code>. É o que a ISO de instalação do Arch usa.</td><td>Só Wi-Fi (faz DHCP próprio se habilitado)</td><td>Notebooks minimalistas; ou como motor de Wi-Fi do NetworkManager</td></tr>
+<tr><td><strong>systemd-networkd</strong></td><td>Vem no <code>systemd</code>; configuração em arquivos <code>.network</code> em <code>/etc/systemd/network/</code></td><td>Não sozinho (junte com <code>iwd</code>)</td><td>Servidores, VMs, containers, rede fixa</td></tr>
+<tr><td><code>dhcpcd</code></td><td>Só um cliente DHCP</td><td>Não</td><td>Máquinas simples com cabo</td></tr>
+</table>
+</div>
+
+<p>Na VM, o <code>iwd</code> não está instalado (<code>pacman -Q iwd</code> → <code>erro: o pacote "iwd" não foi encontrado</code>) e o <code>systemd-networkd</code> está desabilitado. Se um dia quiser usar o iwd como motor de Wi-Fi do NetworkManager (conecta mais rápido), a Arch Wiki explica: instale o <code>iwd</code>, crie <code>/etc/NetworkManager/conf.d/wifi_backend.conf</code> com <code>[device]</code> e <code>wifi.backend=iwd</code>, e reinicie o NetworkManager (sem habilitar o serviço <code>iwd</code> separado).</p>
+
+<h3>No ambiente de instalação: iwctl</h3>
+<p>Na ISO, antes de existir NetworkManager, o Wi-Fi é pelo <code>iwctl</code> (<strong>ilustrativo</strong>, a VM usa cabo; veja <a href="ambiente-live.html">O Ambiente Live</a>):</p>
+<pre class="term" data-host="archiso" data-user="root">#> iwctl device list
+#> iwctl station wlan0 scan
+#> iwctl station wlan0 get-networks
+#> iwctl --passphrase 'minha senha' station wlan0 connect CasaDaAna</pre>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Depois da instalação, nada de rede</strong>
+<p><strong>O que aconteceu:</strong> o gerenciador não foi instalado ou habilitado no chroot (o <code>pacstrap</code> básico não traz nenhum).</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-active NetworkManager</code> → <code>inactive</code>, ou <code>Unit NetworkManager.service not found</code>.</p>
+<p><strong>Como resolver:</strong> se estiver instalado, <code>sudo systemctl enable --now NetworkManager</code>. Se não estiver, volte ao pendrive, monte e entre no sistema com <code>arch-chroot</code>, instale com <code>pacman -S networkmanager</code> e habilite (veja <a href="chroot-resgate.html">Resgate com chroot</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Nome ou serviço desconhecido"</strong>
+<pre class="term">$ ping -c 1 nao-existe.invalid
+ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
+<p><strong>O que aconteceu:</strong> o nome não foi traduzido: erro de digitação, ou o DNS não está funcionando.</p>
+<p><strong>Como confirmar:</strong> <code>ping -c 3 1.1.1.1</code> funciona? Então a internet está ok e o problema é DNS. Veja <code>cat /etc/resolv.conf</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo nmcli connection modify NOME ipv4.dns '1.1.1.1'</code> e <code>nmcli connection up NOME</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to connect to service /run/systemd/resolve/…"</strong>
+<p><strong>O que aconteceu:</strong> você usou <code>resolvectl</code>, mas o <code>systemd-resolved</code> não está ligado (o padrão do Arch).</p>
+<p><strong>Como resolver:</strong> use <code>cat /etc/resolv.conf</code> e <code>nmcli device show</code> para ver o DNS, ou habilite o resolved (seção DNS).</p>
+</div>
+
+<div class="cenario">
+<strong>A conexão cai e volta sozinha</strong>
+<p><strong>O que aconteceu:</strong> quase sempre, dois gerenciadores ligados ao mesmo tempo.</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-active NetworkManager systemd-networkd dhcpcd iwd</code>: mais de um <code>active</code> (o <code>iwd</code> ativo é normal só se você o configurou como motor do NetworkManager e ele foi iniciado por ele).</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl disable --now</code> nos que sobram. Para ver o que o NetworkManager diz: <code>journalctl -u NetworkManager -b</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O Wi-Fi não aparece</strong>
+<p><strong>O que aconteceu:</strong> a placa está bloqueada (botão de modo avião), sem driver/firmware, ou o rádio está desligado.</p>
+<p><strong>Como confirmar:</strong> <code>nmcli radio</code> (<code>WIFI-HW</code> deve ser <code>habilitado</code>), <code>rfkill list</code> (bloqueios), <code>ip link</code> (a placa existe?), <code>journalctl -k | grep -i firmware</code>.</p>
+<p><strong>Como resolver:</strong> <code>nmcli radio wifi on</code>; <code>rfkill unblock wifi</code>; instale o firmware (pacote <code>linux-firmware</code>, que no Arch é dividido em partes: confira se a da sua placa está instalada).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>nmcli general</code></td><td>Estado geral e conectividade</td></tr>
+<tr><td><code>nmcli device</code> · <code>nmcli device show enp0s3</code></td><td>Placas · detalhes (IP, gateway, DNS)</td></tr>
+<tr><td><code>nmcli connection show</code> · <code>… show NOME</code></td><td>Perfis · configurações de um perfil</td></tr>
+<tr><td><code>nmcli connection up|down|delete NOME</code></td><td>Conecta · desconecta · apaga um perfil</td></tr>
+<tr><td><code>nmcli device wifi list</code> · <code>rescan</code></td><td>Redes Wi-Fi visíveis</td></tr>
+<tr><td><code>nmcli device wifi connect SSID --ask</code></td><td>Conecta a um Wi-Fi</td></tr>
+<tr><td><code>nmcli radio wifi on|off</code></td><td>Liga/desliga o Wi-Fi</td></tr>
+<tr><td><code>sudo nmcli connection modify NOME ipv4.method manual ipv4.addresses …</code></td><td>IP fixo</td></tr>
+<tr><td><code>nmtui</code></td><td>Menus no terminal</td></tr>
+<tr><td><code>ip a</code> · <code>ip -br a</code> · <code>ip route</code></td><td>Endereços · resumo · rotas</td></tr>
+<tr><td><code>ping -c 3 destino</code></td><td>Testa se responde</td></tr>
+<tr><td><code>sudo ss -tulpn</code></td><td>Portas abertas e processos</td></tr>
+<tr><td><code>cat /etc/resolv.conf</code> · <code>getent hosts nome</code></td><td>DNS em uso · testar uma tradução</td></tr>
+<tr><td><code>sudo hostnamectl hostname nome</code></td><td>Muda o nome da máquina</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. As placas</h3>
+<p>Complete para ver as placas de rede e o estado de cada uma:</p>
+<div class="ex-code">nmcli <input data-answer="device|dev|d" aria-label="objeto"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O roteador</h3>
+<p>Na VM, <code>ip route</code> mostra <code>default via 10.0.2.2 dev enp0s3</code>. Qual é o IP do gateway?</p>
+<div class="ex-code"><input data-answer="10.0.2.2" aria-label="gateway"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Portas abertas</h3>
+<p>Complete para listar as portas TCP e UDP em escuta, com processos e números:</p>
+<div class="ex-code">sudo ss <input data-answer="-tulpn|-tulnp|-tlunp|-lntup|-plunt" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. <code>ping -c 3 1.1.1.1</code> funciona, mas <code>ping -c 3 archlinux.org</code> dá "Nome ou serviço desconhecido". Onde está o problema?</p>
+<label><input type="radio" name="q4"> No cabo de rede.</label>
+<label><input type="radio" name="q4"> No roteador.</label>
+<label><input type="radio" name="q4"> No DNS.</label>
+<label><input type="radio" name="q4"> No firewall do site.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que <code>resolvectl status</code> falha num Arch padrão com NetworkManager?</p>
+<label><input type="radio" name="q5"> Porque o comando não existe no Arch.</label>
+<label><input type="radio" name="q5"> Porque o <code>systemd-resolved</code> vem desligado; o DNS está em <code>/etc/resolv.conf</code>, escrito pelo NetworkManager.</label>
+<label><input type="radio" name="q5"> Porque precisa de sudo.</label>
+<label><input type="radio" name="q5"> Porque não há internet.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Você quer o Wi-Fi rápido de um notebook minimalista, sem NetworkManager. O que usar?</p>
+<label><input type="radio" name="q6"> <code>dhcpcd</code> sozinho.</label>
+<label><input type="radio" name="q6"> <code>systemd-networkd</code> sozinho.</label>
+<label><input type="radio" name="q6"> Editar o <code>/etc/resolv.conf</code>.</label>
+<label><input type="radio" name="q6"> O <code>iwd</code> (com <code>iwctl</code>), o mesmo da ISO de instalação.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No Arch você escolhe e habilita o gerenciador de rede; um só por vez.</li>
+  <li><code>nmcli general</code>, <code>device</code> e <code>connection</code> mostram o estado; <code>nmcli device wifi connect</code> e <code>nmtui</code> conectam.</li>
+  <li>IP fixo e DNS se mudam no <strong>perfil</strong> (<code>nmcli connection modify</code>), não editando arquivos.</li>
+  <li>O <code>/etc/resolv.conf</code> é escrito pelo NetworkManager; o <code>systemd-resolved</code> vem desligado.</li>
+  <li>Diagnóstico: <code>ip -br a</code> → <code>ip route</code> → <code>ping</code> (gateway, IP, nome) → <code>ss -tulpn</code>.</li>
+  <li>Alternativas: <code>iwd</code> (Wi-Fi leve) e <code>systemd-networkd</code> (servidores).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/NetworkManager">NetworkManager</a> (<a href="https://wiki.archlinux.org/title/NetworkManager_(Portugu%C3%AAs)">em português</a>) tem todos os comandos do <code>nmcli</code>, o motor iwd e a integração com o resolved; o <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>) e o <a href="https://wiki.archlinux.org/title/Systemd-networkd">systemd-networkd</a> têm páginas próprias; o diagnóstico geral e os comandos <code>ip</code> estão em <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a> (<a href="https://wiki.archlinux.org/title/Network_configuration_(Portugu%C3%AAs)">em português</a>); o DNS, em <a href="https://wiki.archlinux.org/title/Domain_name_resolution">Domain name resolution</a> e <a href="https://wiki.archlinux.org/title/Systemd-resolved">systemd-resolved</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
