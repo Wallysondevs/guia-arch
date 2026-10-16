@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch chmod — mudar permissões no modo simbólico e octal | Guia Arch</title>
+<meta name="description" content="chmod no Arch Linux: mudar permissões no modo simbólico (u+x, go-w, u=rw) e octal (644, 755, 600, 700), a conta 4+2+1, chmod +x em scripts, -R com o X maiúsculo, -v e -c, pasta × arquivo, permissões especiais e os erros reais, com saídas de um Arch de verdade e missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">chmod</span></h1>
+
+<p class="intro">O <code>chmod</code> (de <em>change mode</em>, "mudar o modo") muda as permissões de um arquivo ou pasta: quem pode ler, escrever e executar. É o comando que você usa para tornar um script executável, para proteger um arquivo com senhas ou para consertar uma pasta em que ninguém consegue entrar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As duas formas de usar o <code>chmod</code>: <strong>simbólica</strong> (<code>u+x</code>, <code>go-w</code>) e <strong>octal</strong> (<code>644</code>, <code>755</code>), com a conta explicada.</li>
+  <li>A tornar um script executável e a resolver o "Permissão negada" do <code>./script.sh</code>.</li>
+  <li>A diferença de dar <code>x</code> a um arquivo e a uma pasta.</li>
+  <li>A mudar pastas inteiras com <code>-R</code> sem tornar todos os arquivos executáveis (o <code>X</code> maiúsculo).</li>
+  <li>Os erros reais: "Operação não permitida", "modo inválido", "Arquivo ou diretório inexistente".</li>
+</ul>
+</div>
+
+<p>O conceito (dono, grupo, outros, as 10 letras do <code>ls -l</code>, o que <code>r</code>, <code>w</code> e <code>x</code> fazem) está em <a href="permissoes.html">Entendendo Permissões</a>; leia antes se ainda não leu. Aqui vamos à prática. Os exemplos foram feitos na VM do guia, um Arch real, numa pasta de teste (<code>/tmp/b4/aula</code>), e o terminal simulado desta página tem <code>chmod</code>, <code>ls -l</code> e <code>stat</code> para você praticar.</p>
+
+<hr>
+
+<h2>Relembrando: as 9 letras que o chmod muda</h2>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ ls -l backup.sh
+-rw-r--r-- 1 ana ana 37 16 out 15:02 backup.sh</pre>
+
+<dl class="anatomy">
+  <dt>-</dt><dd>Tipo (arquivo comum). O <code>chmod</code> não mexe nesta.</dd>
+  <dt>rw-</dt><dd><strong>Dono</strong> (<code>u</code>, <em>user</em>): lê e escreve.</dd>
+  <dt>r--</dt><dd><strong>Grupo</strong> (<code>g</code>, <em>group</em>): só lê.</dd>
+  <dt>r--</dt><dd><strong>Outros</strong> (<code>o</code>, <em>others</em>): só leem.</dd>
+</dl>
+
+<p>Esse <code>rw-r--r--</code> é como todo arquivo novo nasce no Arch (por causa do <code>umask 022</code>, explicado em <a href="chown.html">chown, chgrp, umask</a>). Repare: <strong>nenhum <code>x</code></strong>. Por isso um script recém-criado não roda.</p>
+
+<hr>
+
+<h2>O primeiro chmod: tornar um script executável</h2>
+<p>O caso mais comum do dia a dia: você escreveu um script e ele não roda.</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ cat backup.sh
+#!/bin/bash
+echo "Fazendo backup..."
+$ ./backup.sh
+bash: ./backup.sh: Permissão negada
+$ echo $?
+126                                          « 126 = achou o arquivo, mas não pode executar
+$ chmod u+x backup.sh
+$ ls -l backup.sh
+-rwxr--r-- 1 ana ana 37 16 out 15:02 backup.sh      « apareceu o x do dono
+$ ./backup.sh
+Fazendo backup...</pre>
+
+<p>Como quase todo comando, o <code>chmod</code> <strong>fica quieto quando dá certo</strong> (código de saída 0). Para ver o efeito, use <code>ls -l</code> antes e depois.</p>
+
+<div class="try" data-setup="printf '#!/bin/bash\necho Fazendo backup...\n' &gt; backup.sh" data-goal="exec:~/backup.sh" data-solucao="chmod u+x backup.sh;;./backup.sh">
+<p class="try-task"><strong>Missão 1:</strong> o <code>backup.sh</code> da sua pasta não roda (<code>./backup.sh</code> dá "Permissão negada"). Dê a você, a dona, a permissão de executar e rode-o.</p>
+</div>
+
+<hr>
+
+<h2>Modo simbólico: quem, operação, permissão</h2>
+<p>No modo simbólico você <strong>descreve a mudança com letras</strong>. Ele tem três partes, escritas juntas, sem espaço:</p>
+
+<dl class="anatomy">
+  <dt>chmod</dt><dd>O programa.</dd>
+  <dt>u</dt><dd><strong>Quem</strong>: <code>u</code> dono, <code>g</code> grupo, <code>o</code> outros, <code>a</code> todos (<em>all</em>). Pode juntar: <code>go</code> = grupo e outros.</dd>
+  <dt>+</dt><dd><strong>Operação</strong>: <code>+</code> dá, <code>-</code> tira, <code>=</code> define exatamente (o que não estiver escrito some).</dd>
+  <dt>x</dt><dd><strong>Permissão</strong>: <code>r</code>, <code>w</code> e/ou <code>x</code>. Pode juntar: <code>rw</code>.</dd>
+  <dt>backup.sh</dt><dd>Um ou mais arquivos ou pastas.</dd>
+</dl>
+
+<p>A vantagem: ele muda <strong>só o que você mandar</strong> e deixa o resto como está. Uma sequência real, sempre olhando o antes e o depois:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ ls -l backup.sh
+-rwxr--r-- 1 ana ana 37 16 out 15:02 backup.sh
+$ chmod go-r backup.sh                   « tira o r do grupo e dos outros
+$ ls -l backup.sh
+-rwx------ 1 ana ana 37 16 out 15:02 backup.sh
+$ chmod u=rw,go=r backup.sh              « "=" define exatamente; a vírgula separa as partes
+$ ls -l backup.sh
+-rw-r--r-- 1 ana ana 37 16 out 15:02 backup.sh      « o x do dono sumiu, porque não estava no "u=rw"
+$ chmod +x backup.sh                     « sem "quem": vale para todos (respeitando o umask)
+$ ls -l backup.sh
+-rwxr-xr-x 1 ana ana 37 16 out 15:02 backup.sh</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Efeito</th></tr>
+<tr><td><code>chmod u+x arq</code></td><td>O dono pode executar</td></tr>
+<tr><td><code>chmod +x arq</code></td><td>Todos podem executar (menos o que o <code>umask</code> bloqueia)</td></tr>
+<tr><td><code>chmod a+x arq</code></td><td>Todos podem executar, sempre</td></tr>
+<tr><td><code>chmod go-w arq</code></td><td>Grupo e outros deixam de poder alterar</td></tr>
+<tr><td><code>chmod go-rwx arq</code> · <code>chmod go= arq</code></td><td>Só o dono acessa</td></tr>
+<tr><td><code>chmod a+r arq</code></td><td>Todos podem ler</td></tr>
+<tr><td><code>chmod u=rw,go= arq</code></td><td>Dono lê e escreve; os outros, nada (o mesmo que 600)</td></tr>
+<tr><td><code>chmod g+w pasta</code></td><td>O grupo pode criar e apagar arquivos na pasta</td></tr>
+</table>
+</div>
+
+<h3>+x × a+x: a diferença que quase ninguém conhece</h3>
+<p>Sem o "quem" (<code>chmod +x</code>), o <code>chmod</code> respeita o seu <code>umask</code>: não dá o que a máscara proíbe. Com o umask padrão do Arch (<code>022</code>) não faz diferença, mas com um umask mais fechado faz:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ umask 077                     « máscara que fecha tudo para grupo e outros
+$ chmod +x backup.sh
+$ ls -l backup.sh
+-rwxr--r-- 1 ana ana 37 16 out 15:02 backup.sh      « só o dono ganhou x
+$ chmod a+x backup.sh
+$ ls -l backup.sh
+-rwxr-xr-x 1 ana ana 37 16 out 15:02 backup.sh      « com "a", todos ganharam
+$ umask 022                     « de volta ao padrão</pre>
+
+<hr>
+
+<h2>Modo octal: a conta 4 + 2 + 1</h2>
+<p>No modo octal, cada trio vira <strong>um número</strong>. Cada permissão tem um valor, e você soma as que quer dar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Permissão</th><th>Valor</th></tr>
+<tr><td><code>r</code> ler</td><td>4</td></tr>
+<tr><td><code>w</code> escrever</td><td>2</td></tr>
+<tr><td><code>x</code> executar</td><td>1</td></tr>
+<tr><td>nada</td><td>0</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Conta</th><th>Trio</th><th>Significa</th></tr>
+<tr><td><code>7</code></td><td>4+2+1</td><td><code>rwx</code></td><td>Tudo</td></tr>
+<tr><td><code>6</code></td><td>4+2</td><td><code>rw-</code></td><td>Ler e escrever</td></tr>
+<tr><td><code>5</code></td><td>4+1</td><td><code>r-x</code></td><td>Ler e executar</td></tr>
+<tr><td><code>4</code></td><td>4</td><td><code>r--</code></td><td>Só ler</td></tr>
+<tr><td><code>0</code></td><td>0</td><td><code>---</code></td><td>Nada</td></tr>
+</table>
+</div>
+
+<p>(Os números 1, 2 e 3 existem, <code>--x</code>, <code>-w-</code> e <code>-wx</code>, mas quase não se usam.) Três números, um para cada trio, sempre na ordem dono, grupo, outros:</p>
+
+<dl class="anatomy">
+  <dt>chmod</dt><dd>O programa.</dd>
+  <dt>7</dt><dd>Dono: 4+2+1 = <code>rwx</code>.</dd>
+  <dt>5</dt><dd>Grupo: 4+1 = <code>r-x</code>.</dd>
+  <dt>4</dt><dd>Outros: 4 = <code>r--</code>.</dd>
+  <dt>backup.sh</dt><dd>O arquivo.</dd>
+</dl>
+
+<p>No comando, os três números ficam juntos: <code>chmod 754 backup.sh</code>. Ao contrário do simbólico, o octal <strong>define as nove permissões de uma vez</strong>: não importa como o arquivo estava antes.</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod 754 backup.sh
+$ ls -l backup.sh
+-rwxr-xr-- 1 ana ana 37 16 out 15:02 backup.sh
+$ stat -c '%a %A %n' backup.sh
+754 -rwxr-xr-- backup.sh              « o stat mostra o número e as letras lado a lado
+$ chmod 600 notas.txt
+$ ls -l notas.txt
+-rw------- 1 ana ana 0 16 out 15:02 notas.txt</pre>
+
+<p>Às vezes você verá quatro dígitos, como <code>chmod 0755</code>. O zero da frente é o das <a href="#especiais">permissões especiais</a> (nenhuma, no caso): <code>0755</code> e <code>755</code> são a mesma coisa.</p>
+
+<h3>Os modos que você vai usar sempre</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Octal</th><th>Letras</th><th>Simbólico equivalente</th><th>Uso típico</th></tr>
+<tr><td><code>644</code></td><td><code>rw-r--r--</code></td><td><code>u=rw,go=r</code></td><td>Arquivo comum: você edita, os outros só leem (o padrão do Arch)</td></tr>
+<tr><td><code>755</code></td><td><code>rwxr-xr-x</code></td><td><code>u=rwx,go=rx</code></td><td>Script ou programa que todos podem rodar; pasta pública (o padrão das pastas)</td></tr>
+<tr><td><code>600</code></td><td><code>rw-------</code></td><td><code>u=rw,go=</code></td><td>Arquivo privado: chave SSH, arquivo de senhas</td></tr>
+<tr><td><code>700</code></td><td><code>rwx------</code></td><td><code>u=rwx,go=</code></td><td>Pasta ou script só seu; <code>~/.ssh</code>; a pasta pessoal no Arch</td></tr>
+<tr><td><code>640</code></td><td><code>rw-r-----</code></td><td><code>u=rw,g=r,o=</code></td><td>O grupo lê, os outros não</td></tr>
+<tr><td><code>750</code></td><td><code>rwxr-x---</code></td><td><code>u=rwx,g=rx,o=</code></td><td>Pasta do dono em que o grupo entra (<code>/root</code> no Arch)</td></tr>
+<tr><td><code>777</code></td><td><code>rwxrwxrwx</code></td><td><code>a=rwx</code></td><td>Todo mundo faz tudo. <strong>Quase sempre um erro</strong> (veja adiante).</td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="echo 'senha do wifi: 123' &gt; senhas.txt" data-goal="ran:chmod,outre:^-rw------- " data-solucao="chmod 600 senhas.txt;;ls -l senhas.txt">
+<p class="try-task"><strong>Missão 2:</strong> o arquivo <code>senhas.txt</code> nasceu <code>rw-r--r--</code>: qualquer usuário do computador pode lê-lo. Deixe-o <code>rw-------</code> (só você lê e escreve), no modo octal ou no simbólico, e confira com <code>ls -l senhas.txt</code>.</p>
+</div>
+
+<h3>Simbólico ou octal: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Melhor forma</th><th>Exemplo</th><th>Por quê</th></tr>
+<tr><td>Tornar um script executável</td><td>Simbólico</td><td><code>chmod u+x script.sh</code></td><td>Acrescenta só o x, sem mexer no resto</td></tr>
+<tr><td>Tirar uma permissão de alguém</td><td>Simbólico</td><td><code>chmod o-r relatorio.txt</code></td><td>Cirúrgico</td></tr>
+<tr><td>Deixar exatamente de um jeito</td><td>Octal</td><td><code>chmod 600 ~/.ssh/id_ed25519</code></td><td>Define as nove de uma vez, não importa o antes</td></tr>
+<tr><td>Seguir uma instrução da internet ou da Arch Wiki</td><td>Octal (é o mais comum)</td><td><code>chmod 644 index.html</code></td><td>Mas <strong>entenda o número</strong> antes de rodar</td></tr>
+<tr><td>Pastas e arquivos juntos</td><td>Simbólico com <code>X</code></td><td><code>chmod -R u=rwX,go=rX site</code></td><td>Só o simbólico tem o <code>X</code> (veja <code>-R</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Ver o que mudou: -v e -c</h2>
+<p>A opção <code>-v</code> (<em>verbose</em>, "detalhado") faz o <code>chmod</code> contar o que fez, em português, com o antes e o depois em número e em letras:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -v 755 backup.sh
+modo de 'backup.sh' alterado de 0754 (rwxr-xr--) para 0755 (rwxr-xr-x)
+$ chmod -v o+r backup.sh
+modo de 'backup.sh' mantido como 0755 (rwxr-xr-x)        « já tinha, nada mudou</pre>
+
+<p>A <code>-c</code> (<em>changes</em>, "mudanças") só fala quando houve mudança de verdade. É a melhor com <code>-R</code>, em pastas grandes:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -c 755 backup.sh                                  « já era 755: silêncio
+$ chmod -c 750 backup.sh
+modo de 'backup.sh' alterado de 0755 (rwxr-xr-x) para 0750 (rwxr-x---)</pre>
+
+<p>E para copiar as permissões de outro arquivo, sem fazer conta, existe <code>--reference</code>:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod --reference=notas.txt backup.sh
+$ ls -l notas.txt backup.sh
+-rw-r--r-- 1 ana ana 37 16 out 15:02 backup.sh
+-rw-r--r-- 1 ana ana  0 16 out 15:02 notas.txt</pre>
+
+<hr>
+
+<h2>chmod numa pasta × num arquivo</h2>
+<p>As mesmas letras querem dizer coisas diferentes numa pasta (veja a tabela completa em <a href="permissoes.html">Entendendo Permissões</a>): <code>r</code> lista os nomes, <code>w</code> cria e apaga coisas dentro, <code>x</code> deixa <strong>entrar</strong>. O erro clássico é dar a uma pasta o modo de um arquivo:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ mkdir privada
+$ chmod 600 privada                       « "privado" como um arquivo…
+$ ls -ld privada
+drw------- 2 ana ana 40 16 out 15:02 privada
+$ cd privada
+bash: cd: privada: Permissão negada        « …e nem a dona entra: falta o x
+$ chmod 700 privada                       « pasta privada é 700, não 600
+$ ls -ld privada
+drwx------ 2 ana ana 40 16 out 15:02 privada</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Num arquivo</th><th>Numa pasta</th></tr>
+<tr><td>Só eu acesso</td><td><code>600</code></td><td><code>700</code></td></tr>
+<tr><td>Todos leem, só eu altero</td><td><code>644</code></td><td><code>755</code></td></tr>
+<tr><td>O grupo lê, os outros nada</td><td><code>640</code></td><td><code>750</code></td></tr>
+<tr><td>Executar / entrar</td><td><code>x</code> = rodar como programa</td><td><code>x</code> = entrar (sem ele, <code>r</code> e <code>w</code> quase não servem)</td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="mkdir privada;;chmod 600 privada" data-goal="cwd:~/privada" data-solucao="chmod 700 privada;;cd privada">
+<p class="try-task"><strong>Missão 3:</strong> alguém deixou a pasta <code>privada</code> com <code>drw-------</code> e agora <code>cd privada</code> dá "Permissão negada". Conserte a permissão (continue sendo o único com acesso) e entre na pasta.</p>
+</div>
+
+<hr>
+
+<h2>Pastas inteiras: -R e o X maiúsculo</h2>
+<p>A opção <code>-R</code> (de <em>recursive</em>, recursivo) aplica a mudança na pasta <strong>e em tudo dentro dela</strong>, subpastas incluídas. Um site com uma pasta e dois arquivos, todo fechado:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -R go-rwx site
+$ ls -lR site                          « -R no ls também: mostra as subpastas
+site:
+total 0
+drwx------ 2 ana ana 60 16 out 15:21 css
+-rw------- 1 ana ana  0 16 out 15:21 index.html
+
+site/css:
+total 0
+-rw------- 1 ana ana 0 16 out 15:21 estilo.css</pre>
+
+<p>Agora queremos abrir o site para leitura. O problema: pastas precisam de <code>x</code> (para entrar), mas arquivos de texto não devem ter <code>x</code>. O <code>X</code> <strong>maiúsculo</strong> resolve: ele dá o <code>x</code> só às <strong>pastas</strong> (e aos arquivos que <strong>já</strong> eram executáveis).</p>
+
+<dl class="anatomy">
+  <dt>chmod</dt><dd>O programa.</dd>
+  <dt>-R</dt><dd>Na pasta e em tudo dentro dela.</dd>
+  <dt>u=rwX</dt><dd>Dono: ler, escrever e, se for pasta, entrar.</dd>
+  <dt>,go=rX</dt><dd>Grupo e outros: ler e, se for pasta, entrar.</dd>
+  <dt>site</dt><dd>A pasta.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -R u=rwX,go=rX site
+$ ls -lR site
+site:
+total 0
+drwxr-xr-x 2 ana ana 60 16 out 15:21 css             « pasta: ganhou x
+-rw-r--r-- 1 ana ana  0 16 out 15:21 index.html      « arquivo: sem x
+
+site/css:
+total 0
+-rw-r--r-- 1 ana ana 0 16 out 15:21 estilo.css</pre>
+
+<p>Compare com o "atalho" que muita gente usa, <code>chmod -R 755</code>: ele dá <code>x</code> a <strong>tudo</strong>, inclusive ao <code>index.html</code>. E, depois disso, o <code>X</code> não conserta mais, porque o arquivo "já era executável":</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -R 755 site
+$ ls -l site
+total 0
+drwxr-xr-x 2 ana ana 60 16 out 15:21 css
+-rwxr-xr-x 1 ana ana  0 16 out 15:21 index.html      « executável sem motivo
+$ chmod -R u=rwX,go=rX site
+$ ls -l site
+total 0
+drwxr-xr-x 2 ana ana 60 16 out 15:21 css
+-rwxr-xr-x 1 ana ana  0 16 out 15:21 index.html      « continua com x</pre>
+
+<p>Para consertar, use o <a href="find.html">find</a>, que trata pastas (<code>-type d</code>) e arquivos (<code>-type f</code>) separadamente. É também a forma mais explícita de fazer tudo de uma vez:</p>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ find site -type d -exec chmod 755 {} +
+$ find site -type f -exec chmod 644 {} +
+$ ls -l site
+total 0
+drwxr-xr-x 2 ana ana 60 16 out 15:21 css
+-rw-r--r-- 1 ana ana  0 16 out 15:21 index.html</pre>
+
+<div class="try" data-setup="mkdir -p site/css;;touch site/index.html site/css/estilo.css;;chmod -R go-rwx site" data-goal="ran:chmod +(-R|-[a-zA-Z]*R),outre:^drwxr-xr-x .* css$,outre:^-rw-r--r-- .* index\.html$" data-solucao="chmod -R u=rwX,go=rX site;;ls -l site">
+<p class="try-task"><strong>Missão 4:</strong> a pasta <code>site</code> está toda fechada (<code>rwx------</code> e <code>rw-------</code>). Abra-a para leitura de todos, <strong>com um comando só</strong>: pastas <code>rwxr-xr-x</code> e arquivos <code>rw-r--r--</code>, sem nenhum arquivo executável. Confira com <code>ls -l site</code>.</p>
+</div>
+
+<div class="warning">
+<strong>Cuidado com chmod -R</strong>
+<p>Um <code>chmod -R</code> na pasta errada estraga muita coisa de uma vez, e não tem "desfazer". Com <code>sudo</code>, então, nada impede o estrago: <code>sudo chmod -R 777 /</code> ou <code>sudo chmod -R 644 /usr</code> deixam o sistema sem funcionar (programas deixam de ser executáveis, o <code>sudo</code> perde o <code>s</code> e para). E o SSH recusa chaves se <code>~/.ssh</code> ficar aberto demais. Confira o caminho duas vezes antes do <kbd>Enter</kbd>, e use <code>-c</code> para ver o que mudou.</p>
+</div>
+
+<hr>
+
+<h2>Por que nunca usar 777</h2>
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod -Rc a+rwx site
+modo de 'site' alterado de 0755 (rwxr-xr-x) para 0777 (rwxrwxrwx)
+modo de 'site/index.html' alterado de 0644 (rw-r--r--) para 0777 (rwxrwxrwx)
+modo de 'site/css' alterado de 0755 (rwxr-xr-x) para 0777 (rwxrwxrwx)
+modo de 'site/css/estilo.css' alterado de 0644 (rw-r--r--) para 0777 (rwxrwxrwx)</pre>
+<p><code>777</code> (ou <code>a+rwx</code>) dá tudo a todos: qualquer usuário, ou qualquer programa invadido, pode alterar, apagar ou trocar o conteúdo por outro. Muitas respostas na internet sugerem 777 para "resolver" um Permissão negada. Isso tira o erro e abre um buraco de segurança.</p>
+<p>Em vez disso, descubra <strong>quem</strong> precisa de acesso e dê só a ele: mude o dono com <a href="chown.html">chown</a>, ou ponha a pessoa no grupo certo (<a href="usuarios.html">Usuários e Grupos</a>) e use <code>g+w</code>.</p>
+
+<hr>
+
+<h2 id="especiais">Permissões especiais: o quarto dígito</h2>
+<p>Às vezes aparece um quarto número na frente (<code>chmod 2775</code>) ou um <code>s</code>/<code>t</code> no lugar do <code>x</code>. O que cada um faz está em <a href="permissoes.html">Entendendo Permissões</a>; aqui, como ligá-los e desligá-los:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>Octal</th><th>Simbólico</th><th>Aparece como</th><th>Exemplo real</th></tr>
+<tr><td>setuid</td><td><code>4000</code></td><td><code>u+s</code></td><td><code>rwsr-xr-x</code></td><td><code>/usr/bin/passwd</code></td></tr>
+<tr><td>setgid</td><td><code>2000</code></td><td><code>g+s</code></td><td><code>rwxr-sr-x</code></td><td>Pastas compartilhadas (veja <a href="chown.html">chown</a>)</td></tr>
+<tr><td>sticky</td><td><code>1000</code></td><td><code>+t</code></td><td><code>rwxrwxrwt</code></td><td><code>/tmp</code></td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="/tmp/b4/aula">$ ls -ld /tmp /usr/bin/passwd
+drwxrwxrwt 15 root root   320 16 out 15:02 /tmp
+-rwsr-xr-x  1 root root 80792 30 jul 07:04 /usr/bin/passwd
+$ chmod -v 4755 backup.sh
+modo de 'backup.sh' alterado de 0755 (rwxr-xr-x) para 4755 (rwsr-xr-x)
+$ chmod -v 1777 privada
+modo de 'privada' alterado de 0700 (rwx------) para 1777 (rwxrwxrwt)
+$ chmod -v 755 backup.sh                « três dígitos num arquivo: o setuid sai
+modo de 'backup.sh' alterado de 4755 (rwsr-xr-x) para 0755 (rwxr-xr-x)
+$ chmod -v 700 privada
+modo de 'privada' alterado de 1777 (rwxrwxrwt) para 0700 (rwx------)</pre>
+
+<p>Você raramente vai precisar ligá-los; um setuid num script seu, aliás, é ignorado pelo Linux. O mais útil para o dia a dia é o setgid em pastas de grupo.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Permissão negada" ao rodar ./script.sh (código 126)</strong>
+<pre class="term" data-cwd="/tmp/b4/aula">$ ./backup.sh
+bash: ./backup.sh: Permissão negada
+$ echo $?
+126</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não tem <code>x</code>. É o normal para arquivos recém-criados ou baixados.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l backup.sh</code> mostra <code>-rw-r--r--</code>.</p>
+<p><strong>Como resolver:</strong> <code>chmod +x backup.sh</code> (ou <code>u+x</code>). Ou, sem mudar nada, <code>bash backup.sh</code>: aí quem executa é o bash, que só precisa <strong>ler</strong> o arquivo. Se o arquivo já tem <code>x</code> e o erro continua, ele pode estar num pendrive ou partição montada com a opção <code>noexec</code>; use <code>bash script.sh</code> ou copie para a sua pasta (veja <a href="fstab.html">mount e fstab</a>). No Arch, o <code>/tmp</code> não é <code>noexec</code>: scripts rodam de lá normalmente.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida"</strong>
+<pre class="term">$ chmod 755 /etc/hostname
+chmod: alterando permissões de '/etc/hostname': Operação não permitida
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> só o <strong>dono</strong> do arquivo (ou o root) muda as permissões dele. O dono de <code>/etc/hostname</code> é o root.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l /etc/hostname</code> mostra <code>root root</code>.</p>
+<p><strong>Como resolver:</strong> primeiro, pergunte se a mudança é mesmo necessária (arquivos do sistema já vêm com a permissão certa). Se for, <code>sudo chmod 644 /etc/hostname</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"modo inválido"</strong>
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod abc backup.sh
+chmod: modo inválido: “abc”
+Tente "chmod --help" para mais informações.
+$ chmod 999 backup.sh
+chmod: modo inválido: “999”
+Tente "chmod --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> o modo foi escrito errado. No octal, cada dígito vai de 0 a 7 (4+2+1 = 7 é o máximo). No simbólico, as letras válidas são <code>ugoa</code>, depois <code>+</code>, <code>-</code> ou <code>=</code>, depois <code>rwxXst</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível acessar 'x': Arquivo ou diretório inexistente"</strong>
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod u+ x backup.sh
+chmod: não foi possível acessar 'x': Arquivo ou diretório inexistente
+$ chmod 644 naoexiste.txt
+chmod: não foi possível acessar 'naoexiste.txt': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> no primeiro, um <strong>espaço</strong> dentro do modo: o <code>chmod</code> entendeu <code>u+</code> como modo (válido, mas que não faz nada) e <code>x</code> como nome de arquivo. No segundo, o arquivo não existe (ou você não está na pasta certa).</p>
+<p><strong>Como resolver:</strong> escreva o modo sem espaços (<code>u+x</code>) e confira o nome com <code>ls</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudei para 000 e agora nem eu leio</strong>
+<pre class="term" data-cwd="/tmp/b4/aula">$ chmod 000 trancado.txt
+$ cat trancado.txt
+cat: trancado.txt: Permissão negada
+$ chmod 644 trancado.txt
+$ cat trancado.txt
+rascunho</pre>
+<p><strong>O que aconteceu:</strong> as permissões valem também para a dona. Mas, como ela continua sendo a dona, ela pode sempre devolver as permissões.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / opção</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>chmod u+x arq</code></td><td>Simbólico: dá (<code>+</code>), tira (<code>-</code>), define (<code>=</code>)</td><td><code>chmod go-w arq</code> · <code>chmod u=rw,go= arq</code></td></tr>
+<tr><td><code>chmod 644 arq</code></td><td>Octal: r=4, w=2, x=1, por trio</td><td><code>600</code> · <code>755</code> · <code>700</code></td></tr>
+<tr><td><code>-R</code></td><td>Na pasta e em tudo dentro</td><td><code>chmod -R go-w pasta</code></td></tr>
+<tr><td><code>X</code> (no modo)</td><td><code>x</code> só para pastas e já executáveis</td><td><code>chmod -R u=rwX,go=rX pasta</code></td></tr>
+<tr><td><code>-v</code></td><td>Conta cada arquivo processado</td><td><code>chmod -v 644 a.txt</code></td></tr>
+<tr><td><code>-c</code></td><td>Conta só o que mudou</td><td><code>chmod -Rc 755 bin</code></td></tr>
+<tr><td><code>--reference=arq</code></td><td>Copia as permissões de outro arquivo</td><td><code>chmod --reference=a.sh b.sh</code></td></tr>
+<tr><td><code>stat -c '%a %A %n' arq</code></td><td>Ver em número e em letras</td><td>—</td></tr>
+<tr><td><code>sudo chmod …</code></td><td>Arquivos de outro dono (do sistema)</td><td><code>sudo chmod 644 /etc/hostname</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tornar executável</h3>
+<p>Complete para que só o <strong>dono</strong> ganhe a permissão de executar:</p>
+<div class="ex-code">chmod <input data-answer="u+x" aria-label="modo"> deploy.sh</div>
+</div>
+
+<div class="exercise">
+<h3>2. Fazer a conta</h3>
+<p>Qual número octal corresponde a <code>rw-r-----</code>?</p>
+<div class="ex-code">chmod <input data-answer="640|0640" aria-label="número octal"> segredo.txt</div>
+</div>
+
+<div class="exercise">
+<h3>3. Chave SSH</h3>
+<p>Uma chave privada só pode ser lida e escrita pelo dono. Complete:</p>
+<div class="ex-code">chmod <input data-answer="600|0600|u=rw,go=|u=rw,g=,o=" aria-label="modo"> ~/.ssh/id_ed25519</div>
+</div>
+
+<div class="exercise">
+<h3>4. Pasta inteira sem tornar tudo executável</h3>
+<p>Complete para abrir a pasta <code>fotos</code> para leitura de todos (pastas com x, arquivos sem x):</p>
+<div class="ex-code">chmod -R <input data-answer="a+rX|go+rX|u=rwX,go=rX" aria-label="modo"> fotos</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O que <code>chmod 755 app.sh</code> deixa o <strong>grupo</strong> fazer?</p>
+<label><input type="radio" name="q5"> Ler, escrever e executar.</label>
+<label><input type="radio" name="q5"> Ler e executar.</label>
+<label><input type="radio" name="q5"> Só ler.</label>
+<label><input type="radio" name="q5"> Nada.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. A ana roda <code>chmod 755 /etc/hostname</code> (sem sudo). O que aparece?</p>
+<label><input type="radio" name="q6"> Nada: deu certo.</label>
+<label><input type="radio" name="q6"> <code>bash: chmod: comando não encontrado</code></label>
+<label><input type="radio" name="q6"> <code>chmod: alterando permissões de '/etc/hostname': Operação não permitida</code></label>
+<label><input type="radio" name="q6"> <code>chmod: modo inválido: “755”</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. A pasta <code>docs</code> está <code>drw-------</code>. Por que a dona não consegue entrar?</p>
+<label><input type="radio" name="q7"> Porque falta o <code>r</code>.</label>
+<label><input type="radio" name="q7"> Porque só o root entra em pastas.</label>
+<label><input type="radio" name="q7"> Porque falta o <code>w</code> do grupo.</label>
+<label><input type="radio" name="q7"> Porque falta o <code>x</code>, que numa pasta é a permissão de entrar.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Simbólico muda um pedaço (<code>u+x</code>, <code>go-w</code>, <code>u=rw</code>); octal define as nove de uma vez (<code>644</code>, <code>755</code>, <code>600</code>, <code>700</code>).</li>
+  <li>A conta do octal: r=4, w=2, x=1, somados por trio (dono, grupo, outros).</li>
+  <li>Script novo não roda? <code>chmod +x script.sh</code>.</li>
+  <li>Pasta precisa de <code>x</code> para entrar: privada é 700, não 600.</li>
+  <li><code>-R</code> vale para a pasta inteira; use <code>X</code> maiúsculo para não tornar todo arquivo executável.</li>
+  <li>Só o dono ou o root mudam permissões (<code>sudo chmod</code> para arquivos do sistema). Nunca 777.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>chmod</code> é explicado, com as duas notações, em <a href="https://wiki.archlinux.org/title/File_permissions_and_attributes#Changing_permissions">File permissions and attributes → Changing permissions</a> (<a href="https://wiki.archlinux.org/title/File_permissions_and_attributes_(Portugu%C3%AAs)">em português</a>); as permissões que o SSH exige em <code>~/.ssh</code> estão em <a href="https://wiki.archlinux.org/title/SSH_keys">SSH keys</a> (<a href="https://wiki.archlinux.org/title/SSH_keys_(Portugu%C3%AAs)">em português</a>). O manual completo: <code>man chmod</code> (do pacote <code>coreutils</code>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
