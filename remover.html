@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch rm e rmdir — apagar arquivos e pastas com segurança | Guia Arch</title>
+<meta name="description" content="Apague arquivos e pastas no Arch Linux com rm e rmdir: -i, -I, -r, -f, -v, -d, arquivos que começam com hífen e o --, por que não há lixeira, o perigo do rm -rf com variável vazia, a proteção do /, e lixeira pelo terminal com gio trash e trash-cli.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">rm e rmdir</span></h1>
+
+<p class="intro">O <code>rm</code> apaga arquivos (e, com uma opção, pastas inteiras), e o <code>rmdir</code> apaga pastas vazias. Os dois são rápidos e quase nunca pedem confirmação. Por isso esta aula ensina, junto com os comandos, os hábitos que evitam apagar o que não devia.</p>
+
+<div class="warning">
+<strong>No terminal não há lixeira</strong>
+<p>O que o <code>rm</code> apaga não vai para a lixeira do desktop e não volta com "desfazer". Antes de qualquer <code>rm</code>, confira o que vai sair. Se você quer uma segunda chance, use a lixeira pelo terminal, mostrada no fim desta aula.</p>
+</div>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Apagar arquivos com <code>rm</code> e pastas com <code>rmdir</code> e <code>rm -r</code>.</li>
+  <li>Pedir confirmação com <code>-i</code> e <code>-I</code>, e por que o <code>-f</code> é perigoso.</li>
+  <li>Apagar um arquivo cujo nome começa com <code>-</code>, usando <code>--</code>.</li>
+  <li>O perigo do <code>rm -rf</code> com uma variável vazia, e a proteção que existe (e a que não existe).</li>
+  <li>Mandar para a lixeira pelo terminal, com <code>gio trash</code> ou com o pacote <code>trash-cli</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram feitos num Arch Linux real (coreutils 9.12), numa pasta de treino chamada <code>lixo</code>, dentro da pasta pessoal da <strong>ana</strong>.</p>
+
+<hr>
+
+<h2>A ideia: apagar é tirar o nome da lista</h2>
+<p>Uma pasta é como o índice de um livro: uma lista de nomes que apontam para os dados guardados no disco. O <code>rm</code> risca o nome do índice. Quando nenhum nome aponta mais para aqueles dados, o espaço que eles ocupavam fica marcado como livre e logo é reaproveitado por outros arquivos. Na prática: o arquivo some na hora, e não há um "lugar" de onde trazê-lo de volta.</p>
+
+<p>Por isso, para apagar um arquivo você precisa de permissão para escrever na <strong>pasta</strong> que o contém (é a lista dela que muda), e não necessariamente no arquivo. Veja <a href="permissoes.html">Entendendo Permissões</a>.</p>
+
+<hr>
+
+<h2>rm: apagar arquivos</h2>
+<p><code>rm</code> vem de <em>remove</em>, "remover".</p>
+
+<dl class="anatomy">
+  <dt>rm</dt><dd>O programa que apaga.</dd>
+  <dt>a.txt</dt><dd>O arquivo a apagar. Podem ser vários: <code>rm a.txt b.txt</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/lixo">$ ls
+a.txt  b.txt  cheio.txt  c.log  d.log  e.log  f.log  foto.jpg  vazia  velho
+$ rm a.txt
+$ echo $?
+0                                  « 0 = apagado, sem aviso nenhum
+$ rm -v b.txt
+removido 'b.txt'                   « com -v, o rm conta o que fez</pre>
+
+<h3>O que o comando devolve quando falha</h3>
+<pre class="term" data-cwd="~/lixo">$ rm nada
+rm: não foi possível remover 'nada': Arquivo ou diretório inexistente
+$ echo $?
+1</pre>
+
+<p>Silêncio e código <code>0</code> = apagado. Mensagem e código <code>1</code> = algo deu errado (aqui, o arquivo não existia).</p>
+
+<hr>
+
+<h2>Pedir confirmação: <code>-i</code> e <code>-I</code></h2>
+
+<h3><code>-i</code>: pergunta a cada arquivo</h3>
+<p>O <code>-i</code> (de <em>interactive</em>, "interativo") pergunta antes de cada arquivo. Responda <kbd>s</kbd> para apagar ou <kbd>n</kbd> para manter. A pergunta diz até o tipo do arquivo:</p>
+
+<pre class="term" data-cwd="~/lixo">$ rm -i foto.jpg
+rm: remover arquivo comum vazio 'foto.jpg'? n        « "vazio": o arquivo tem 0 bytes
+$ rm -i cheio.txt
+rm: remover arquivo comum 'cheio.txt'? n             « arquivo com conteúdo</pre>
+
+<p>"Arquivo comum" (<em>regular file</em>) quer dizer um arquivo normal, não uma pasta nem um link.</p>
+
+<h3><code>-I</code>: pergunta uma vez só</h3>
+<p>O <code>-I</code> (i maiúsculo) pergunta <strong>uma vez</strong>, e só quando vai apagar <strong>mais de três</strong> arquivos ou apagar de forma recursiva. É menos chato que o <code>-i</code> e ainda segura um curinga que pegou mais do que você imaginava:</p>
+
+<pre class="term" data-cwd="~/lixo">$ rm -I *.log
+rm: remover 4 argumentos? n                          « *.log virou 4 arquivos
+$ rm -rI velho
+rm: remover 1 argumento recursivamente? n
+$ rm -I c.log d.log                                  « só 2: NÃO pergunta e apaga</pre>
+
+<p>Repare na última linha: com dois arquivos, o <code>-I</code> não perguntou nada e apagou. Ele protege contra apagar <strong>muita coisa</strong>, não contra apagar a coisa errada.</p>
+
+<h3>Arquivos protegidos contra escrita</h3>
+<p>Se o arquivo não tem permissão de escrita, o <code>rm</code> pergunta mesmo sem <code>-i</code>, para você pensar duas vezes:</p>
+
+<pre class="term" data-cwd="~/lixo">$ chmod -w cheio.txt                « tira a permissão de escrita (veja a aula chmod)
+$ rm cheio.txt
+rm: remover arquivo comum 'cheio.txt' protegido contra escrita? n</pre>
+
+<div class="tip">
+<strong>Fazer o rm sempre perguntar</strong>
+<p>O <code>.bashrc</code> padrão do Arch não traz apelidos para o <code>rm</code>. Se quiser uma rede de segurança, acrescente <code>alias rm='rm -I'</code> ao seu <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>). O <code>-I</code> incomoda pouco e pega o pior tipo de erro.</p>
+</div>
+
+<hr>
+
+<h2>Apagar pastas</h2>
+
+<h3>rmdir: só pastas vazias</h3>
+<p><code>rmdir</code> vem de <em>remove directory</em>, "remover diretório". Ele só apaga pastas <strong>vazias</strong>, e isso é uma proteção: você nunca perde arquivos com ele.</p>
+
+<pre class="term" data-cwd="~/lixo">$ rmdir vazia
+$ rmdir velho
+rmdir: falhou em remover 'velho': Diretório não vazio</pre>
+
+<p>Com <code>-p</code> (de <em>parents</em>, "pais"), ele apaga a pasta e também as de cima, se ficarem vazias. Com <code>-v</code>, conta o que fez:</p>
+
+<pre class="term" data-cwd="~/lixo">$ mkdir -p p1/p2/p3
+$ rmdir -pv p1/p2/p3
+rmdir: removendo o diretório 'p1/p2/p3'
+rmdir: removendo o diretório 'p1/p2'
+rmdir: removendo o diretório 'p1'</pre>
+
+<h3>A pasta "vazia" que não está vazia</h3>
+<p>Arquivos cujo nome começa com ponto são <strong>ocultos</strong>: o <code>ls</code> comum não mostra. O <code>rmdir</code> enxerga:</p>
+
+<pre class="term" data-cwd="~/lixo">$ ls oculta
+$ rmdir oculta
+rmdir: falhou em remover 'oculta': Diretório não vazio
+$ ls -A oculta
+.escondido                          « -A mostra os ocultos</pre>
+
+<h3>rm -r: a pasta e tudo o que há dentro</h3>
+<p>Sem opção, o <code>rm</code> recusa pastas:</p>
+
+<pre class="term" data-cwd="~/lixo">$ rm velho
+rm: não foi possível remover 'velho': É um diretório</pre>
+
+<p>O <code>-r</code> (de <em>recursive</em>, "recursivo") entra na pasta e apaga tudo, de dentro para fora: primeiro os arquivos, depois a pasta.</p>
+
+<dl class="anatomy">
+  <dt>rm</dt><dd>O programa.</dd>
+  <dt>-rv</dt><dd><code>-r</code> apaga a pasta e o conteúdo; <code>-v</code> mostra cada item. (<code>-R</code> é igual a <code>-r</code>.)</dd>
+  <dt>velho</dt><dd>A pasta.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/lixo">$ ls -A velho
+x.txt  y.txt
+$ rm -rv velho
+removido 'velho/y.txt'
+removido 'velho/x.txt'
+foi removido o diretório: 'velho'</pre>
+
+<p>Com <code>-r</code> e <code>-i</code> juntos, o <code>rm</code> pergunta até antes de entrar na pasta: <code>rm: entrar no diretório 'velho'?</code>.</p>
+
+<h3><code>-d</code>: pasta vazia com o próprio rm</h3>
+<p>O <code>rm -d</code> apaga uma pasta só se ela estiver vazia, como o <code>rmdir</code>:</p>
+
+<pre class="term" data-cwd="~/lixo">$ mkdir v2
+$ rm v2
+rm: não foi possível remover 'v2': É um diretório
+$ rm -d v2</pre>
+
+<div class="try" data-setup="mkdir lixo;;cd lixo;;touch a.txt b.txt c.log d.log foto.jpg;;mkdir velho vazia;;touch velho/x.txt velho/y.txt" data-goal="absent:~/lixo/velho,absent:~/lixo/vazia,absent:~/lixo/c.log,absent:~/lixo/d.log,file:~/lixo/foto.jpg,file:~/lixo/a.txt" data-solucao="rmdir vazia;;rm -rv velho;;rm -v *.log;;ls">
+<p class="try-task"><strong>Missão:</strong> você está na pasta <code>lixo</code>. Apague a pasta <code>vazia</code> com <code>rmdir</code>, a pasta <code>velho</code> com tudo dentro e os dois arquivos <code>.log</code>. A <code>foto.jpg</code> e os <code>.txt</code> têm de ficar.</p>
+</div>
+
+<hr>
+
+<h2>Confira antes de apagar com curingas</h2>
+<p>Antes de um <code>rm</code> com curinga, troque <code>rm</code> por <code>echo</code>: o shell mostra a lista de nomes em que o curinga se transforma, sem apagar nada. Se a lista estiver certa, rode o <code>rm</code> (veja <a href="curingas.html">Curingas</a>):</p>
+
+<pre class="term" data-cwd="~/lixo">$ echo *.log
+e.log f.log
+$ rm -v *.log
+removido 'e.log'
+removido 'f.log'</pre>
+
+<hr>
+
+<h2>-f: forçar, sem perguntas e sem reclamar</h2>
+<p>O <code>-f</code> (de <em>force</em>, "forçar") faz duas coisas: não pergunta nada (nem nos arquivos protegidos) e não reclama de arquivos que não existem. Até o código de saída fica <code>0</code>:</p>
+
+<pre class="term" data-cwd="~/lixo">$ rm -f nada
+$ echo $?
+0                                  « sem -f seria erro e código 1
+$ rm -f cheio.txt                  « o protegido contra escrita sai sem pergunta</pre>
+
+<p>Isso é útil em scripts ("apague se existir"). Digitado à mão, é perigoso: o <code>-f</code> desliga justamente os avisos que poderiam salvar você.</p>
+
+<hr>
+
+<h2>Arquivos cujo nome começa com <code>-</code></h2>
+<p>Às vezes aparece um arquivo chamado, por exemplo, <code>-arquivo</code> (um erro de digitação, um programa mal-comportado). O <code>rm</code> acha que é uma opção:</p>
+
+<pre class="term" data-cwd="~/lixo">$ ls
+-arquivo  foto.jpg  oculta
+$ rm -arquivo
+rm: opção inválida -- “a”
+Tente "rm ./-arquivo" para remover o arquivo '-arquivo'.
+Tente "rm --help" para mais informações.</pre>
+
+<p>O <code>rm</code> leu <code>-arquivo</code> como as opções <code>-a</code>, <code>-r</code>, <code>-q</code>… e parou na primeira que não existe (<code>a</code>). A própria mensagem ensina a saída. Há duas formas:</p>
+
+<dl class="anatomy">
+  <dt>rm -- -arquivo</dt><dd>O <code>--</code> quer dizer "acabaram as opções": tudo o que vem depois é nome de arquivo, mesmo começando com hífen. Vale para quase todos os comandos.</dd>
+  <dt>rm ./-arquivo</dt><dd>Com <code>./</code> na frente, o nome já não começa com hífen, e continua apontando para o mesmo arquivo da pasta atual.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/lixo">$ rm -- -arquivo
+$ touch -- -arquivo                « cria de novo (o touch também precisa do --)
+$ rm -v ./-arquivo
+removido './-arquivo'</pre>
+
+<div class="try" data-setup="touch -- -arquivo" data-goal="absent:~/-arquivo,file:~/frutas.txt" data-solucao="rm -- -arquivo;;ls">
+<p class="try-task"><strong>Missão:</strong> apareceu um arquivo chamado <code>-arquivo</code> na sua pasta pessoal. Tente <code>rm -arquivo</code> para ver o erro, e depois apague-o do jeito certo.</p>
+</div>
+
+<hr>
+
+<h2>rm -rf: o comando que merece respeito</h2>
+<p><code>rm -rf pasta</code> apaga uma pasta inteira, em silêncio, sem perguntar nada. É útil e muito usado em scripts e tutoriais. Também é o comando que mais destrói dados por acidente. Os acidentes mais comuns:</p>
+
+<h3>1. A variável vazia</h3>
+<p>Em scripts, é comum guardar uma pasta numa variável e apagar o conteúdo dela com <code>rm -rf "$pasta"/*</code>. Se a variável estiver vazia (um erro de digitação no nome, um valor que não chegou), o comando vira outra coisa. Veja com <code>echo</code>, sem apagar nada:</p>
+
+<pre class="term">$ pasta=""
+$ echo rm -rf "$pasta"/*
+rm -rf /bin /boot /dev /etc /home /lib /lib64 /lost+found /mnt /opt /proc /root /run /sbin /srv /sys /tmp /usr /var</pre>
+
+<p>Com <code>$pasta</code> vazia, <code>"$pasta"/*</code> virou <code>/*</code>: <strong>todas as pastas da raiz do sistema</strong>. Como root, isso apagaria o Arch inteiro. Como usuária comum, apagaria tudo o que a ana pode apagar: a pasta pessoal dela inteira.</p>
+
+<div class="warning">
+<strong>Defesas contra a variável vazia</strong>
+<ul>
+  <li>Em scripts, use <code>"${pasta:?}"</code>: se a variável estiver vazia, o Bash para com um erro em vez de rodar o comando (veja <a href="script-variaveis.html">Variáveis e Argumentos</a>).</li>
+  <li>Rode o comando com <code>echo</code> na frente antes da primeira vez.</li>
+  <li>Nunca rode <code>sudo rm -rf</code> com curingas ou variáveis sem conferir.</li>
+</ul>
+</div>
+
+<h3>2. Um espaço no lugar errado</h3>
+<p><code>rm -rf ~/pasta /</code> (com um espaço antes da barra) são <strong>dois</strong> alvos: <code>~/pasta</code> e <code>/</code>. O mesmo vale para <code>rm -rf ~ /Downloads</code> em vez de <code>rm -rf ~/Downloads</code>: o primeiro apaga a sua pasta pessoal inteira.</p>
+
+<h3>A proteção que existe (e a que não existe)</h3>
+<p>O <code>rm</code> do GNU se recusa a apagar a raiz <code>/</code> de forma recursiva:</p>
+
+<pre class="term">$ rm -rf /
+rm: é perigoso operar recursivamente em '/'
+rm: use --no-preserve-root para contornar esta segurança
+$ echo $?
+1</pre>
+
+<p>Essa trava (<code>--preserve-root</code>, ligada por padrão) só protege o <code>/</code> <strong>exato</strong>. Ela <strong>não</strong> protege <code>/*</code>, <code>/home</code>, <code>/etc</code>, nem a sua pasta pessoal. A proteção de verdade é o hábito: confira com <code>ls</code> ou <code>echo</code>, prefira <code>-I</code>, e tenha backup ou snapshots (veja <a href="snapshots.html">Snapshots (snapper)</a>).</p>
+
+<hr>
+
+<h2>Lixeira pelo terminal</h2>
+<p>A lixeira do desktop (GNOME, KDE, XFCE…) segue um padrão chamado <em>FreeDesktop Trash</em>: os arquivos vão para <code>~/.local/share/Trash/files/</code>, e um arquivo <code>.trashinfo</code> em <code>~/.local/share/Trash/info/</code> guarda o caminho original e a data. Há duas formas de usar essa lixeira pelo terminal no Arch.</p>
+
+<h3><code>gio trash</code> (já vem com o glib2)</h3>
+<p>O comando <code>gio</code> vem do pacote <code>glib2</code>, que quase todo Arch tem instalado como dependência (do NetworkManager, do polkit e de todo desktop):</p>
+
+<pre class="term">$ gio trash frutas.txt
+$ echo $?
+0
+$ ls frutas.txt
+ls: não foi possível acessar 'frutas.txt': Arquivo ou diretório inexistente
+$ ls -A .local/share/Trash/files .local/share/Trash/info
+.local/share/Trash/files:
+frutas.txt                                  « o arquivo, guardado
+
+.local/share/Trash/info:
+frutas.txt.trashinfo                        « de onde ele veio e quando
+$ cat .local/share/Trash/info/frutas.txt.trashinfo
+[Trash Info]
+Path=/home/ana/frutas.txt
+DeletionDate=2026-10-16T14:58:08</pre>
+
+<p>O <code>gio trash</code> funciona em qualquer lugar. Já os comandos para <strong>listar</strong> e <strong>devolver</strong> (<code>gio trash --list</code>, <code>gio trash --restore</code>) precisam do <code>gvfs</code>, um serviço que vem com os desktops. Num Arch sem desktop (como o da VM, acessado por SSH), eles respondem:</p>
+
+<pre class="term">$ gio trash --list
+gio: trash:: Operação sem suporte
+$ echo $?
+1</pre>
+
+<p>Nesse caso, devolva o arquivo à mão: <code>mv ~/.local/share/Trash/files/frutas.txt ~/</code> (e apague o <code>.trashinfo</code> correspondente), ou use o <code>trash-cli</code>.</p>
+
+<h3><code>trash-cli</code> (o pacote próprio para isso)</h3>
+<p>O <code>trash-cli</code> está no repositório <code>extra</code>. Ele usa a <strong>mesma</strong> lixeira do desktop e funciona em qualquer terminal, com ou sem interface gráfica. Veja o que a instalação traria (respondendo "n" na pergunta, nada foi instalado):</p>
+
+<pre class="term">$ sudo pacman -S trash-cli
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (3) python-psutil-7.2.2-1  python-six-1.17.0-3  trash-cli-0.24.5.26-3
+
+Tamanho total download:   0,39 MiB
+Tamanho total instalado:  2,09 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Depois de instalado (veja <a href="pacman.html">pacman: o Básico</a>), os comandos são:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Faz</th></tr>
+<tr><td><code>trash-put arquivo</code></td><td>Manda para a lixeira (o <code>trash</code> é um apelido dele)</td></tr>
+<tr><td><code>trash-list</code></td><td>Lista o que está na lixeira, com data e caminho original</td></tr>
+<tr><td><code>trash-restore</code></td><td>Mostra a lista numerada e pergunta qual item devolver</td></tr>
+<tr><td><code>trash-rm padrão</code></td><td>Apaga de vez só os itens que casam com o padrão</td></tr>
+<tr><td><code>trash-empty</code></td><td>Esvazia a lixeira (aí não volta mais); <code>trash-empty 30</code> apaga só o que está lá há mais de 30 dias</td></tr>
+</table>
+</div>
+
+<p>Os nomes dos comandos vêm da lista de arquivos do pacote (<code>pacman -Fl trash-cli</code>); o funcionamento deles não foi mostrado aqui porque o pacote não foi instalado na máquina de exemplo.</p>
+
+<hr>
+
+<h2>Formas diferentes de apagar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Comando</th><th>Volta?</th></tr>
+<tr><td>Um arquivo</td><td><code>rm arq</code></td><td>Não</td></tr>
+<tr><td>Com confirmação</td><td><code>rm -i arq</code> / <code>rm -I muitos*</code></td><td>Não</td></tr>
+<tr><td>Pasta vazia</td><td><code>rmdir pasta</code> ou <code>rm -d pasta</code></td><td>Não</td></tr>
+<tr><td>Pasta com conteúdo</td><td><code>rm -r pasta</code></td><td>Não</td></tr>
+<tr><td>Nome começando com hífen</td><td><code>rm -- -nome</code> ou <code>rm ./-nome</code></td><td>Não</td></tr>
+<tr><td>Para a lixeira</td><td><code>gio trash arq</code> ou <code>trash-put arq</code></td><td>Sim, até esvaziar</td></tr>
+<tr><td>Muitos arquivos por critério</td><td><code>find . -name "*.tmp" -delete</code></td><td>Não (veja <a href="find.html">find e locate</a>)</td></tr>
+<tr><td>Pacotes, não arquivos</td><td><code>sudo pacman -Rns pacote</code></td><td>Reinstalando (veja <a href="pacman.html">pacman: o Básico</a>; nunca apague arquivos de <code>/usr</code> com <code>rm</code>)</td></tr>
+<tr><td>No desktop</td><td>Tecla <kbd>Delete</kbd> no gerenciador de arquivos</td><td>Sim, vai para a lixeira</td></tr>
+</table>
+</div>
+
+<h3>Qual usar?</h3>
+<ul>
+  <li>Arquivo que você tem certeza de que não quer: <code>rm</code>.</li>
+  <li>Algo que talvez queira de volta: <code>gio trash</code> ou <code>trash-put</code>.</li>
+  <li>Pasta: tente <code>rmdir</code> primeiro; se recusar, veja o que há dentro com <code>ls -A</code> antes do <code>rm -r</code>.</li>
+  <li>Muitos arquivos: <code>echo</code> antes, <code>rm -I</code> depois.</li>
+</ul>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"É um diretório"</strong>
+<pre class="term">$ rm velho
+rm: não foi possível remover 'velho': É um diretório</pre>
+<p><strong>O que aconteceu:</strong> o <code>rm</code> sem opções só apaga arquivos.</p>
+<p><strong>Como resolver:</strong> <code>rmdir velho</code> se estiver vazia, ou <code>rm -r velho</code> para apagar com o conteúdo (depois de olhar com <code>ls -A velho</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Diretório não vazio"</strong>
+<pre class="term">$ rmdir oculta
+rmdir: falhou em remover 'oculta': Diretório não vazio</pre>
+<p><strong>O que aconteceu:</strong> o <code>rmdir</code> só apaga pastas vazias, e às vezes há arquivos ocultos lá dentro.</p>
+<p><strong>Como resolver:</strong> <code>ls -A oculta</code> mostra tudo. Se pode mesmo sair, <code>rm -r oculta</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term">$ rm /etc/hostname
+rm: remover arquivo comum '/etc/hostname' protegido contra escrita? s
+rm: não foi possível remover '/etc/hostname': Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> o arquivo é do root (por isso a pergunta de "protegido contra escrita"), e mesmo respondendo <kbd>s</kbd> a ana não pode mudar a lista do <code>/etc</code>, que também é do root.</p>
+<p><strong>Como resolver:</strong> pare e pense se é mesmo para apagar um arquivo do sistema; quase nunca é. Arquivos de programas se removem com o <code>pacman</code>, não com <code>rm</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"opção inválida" ao apagar um arquivo</strong>
+<p><strong>O que aconteceu:</strong> o nome começa com hífen e o <code>rm</code> o leu como opção.</p>
+<p><strong>Como resolver:</strong> <code>rm -- -nome</code> ou <code>rm ./-nome</code>, como a própria mensagem sugere.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" com nome que tem espaço</strong>
+<p><strong>O que aconteceu:</strong> <code>rm lista de compras.txt</code> tenta apagar três arquivos: <code>lista</code>, <code>de</code> e <code>compras.txt</code>. Pior: se algum deles existir, ele é apagado.</p>
+<p><strong>Como resolver:</strong> aspas ou <kbd>Tab</kbd>: <code>rm 'lista de compras.txt'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apaguei sem querer</strong>
+<p><strong>O que aconteceu:</strong> o <code>rm</code> não usa lixeira.</p>
+<p><strong>Como resolver:</strong> pare de gravar no disco (cada arquivo novo pode ocupar o espaço do que foi apagado) e recupere de um backup ou snapshot. Ferramentas de recuperação existem, mas raramente devolvem tudo; a Arch Wiki tem uma página sobre elas (abaixo).</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Opção</th><th>Descrição</th></tr>
+<tr><td><code>rm</code></td><td><code>-i</code></td><td>Pergunta a cada arquivo</td></tr>
+<tr><td><code>rm</code></td><td><code>-I</code></td><td>Pergunta uma vez, se forem mais de 3 ou se for recursivo</td></tr>
+<tr><td><code>rm</code></td><td><code>-r</code>, <code>-R</code></td><td>Apaga pastas e tudo o que há dentro</td></tr>
+<tr><td><code>rm</code></td><td><code>-f</code></td><td>Não pergunta e não reclama de inexistentes (código 0)</td></tr>
+<tr><td><code>rm</code></td><td><code>-d</code></td><td>Apaga pastas vazias (como o <code>rmdir</code>)</td></tr>
+<tr><td><code>rm</code></td><td><code>-v</code></td><td>Mostra cada item apagado</td></tr>
+<tr><td><code>rm</code></td><td><code>--</code></td><td>Fim das opções: o que vem depois é nome, mesmo começando com <code>-</code></td></tr>
+<tr><td><code>rm</code></td><td><code>--preserve-root</code></td><td>Recusa apagar <code>/</code> (já é o padrão)</td></tr>
+<tr><td><code>rmdir</code></td><td><code>-p</code></td><td>Apaga também as pastas de cima que ficarem vazias</td></tr>
+<tr><td><code>rmdir</code></td><td><code>-v</code></td><td>Mostra cada pasta apagada</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Pasta com conteúdo</h3>
+<p>Complete para apagar a pasta <code>antigo</code> com tudo o que há dentro:</p>
+<div class="ex-code">rm <input data-answer="-r|-R|-rf|-rv|-ri|-rI" aria-label="opção"> antigo</div>
+</div>
+
+<div class="exercise">
+<h3>2. Conferir antes</h3>
+<p>Antes de <code>rm *.bak</code>, que comando mostra o que vai ser apagado sem apagar nada?</p>
+<div class="ex-code"><input data-answer="echo *.bak|ls *.bak|ls -l *.bak" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O nome com hífen</h3>
+<p>Complete para apagar o arquivo <code>-x.txt</code>:</p>
+<div class="ex-code">rm <input data-answer="--|-- " aria-label="separador"> -x.txt</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>rm: é perigoso operar recursivamente em '/'</code> indica?</p>
+<label><input type="radio" name="q4"> Que o sistema foi apagado.</label>
+<label><input type="radio" name="q4"> Que falta permissão de root.</label>
+<label><input type="radio" name="q4"> Que o rm se recusou a apagar a raiz, por segurança.</label>
+<label><input type="radio" name="q4"> Que o disco está cheio.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O <code>rmdir velho</code> respondeu "Diretório não vazio", mas o <code>ls velho</code> não mostra nada. Por quê?</p>
+<label><input type="radio" name="q5"> O rmdir está com defeito.</label>
+<label><input type="radio" name="q5"> Há arquivos ocultos, que só o <code>ls -A</code> mostra.</label>
+<label><input type="radio" name="q5"> A pasta é do root.</label>
+<label><input type="radio" name="q5"> Faltou o <code>-f</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Num script, <code>rm -rf "$destino"/*</code> rodou com <code>$destino</code> vazia. O que o rm recebeu?</p>
+<label><input type="radio" name="q6"> Nada: o comando não roda com variável vazia.</label>
+<label><input type="radio" name="q6"> Só a pasta atual.</label>
+<label><input type="radio" name="q6"> Só <code>/</code>, que é protegido.</label>
+<label><input type="radio" name="q6"> Todas as pastas da raiz (<code>/bin /boot /dev /etc /home …</code>).</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>rm</code> apaga de verdade, sem lixeira; silêncio e código 0 = apagado.</li>
+  <li><code>rmdir</code> (ou <code>rm -d</code>) apaga pastas vazias; <code>rm -r</code> apaga pastas com conteúdo.</li>
+  <li><code>-i</code> pergunta a cada arquivo; <code>-I</code> pergunta uma vez (mais de 3 ou recursivo); <code>-f</code> não pergunta nada.</li>
+  <li>Nome com hífen: <code>rm -- -nome</code> ou <code>rm ./-nome</code>.</li>
+  <li>Antes de <code>rm</code> com curinga ou variável, confira com <code>echo</code>; a trava do <code>/</code> não protege mais nada.</li>
+  <li>Lixeira pelo terminal: <code>gio trash</code> (glib2) ou <code>trash-put</code> (pacote <code>trash-cli</code>).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>) apresenta o <code>rm</code> e o <code>rmdir</code>. Se algo foi apagado por engano, leia <a href="https://wiki.archlinux.org/title/File_recovery">File recovery</a> (e, para nunca precisar dela, <a href="https://wiki.archlinux.org/title/Synchronization_and_backup_programs">Synchronization and backup programs</a>). O pacote <code>trash-cli</code> está descrito em <a href="https://archlinux.org/packages/extra/any/trash-cli/">archlinux.org/packages</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
