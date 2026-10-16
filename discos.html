@@ -163,6 +163,7 @@ $ echo $?
 0
 </pre>
 <p>Nenhuma linha, nenhum erro e código 0. Como usuário comum, o <code>blkid</code> só consegue ler o próprio cache, que no Arch começa vazio; ele não tem permissão para abrir <code>/dev/sda3</code>. Não é que o disco não tenha UUID: falta o <code>sudo</code>.</p>
+<div class="note"><p><strong>Por que às vezes funciona sem sudo?</strong> O cache fica em <code>/run/blkid/blkid.tab</code>, que é apagado a cada boot. Depois que alguém roda <code>sudo blkid</code> uma vez, o cache é preenchido e o <code>blkid</code> sem root passa a mostrar os discos que estão nele, até o próximo boot. Por isso o mesmo comando pode não mostrar nada logo depois de ligar o computador e mostrar tudo mais tarde. Para não depender disso, use <code>sudo blkid</code> ou <code>lsblk -f</code>, que funciona sem root.</p></div>
 
 <pre class="term">$ sudo blkid
 /dev/sda2: UUID="02576132-0458-4975-916f-94e08af9a31c" TYPE="swap" PARTUUID="70da2fa4-d42b-4f7b-916b-1385531205b8"
