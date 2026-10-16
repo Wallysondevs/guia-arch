@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossário do Arch Linux — termos explicados | Guia Arch</title>
+<meta name="description" content="Glossário do Guia Arch: rolling release, AUR, PKGBUILD, makepkg, keyring, mirror, ESP, initramfs, microcode, chroot, pacstrap, .pacnew, órfão, meta-pacote, provedor, LTS, wheel, unit, timer, Btrfs, snapshot, LUKS, LVM e mais, cada um com link para a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Glossário</span></h1>
+
+<p class="intro">Os termos que aparecem no guia, em ordem alfabética, explicados em uma ou duas frases, cada um com o link para a aula em que é tratado com calma. Muitos nomes do Arch vêm do inglês; quando ajuda, a origem do nome aparece entre parênteses.</p>
+
+<div class="tip">
+<strong>Dica</strong>
+<p>Use <kbd>Ctrl</kbd>+<kbd>F</kbd> no navegador para achar um termo, ou o índice de letras abaixo. Para comandos, veja a <a href="ref-comandos.html">Referência de Comandos</a>.</p>
+</div>
+
+<p class="indice-letras"><a href="#g-A">A</a> · <a href="#g-B">B</a> · <a href="#g-C">C</a> · <a href="#g-D">D</a> · <a href="#g-E">E</a> · <a href="#g-F">F</a> · <a href="#g-G">G</a> · <a href="#g-H">H</a> · <a href="#g-I">I</a> · <a href="#g-J">J</a> · <a href="#g-K">K</a> · <a href="#g-L">L</a> · <a href="#g-M">M</a> · <a href="#g-N">N</a> · <a href="#g-O">O</a> · <a href="#g-P">P</a> · <a href="#g-Q">Q</a> · <a href="#g-R">R</a> · <a href="#g-S">S</a> · <a href="#g-T">T</a> · <a href="#g-U">U</a> · <a href="#g-V">V</a> · <a href="#g-W">W</a> · <a href="#g-Y">Y</a> · <a href="#g-Z">Z</a></p>
+
+<h2 id="g-A">A</h2>
+<dl class="glossario">
+<dt><strong>AppArmor</strong></dt>
+<dd>Módulo de segurança do kernel que limita o que cada programa pode acessar, por perfis. Existe no Arch, mas não vem ativo. Veja: <a href="seguranca.html">Segurança</a>.</dd>
+<dt><strong>Arch Wiki</strong></dt>
+<dd>A documentação comunitária do Arch, em <code>wiki.archlinux.org</code>; referência para qualquer distribuição. Veja: <a href="arch-wiki.html">A Arch Wiki</a>.</dd>
+<dt><strong>arch-chroot</strong></dt>
+<dd>Script do pacote <code>arch-install-scripts</code> que monta <code>/proc</code>, <code>/sys</code>, <code>/dev</code> e entra num sistema em <code>/mnt</code> (um <a href="#g-C">chroot</a> pronto). Veja: <a href="configurar.html">Configurar o Sistema</a>, <a href="chroot-resgate.html">Resgate com chroot</a>.</dd>
+<dt><strong>archinstall</strong></dt>
+<dd>Instalador guiado oficial, em modo texto, que vem na ISO. Veja: <a href="archinstall.html">archinstall</a>.</dd>
+<dt><strong>archiso</strong></dt>
+<dd>A ferramenta que gera a ISO do Arch, e o nome da máquina no ambiente live (<code>root@archiso</code>). Veja: <a href="ambiente-live.html">O Ambiente Live</a>.</dd>
+<dt><strong>atualização parcial</strong></dt>
+<dd>Atualizar a lista de pacotes e só parte do sistema (<code>pacman -Sy pacote</code>). Não é suportada no Arch e pode quebrar bibliotecas. Veja: <a href="atualizar.html">Atualizar o Sistema</a>.</dd>
+<dt><strong>AUR</strong> (<em>Arch User Repository</em>)</dt>
+<dd>Repositório comunitário de <a href="#g-P">PKGBUILDs</a>: receitas que você baixa, lê e compila com <code>makepkg</code>. Não tem revisão prévia. Veja: <a href="aur.html">O que é o AUR</a>, <a href="aur-seguranca.html">AUR com Segurança</a>.</dd>
+<dt><strong>ajudante do AUR</strong> (<em>AUR helper</em>)</dt>
+<dd>Programa que automatiza baixar, compilar e atualizar pacotes do AUR, como <code>yay</code> e <code>paru</code>. Não é oficial. Veja: <a href="yay-paru.html">yay e paru</a>.</dd>
+</dl>
+
+<h2 id="g-B">B</h2>
+<dl class="glossario">
+<dt><strong>base</strong></dt>
+<dd>Meta-pacote mínimo do Arch (pacman, systemd, coreutils…). Não traz kernel, editor, <code>sudo</code> nem rede: tudo isso é escolhido à parte no <code>pacstrap</code>. Veja: <a href="pacstrap.html">pacstrap</a>.</dd>
+<dt><strong>base-devel</strong></dt>
+<dd>Meta-pacote com as ferramentas de compilação (gcc, make, fakeroot…) que o <code>makepkg</code> supõe instaladas. Hoje é meta-pacote, não grupo. Veja: <a href="makepkg.html">makepkg</a>.</dd>
+<dt><strong>bootloader</strong> (gerenciador de boot)</dt>
+<dd>Programa que o firmware carrega e que carrega o kernel: GRUB, systemd-boot, Limine… Veja: <a href="bootloader.html">Bootloader</a>.</dd>
+<dt><strong>Btrfs</strong></dt>
+<dd>Sistema de arquivos com cópia-na-escrita, subvolumes, snapshots e compressão. Veja: <a href="btrfs.html">Btrfs e Subvolumes</a>.</dd>
+</dl>
+
+<h2 id="g-C">C</h2>
+<dl class="glossario">
+<dt><strong>cache de pacotes</strong></dt>
+<dd>A pasta <code>/var/cache/pacman/pkg</code>, onde ficam todos os pacotes baixados; o pacman não a limpa sozinho. Veja: <a href="cache-orfaos.html">Cache e Órfãos</a>.</dd>
+<dt><strong>chaveiro</strong> (<em>keyring</em>)</dt>
+<dd>O conjunto de chaves PGP em que o pacman confia, em <code>/etc/pacman.d/gnupg</code>, atualizado pelo pacote <code>archlinux-keyring</code>. Veja: <a href="chaves.html">Chaves e Assinaturas</a>.</dd>
+<dt><strong>chroot</strong> (<em>change root</em>)</dt>
+<dd>Rodar comandos com outra pasta fazendo papel de <code>/</code>: é como "entrar" num sistema instalado a partir do live, para configurar ou consertar. Veja: <a href="chroot-resgate.html">Resgate com chroot</a>.</dd>
+<dt><strong>container</strong></dt>
+<dd>Programa isolado com sistema de arquivos e processos próprios, usando o mesmo kernel. Veja: <a href="containers.html">Docker e Podman</a>.</dd>
+<dt><strong>core</strong> / <strong>extra</strong> / <strong>multilib</strong></dt>
+<dd>Os repositórios oficiais: <code>core</code> (o essencial), <code>extra</code> (todo o resto) e <code>multilib</code> (programas de 32 bits, desligado de fábrica). Veja: <a href="pacman-avancado.html">pacman Avançado</a>.</dd>
+<dt><strong>CVE</strong></dt>
+<dd>Número público de uma vulnerabilidade conhecida (ex.: CVE-2026-1234). O <code>arch-audit</code> cruza CVEs com os seus pacotes. Veja: <a href="seguranca.html">Segurança</a>.</dd>
+</dl>
+
+<h2 id="g-D">D</h2>
+<dl class="glossario">
+<dt><strong>daemon</strong></dt>
+<dd>Programa que roda em segundo plano, sem janela, esperando trabalho (<code>sshd</code>, <code>dockerd</code>); no systemd, um serviço. Veja: <a href="systemd.html">systemctl e Serviços</a>.</dd>
+<dt><strong>dependência</strong></dt>
+<dd>Outro pacote de que um pacote precisa para funcionar; o pacman instala sozinho. Veja: <a href="pacman.html">pacman</a>.</dd>
+<dt><strong>derivada</strong></dt>
+<dd>Distribuição baseada no Arch (Manjaro, EndeavourOS, CachyOS…). Os fóruns do Arch não dão suporte a elas. Veja: <a href="arch-x-outras.html">Arch × Debian × Fedora</a>.</dd>
+<dt><strong>DKMS</strong> (<em>Dynamic Kernel Module Support</em>)</dt>
+<dd>Recompila módulos de terceiros (VirtualBox, NVIDIA) a cada kernel novo; precisa dos <code>-headers</code> do kernel. Veja: <a href="kvm.html">Máquinas Virtuais</a>, <a href="kernels.html">Kernels</a>.</dd>
+<dt><strong>downgrade</strong></dt>
+<dd>Voltar um pacote para uma versão anterior, pelo cache ou pelo Arch Linux Archive. Veja: <a href="downgrade.html">Voltar um Pacote</a>.</dd>
+</dl>
+
+<h2 id="g-E">E</h2>
+<dl class="glossario">
+<dt><strong>época</strong> (<em>epoch</em>)</dt>
+<dd>O número antes de <code>:</code> na versão (<code>docker 1:29.9.1</code>, <code>mesa 1:26.2.4</code>), usado quando o esquema de versões muda; vence qualquer versão sem época. Veja: <a href="pacman-avancado.html">pacman Avançado</a>.</dd>
+<dt><strong>ESP</strong> (<em>EFI System Partition</em>)</dt>
+<dd>Partição FAT32 que a UEFI lê no boot; no guia, <code>/dev/sda1</code> com 1 GiB montada em <code>/boot</code>. Veja: <a href="particionar.html">Particionar</a>.</dd>
+<dt><strong>explícito</strong></dt>
+<dd>Pacote que você pediu pelo nome ("Motivo da instalação: Instalado explicitamente"), ao contrário de uma dependência. <code>pacman -Qe</code> lista. Veja: <a href="cache-orfaos.html">Cache e Órfãos</a>.</dd>
+<dt><strong>ext4</strong></dt>
+<dd>O sistema de arquivos mais comum no Linux, simples e robusto; a raiz da VM do guia. Veja: <a href="formatar-montar.html">Formatar e Montar</a>.</dd>
+</dl>
+
+<h2 id="g-F">F</h2>
+<dl class="glossario">
+<dt><strong>faillock</strong></dt>
+<dd>Módulo do PAM que trava a conta por 10 minutos depois de 3 senhas erradas (padrão do Arch). Veja: <a href="seguranca.html">Segurança</a>, <a href="usuarios.html">Usuários e Grupos</a>.</dd>
+<dt><strong>firmware</strong></dt>
+<dd>O software da placa-mãe (UEFI ou BIOS) que liga o computador; também os arquivos que alguns dispositivos precisam carregar (<code>linux-firmware</code>). Veja: <a href="preparar.html">Baixar a ISO</a>.</dd>
+<dt><strong>Flatpak</strong></dt>
+<dd>Formato de aplicativos em sandbox, independente da distribuição; o Flathub é a loja principal. Veja: <a href="flatpak.html">Flatpak</a>.</dd>
+<dt><strong>fstab</strong></dt>
+<dd>O arquivo <code>/etc/fstab</code>, que diz o que montar no boot. Gerado pelo <code>genfstab</code>. Veja: <a href="fstab.html">mount e fstab</a>.</dd>
+</dl>
+
+<h2 id="g-G">G</h2>
+<dl class="glossario">
+<dt><strong>GPT</strong></dt>
+<dd>Tabela de partições moderna, usada com UEFI (a antiga é a MBR/"dos"). Veja: <a href="particionar.html">Particionar</a>.</dd>
+<dt><strong>GRUB</strong></dt>
+<dd>O bootloader mais usado no Linux; no Arch, o menu é gerado com <code>grub-mkconfig</code> (o pacman não o roda sozinho). Veja: <a href="bootloader.html">Bootloader</a>.</dd>
+<dt><strong>grupo</strong> (de pacotes)</dt>
+<dd>Conjunto de pacotes com um nome (<code>plasma</code>, <code>gnome</code>); o pacman pergunta quais membros instalar. Diferente de <a href="#g-M">meta-pacote</a>. Veja: <a href="pacman-avancado.html">pacman Avançado</a>.</dd>
+<dt><strong>grupo</strong> (de usuários)</dt>
+<dd>Conjunto de usuários com as mesmas permissões (<code>wheel</code>, <code>libvirt</code>). Veja: <a href="usuarios.html">Usuários e Grupos</a>.</dd>
+</dl>
+
+<h2 id="g-H">H</h2>
+<dl class="glossario">
+<dt><strong>headers</strong> (do kernel)</dt>
+<dd>Arquivos para compilar módulos contra um kernel (<code>linux-headers</code>, <code>linux-lts-headers</code>). Veja: <a href="kernels.html">Kernels</a>.</dd>
+<dt><strong>hook</strong> (do pacman)</dt>
+<dd>Ação que o pacman roda antes ou depois de mexer em certos arquivos (ex.: gerar o initramfs ao atualizar o kernel). Ficam em <code>/usr/share/libalpm/hooks</code> e <code>/etc/pacman.d/hooks</code>. Veja: <a href="hooks.html">Hooks do pacman</a>.</dd>
+<dt><strong>hook</strong> (do mkinitcpio)</dt>
+<dd>Peça do initramfs (<code>base</code>, <code>systemd</code>, <code>sd-encrypt</code>, <code>lvm2</code>…) listada em <code>HOOKS=()</code>. Veja: <a href="mkinitcpio.html">mkinitcpio</a>.</dd>
+</dl>
+
+<h2 id="g-I">I</h2>
+<dl class="glossario">
+<dt><strong>initramfs</strong></dt>
+<dd>Pequeno sistema carregado junto com o kernel que prepara tudo para montar a raiz (drivers, LUKS, LVM). Gerado pelo <code>mkinitcpio</code>. Veja: <a href="mkinitcpio.html">mkinitcpio e initramfs</a>.</dd>
+<dt><strong>ISO</strong></dt>
+<dd>A imagem do disco de instalação (<code>archlinux-x86_64.iso</code>), nova todo mês. Veja: <a href="preparar.html">Baixar e Verificar a ISO</a>.</dd>
+<dt><strong>iwd</strong> / <strong>iwctl</strong></dt>
+<dd>Serviço de Wi-Fi da Intel e o comando para controlá-lo; é o que conecta no live. Veja: <a href="ambiente-live.html">Ambiente Live</a>, <a href="rede.html">NetworkManager e iwd</a>.</dd>
+</dl>
+
+<h2 id="g-J">J</h2>
+<dl class="glossario">
+<dt><strong>journal</strong></dt>
+<dd>O registro de logs do systemd, lido com <code>journalctl</code>. Veja: <a href="journal.html">Logs (journalctl)</a>.</dd>
+</dl>
+
+<h2 id="g-K">K</h2>
+<dl class="glossario">
+<dt><strong>kernel</strong></dt>
+<dd>O núcleo do sistema, que fala com o hardware. No Arch: <code>linux</code>, <code>linux-lts</code>, <code>linux-zen</code>, <code>linux-hardened</code>. Veja: <a href="kernels.html">Kernels</a>.</dd>
+<dt><strong>KVM</strong></dt>
+<dd>A virtualização do kernel Linux, usada pelo QEMU; precisa de VT-x/AMD-V. Veja: <a href="kvm.html">Máquinas Virtuais</a>.</dd>
+</dl>
+
+<h2 id="g-L">L</h2>
+<dl class="glossario">
+<dt><strong>live</strong> (ambiente)</dt>
+<dd>O Arch que roda direto do pendrive, sem instalar, como root e em inglês; é dele que se instala e se resgata. Veja: <a href="ambiente-live.html">O Ambiente Live</a>.</dd>
+<dt><strong>locale</strong></dt>
+<dd>Idioma e formatos (data, números) do sistema, como <code>pt_BR.UTF-8</code>, gerados pelo <code>locale-gen</code>. Veja: <a href="configurar.html">Configurar o Sistema</a>.</dd>
+<dt><strong>LTS</strong> (<em>Long Term Support</em>)</dt>
+<dd>Versão com suporte longo; no Arch, o kernel <code>linux-lts</code> (6.18 no guia), mais conservador que o <code>linux</code>. Veja: <a href="kernels.html">Kernels</a>.</dd>
+<dt><strong>LUKS</strong></dt>
+<dd>Padrão de criptografia de disco do Linux, usado com <code>cryptsetup</code>. Veja: <a href="luks.html">Criptografia (LUKS)</a>.</dd>
+<dt><strong>LVM</strong></dt>
+<dd>Camada que junta discos em "volumes lógicos" redimensionáveis (PV → VG → LV). Veja: <a href="lvm.html">LVM</a>.</dd>
+</dl>
+
+<h2 id="g-M">M</h2>
+<dl class="glossario">
+<dt><strong>makepkg</strong></dt>
+<dd>Ferramenta que lê um PKGBUILD, baixa o código, compila e gera um <code>.pkg.tar.zst</code>. Nunca roda como root. Veja: <a href="makepkg.html">Compilar do AUR</a>.</dd>
+<dt><strong>meta-pacote</strong></dt>
+<dd>Pacote vazio que só depende de outros (<code>base</code>, <code>plasma-meta</code>, <code>base-devel</code>). Instala tudo sem perguntar e acompanha mudanças futuras. Veja: <a href="projeto-desktop.html">Montar um Desktop KDE</a>.</dd>
+<dt><strong>microcode</strong></dt>
+<dd>Correções do próprio processador, carregadas no boot (<code>intel-ucode</code>, <code>amd-ucode</code>). Veja: <a href="microcode.html">Microcode</a>.</dd>
+<dt><strong>mirror</strong> (espelho)</dt>
+<dd>Servidor que copia os repositórios do Arch; a lista fica em <code>/etc/pacman.d/mirrorlist</code>. Veja: <a href="espelhos.html">Espelhos (reflector)</a>.</dd>
+<dt><strong>mkinitcpio</strong></dt>
+<dd>O gerador de initramfs do Arch (<code>mkinitcpio -P</code>). Veja: <a href="mkinitcpio.html">mkinitcpio</a>.</dd>
+<dt><strong>módulo</strong> (do kernel)</dt>
+<dd>Driver carregável (<code>modprobe</code>, <code>lsmod</code>). Veja: <a href="kernels.html">Kernels</a>.</dd>
+</dl>
+
+<h2 id="g-N">N</h2>
+<dl class="glossario">
+<dt><strong>NetworkManager</strong></dt>
+<dd>O serviço de rede mais comum em desktops (<code>nmcli</code>, <code>nmtui</code>). No Arch, precisa ser instalado e habilitado. Veja: <a href="rede.html">NetworkManager e iwd</a>.</dd>
+<dt><strong>news</strong> (notícias do Arch)</dt>
+<dd>Avisos em <code>archlinux.org/news</code> sobre atualizações que pedem ação manual. Leia antes de atualizar. Veja: <a href="atualizar.html">Atualizar o Sistema</a>.</dd>
+<dt><strong>nftables</strong></dt>
+<dd>O firewall atual do kernel Linux (<code>nft</code>). Veja: <a href="firewall.html">Firewall</a>.</dd>
+</dl>
+
+<h2 id="g-O">O</h2>
+<dl class="glossario">
+<dt><strong>órfão</strong></dt>
+<dd>Pacote instalado como dependência que nenhum outro usa mais. <code>pacman -Qdt</code> lista. Veja: <a href="cache-orfaos.html">Cache e Órfãos</a>.</dd>
+</dl>
+
+<h2 id="g-P">P</h2>
+<dl class="glossario">
+<dt><strong>pacman</strong> (<em>package manager</em>)</dt>
+<dd>O gerenciador de pacotes do Arch. Veja: <a href="pacman.html">pacman: o Básico</a>.</dd>
+<dt><strong>.pacnew</strong> / <strong>.pacsave</strong></dt>
+<dd>Arquivos que o pacman cria quando a configuração nova do pacote não substitui a sua (<code>.pacnew</code>) ou quando você remove um pacote com configuração alterada (<code>.pacsave</code>). Veja: <a href="pacnew.html">.pacnew e .pacsave</a>.</dd>
+<dt><strong>pacstrap</strong></dt>
+<dd>Script que instala os primeiros pacotes no disco novo (<code>pacstrap -K /mnt base linux linux-firmware</code>). Veja: <a href="pacstrap.html">Espelhos e pacstrap</a>.</dd>
+<dt><strong>PAM</strong></dt>
+<dd>O sistema que confere senhas para login, <code>sudo</code>, <code>su</code> (arquivos em <code>/etc/pam.d</code>). Veja: <a href="seguranca.html">Segurança</a>.</dd>
+<dt><strong>PipeWire</strong></dt>
+<dd>O servidor de som (e vídeo) atual do Linux, com WirePlumber como gerente de sessão. Veja: <a href="projeto-desktop.html">Montar um Desktop KDE</a>.</dd>
+<dt><strong>PKGBUILD</strong></dt>
+<dd>Script Bash com a receita de um pacote: nome, versão, fontes, somas e funções <code>build()</code>/<code>package()</code>. Veja: <a href="pkgbuild.html">Escrever um PKGBUILD</a>.</dd>
+<dt><strong>Podman</strong></dt>
+<dd>Ferramenta de containers sem daemon, que roda sem root. Veja: <a href="containers.html">Docker e Podman</a>.</dd>
+<dt><strong>provedor</strong> (<em>provider</em>)</dt>
+<dd>Pacote que satisfaz uma dependência genérica (<code>ttf-font</code>, <code>jack</code>); quando há vários, o pacman pergunta qual. O padrão é só o primeiro da lista. Veja: <a href="pacman-avancado.html">pacman Avançado</a>, <a href="projeto-desktop.html">Desktop KDE</a>.</dd>
+</dl>
+
+<h2 id="g-Q">Q</h2>
+<dl class="glossario">
+<dt><strong>QEMU</strong></dt>
+<dd>Emulador e virtualizador de máquinas; com KVM, roda VMs quase na velocidade real. Veja: <a href="kvm.html">Máquinas Virtuais</a>.</dd>
+</dl>
+
+<h2 id="g-R">R</h2>
+<dl class="glossario">
+<dt><strong>reflector</strong></dt>
+<dd>Script que escolhe e ordena espelhos por país, idade e velocidade. Veja: <a href="espelhos.html">Espelhos (reflector)</a>.</dd>
+<dt><strong>repositório</strong></dt>
+<dd>Servidor (ou pasta) com pacotes e um banco de dados que o pacman sincroniza. Veja: <a href="pacman.html">pacman</a>, <a href="repositorio-local.html">Seu Próprio Repositório</a>.</dd>
+<dt><strong>rolling release</strong></dt>
+<dd>Modelo em que não há "versões" do sistema: tudo é atualizado continuamente. Veja: <a href="rolling-release.html">Rolling Release</a>.</dd>
+<dt><strong>rootless</strong></dt>
+<dd>Rodar algo (como containers) sem privilégios de root. Veja: <a href="containers.html">Docker e Podman</a>.</dd>
+</dl>
+
+<h2 id="g-S">S</h2>
+<dl class="glossario">
+<dt><strong>Secure Boot</strong></dt>
+<dd>Recurso da UEFI que só aceita bootloaders e kernels assinados; no Arch, com chaves próprias via <code>sbctl</code>. Veja: <a href="seguranca.html">Segurança</a>.</dd>
+<dt><strong>serviço</strong> (<em>service</em>)</dt>
+<dd>Unit do systemd que roda um programa (<code>nginx.service</code>). No Arch, instalar não liga. Veja: <a href="systemd.html">systemctl e Serviços</a>.</dd>
+<dt><strong>snapshot</strong></dt>
+<dd>Foto instantânea de um subvolume (Btrfs), de um volume (LVM) ou de uma VM, para voltar no tempo. Veja: <a href="snapshots.html">Snapshots (snapper)</a>.</dd>
+<dt><strong>snapper</strong></dt>
+<dd>Ferramenta que tira e gerencia snapshots Btrfs (com timers e antes/depois do pacman). Veja: <a href="snapshots.html">Snapshots</a>.</dd>
+<dt><strong>subvolume</strong></dt>
+<dd>"Pasta especial" do Btrfs que pode ser montada e fotografada separadamente (<code>@</code>, <code>@home</code>). Veja: <a href="btrfs.html">Btrfs e Subvolumes</a>.</dd>
+<dt><strong>sudo</strong></dt>
+<dd>Comando que roda outro como root pedindo a <strong>sua</strong> senha; no Arch, é instalado à parte e liberado ao grupo <code>wheel</code>. Veja: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</dd>
+<dt><strong>swap</strong></dt>
+<dd>Área de disco (partição ou arquivo) usada quando a RAM acaba, e para hibernar. Veja: <a href="swap-zram.html">Swap e zram</a>.</dd>
+<dt><strong>systemd</strong></dt>
+<dd>O sistema de inicialização e gerência de serviços do Arch (processo 1). Veja: <a href="systemd.html">systemctl e Serviços</a>.</dd>
+<dt><strong>systemd-boot</strong></dt>
+<dd>Bootloader simples do systemd, só para UEFI. Veja: <a href="bootloader.html">Bootloader</a>.</dd>
+</dl>
+
+<h2 id="g-T">T</h2>
+<dl class="glossario">
+<dt><strong>tag</strong> (de imagem)</dt>
+<dd>A versão de uma imagem de container depois do <code>:</code> (<code>alpine:latest</code>). Veja: <a href="containers.html">Docker e Podman</a>.</dd>
+<dt><strong>timer</strong></dt>
+<dd>Unit do systemd que agenda outra (<code>backup.timer</code> liga <code>backup.service</code>), substituindo o cron. Veja: <a href="timers.html">Timers e Tarefas</a>.</dd>
+</dl>
+
+<h2 id="g-U">U</h2>
+<dl class="glossario">
+<dt><strong>UEFI</strong></dt>
+<dd>O firmware moderno dos PCs, sucessor da BIOS; dá boot a partir da ESP. Veja: <a href="ambiente-live.html">Ambiente Live</a>, <a href="bootloader.html">Bootloader</a>.</dd>
+<dt><strong>unit</strong></dt>
+<dd>Qualquer coisa que o systemd gerencia: <code>.service</code>, <code>.timer</code>, <code>.socket</code>, <code>.mount</code>, <code>.target</code>… Veja: <a href="systemd.html">systemctl e Serviços</a>.</dd>
+<dt><strong>UUID</strong></dt>
+<dd>Identificador único de um sistema de arquivos, usado no fstab no lugar de <code>/dev/sdaN</code>. Veja: <a href="fstab.html">mount e fstab</a>.</dd>
+</dl>
+
+<h2 id="g-V">V</h2>
+<dl class="glossario">
+<dt><strong>vanilla</strong></dt>
+<dd>"Do jeito que o autor fez", sem alterações da distribuição. O Arch empacota assim sempre que pode (por isso o nginx não tem <code>sites-enabled</code>). Veja: <a href="servidor-web.html">Servidor Web</a>.</dd>
+<dt><strong>VM</strong> (máquina virtual)</dt>
+<dd>Computador simulado dentro de outro; todo o guia foi conferido numa. Veja: <a href="kvm.html">Máquinas Virtuais</a>, <a href="projetos.html">Projetos</a>.</dd>
+</dl>
+
+<h2 id="g-W">W</h2>
+<dl class="glossario">
+<dt><strong>Wayland</strong></dt>
+<dd>O protocolo gráfico atual do Linux (sucessor do X11); KDE e GNOME o usam por padrão. Veja: <a href="desktop.html">Instalar um Desktop</a>.</dd>
+<dt><strong>wheel</strong></dt>
+<dd>O grupo de administradores no Arch: quem está nele pode usar <code>sudo</code> (depois de descomentar a linha <code>%wheel</code> no sudoers). Veja: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</dd>
+</dl>
+
+<h2 id="g-Y">Y</h2>
+<dl class="glossario">
+<dt><strong>yay</strong> / <strong>paru</strong></dt>
+<dd>Os ajudantes do AUR mais usados, com a sintaxe do pacman. Veja: <a href="yay-paru.html">yay e paru</a>.</dd>
+</dl>
+
+<h2 id="g-Z">Z</h2>
+<dl class="glossario">
+<dt><strong>zram</strong></dt>
+<dd>Swap comprimida dentro da própria RAM, muito mais rápida que swap em disco. Veja: <a href="swap-zram.html">Swap e zram</a>.</dd>
+<dt><strong>.zst</strong> (zstd)</dt>
+<dd>Formato de compressão dos pacotes do Arch (<code>.pkg.tar.zst</code>): rápido para descomprimir. Veja: <a href="pacman.html">pacman</a>.</dd>
+</dl>
+
+<p><strong>Na Arch Wiki:</strong> não há um glossário único, mas a página <a href="https://wiki.archlinux.org/title/Arch_terminology">Arch terminology</a> explica os termos próprios do Arch (core, extra, AUR, PKGBUILD, ABS…), e o <a href="https://wiki.archlinux.org/title/Frequently_asked_questions">Frequently asked questions</a> (em pt-BR: <a href="https://wiki.archlinux.org/title/Frequently_asked_questions_(Portugu%C3%AAs)">Perguntas frequentes</a>) responde as dúvidas mais comuns de quem chega.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
