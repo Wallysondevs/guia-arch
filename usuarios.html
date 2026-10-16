@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch usuários e grupos — useradd, usermod -aG, passwd, userdel | Guia Arch</title>
+<meta name="description" content="Usuários e grupos no Arch Linux: useradd (e por que não existe adduser), passwd, usermod -aG, gpasswd, id, groups, userdel -r, os arquivos /etc/passwd, /etc/group e /etc/shadow, e quais grupos ainda importam com o systemd-logind.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Usuários e <span class="hl">grupos</span></h1>
+
+<p class="intro">O Linux foi feito para várias pessoas usarem o mesmo computador sem mexer nas coisas umas das outras. Cada pessoa (e cada serviço) é um <strong>usuário</strong>; usuários se juntam em <strong>grupos</strong> para dividir permissões. Nesta aula você cria, muda e apaga usuários no Arch, entende os arquivos onde eles moram e descobre quais grupos ainda fazem sentido hoje.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são UID, GID, grupo principal e grupos extras.</li>
+  <li>Ler <code>/etc/passwd</code>, <code>/etc/group</code> e por que <code>/etc/shadow</code> é fechado.</li>
+  <li>Criar usuários com <code>useradd</code> (no Arch não existe <code>adduser</code>) e definir a senha com <code>passwd</code>.</li>
+  <li>Pôr e tirar de grupos com <code>usermod -aG</code> e <code>gpasswd -d</code>, e a armadilha do <code>-G</code> sem <code>-a</code>.</li>
+  <li>Apagar com <code>userdel -r</code> e escolher os grupos certos no Arch (wheel, systemd-journal… e por que não video/audio).</li>
+</ul>
+</div>
+
+<p>A aula <a href="sudo-usuarios.html">sudo, root e Usuários</a> (Nível 1) mostrou o básico de root e <code>sudo</code>. Aqui vamos mais fundo. Os exemplos usam um usuário de teste, <code>teste-a6</code>, criado e apagado na VM do guia.</p>
+
+<hr>
+
+<h2>Quem sou eu: id e groups</h2>
+
+<pre class="term">$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)
+$ groups
+ana wheel</pre>
+
+<dl class="anatomy">
+  <dt>uid=1000(ana)</dt><dd><strong>UID</strong> (<em>user ID</em>): o número do usuário. O sistema guarda números; o nome é só para nós. No Arch, pessoas começam em 1000.</dd>
+  <dt>gid=1000(ana)</dt><dd><strong>Grupo principal</strong> (<em>group ID</em>): o grupo que os arquivos novos da ana recebem. No Arch, cada usuário ganha um grupo com o mesmo nome (<em>user private group</em>).</dd>
+  <dt>grupos=…,998(wheel)</dt><dd><strong>Grupos extras</strong> (suplementares). O <code>wheel</code> é o dos administradores: é por ele que a ana pode usar <code>sudo</code>.</dd>
+</dl>
+
+<p>Com um nome depois, eles mostram outro usuário: <code>id root</code>, <code>groups ana</code>.</p>
+
+<div class="try" data-goal="out:wheel" data-solucao="id">
+<p class="try-task"><strong>Missão:</strong> mostre o seu UID, o seu grupo principal e os seus grupos extras com um único comando.</p>
+</div>
+
+<h3>Faixas de UID</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>UID</th><th>Quem</th><th>Exemplos na VM</th></tr>
+<tr><td>0</td><td>root, o administrador</td><td><code>root</code></td></tr>
+<tr><td>1–999</td><td>Usuários de sistema (serviços, sem login)</td><td><code>http</code> (33), <code>dbus</code>, <code>polkitd</code></td></tr>
+<tr><td>1000–60000</td><td>Pessoas</td><td><code>ana</code> (1000)</td></tr>
+<tr><td>65534</td><td><code>nobody</code>: "ninguém", o mínimo de permissão</td><td><code>nobody</code></td></tr>
+</table>
+</div>
+
+<p>Os limites vêm de <code>/etc/login.defs</code>:</p>
+<pre class="term">$ grep -E '^(UID_MIN|UID_MAX|SYS_UID_MIN|UMASK|HOME_MODE|USERGROUPS_ENAB|ENCRYPT_METHOD)' /etc/login.defs
+UMASK		022
+HOME_MODE	0700                  « pastas pessoais novas: só o dono entra
+UID_MIN			 1000
+UID_MAX			60000
+SYS_UID_MIN		  500
+ENCRYPT_METHOD YESCRYPT           « o algoritmo das senhas em /etc/shadow
+USERGROUPS_ENAB yes               « um grupo com o nome de cada usuário</pre>
+
+<hr>
+
+<h2>Onde os usuários moram: três arquivos</h2>
+
+<h3>/etc/passwd: a lista de usuários</h3>
+<p>Uma linha por usuário, campos separados por <code>:</code>. Apesar do nome, as senhas <strong>não</strong> ficam mais aqui (o <code>x</code> manda olhar o <code>/etc/shadow</code>). Algumas linhas reais:</p>
+
+<pre class="term">$ grep -E '^(root|ana|http|nobody):' /etc/passwd
+root:x:0:0::/root:/usr/bin/bash
+http:x:33:33::/srv/http:/usr/bin/nologin
+nobody:x:65534:65534:Kernel Overflow User:/:/usr/bin/nologin
+ana:x:1000:1000::/home/ana:/bin/bash</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo</th><th>Na linha da ana</th><th>Significado</th></tr>
+<tr><td>1</td><td><code>ana</code></td><td>Nome de login</td></tr>
+<tr><td>2</td><td><code>x</code></td><td>Senha: está no <code>/etc/shadow</code></td></tr>
+<tr><td>3</td><td><code>1000</code></td><td>UID</td></tr>
+<tr><td>4</td><td><code>1000</code></td><td>GID do grupo principal</td></tr>
+<tr><td>5</td><td>(vazio)</td><td>Comentário, o "nome completo" (GECOS). O do <code>nobody</code> é <code>Kernel Overflow User</code>.</td></tr>
+<tr><td>6</td><td><code>/home/ana</code></td><td>Pasta pessoal</td></tr>
+<tr><td>7</td><td><code>/bin/bash</code></td><td>Shell de login. <code>/usr/bin/nologin</code> = conta que não pode entrar (serviços).</td></tr>
+</table>
+</div>
+
+<p>O <code>http</code> é o usuário com que o servidor web roda: ele existe, mas não pode fazer login. Rodar serviços com usuários próprios limita o estrago se um deles for invadido.</p>
+
+<h3>/etc/group: a lista de grupos</h3>
+<pre class="term">$ getent group wheel
+wheel:x:998:ana
+$ grep -E '^(wheel|ana|video|audio):' /etc/group
+wheel:x:998:ana         « nome : senha (x) : GID : membros extras, separados por vírgula
+audio:x:995:            « sem membros
+video:x:983:
+ana:x:1000:             « o grupo principal da ana; ela não aparece listada aqui, e não precisa</pre>
+
+<p><code>getent</code> (<em>get entries</em>) consulta as bases de usuários e grupos do sistema; é mais correto que o <code>grep</code>, porque também acha usuários que não estão nos arquivos (de rede, do <code>systemd-homed</code>…).</p>
+
+<h3>/etc/shadow: as senhas, trancadas</h3>
+<pre class="term">$ ls -l /etc/passwd /etc/group /etc/shadow /etc/gshadow
+-rw-r--r-- 1 root root  825 16 out 13:39 /etc/group
+-rw------- 1 root root  726 16 out 13:39 /etc/gshadow
+-rw-r--r-- 1 root root 1451 16 out 13:39 /etc/passwd
+-rw------- 1 root root  771 16 out 13:39 /etc/shadow
+$ cat /etc/shadow
+cat: /etc/shadow: Permissão negada</pre>
+
+<p><code>passwd</code> e <code>group</code> são <code>rw-r--r--</code>: todos leem (os programas precisam saber que o UID 1000 se chama ana). <code>shadow</code> e <code>gshadow</code> são <code>rw-------</code>: só o root lê e escreve. Lá ficam as senhas, guardadas como <em>hash</em> (uma "impressão digital" da senha, que não dá para desfazer). Como ler essas permissões está em <a href="permissoes.html">Permissões</a>. Com <code>sudo</code>, a linha de um usuário recém-criado e já com senha (cortada):</p>
+
+<pre class="term">$ sudo grep teste-a6 /etc/shadow | cut -c1-40
+teste-a6:$y$j9T$ZL64caZUBHwNsX4UFKG9.1$Q</pre>
+
+<p>O <code>$y$</code> no começo do hash indica o <strong>yescrypt</strong>, o <code>ENCRYPT_METHOD</code> do <code>login.defs</code>. Um <code>!</code> no lugar do hash quer dizer "sem senha válida: login por senha bloqueado".</p>
+
+<div class="warning">
+<strong>Não edite esses arquivos à mão</strong>
+<p>Um <code>:</code> a mais no <code>/etc/passwd</code> pode impedir todo mundo de entrar. Use os comandos desta aula; se precisar mesmo editar, use <code>sudo vipw</code> e <code>sudo vigr</code>, que travam o arquivo e conferem o formato. O <code>shadow.timer</code> do Arch confere a integridade deles todo dia (veja <a href="timers.html">Timers e Tarefas</a>).</p>
+</div>
+
+<hr>
+
+<h2>Criar um usuário: useradd</h2>
+
+<h3>"adduser"? Não no Arch</h3>
+<p>Quem vem do Debian ou do Ubuntu procura o <code>adduser</code>, um assistente que pergunta nome, senha e cria tudo. No Arch ele não existe, nem nos repositórios oficiais:</p>
+
+<pre class="term">$ adduser teste
+bash: adduser: comando não encontrado
+$ echo $?
+127
+$ pacman -F /usr/bin/adduser; echo $?
+1                                « nenhum pacote oficial tem esse arquivo
+$ pacman -F /usr/bin/useradd
+usr/bin/useradd pertence a core/shadow 4.20.0.arch1-1</pre>
+
+<p>O comando do Arch é o <code>useradd</code>, do pacote <code>shadow</code> (o mesmo que existe em todas as distros, por baixo do <code>adduser</code>). Ele não pergunta nada: faz exatamente o que as opções mandam.</p>
+
+<h3>As opções</h3>
+<dl class="anatomy">
+  <dt>sudo useradd</dt><dd>Cria um usuário (precisa de root).</dd>
+  <dt>-m</dt><dd><em>create home</em>: cria a pasta pessoal. <strong>Sem ele, não há pasta</strong>.</dd>
+  <dt>-G wheel</dt><dd>Grupos extras, separados por vírgula (<code>-G wheel,systemd-journal</code>).</dd>
+  <dt>-s /bin/bash</dt><dd>O shell de login.</dd>
+  <dt>-c "Ana Souza"</dt><dd>O comentário (nome completo).</dd>
+  <dt>teste-a6</dt><dd>O nome: minúsculas, números, <code>-</code> e <code>_</code>; começa com letra.</dd>
+</dl>
+
+<p>Foi exatamente assim que a ana nasceu, na instalação da VM:</p>
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt useradd -m -G wheel -s /bin/bash ana
+#> arch-chroot /mnt id ana
+uid=1000(ana) gid=1000(ana) groups=1000(ana),998(wheel)</pre>
+
+<p>(Durante a instalação o sistema ainda estava em inglês: <code>groups</code> em vez de <code>grupos</code>.) Agora, um usuário comum, só com <code>-m</code>:</p>
+
+<pre class="term">$ id teste-a6
+id: “teste-a6”: usuário inexistente
+$ sudo useradd -m teste-a6
+$ echo $?
+0                                 « silencioso quando dá certo
+$ id teste-a6
+uid=1001(teste-a6) gid=1001(teste-a6) grupos=1001(teste-a6)
+$ sudo ls -la /home/teste-a6
+total 20
+drwx------ 2 teste-a6 teste-a6 4096 16 out 13:35 .        « 700: só o dono entra (HOME_MODE)
+drwxr-xr-x 4 root     root     4096 16 out 13:39 ..
+-rw-r--r-- 1 teste-a6 teste-a6   21 15 set 16:47 .bash_logout
+-rw-r--r-- 1 teste-a6 teste-a6   57 15 set 16:47 .bash_profile
+-rw-r--r-- 1 teste-a6 teste-a6  172 15 set 16:47 .bashrc</pre>
+
+<p>Os três arquivos vieram de <code>/etc/skel</code> (<em>skeleton</em>, "esqueleto"): tudo o que estiver lá é copiado para a pasta de cada usuário novo. E as linhas que o <code>useradd</code> escreveu:</p>
+
+<pre class="term">$ sudo grep teste-a6 /etc/passwd /etc/group /etc/shadow /etc/gshadow
+/etc/passwd:teste-a6:x:1001:1001::/home/teste-a6:/usr/bin/bash
+/etc/group:teste-a6:x:1001:
+/etc/shadow:teste-a6:!:20742::::::            « "!" = ainda sem senha
+/etc/gshadow:teste-a6:!::</pre>
+
+<p>Repare que o shell do <code>teste-a6</code> é <code>/usr/bin/bash</code>, e o da ana, <code>/bin/bash</code>. No Arch, <code>/bin</code> é um link para <code>/usr/bin</code>: é o mesmo programa. O padrão vem de <code>/etc/default/useradd</code>, que só o root lê:</p>
+
+<pre class="term">$ sudo useradd -D
+GROUP=1000
+GROUPS=
+HOME=/home
+INACTIVE=-1
+EXPIRE=
+SHELL=/usr/bin/bash
+SKEL=/etc/skel
+USRSKEL=/usr/etc/skel
+CREATE_MAIL_SPOOL=yes
+BTRFS_SUBVOLUME_HOME=no
+BTRFS_SUBVOLUME_SYSTEM=no
+LOG_INIT=yes</pre>
+
+<h3>Definir a senha: passwd</h3>
+<p>Um usuário criado não tem senha (o <code>!</code>): ninguém consegue entrar como ele. O <code>passwd</code> define:</p>
+
+<pre class="term">$ sudo passwd -S teste-a6
+teste-a6 L 2026-10-16 -1 -1 -1 -1        « L = locked (sem senha utilizável)
+$ sudo passwd teste-a6
+Nova senha:                              « nada aparece enquanto você digita
+Redigite a nova senha:
+passwd: senha atualizada com sucesso
+$ sudo passwd -S teste-a6
+teste-a6 P 2026-10-16 -1 -1 -1 -1        « P = tem senha (password)</pre>
+
+<dl class="anatomy">
+  <dt>passwd</dt><dd>Sem nome: troca a <strong>sua</strong> senha (pede a atual antes). Não precisa de sudo.</dd>
+  <dt>sudo passwd nome</dt><dd>O root troca a senha de qualquer um, sem saber a antiga.</dd>
+  <dt>-S</dt><dd><em>status</em>: estado da senha (<code>P</code>, <code>L</code>, <code>NP</code> = sem senha nenhuma), data da última troca e prazos.</dd>
+  <dt>-l / -u</dt><dd>Trava / destrava a senha (põe/tira um <code>!</code> no shadow).</dd>
+</dl>
+
+<p>Os prazos (validade da senha, aviso de expiração) se veem com <code>chage -l</code>:</p>
+<pre class="term">$ sudo chage -l teste-a6
+Última mudança de senha					: out 16, 2026
+Senha expira					: nunca
+Senha inativa					: nunca
+Conta expira						: nunca
+Número máximo de dias entre troca de senhas		: -1
+Número de dias de avisos antes da expiração da senha	: -1</pre>
+
+<h3>Entrar como o novo usuário</h3>
+<p><code>su - nome</code> (<em>substitute user</em>) abre um shell como outro usuário, pedindo a senha <strong>dele</strong>. O <code>-</code> faz um login completo (vai para a pasta dele, lê o <code>.bash_profile</code>):</p>
+
+<pre class="term">$ su - teste-a6
+Senha:
+$ whoami
+teste-a6
+$ pwd
+/home/teste-a6
+$ sudo pacman -Q bash
+[sudo] senha para teste-a6:
+teste-a6 não está no arquivo sudoers.        « não está no wheel: sem sudo
+$ echo $?
+1
+$ exit</pre>
+
+<p>O <code>sudo</code> recusou porque o <code>teste-a6</code> não está no grupo <code>wheel</code> (é a linha <code>%wheel ALL=(ALL:ALL) ALL</code> do <code>/etc/sudoers</code> que libera; veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). A tentativa fica registrada no journal.</p>
+
+<hr>
+
+<h2>Grupos: usermod -aG, gpasswd -d</h2>
+
+<h3>Pôr num grupo</h3>
+<dl class="anatomy">
+  <dt>sudo usermod</dt><dd>Modifica um usuário que já existe.</dd>
+  <dt>-a</dt><dd><em>append</em>: <strong>acrescenta</strong> aos grupos que ele já tem.</dd>
+  <dt>-G video</dt><dd>O(s) grupo(s) extra(s).</dd>
+  <dt>teste-a6</dt><dd>O usuário.</dd>
+</dl>
+
+<pre class="term">$ sudo usermod -aG video teste-a6
+$ id teste-a6
+uid=1001(teste-a6) gid=1001(teste-a6) grupos=1001(teste-a6),983(video)</pre>
+
+<h3>A armadilha: -G sem -a</h3>
+<p>Sem o <code>-a</code>, o <code>-G</code> <strong>substitui</strong> a lista inteira de grupos extras. Veja o <code>video</code> sumir:</p>
+
+<pre class="term">$ sudo usermod -G audio teste-a6
+$ id teste-a6
+uid=1001(teste-a6) gid=1001(teste-a6) grupos=1001(teste-a6),995(audio)     « o video foi embora!
+$ sudo usermod -aG video teste-a6
+$ id teste-a6
+uid=1001(teste-a6) gid=1001(teste-a6) grupos=1001(teste-a6),995(audio),983(video)</pre>
+
+<div class="warning">
+<strong>Nunca rode usermod -G nos seus grupos sem o -a</strong>
+<p>Se a ana rodasse <code>sudo usermod -G video ana</code>, sairia do <code>wheel</code> e perderia o <code>sudo</code> na hora (e não conseguiria mais rodar <code>sudo</code> para consertar). A saída seria entrar como root (<code>su -</code>, se o root tem senha) ou o resgate pelo pendrive (<a href="chroot-resgate.html">Resgate com chroot</a>). Decore: <strong>-aG</strong>, sempre juntos.</p>
+</div>
+
+<h3>Tirar de um grupo</h3>
+<pre class="term">$ sudo gpasswd -d teste-a6 audio
+Removendo usuário teste-a6 do grupo audio
+$ id teste-a6
+uid=1001(teste-a6) gid=1001(teste-a6) grupos=1001(teste-a6),983(video)</pre>
+
+<p><code>gpasswd</code> (<em>group password</em>, por razões históricas) gerencia membros de grupos: <code>-a usuário grupo</code> acrescenta, <code>-d usuário grupo</code> tira (<em>delete</em>). Criar e apagar grupos: <code>sudo groupadd nome</code>, <code>sudo groupdel nome</code>.</p>
+
+<div class="note">
+<strong>Mudou de grupo? Saia e entre de novo</strong>
+<p>Os grupos de uma sessão são lidos no login. Depois de um <code>usermod -aG</code> no seu próprio usuário, o <code>id</code> do terminal aberto ainda mostra os grupos antigos. Saia da sessão (ou reinicie) e entre de novo. Para testar na hora, num terminal só: <code>newgrp nome-do-grupo</code> ou <code>su - $USER</code>.</p>
+</div>
+
+<h3>Quais grupos usar no Arch?</h3>
+<p>Guias antigos mandam colocar o usuário em <code>audio</code>, <code>video</code>, <code>storage</code>, <code>optical</code>… Isso era necessário antes do systemd. Hoje, o <code>systemd-logind</code> dá acesso ao som, ao vídeo e aos pendrives para <strong>quem está sentado no computador</strong> (a sessão ativa), automaticamente, por ACLs. A Arch Wiki (página <em>Users and groups</em>, seção "Pre-systemd groups") avisa que pôr usuários nesses grupos pode até <strong>quebrar</strong> coisas: o grupo <code>audio</code>, por exemplo, atrapalha a troca rápida de usuário.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Grupo</th><th>Para quê</th><th>Colocar?</th></tr>
+<tr><td><code>wheel</code></td><td>Administradores: <code>sudo</code> (depois de liberar no sudoers), ler todo o journal, polkit</td><td>Sim, para quem administra</td></tr>
+<tr><td><code>systemd-journal</code></td><td>Ler todos os logs, sem outro poder (veja <a href="journal.html">Logs</a>)</td><td>Para quem só precisa ler logs</td></tr>
+<tr><td><code>adm</code></td><td>Também lê todo o journal (tradição de outras distros)</td><td>Opcional</td></tr>
+<tr><td><code>uucp</code></td><td>Portas seriais e USB-serial (Arduino, modems): <code>/dev/ttyUSB0</code>, <code>/dev/ttyACM0</code></td><td>Se você programa placas</td></tr>
+<tr><td><code>kvm</code></td><td>Usar <code>/dev/kvm</code> para máquinas virtuais (veja <a href="kvm.html">KVM</a>)</td><td>Se for usar KVM/QEMU</td></tr>
+<tr><td><code>lp</code></td><td>Impressoras na porta paralela</td><td>Raramente</td></tr>
+<tr><td><code>audio</code>, <code>video</code>, <code>storage</code>, <code>optical</code>, <code>input</code></td><td>Acesso direto ao hardware, mesmo fora da sessão</td><td><strong>Normalmente não</strong>: o logind já cuida. Só em casos especiais (som em sessão remota, por exemplo).</td></tr>
+</table>
+</div>
+
+<p>Grupos de programas específicos aparecem quando você instala o programa (por exemplo, <code>docker</code>; veja <a href="containers.html">Docker e Podman</a>). Para ver todos os grupos da máquina: <code>cut -d: -f1 /etc/group</code>.</p>
+
+<hr>
+
+<h2>Mudar outras coisas: usermod</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que muda</th></tr>
+<tr><td><code>sudo usermod -s /usr/bin/zsh ana</code></td><td>O shell de login (ou <code>chsh -s</code>, sem sudo, para si mesmo)</td></tr>
+<tr><td><code>sudo usermod -c "Ana Souza" ana</code></td><td>O nome completo</td></tr>
+<tr><td><code>sudo usermod -l novo velho</code></td><td>O nome de login (a pasta não muda sozinha)</td></tr>
+<tr><td><code>sudo usermod -d /home/novo -m novo</code></td><td>A pasta pessoal, movendo o conteúdo</td></tr>
+<tr><td><code>sudo usermod -L nome</code> / <code>-U</code></td><td>Trava / destrava a conta</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Apagar: userdel</h2>
+<dl class="anatomy">
+  <dt>sudo userdel</dt><dd>Apaga o usuário dos arquivos <code>passwd</code>, <code>shadow</code>, <code>group</code>.</dd>
+  <dt>-r</dt><dd><em>remove</em>: apaga também a pasta pessoal e a caixa de correio local. Sem ele, <code>/home/nome</code> fica para trás.</dd>
+</dl>
+
+<pre class="term">$ pgrep -u teste-a6; echo $?
+1                                    « confira antes: nenhum processo dele rodando
+$ sudo userdel -r teste-a6
+userdel: teste-a6 spool de mail (/var/spool/mail/teste-a6) não foi encontrado
+$ echo $?
+0                                    « o aviso é inofensivo: deu certo
+$ id teste-a6
+id: “teste-a6”: usuário inexistente
+$ ls /home
+ana</pre>
+
+<p>O aviso aparece porque o Arch não cria caixa de correio para usuários novos (<code>CREATE_MAIL_SPOOL=no</code> no <code>/etc/default/useradd</code>), e o <code>userdel -r</code> tenta apagar uma que não existe. Pode ignorar.</p>
+
+<div class="warning">
+<strong>Arquivos fora da pasta pessoal ficam órfãos</strong>
+<p>O <code>-r</code> apaga só a pasta pessoal. Arquivos do usuário em <code>/tmp</code>, <code>/srv</code> ou num HD externo continuam lá, com o UID antigo no lugar do dono. Se depois você criar outro usuário, ele pode receber o <strong>mesmo UID</strong> e virar dono desses arquivos sem querer (aconteceu na VM do guia: o <code>teste-a6</code> recebeu o UID 1001, que antes era de outro usuário de teste, e herdou o journal dele). Procure antes com <code>sudo find /caminho -uid 1001</code>, numa pasta específica.</p>
+</div>
+
+<hr>
+
+<h2>Formas de criar um usuário: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>sudo useradd -m -G wheel nome</code> + <code>sudo passwd nome</code></td><td>O jeito do Arch, para um administrador</td></tr>
+<tr><td><code>sudo useradd -m nome</code> + <code>sudo passwd nome</code></td><td>Uma pessoa comum, sem <code>sudo</code></td></tr>
+<tr><td><code>sudo useradd -r -s /usr/bin/nologin nome</code></td><td>Um usuário de sistema para um serviço seu (<code>-r</code>: UID abaixo de 1000, sem pasta)</td></tr>
+<tr><td>Configurações do KDE/GNOME</td><td>No desktop, a tela "Usuários" faz o mesmo (precisa do pacote <code>accountsservice</code>)</td></tr>
+<tr><td><code>archinstall</code></td><td>Cria a conta durante a instalação (veja <a href="archinstall.html">archinstall</a>)</td></tr>
+<tr><td><code>adduser</code></td><td>Não existe no Arch</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"usuário 'x' já existe"</strong>
+<pre class="term">$ sudo useradd -m teste-a6
+useradd: usuário 'teste-a6' já existe
+$ echo $?
+9</pre>
+<p><strong>Como resolver:</strong> escolha outro nome, ou mude o existente com <code>usermod</code>. Veja quem é com <code>id teste-a6</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"grupo 'x' não existe"</strong>
+<pre class="term">$ sudo usermod -aG grupoinexistente teste-a6
+usermod: grupo 'grupoinexistente' não existe
+$ echo $?
+6</pre>
+<p><strong>O que aconteceu:</strong> erro de digitação, ou o grupo é criado por um pacote que você ainda não instalou (<code>docker</code>, <code>libvirt</code>).</p>
+<p><strong>Como resolver:</strong> <code>getent group nome</code> para conferir; instale o pacote ou crie com <code>sudo groupadd nome</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"x não está no arquivo sudoers"</strong>
+<p><strong>O que aconteceu:</strong> o usuário não está no <code>wheel</code> (ou a linha <code>%wheel</code> do sudoers está comentada).</p>
+<p><strong>Como resolver:</strong> de uma conta que tem sudo (ou como root): <code>sudo usermod -aG wheel nome</code>; depois, o usuário sai e entra de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Coloquei no grupo, mas não funcionou</strong>
+<p><strong>O que aconteceu:</strong> a sessão aberta ainda tem os grupos antigos.</p>
+<p><strong>Como confirmar:</strong> <code>id</code> (sessão atual) mostra sem o grupo; <code>id nome</code> (lido dos arquivos) mostra com.</p>
+<p><strong>Como resolver:</strong> saia da sessão e entre de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>"The account is locked due to 3 failed logins."</strong>
+<p>Mensagem real da VM, quando o polkit pediu a senha da ana logo depois de vários autores errarem a senha dela no <code>sudo</code>:</p>
+<pre class="term">Info: The account is locked due to 3 failed logins.
+Info: (3 minutes left to unlock)
+Password: </pre>
+<p><strong>O que aconteceu:</strong> o Arch usa o <code>pam_faillock</code>: 3 senhas erradas seguidas travam a conta por 10 minutos (mesmo a senha certa é recusada nesse tempo).</p>
+<p><strong>Como confirmar:</strong> <code>sudo faillock --user ana</code> lista as tentativas (hora, origem como <code>sudo</code> ou <code>/dev/pts/0</code>).</p>
+<p><strong>Como resolver:</strong> espere o tempo indicado, ou, como root, <code>faillock --user ana --reset</code>. Os limites ficam em <code>/etc/security/faillock.conf</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>id</code> · <code>id nome</code></td><td>UID, grupo principal e grupos</td></tr>
+<tr><td><code>groups</code> · <code>groups nome</code></td><td>Só os nomes dos grupos</td></tr>
+<tr><td><code>getent passwd nome</code> · <code>getent group nome</code></td><td>A linha do usuário / grupo</td></tr>
+<tr><td><code>sudo useradd -m [-G grupos] [-s shell] nome</code></td><td>Cria usuário com pasta</td></tr>
+<tr><td><code>passwd</code> · <code>sudo passwd nome</code></td><td>Troca a sua senha · a de outro</td></tr>
+<tr><td><code>sudo passwd -S nome</code> · <code>sudo chage -l nome</code></td><td>Estado da senha · prazos</td></tr>
+<tr><td><code>sudo usermod -aG grupo nome</code></td><td>Acrescenta a um grupo (<strong>com -a!</strong>)</td></tr>
+<tr><td><code>sudo gpasswd -d nome grupo</code></td><td>Tira de um grupo</td></tr>
+<tr><td><code>sudo groupadd nome</code> · <code>sudo groupdel nome</code></td><td>Cria · apaga um grupo</td></tr>
+<tr><td><code>sudo userdel -r nome</code></td><td>Apaga o usuário e a pasta</td></tr>
+<tr><td><code>su - nome</code></td><td>Entra como outro usuário (senha dele)</td></tr>
+<tr><td><code>sudo vipw</code> · <code>sudo vigr</code></td><td>Edita passwd/group com segurança</td></tr>
+<tr><td><code>sudo faillock --user nome [--reset]</code></td><td>Tentativas erradas / destravar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar com pasta</h3>
+<p>Complete para criar o usuário <code>bruno</code> com pasta pessoal e no grupo dos administradores:</p>
+<div class="ex-code">sudo useradd <input data-answer="-m" aria-label="opção da pasta"> -G <input data-answer="wheel" aria-label="grupo"> bruno</div>
+</div>
+
+<div class="exercise">
+<h3>2. Acrescentar sem apagar</h3>
+<p>Complete para pôr o <code>bruno</code> no grupo <code>systemd-journal</code> sem tirá-lo dos outros:</p>
+<div class="ex-code">sudo usermod <input data-answer="-aG|-a -G" aria-label="opções"> systemd-journal bruno</div>
+</div>
+
+<div class="exercise">
+<h3>3. Apagar tudo</h3>
+<p>Complete para apagar o <code>bruno</code> e a pasta pessoal dele:</p>
+<div class="ex-code">sudo userdel <input data-answer="-r" aria-label="opção"> bruno</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. No Arch, você digita <code>adduser carla</code>. O que acontece?</p>
+<label><input type="radio" name="q4"> Um assistente pergunta a senha da Carla.</label>
+<label><input type="radio" name="q4"> A Carla é criada sem pasta.</label>
+<label><input type="radio" name="q4"> <code>bash: adduser: comando não encontrado</code>: no Arch se usa <code>useradd</code>.</label>
+<label><input type="radio" name="q4"> Pede para instalar o pacote adduser.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. A ana está nos grupos <code>ana</code> e <code>wheel</code> e alguém roda <code>sudo usermod -G video ana</code>. Como ela fica?</p>
+<label><input type="radio" name="q5"> ana, wheel e video.</label>
+<label><input type="radio" name="q5"> ana e video: saiu do wheel e perdeu o sudo.</label>
+<label><input type="radio" name="q5"> Só video.</label>
+<label><input type="radio" name="q5"> Dá erro, porque falta o -a.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que o <code>/etc/shadow</code> tem permissão <code>rw-------</code> (600)?</p>
+<label><input type="radio" name="q6"> Porque é um arquivo binário.</label>
+<label><input type="radio" name="q6"> Para que só a ana o leia.</label>
+<label><input type="radio" name="q6"> Por engano da instalação.</label>
+<label><input type="radio" name="q6"> Porque guarda os hashes das senhas: só o root pode ler.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Usuários e grupos são números (UID/GID); pessoas começam em 1000 no Arch.</li>
+  <li><code>/etc/passwd</code> e <code>/etc/group</code> todos leem; <code>/etc/shadow</code> (as senhas) só o root.</li>
+  <li>No Arch: <code>sudo useradd -m [-G wheel] nome</code> + <code>sudo passwd nome</code>. Não existe <code>adduser</code>.</li>
+  <li><code>usermod -aG</code> acrescenta; <code>-G</code> sozinho substitui. <code>gpasswd -d</code> tira.</li>
+  <li><code>userdel -r</code> apaga o usuário e a pasta (o aviso do "spool de mail" é inofensivo).</li>
+  <li>Com o systemd-logind, quase nunca é preciso pôr alguém em <code>audio</code>/<code>video</code>; <code>wheel</code> e <code>systemd-journal</code> são os úteis.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Users_and_groups">Users and groups</a> (<a href="https://wiki.archlinux.org/title/Users_and_groups_(Portugu%C3%AAs)">em português</a>) tem a lista completa de grupos (de usuário, de sistema, "pre-systemd" e não usados) e todos os comandos; o <code>sudo</code> e o grupo <code>wheel</code> estão em <a href="https://wiki.archlinux.org/title/Sudo">Sudo</a> (<a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">em português</a>); o travamento por senhas erradas, em <a href="https://wiki.archlinux.org/title/Security#Lock_out_user_after_three_failed_login_attempts">Security</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
