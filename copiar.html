@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch cp — copiar arquivos e pastas | Guia Arch</title>
+<meta name="description" content="Aprenda o cp no Arch Linux com calma: copiar um arquivo, para outra pasta, com outro nome, vários arquivos, pastas com -r, as opções -i, -n, -u, -b, -v, -p e -a, o que acontece quando o destino existe, e as mensagens reais do coreutils 9.12.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">cp</span></h1>
+
+<p class="intro">O <code>cp</code> faz uma cópia de um arquivo ou de uma pasta. O original continua onde estava, e a cópia é um arquivo novo, independente: mudar um não muda o outro. É o comando que você usa antes de mexer num arquivo importante, para fazer backup de uma pasta ou para levar um arquivo para outro lugar sem tirá-lo de onde está.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A regra de ouro do <code>cp</code>: primeiro a <strong>origem</strong>, depois o <strong>destino</strong>.</li>
+  <li>Copiar na mesma pasta, para outra pasta, com outro nome, para a pasta atual (<code>.</code>) e vários arquivos de uma vez.</li>
+  <li>Copiar pastas inteiras com <code>-r</code>, e a pegadinha de quando o destino já existe.</li>
+  <li>Proteger o que já existe com <code>-i</code>, <code>-n</code>, <code>-u</code> e <code>-b</code>, porque o <code>cp</code> <strong>sobrescreve sem perguntar</strong>.</li>
+  <li>Preservar data, permissões e dono com <code>-p</code> e <code>-a</code>, vendo a diferença no <code>ls -l</code>.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos foram feitos num Arch Linux real (coreutils 9.12), com a usuária <strong>ana</strong> na máquina <strong>notebook</strong>, a partir da pasta pessoal dela. Se você ainda não leu, as aulas <a href="caminhos.html">Caminhos</a> e <a href="ls.html">ls</a> ajudam muito aqui: o <code>cp</code> recebe caminhos, e o <code>ls</code> é como você confere o resultado.</p>
+
+<div class="warning">
+<strong>Antes de começar: o cp não pergunta nada</strong>
+<p>Se o destino já existir, o <code>cp</code> troca o conteúdo dele pelo da origem, <strong>em silêncio</strong>. Não há lixeira nem "desfazer". Mais adiante você verá as opções que evitam esse acidente.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: origem e destino</h2>
+<p>Pense numa fotocopiadora. Você põe o original de um lado e escolhe onde a cópia sai. O <code>cp</code> (de <em>copy</em>, "copiar") funciona igual: você diz <strong>o que</strong> copiar e <strong>para onde</strong>. A forma geral é:</p>
+
+<pre class="cmd">cp [opções] ORIGEM DESTINO</pre>
+
+<p>O <code>cp</code> olha para o <strong>destino</strong> e decide o que fazer:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O destino é…</th><th>O que o cp faz</th><th>Exemplo</th></tr>
+<tr><td>Um nome que não existe</td><td>Cria um arquivo novo com esse nome</td><td><code>cp frutas.txt frutas-copia.txt</code></td></tr>
+<tr><td>Uma pasta que existe</td><td>Põe a cópia <strong>dentro</strong> dela, com o mesmo nome</td><td><code>cp frutas.txt Documentos/</code></td></tr>
+<tr><td>Uma pasta + um nome</td><td>Põe a cópia dentro da pasta, com o nome novo</td><td><code>cp frutas.txt Documentos/feira.txt</code></td></tr>
+<tr><td>Um arquivo que já existe</td><td><strong>Sobrescreve</strong> o conteúdo, sem perguntar</td><td><code>cp frutas.txt notas.txt</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Copiar um arquivo na mesma pasta</h2>
+<p>O caso mais simples: fazer uma cópia de segurança de um arquivo, ao lado dele, com outro nome.</p>
+
+<dl class="anatomy">
+  <dt>cp</dt><dd>O programa que copia.</dd>
+  <dt>frutas.txt</dt><dd>A <strong>origem</strong>: o arquivo que já existe.</dd>
+  <dt>frutas-copia.txt</dt><dd>O <strong>destino</strong>: o nome da cópia. Como não existe, o <code>cp</code> cria.</dd>
+</dl>
+
+<pre class="term">$ ls
+'Área de trabalho'   Documentos   frutas.txt   Modelos   Público
+ aur                 Downloads    Imagens      Música    Vídeos
+$ cp frutas.txt frutas-copia.txt
+$ echo $?
+0                                    « 0 = deu certo
+$ ls
+'Área de trabalho'   Documentos   frutas-copia.txt   Imagens   Música    Vídeos
+ aur                 Downloads    frutas.txt         Modelos   Público</pre>
+
+<p>Repare: o <code>cp</code> não escreveu nada. No Linux, <strong>silêncio é sucesso</strong>. O <code>echo $?</code> mostra o código de saída do último comando: <code>0</code> quer dizer que deu certo; qualquer outro número, que houve erro. O segundo <code>ls</code> confirma: agora há <code>frutas.txt</code> e <code>frutas-copia.txt</code>.</p>
+
+<h3>O que mudou na cópia? Veja com <code>ls -l</code></h3>
+
+<pre class="term">$ ls -l frutas.txt frutas-copia.txt
+-rw-r--r-- 1 ana ana 47 16 out 14:55 frutas-copia.txt     « data e hora de AGORA
+-rw-rw-r-- 1 ana ana 47 14 out 16:05 frutas.txt           « a data original</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Original</th><th>Cópia</th><th>Por quê</th></tr>
+<tr><td>Permissões</td><td><code>-rw-rw-r--</code></td><td><code>-rw-r--r--</code></td><td>Um arquivo novo nasce com as permissões da origem "filtradas" pela <strong>umask</strong> do Arch (<code>022</code>), que tira a escrita do grupo. Veja <a href="chown.html">chown, chgrp, umask</a>.</td></tr>
+<tr><td>Dono e grupo</td><td><code>ana ana</code></td><td><code>ana ana</code></td><td>A cópia sempre pertence a quem copiou.</td></tr>
+<tr><td>Tamanho</td><td><code>47</code></td><td><code>47</code></td><td>Mesmo conteúdo, mesmo tamanho em bytes.</td></tr>
+<tr><td>Data</td><td><code>14 out 16:05</code></td><td><code>16 out 14:55</code></td><td>Para o sistema, a cópia é um arquivo <strong>novo</strong>, criado agora.</td></tr>
+</table>
+</div>
+
+<p>Se você quiser que a cópia fique com a data e as permissões do original, use <code>-p</code> ou <code>-a</code>, explicados na seção 7.</p>
+
+<hr>
+
+<h2>2. Copiar para outra pasta</h2>
+<p>Quando o destino é uma pasta que existe, a cópia vai para <strong>dentro</strong> dela, com o mesmo nome:</p>
+
+<dl class="anatomy">
+  <dt>cp</dt><dd>O programa.</dd>
+  <dt>frutas.txt</dt><dd>A origem.</dd>
+  <dt>Documentos/</dt><dd>O destino: uma pasta. A barra no fim deixa claro que é uma pasta.</dd>
+</dl>
+
+<pre class="term">$ cp frutas.txt Documentos/
+$ ls Documentos
+acesso.log  alunos.csv  frutas.txt  notas.txt  projetos  relatorio.odt</pre>
+
+<h3>Para outra pasta, com outro nome</h3>
+<p>Escreva a pasta e, depois da barra, o nome que a cópia deve ter:</p>
+
+<pre class="term">$ cp frutas.txt Documentos/feira.txt
+$ ls Documentos
+acesso.log  feira.txt   notas.txt  relatorio.odt
+alunos.csv  frutas.txt  projetos</pre>
+
+<div class="tip">
+<strong>A barra no fim protege você</strong>
+<p>Com a barra (<code>Documentos/</code>), se a pasta não existir o <code>cp</code> dá erro. Sem a barra, um erro de digitação vira um <strong>arquivo</strong> com o nome errado: <code>cp frutas.txt Doc</code> cria um arquivo chamado <code>Doc</code>, sem reclamar. Veja os dois casos em <a href="#erros">Quando não funciona</a>.</p>
+</div>
+
+<h3>Ver o que foi feito: <code>-v</code></h3>
+<p>O <code>-v</code> (de <em>verbose</em>, "detalhado") faz o <code>cp</code> contar cada cópia, no formato <code>'origem' -&gt; 'destino'</code>:</p>
+
+<pre class="term">$ cp -v frutas.txt Imagens/
+'frutas.txt' -&gt; 'Imagens/frutas.txt'          « de onde -&gt; para onde</pre>
+
+<p>Use o <code>-v</code> sempre que estiver aprendendo: você vê exatamente onde a cópia foi parar.</p>
+
+<div class="try" data-goal="file:~/Documentos/frutas.txt,file:~/Imagens/frutas.txt" data-solucao="cp -v frutas.txt Documentos/;;cp -v frutas.txt Imagens/">
+<p class="try-task"><strong>Missão:</strong> copie <code>frutas.txt</code> para a pasta <code>Documentos</code> e também para a pasta <code>Imagens</code> (são dois comandos). Use <code>-v</code> para ver cada cópia e confira com <code>ls Documentos</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Trazer um arquivo para a pasta atual: o ponto</h2>
+<p>E o contrário: trazer um arquivo de outra pasta para onde você está? O destino é a <strong>pasta atual</strong>, que no terminal tem um nome curtinho: <code>.</code> (um ponto).</p>
+
+<dl class="anatomy">
+  <dt>cp</dt><dd>O programa.</dd>
+  <dt>-v</dt><dd>Mostra o que fez.</dd>
+  <dt>Documentos/notas.txt</dt><dd>A origem, em outra pasta.</dd>
+  <dt>.</dt><dd>O destino: "aqui", a pasta atual. Não esqueça o espaço antes do ponto.</dd>
+</dl>
+
+<pre class="term">$ cp -v Documentos/notas.txt .
+'Documentos/notas.txt' -&gt; './notas.txt'        « ./notas.txt = notas.txt aqui</pre>
+
+<p>Também funciona com caminhos absolutos. Este exemplo traz uma cópia do arquivo de configuração do <code>pacman</code> para a sua pasta, para você estudar sem risco de estragar o original:</p>
+
+<pre class="term">$ cp /etc/pacman.conf .
+$ ls -l /etc/pacman.conf pacman.conf
+-rw-r--r-- 1 root root 2928 15 out 05:27 /etc/pacman.conf     « o original é do root
+-rw-r--r-- 1 ana  ana  2928 16 out 14:56 pacman.conf          « a cópia é sua</pre>
+
+<p>Repare no dono: o original pertence ao <code>root</code>, mas a cópia pertence à <code>ana</code>, porque foi ela quem copiou. Você pode ler e editar a sua cópia à vontade.</p>
+
+<hr>
+
+<h2>4. Vários arquivos de uma vez</h2>
+<p>O <code>cp</code> aceita várias origens. A regra é: <strong>o último argumento é o destino e tem que ser uma pasta</strong>. Todos os outros são copiados para dentro dela.</p>
+
+<dl class="anatomy">
+  <dt>cp -v</dt><dd>O programa, mostrando cada cópia.</dd>
+  <dt>Documentos/notas.txt Documentos/alunos.csv</dt><dd>As origens (quantas quiser).</dd>
+  <dt>Imagens/</dt><dd>O destino: sempre o último, sempre uma pasta.</dd>
+</dl>
+
+<pre class="term">$ cp -v Documentos/notas.txt Documentos/alunos.csv Imagens/
+'Documentos/notas.txt' -&gt; 'Imagens/notas.txt'
+'Documentos/alunos.csv' -&gt; 'Imagens/alunos.csv'</pre>
+
+<h3>Com curingas</h3>
+<p>Quando os arquivos têm algo em comum no nome, um <strong>curinga</strong> escreve a lista para você. O <code>*.txt</code> quer dizer "todos os nomes que terminam em <code>.txt</code>" (veja <a href="curingas.html">Curingas</a>):</p>
+
+<pre class="term">$ cp -v Documentos/*.txt Downloads/
+'Documentos/feira.txt' -&gt; 'Downloads/feira.txt'
+'Documentos/frutas.txt' -&gt; 'Downloads/frutas.txt'
+'Documentos/notas.txt' -&gt; 'Downloads/notas.txt'</pre>
+
+<h3>O destino primeiro: <code>-t</code></h3>
+<p>O <code>-t PASTA</code> (de <em>target</em>, "alvo") deixa você escrever o destino antes das origens. É útil em comandos montados por outros programas, como o <code>xargs</code> (veja <a href="pipes.html">Pipes e xargs</a>):</p>
+
+<pre class="term">$ cp -v -t Modelos/ frutas.txt notas.txt
+'frutas.txt' -&gt; 'Modelos/frutas.txt'
+'notas.txt' -&gt; 'Modelos/notas.txt'</pre>
+
+<h3>Quando o último não é uma pasta</h3>
+<pre class="term">$ cp frutas.txt notas.txt nao-existe
+cp: alvo 'nao-existe': Arquivo ou diretório inexistente
+$ echo $?
+1
+$ cp frutas.txt notas.txt frutas-copia.txt
+cp: alvo 'frutas-copia.txt': Não é um diretório</pre>
+
+<p>Com várias origens, o <code>cp</code> exige uma pasta no fim. Na primeira linha a pasta não existe; na segunda, o último nome é um arquivo. Nada foi copiado nos dois casos.</p>
+
+<div class="try" data-goal="file:~/Modelos/notas.txt,file:~/Modelos/alunos.csv" data-solucao="cp -v Documentos/notas.txt Documentos/alunos.csv Modelos/">
+<p class="try-task"><strong>Missão:</strong> com <strong>um único</strong> <code>cp</code>, copie <code>Documentos/notas.txt</code> e <code>Documentos/alunos.csv</code> para a pasta <code>Modelos</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. Copiar pastas: <code>-r</code></h2>
+<p>Sem opção nenhuma, o <code>cp</code> se recusa a copiar uma pasta:</p>
+
+<pre class="term">$ cp Documentos/projetos copia
+cp: -r não especificado; omitindo o diretório 'Documentos/projetos'
+$ echo $?
+1</pre>
+
+<p>A mensagem quer dizer: "você não passou o <code>-r</code>, então pulei a pasta". O <code>-r</code> (de <em>recursive</em>, "recursivo") manda o <code>cp</code> entrar na pasta, e nas pastas dentro dela, e copiar tudo.</p>
+
+<dl class="anatomy">
+  <dt>cp</dt><dd>O programa.</dd>
+  <dt>-r</dt><dd>Recursivo: a pasta e tudo o que há dentro dela. <code>-R</code> (maiúsculo) é igual.</dd>
+  <dt>Documentos/projetos</dt><dd>A pasta de origem.</dd>
+  <dt>copia</dt><dd>O destino. Como <code>copia</code> não existe, ela é criada como uma cópia de <code>projetos</code>.</dd>
+</dl>
+
+<pre class="term">$ cp -r Documentos/projetos copia
+$ ls copia copia/site
+copia:
+backup.sh  site
+
+copia/site:
+index.html  style.css</pre>
+
+<h3>A pegadinha: quando a pasta de destino já existe</h3>
+<p>Rode o mesmo comando de novo, agora com <code>-v</code>, e veja onde as coisas vão parar:</p>
+
+<pre class="term">$ cp -rv Documentos/projetos copia
+'Documentos/projetos' -&gt; 'copia/projetos'                   « DENTRO de copia!
+'Documentos/projetos/site' -&gt; 'copia/projetos/site'
+'Documentos/projetos/site/index.html' -&gt; 'copia/projetos/site/index.html'
+'Documentos/projetos/site/style.css' -&gt; 'copia/projetos/site/style.css'
+'Documentos/projetos/backup.sh' -&gt; 'copia/projetos/backup.sh'
+$ ls copia
+backup.sh  projetos  site</pre>
+
+<p>Da primeira vez, <code>copia</code> não existia e virou a cópia. Da segunda, <code>copia</code> já era uma pasta, então o <code>cp</code> fez o que sempre faz com pastas que existem: pôs a cópia <strong>dentro</strong> dela. Por isso apareceu <code>copia/projetos</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th><code>copia</code> não existe</th><th><code>copia</code> já existe</th></tr>
+<tr><td><code>cp -r projetos copia</code></td><td>Cria <code>copia/</code> com o conteúdo de <code>projetos</code></td><td>Cria <code>copia/projetos/</code></td></tr>
+</table>
+</div>
+
+<p>Se você escrever <code>Documentos/projetos/</code> com barra no fim, o <code>cp</code> se comporta do mesmo jeito (diferente do <code>rsync</code>, em que a barra muda tudo; veja <a href="scp-rsync.html">scp e rsync</a>).</p>
+
+<div class="try" data-goal="file:~/backup/projetos/site/index.html,file:~/backup/projetos/backup.sh" data-solucao="mkdir backup;;cp -rv Documentos/projetos backup/">
+<p class="try-task"><strong>Missão:</strong> crie a pasta <code>backup</code> (com <code>mkdir</code>, veja <a href="criar.html">touch e mkdir</a>) e copie para dentro dela a pasta <code>Documentos/projetos</code> inteira. No fim deve existir <code>backup/projetos/site/index.html</code>.</p>
+</div>
+
+<hr>
+
+<h2>6. Quando o destino já existe: o cp sobrescreve</h2>
+<p>Este é o ponto mais importante da aula. Veja o que acontece com a <code>notas.txt</code> (uma cópia das anotações da Ana) quando o <code>frutas.txt</code> é copiado <strong>em cima</strong> dela:</p>
+
+<pre class="term">$ cat notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+$ cp frutas.txt notas.txt                  « nenhuma pergunta, nenhum aviso
+$ cat notas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana</pre>
+
+<p>As anotações sumiram. O <code>notas.txt</code> agora tem o conteúdo do <code>frutas.txt</code>, e não há como desfazer. Quatro opções evitam isso:</p>
+
+<h3><code>-i</code>: perguntar antes</h3>
+<p>O <code>-i</code> (de <em>interactive</em>, "interativo") pergunta antes de sobrescrever. Responda <kbd>s</kbd> (sim) para sobrescrever ou <kbd>n</kbd> (não) para manter o que existe:</p>
+
+<pre class="term">$ cp Documentos/notas.txt .                 « traz as anotações de volta
+$ cp -i frutas.txt notas.txt
+cp: sobrescrever 'notas.txt'? n             « você digitou n e Enter
+$ echo $?
+1                                          « nada foi copiado
+$ head -1 notas.txt
+Comprar café                               « o arquivo está intacto</pre>
+
+<p>Qualquer resposta que não comece com <kbd>s</kbd> ou <kbd>S</kbd> vale como "não". Repare que, quando você diz não, o código de saída é <code>1</code>: para o <code>cp</code>, a cópia não aconteceu.</p>
+
+<h3><code>-n</code>: nunca sobrescrever</h3>
+<p>O <code>-n</code> (de <em>no-clobber</em>, "não atropelar") simplesmente pula os destinos que existem, sem perguntar e sem avisar. É o ideal em scripts:</p>
+
+<pre class="term">$ cp -n frutas.txt notas.txt
+$ echo $?
+0                                          « no coreutils 9.12: sucesso, mesmo pulando
+$ head -1 notas.txt
+Comprar café                               « não foi tocado</pre>
+
+<p>Nem com <code>-v</code> o <code>-n</code> avisa que pulou. Se o destino não existir, ele copia normalmente.</p>
+
+<h3><code>-u</code>: só se a origem for mais nova</h3>
+<p>O <code>-u</code> (de <em>update</em>, "atualizar") copia só quando a origem é <strong>mais recente</strong> que o destino (ou quando o destino não existe). É como atualizar uma pasta de backup copiando só o que mudou:</p>
+
+<pre class="term">$ mkdir backup
+$ cp -uv Documentos/*.txt Documentos/*.csv backup/
+'Documentos/notas.txt' -&gt; 'backup/notas.txt'
+'Documentos/alunos.csv' -&gt; 'backup/alunos.csv'
+$ echo "Pagar a internet" &gt;&gt; Documentos/notas.txt     « só a notas.txt muda
+$ cp -uv Documentos/*.txt Documentos/*.csv backup/
+'Documentos/notas.txt' -&gt; 'backup/notas.txt'        « o alunos.csv nem aparece: não mudou</pre>
+
+<p>Na primeira vez, nada existia em <code>backup/</code>, então tudo foi copiado. Na segunda, só a <code>notas.txt</code>, a única que ficou mais nova que a cópia. (O <code>&gt;&gt;</code> acrescenta uma linha no fim do arquivo; veja <a href="redirecionamento.html">Redirecionamento</a>.)</p>
+
+<h3><code>-b</code>: sobrescrever, mas guardar o antigo</h3>
+<p>O <code>-b</code> (de <em>backup</em>) sobrescreve, mas antes renomeia o destino antigo com um <code>~</code> no fim:</p>
+
+<pre class="term">$ cp -bv frutas.txt notas.txt
+'frutas.txt' -&gt; 'notas.txt' (cópia de segurança: 'notas.txt~')
+$ ls notas*
+notas.txt  notas.txt~                      « notas.txt~ é a versão antiga</pre>
+
+<p>Com <code>--backup=numbered</code>, cada sobrescrita guarda uma versão numerada, sem apagar a anterior:</p>
+
+<pre class="term">$ cp -v --backup=numbered frutas.txt notas.txt
+'frutas.txt' -&gt; 'notas.txt' (cópia de segurança: 'notas.txt.~1~')
+$ cp -v --backup=numbered frutas.txt notas.txt
+'frutas.txt' -&gt; 'notas.txt' (cópia de segurança: 'notas.txt.~2~')
+$ ls notas*
+notas.txt  notas.txt~  notas.txt.~1~  notas.txt.~2~</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Se o destino existe…</th><th>Quando usar</th></tr>
+<tr><td>(nenhuma)</td><td>Sobrescreve em silêncio</td><td>Quando você tem certeza</td></tr>
+<tr><td><code>-i</code></td><td>Pergunta</td><td>Digitando à mão, com arquivos importantes</td></tr>
+<tr><td><code>-n</code></td><td>Pula, em silêncio</td><td>Scripts; "copie só o que falta"</td></tr>
+<tr><td><code>-u</code></td><td>Sobrescreve só se a origem for mais nova</td><td>Atualizar uma cópia de backup</td></tr>
+<tr><td><code>-b</code></td><td>Sobrescreve e guarda o antigo como <code>arquivo~</code></td><td>Quando você quer as duas versões</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Fazer o cp sempre perguntar</strong>
+<p>O Arch não cria apelidos para o <code>cp</code> (o <code>~/.bashrc</code> dele só tem os de <code>ls</code> e <code>grep</code>). Se você quiser que o <code>cp</code> sempre pergunte, acrescente <code>alias cp='cp -i'</code> ao seu <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>).</p>
+</div>
+
+<div class="try" data-goal="ran:cp\s+(.*\s)?-[a-zA-Z]*n,contains:~/Documentos/notas.txt=João,file:~/Documentos/frutas.txt" data-solucao="cp -n frutas.txt Documentos/notas.txt;;cp -n frutas.txt Documentos/;;head -1 Documentos/notas.txt">
+<p class="try-task"><strong>Missão:</strong> você quer levar o <code>frutas.txt</code> para <code>Documentos</code>, mas sem nunca estragar o que já existe lá. Rode <code>cp</code> com a opção que <strong>nunca sobrescreve</strong>, primeiro por cima de <code>Documentos/notas.txt</code> (confira com <code>head -1</code> que as anotações continuam lá) e depois para a pasta <code>Documentos/</code> (aí a cópia acontece, porque ainda não existia).</p>
+</div>
+
+<hr>
+
+<h2>7. Preservar data, permissões e dono: <code>-p</code> e <code>-a</code></h2>
+<p>Você viu na seção 1 que a cópia nasce com a data de agora e com permissões filtradas pela umask. Às vezes você quer uma cópia <strong>idêntica</strong>, por exemplo num backup, para saber quando o arquivo foi realmente modificado.</p>
+
+<dl class="anatomy">
+  <dt>-p</dt><dd><em>Preserve</em>: mantém data de modificação, permissões e (se você puder) dono e grupo.</dd>
+  <dt>-a</dt><dd><em>Archive</em>: é o <code>-r</code> + <code>-p</code> + manter links simbólicos como links. O mais indicado para copiar pastas como backup.</dd>
+</dl>
+
+<h3>Arquivo: sem e com <code>-p</code></h3>
+<pre class="term">$ cp Documentos/notas.txt n1.txt
+$ cp -p Documentos/notas.txt n2.txt
+$ ls -l Documentos/notas.txt n1.txt n2.txt
+-rw-rw-r-- 1 ana ana 69 14 out 17:40 Documentos/notas.txt     « o original
+-rw-r--r-- 1 ana ana 69 16 out 14:56 n1.txt                   « sem -p: data de agora, rw-r--r--
+-rw-rw-r-- 1 ana ana 69 14 out 17:40 n2.txt                   « com -p: igual ao original</pre>
+
+<h3>Pasta: <code>-r</code> × <code>-a</code></h3>
+<pre class="term">$ cp -r Documentos/projetos p-r
+$ cp -a Documentos/projetos p-a
+$ ls -l Documentos/projetos p-r p-a
+Documentos/projetos:
+total 8
+-rwxrwxr-x 1 ana ana   45 15 out 09:15 backup.sh
+drwxrwxr-x 2 ana ana 4096 12 out 08:03 site
+
+p-a:                                                   « -a: tudo igual ao original
+total 8
+-rwxrwxr-x 1 ana ana   45 15 out 09:15 backup.sh
+drwxrwxr-x 2 ana ana 4096 12 out 08:03 site
+
+p-r:                                                   « -r: datas de agora, permissões filtradas
+total 8
+-rwxr-xr-x 1 ana ana   45 16 out 14:56 backup.sh
+drwxr-xr-x 2 ana ana 4096 16 out 14:56 site</pre>
+
+<h3>E o dono?</h3>
+<p>Mudar o dono de um arquivo para outra pessoa é coisa do <strong>root</strong>. Quando a <code>ana</code> copia um arquivo do root com <code>-p</code>, a data é mantida, mas o dono vira ela, sem nenhum aviso:</p>
+
+<pre class="term">$ cp -p /etc/pacman.conf pacman2.conf
+$ ls -l /etc/pacman.conf pacman2.conf
+-rw-r--r-- 1 root root 2928 15 out 05:27 /etc/pacman.conf
+-rw-r--r-- 1 ana  ana  2928 15 out 05:27 pacman2.conf     « data mantida, dono não</pre>
+
+<p>Para preservar também o dono (por exemplo, ao copiar arquivos de sistema para um backup), o <code>cp -a</code> precisa ser feito como root: <code>sudo cp -a /etc/pacman.conf /root/</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+
+<div class="try" data-goal="file:~/notas-original.txt,ran:cp\s+(.*\s)?-[a-zA-Z]*[pa]" data-solucao="cp -p Documentos/notas.txt notas-original.txt;;ls -l Documentos/notas.txt notas-original.txt">
+<p class="try-task"><strong>Missão:</strong> faça uma cópia de <code>Documentos/notas.txt</code> chamada <code>notas-original.txt</code> na pasta pessoal, <strong>mantendo a data original</strong>. Confira com <code>ls -l</code> que as duas datas são iguais.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de copiar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Forma</th><th>Quando usar</th></tr>
+<tr><td>Cópia ao lado, com outro nome</td><td><code>cp arq arq.bak</code></td><td>Antes de editar um arquivo importante</td></tr>
+<tr><td>Vários para uma pasta</td><td><code>cp a b c pasta/</code></td><td>Poucos arquivos com nomes diferentes</td></tr>
+<tr><td>Vários por padrão</td><td><code>cp *.txt pasta/</code></td><td>Muitos arquivos parecidos</td></tr>
+<tr><td>Destino primeiro</td><td><code>cp -t pasta/ a b c</code></td><td>Junto com <code>xargs</code> e <code>find</code></td></tr>
+<tr><td>Pasta inteira</td><td><code>cp -r origem destino</code></td><td>Uma cópia de trabalho</td></tr>
+<tr><td>Pasta preservando tudo</td><td><code>cp -a origem destino</code></td><td>Backups simples</td></tr>
+<tr><td>Só o que mudou</td><td><code>cp -u</code> ou <code>rsync -a</code></td><td>Atualizar um backup (o <code>rsync</code> é melhor para isso; veja <a href="scp-rsync.html">scp e rsync</a>)</td></tr>
+<tr><td>Para outro computador</td><td><code>scp</code> ou <code>rsync</code></td><td>Pela rede (<a href="scp-rsync.html">scp e rsync</a>)</td></tr>
+<tr><td>No desktop</td><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> no gerenciador de arquivos</td><td>Quando você está no ambiente gráfico (<a href="desktop.html">Instalar um Desktop</a>)</td></tr>
+</table>
+</div>
+
+<h3>Qual usar?</h3>
+<ul>
+  <li>Um arquivo, uma vez: <code>cp</code> simples (com <code>-v</code> enquanto aprende).</li>
+  <li>Arquivo importante no destino: <code>-i</code> à mão, <code>-n</code> em script, <code>-b</code> se quiser guardar os dois.</li>
+  <li>Pasta: <code>-r</code> para trabalhar na cópia; <code>-a</code> para backup.</li>
+  <li>Backup que você vai atualizar sempre: aprenda o <code>rsync</code>.</li>
+</ul>
+
+<hr>
+
+<h2 id="erros">Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"-r não especificado; omitindo o diretório"</strong>
+<pre class="term">$ cp Documentos/projetos copia
+cp: -r não especificado; omitindo o diretório 'Documentos/projetos'</pre>
+<p><strong>O que aconteceu:</strong> a origem é uma pasta e você não pediu cópia recursiva.</p>
+<p><strong>Como resolver:</strong> <code>cp -r Documentos/projetos copia</code> (ou <code>-a</code> para preservar datas e permissões).</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível obter estado de"</strong>
+<pre class="term">$ cp nada x
+cp: não foi possível obter estado de 'nada': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> a origem não existe. "Obter estado" (<em>stat</em>) é a primeira coisa que o <code>cp</code> faz: ler as informações do arquivo.</p>
+<p><strong>Como confirmar:</strong> <code>ls nada</code> dá o mesmo erro.</p>
+<p><strong>Como resolver:</strong> confira o nome e a pasta; use <kbd>Tab</kbd> para completar nomes e evitar erros de digitação.</p>
+</div>
+
+<div class="cenario">
+<strong>"alvo …: Arquivo ou diretório inexistente" / "Não é um diretório"</strong>
+<pre class="term">$ cp frutas.txt notas.txt nao-existe
+cp: alvo 'nao-existe': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> com mais de uma origem, o último argumento precisa ser uma pasta que existe.</p>
+<p><strong>Como resolver:</strong> crie a pasta antes (<code>mkdir nao-existe</code>) ou corrija o nome.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível criar arquivo comum 'Doc/': Não é um diretório"</strong>
+<pre class="term">$ cp frutas.txt Doc/
+cp: não foi possível criar arquivo comum 'Doc/': Não é um diretório
+$ cp frutas.txt Doc
+$ ls -l Doc
+-rw-r--r-- 1 ana ana 47 16 out 14:56 Doc          « virou um arquivo chamado Doc!</pre>
+<p><strong>O que aconteceu:</strong> a pasta <code>Doc</code> não existe (você queria <code>Documentos</code>). Com a barra, o <code>cp</code> entendeu que devia ser uma pasta e parou. Sem a barra, ele criou um <strong>arquivo</strong> chamado <code>Doc</code>.</p>
+<p><strong>Como resolver:</strong> apague o arquivo errado (<code>rm Doc</code>, veja <a href="remover.html">rm e rmdir</a>) e copie de novo com o nome certo. Use sempre a barra no fim quando o destino for uma pasta.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term">$ cp frutas.txt /etc/
+cp: não foi possível criar arquivo comum '/etc/frutas.txt': Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> para criar um arquivo numa pasta, você precisa de permissão de escrita <strong>nela</strong>, e o <code>/etc</code> é do root.</p>
+<p><strong>Como resolver:</strong> primeiro pense se o destino está certo. Se estiver, copie como root: <code>sudo cp frutas.txt /etc/</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a> e <a href="permissoes.html">Entendendo Permissões</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"são o mesmo arquivo"</strong>
+<pre class="term">$ cp frutas.txt ./frutas.txt
+cp: 'frutas.txt' e './frutas.txt' são o mesmo arquivo</pre>
+<p><strong>O que aconteceu:</strong> origem e destino apontam para o mesmo lugar (o <code>./</code> é só "aqui").</p>
+<p><strong>Como resolver:</strong> dê outro nome ou outra pasta ao destino.</p>
+</div>
+
+<div class="cenario">
+<strong>Copiar uma pasta para dentro dela mesma</strong>
+<pre class="term">$ cp -r Documentos Documentos/sub
+cp: não é possível copiar um diretório, 'Documentos', para si próprio, 'Documentos/sub'</pre>
+<p><strong>O que aconteceu:</strong> o destino fica dentro da origem; a cópia nunca terminaria.</p>
+<p><strong>Como resolver:</strong> escolha um destino fora da pasta, como <code>cp -r Documentos Documentos-copia</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"falta o operando"</strong>
+<pre class="term">$ cp Documentos/projetos
+cp: falta o operando arquivo de destino após 'Documentos/projetos'
+Tente "cp --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> o <code>cp</code> precisa de pelo menos dois nomes, origem e destino.</p>
+<p><strong>Como resolver:</strong> diga para onde copiar; para "aqui", use <code>.</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sobrescrevi um arquivo sem querer</strong>
+<p><strong>O que aconteceu:</strong> o destino já existia e o <code>cp</code> trocou o conteúdo, sem perguntar.</p>
+<p><strong>Como resolver:</strong> pelo terminal não há como desfazer. Recupere de um backup ou de um snapshot, se você tiver (veja <a href="snapshots.html">Snapshots (snapper)</a>). Para a próxima vez, use <code>-i</code>, <code>-n</code> ou <code>-b</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Nome longo</th><th>Descrição</th></tr>
+<tr><td><code>-r</code>, <code>-R</code></td><td><code>--recursive</code></td><td>Copia pastas e tudo o que há dentro</td></tr>
+<tr><td><code>-a</code></td><td><code>--archive</code></td><td>Como <code>-r</code>, preservando datas, permissões, dono e links</td></tr>
+<tr><td><code>-p</code></td><td><code>--preserve=mode,ownership,timestamps</code></td><td>Preserva permissões, dono (se puder) e datas</td></tr>
+<tr><td><code>-v</code></td><td><code>--verbose</code></td><td>Mostra cada cópia (<code>'a' -&gt; 'b'</code>)</td></tr>
+<tr><td><code>-i</code></td><td><code>--interactive</code></td><td>Pergunta antes de sobrescrever</td></tr>
+<tr><td><code>-n</code></td><td><code>--no-clobber</code></td><td>Nunca sobrescreve (pula em silêncio)</td></tr>
+<tr><td><code>-u</code></td><td><code>--update</code></td><td>Só copia se a origem for mais nova que o destino</td></tr>
+<tr><td><code>-b</code></td><td><code>--backup</code></td><td>Guarda o destino antigo como <code>arquivo~</code></td></tr>
+<tr><td></td><td><code>--backup=numbered</code></td><td>Guarda versões numeradas (<code>arquivo.~1~</code>, <code>.~2~</code>…)</td></tr>
+<tr><td><code>-t PASTA</code></td><td><code>--target-directory=PASTA</code></td><td>Informa o destino antes das origens</td></tr>
+<tr><td><code>-l</code></td><td><code>--link</code></td><td>Cria links físicos em vez de copiar (veja <a href="links.html">Links</a>)</td></tr>
+<tr><td><code>-s</code></td><td><code>--symbolic-link</code></td><td>Cria links simbólicos em vez de copiar</td></tr>
+</table>
+</div>
+
+<p>A lista completa está em <code>cp --help</code> e em <code>man cp</code> (veja <a href="ajuda.html">Obtendo Ajuda</a>).</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Copiar uma pasta</h3>
+<p>Complete para copiar a pasta <code>fotos</code> para <code>fotos-backup</code>:</p>
+<div class="ex-code">cp <input data-answer="-r|-R|-a|-rv|-av|-Rv" aria-label="opção"> fotos fotos-backup</div>
+</div>
+
+<div class="exercise">
+<h3>2. Trazer para cá</h3>
+<p>Complete para copiar <code>/etc/hostname</code> para a pasta atual:</p>
+<div class="ex-code">cp /etc/hostname <input data-answer=".|./" aria-label="destino"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem estragar o que existe</h3>
+<p>Complete com a opção que <strong>pergunta</strong> antes de sobrescrever:</p>
+<div class="ex-code">cp <input data-answer="-i|--interactive" aria-label="opção"> relatorio.odt Documentos/</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. <code>notas.txt</code> já existe. O que acontece com <code>cp frutas.txt notas.txt</code>?</p>
+<label><input type="radio" name="q4"> O cp pergunta se pode sobrescrever.</label>
+<label><input type="radio" name="q4"> Aparece um erro, porque o destino existe.</label>
+<label><input type="radio" name="q4"> O conteúdo de notas.txt é trocado pelo de frutas.txt, sem aviso.</label>
+<label><input type="radio" name="q4"> É criado notas.txt.1.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. A pasta <code>copia</code> já existe. Onde vai parar <code>cp -r projetos copia</code>?</p>
+<label><input type="radio" name="q5"> O conteúdo de <code>copia</code> é trocado pelo de <code>projetos</code>.</label>
+<label><input type="radio" name="q5"> Em <code>copia/projetos</code>.</label>
+<label><input type="radio" name="q5"> Dá erro: "Arquivo existe".</label>
+<label><input type="radio" name="q5"> Em <code>projetos/copia</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Você copiou um arquivo e o <code>ls -l</code> mostra a data de hoje na cópia. Que opção manteria a data original?</p>
+<label><input type="radio" name="q6"> <code>-p</code></label>
+<label><input type="radio" name="q6"> <code>-v</code></label>
+<label><input type="radio" name="q6"> <code>-u</code></label>
+<label><input type="radio" name="q6"> <code>-n</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>cp ORIGEM DESTINO</code>: primeiro o que copiar, depois para onde.</li>
+  <li>Destino pasta → a cópia vai para dentro; destino nome novo → cria; destino arquivo existente → <strong>sobrescreve sem perguntar</strong>.</li>
+  <li><code>.</code> é a pasta atual; com várias origens, o último argumento é uma pasta.</li>
+  <li>Pastas precisam de <code>-r</code> (ou <code>-a</code>); se o destino já existe, a cópia vai para dentro dele.</li>
+  <li>Proteção: <code>-i</code> pergunta, <code>-n</code> pula, <code>-u</code> só o mais novo, <code>-b</code> guarda o antigo.</li>
+  <li>A cópia é sua e tem a data de agora; <code>-p</code>/<code>-a</code> preservam data e permissões.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>) apresenta o <code>cp</code> e os outros comandos básicos do pacote <code>coreutils</code>, com alternativas modernas. Para cópias de backup que se atualizam, veja <a href="https://wiki.archlinux.org/title/Rsync">rsync</a> e a lista de <a href="https://wiki.archlinux.org/title/Synchronization_and_backup_programs">Synchronization and backup programs</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

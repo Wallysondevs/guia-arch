@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch mv — mover e renomear arquivos e pastas | Guia Arch</title>
+<meta name="description" content="Aprenda o mv no Arch Linux: por que mover e renomear são o mesmo comando, mover vários arquivos e pastas (sem -r), as opções -i, -n, -u, -b e -v, nomes com espaço, renomear em lote com for e com o rename do util-linux, e as mensagens reais do coreutils 9.12.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">mv</span></h1>
+
+<p class="intro">O <code>mv</code> muda um arquivo ou uma pasta de lugar, ou muda o nome dele. Para o Linux, essas duas coisas são a mesma: trocar o <strong>endereço</strong> do arquivo. Diferente do <code>cp</code>, depois do <code>mv</code> o original não fica para trás.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que mover e renomear são um comando só, e como o <code>mv</code> decide o que fazer.</li>
+  <li>Mover um arquivo, vários arquivos e pastas inteiras (sem <code>-r</code>).</li>
+  <li>Não sobrescrever nada sem querer: <code>-i</code>, <code>-n</code>, <code>-u</code> e <code>-b</code>.</li>
+  <li>Renomear nomes com espaço, mudar maiúsculas e renomear muitos arquivos de uma vez.</li>
+  <li>Ler as mensagens de erro reais do Arch (uma delas ainda está em inglês).</li>
+</ul>
+</div>
+
+<p>Os exemplos foram feitos num Arch Linux real (coreutils 9.12), com a usuária <strong>ana</strong> na pasta pessoal dela. Se ainda não viu, leia antes <a href="copiar.html">Copiar (cp)</a>: o <code>mv</code> usa a mesma ideia de <strong>origem</strong> e <strong>destino</strong>.</p>
+
+<div class="warning">
+<strong>O mv também sobrescreve sem perguntar</strong>
+<p>Se já existir um arquivo com o nome de destino, ele é <strong>substituído</strong>, e o conteúdo antigo se perde. Não há lixeira nem "desfazer". A seção 5 mostra como se proteger.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: mudar o endereço</h2>
+<p>Todo arquivo tem um endereço completo: a pasta onde está + o nome. A <code>frutas.txt</code> da Ana mora em <code>/home/ana/frutas.txt</code>. O <code>mv</code> (de <em>move</em>, "mover") troca esse endereço. Se você troca só o nome, chamamos de <strong>renomear</strong>; se troca a pasta, de <strong>mover</strong>; e dá para trocar os dois de uma vez.</p>
+
+<pre class="cmd">mv [opções] ORIGEM DESTINO</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Endereço antes</th><th>Endereço depois</th><th>Pasta mudou?</th><th>Nome mudou?</th><th>Chamamos de</th></tr>
+<tr><td><code>mv lista.txt compras.txt</code></td><td><code>~/lista.txt</code></td><td><code>~/compras.txt</code></td><td>não</td><td>sim</td><td><strong>renomear</strong></td></tr>
+<tr><td><code>mv compras.txt Documentos/</code></td><td><code>~/compras.txt</code></td><td><code>~/Documentos/compras.txt</code></td><td>sim</td><td>não</td><td><strong>mover</strong></td></tr>
+<tr><td><code>mv compras.txt Documentos/mercado.txt</code></td><td><code>~/compras.txt</code></td><td><code>~/Documentos/mercado.txt</code></td><td>sim</td><td>sim</td><td><strong>mover e renomear</strong></td></tr>
+</table>
+</div>
+
+<p>Em forma de desenho, a mesma pasta antes e depois de <code>mv compras.txt Documentos/mercado.txt</code>:</p>
+
+<pre class="file" data-file="antes → depois">ANTES                              DEPOIS
+/home/ana                          /home/ana
+├── compras.txt   ───────┐         ├── Documentos
+└── Documentos           │         │   ├── mercado.txt   ◄── o mesmo arquivo,
+    └── notas.txt        └───────► │   └── notas.txt         com outro endereço
+                                   └── (compras.txt não existe mais aqui)</pre>
+
+<p>Assim como no <code>cp</code>, o que decide o comportamento é o <strong>destino</strong>: se é uma pasta que existe, o arquivo vai para dentro dela com o mesmo nome; se não é, ele vira o nome novo.</p>
+
+<hr>
+
+<h2>1. Renomear</h2>
+
+<dl class="anatomy">
+  <dt>mv</dt><dd>O programa que move.</dd>
+  <dt>rascunho.txt</dt><dd>A origem: o nome atual.</dd>
+  <dt>lista.txt</dt><dd>O destino: o nome novo, na mesma pasta.</dd>
+</dl>
+
+<pre class="term">$ cp frutas.txt rascunho.txt                « um arquivo para treinar
+$ mv rascunho.txt lista.txt
+$ echo $?
+0                                          « 0 = deu certo
+$ ls
+'Área de trabalho'   Documentos   frutas.txt   lista.txt   Música    Vídeos
+ aur                 Downloads    Imagens      Modelos     Público</pre>
+
+<p>Silêncio é sucesso. O <code>rascunho.txt</code> sumiu da lista e apareceu o <code>lista.txt</code>: é o mesmo arquivo, com o mesmo conteúdo, só com outro nome.</p>
+
+<h3>Ver o que foi feito: <code>-v</code></h3>
+<p>Com <code>-v</code> (<em>verbose</em>, "detalhado"), o <code>mv</code> conta o que fez:</p>
+
+<pre class="term">$ mv -v lista.txt compras.txt
+renomeado 'lista.txt' -&gt; 'compras.txt'</pre>
+
+<div class="try" data-goal="file:~/lista-frutas.txt,absent:~/frutas.txt" data-solucao="mv -v frutas.txt lista-frutas.txt;;ls">
+<p class="try-task"><strong>Missão:</strong> renomeie o <code>frutas.txt</code> para <code>lista-frutas.txt</code>, com <code>-v</code>, e confira com <code>ls</code>.</p>
+</div>
+
+<hr>
+
+<h2>2. Mover para outra pasta</h2>
+<p>Quando o destino é uma pasta que existe, o arquivo vai para dentro dela, mantendo o nome:</p>
+
+<pre class="term">$ mv -v compras.txt Documentos/
+renomeado 'compras.txt' -&gt; 'Documentos/compras.txt'
+$ ls Documentos
+acesso.log  alunos.csv  compras.txt  notas.txt  projetos  relatorio.odt</pre>
+
+<p>Repare que o Arch diz <strong>"renomeado"</strong> mesmo quando você moveu de pasta. Não é erro: para o sistema, mover dentro do mesmo disco é só trocar o endereço, exatamente como renomear.</p>
+
+<h3>Trazer de volta para a pasta atual</h3>
+<p>O destino <code>.</code> (ponto) quer dizer "a pasta onde estou":</p>
+
+<pre class="term">$ mv -v Documentos/compras.txt .
+renomeado 'Documentos/compras.txt' -&gt; './compras.txt'</pre>
+
+<h3>Mover e renomear de uma vez</h3>
+<pre class="term">$ mv -v compras.txt Documentos/mercado.txt
+renomeado 'compras.txt' -&gt; 'Documentos/mercado.txt'</pre>
+
+<h3>Para a pasta pessoal: <code>~</code></h3>
+<p>O <code>~</code> (til) é um atalho para a sua pasta pessoal. O shell troca o <code>~</code> pelo caminho completo antes de o <code>mv</code> rodar, e por isso a mensagem mostra <code>/home/ana</code>:</p>
+
+<pre class="term" data-cwd="~">$ mv -v Documentos/mercado.txt ~/
+renomeado 'Documentos/mercado.txt' -&gt; '/home/ana/mercado.txt'</pre>
+
+<div class="try" data-goal="file:~/Documentos/compras.txt,absent:~/frutas.txt" data-solucao="mv -v frutas.txt Documentos/compras.txt">
+<p class="try-task"><strong>Missão:</strong> com <strong>um único</strong> <code>mv</code>, leve o <code>frutas.txt</code> para a pasta <code>Documentos</code>, já com o nome novo <code>compras.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Várias coisas de uma vez</h2>
+<p>Como no <code>cp</code>: com várias origens, <strong>o último argumento é o destino e tem que ser uma pasta</strong>.</p>
+
+<dl class="anatomy">
+  <dt>mv -v</dt><dd>O programa, contando cada passo.</dd>
+  <dt>Documentos/alunos.csv Documentos/acesso.log</dt><dd>As origens.</dd>
+  <dt>arquivo-morto/</dt><dd>O destino: a pasta, sempre por último.</dd>
+</dl>
+
+<pre class="term">$ mkdir arquivo-morto
+$ mv -v Documentos/alunos.csv Documentos/acesso.log arquivo-morto/
+renomeado 'Documentos/alunos.csv' -&gt; 'arquivo-morto/alunos.csv'
+renomeado 'Documentos/acesso.log' -&gt; 'arquivo-morto/acesso.log'</pre>
+
+<p>Curingas também funcionam: <code>mv *.log arquivo-morto/</code> leva todos os arquivos terminados em <code>.log</code> (veja <a href="curingas.html">Curingas</a>). E o <code>-t PASTA</code> deixa escrever o destino primeiro: <code>mv -t arquivo-morto/ a.txt b.txt</code>.</p>
+
+<hr>
+
+<h2>4. Pastas: sem <code>-r</code></h2>
+<p>Aqui o <code>mv</code> é diferente do <code>cp</code>: ele move pastas inteiras <strong>sem opção nenhuma</strong>. Afinal, ele não copia o conteúdo; só troca o endereço da pasta, e tudo o que está dentro vai junto.</p>
+
+<pre class="term">$ mv -v Documentos/projetos arquivo-morto/
+renomeado 'Documentos/projetos' -&gt; 'arquivo-morto/projetos'
+$ ls arquivo-morto
+acesso.log  alunos.csv  projetos
+$ mv -v arquivo-morto/projetos Documentos/          « e de volta
+renomeado 'arquivo-morto/projetos' -&gt; 'Documentos/projetos'
+$ ls -ld Documentos/projetos
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 Documentos/projetos     « a data não mudou</pre>
+
+<p>Outra diferença em relação ao <code>cp</code>: o arquivo movido <strong>mantém</strong> a data, as permissões e o dono, porque continua sendo o mesmo arquivo.</p>
+
+<h3>Quando o mv precisa copiar: outra partição</h3>
+<p>Trocar só o endereço funciona dentro de um mesmo <strong>sistema de arquivos</strong> (uma partição). Para levar um arquivo para outro disco, o <code>mv</code> precisa copiar os dados e depois apagar o original. No Arch dá para ver isso sem pendrive nenhum: a pasta <code>/tmp</code> é um <strong>tmpfs</strong>, um sistema de arquivos que fica na memória RAM, separado do disco:</p>
+
+<pre class="term">$ findmnt -n /tmp
+/tmp tmpfs tmpfs rw,nosuid,nodev,nr_inodes=1048576,inode64,huge=advise,usrquota
+$ mv -v mercado.txt /tmp/
+copiado 'mercado.txt' -&gt; '/tmp/mercado.txt'           « 1º: copia para o tmpfs
+removido 'mercado.txt'                                 « 2º: apaga o original
+$ mv -v /tmp/mercado.txt .
+copiado '/tmp/mercado.txt' -&gt; './mercado.txt'
+removido '/tmp/mercado.txt'</pre>
+
+<p>Para você, o resultado é o mesmo. A diferença é o tempo: mover 10 GB dentro do mesmo disco é instantâneo; para outro disco, demora o tempo de copiar 10 GB. Lembre também que o <code>/tmp</code> do Arch é apagado a cada reinício, por estar na memória.</p>
+
+<div class="try" data-goal="dir:~/arquivo-morto/projetos,absent:~/Documentos/projetos,file:~/arquivo-morto/projetos/site/index.html" data-solucao="mkdir arquivo-morto;;mv -v Documentos/projetos arquivo-morto/;;ls arquivo-morto">
+<p class="try-task"><strong>Missão:</strong> crie a pasta <code>arquivo-morto</code> e mova para dentro dela a pasta <code>Documentos/projetos</code> inteira (lembre: o <code>mv</code> não precisa de <code>-r</code>).</p>
+</div>
+
+<hr>
+
+<h2>5. Quando o destino já existe</h2>
+<p>Veja o que acontece quando o nome de destino já está em uso. O <code>a.txt</code> tem as frutas e o <code>b.txt</code>, as anotações da Ana:</p>
+
+<pre class="term">$ cp frutas.txt a.txt
+$ cp Documentos/notas.txt b.txt
+$ mv a.txt b.txt                           « nenhuma pergunta
+$ ls a.txt b.txt
+ls: não foi possível acessar 'a.txt': Arquivo ou diretório inexistente
+b.txt
+$ head -1 b.txt
+banana                                     « as anotações sumiram</pre>
+
+<p>O <code>a.txt</code> virou o <code>b.txt</code>, e o <code>b.txt</code> antigo foi substituído. As mesmas opções do <code>cp</code> protegem você:</p>
+
+<h3><code>-i</code>: perguntar</h3>
+<pre class="term">$ cp frutas.txt a.txt
+$ cp Documentos/notas.txt b.txt
+$ mv -i a.txt b.txt
+mv: sobrescrever 'b.txt'? n                « n e Enter: não mexe em nada
+$ echo $?
+1
+$ ls a.txt b.txt
+a.txt  b.txt                               « os dois continuam lá</pre>
+
+<h3><code>-n</code>: nunca sobrescrever</h3>
+<pre class="term">$ mv -n a.txt b.txt
+$ echo $?
+0                                          « nenhum aviso, código 0
+$ ls a.txt b.txt
+a.txt  b.txt                               « nada mudou</pre>
+
+<h3><code>-b</code>: guardar o antigo</h3>
+<pre class="term">$ mv -bv a.txt b.txt
+renomeado 'a.txt' -&gt; 'b.txt' (cópia de segurança: 'b.txt~')
+$ ls b.txt*
+b.txt  b.txt~                              « b.txt~ = as anotações antigas</pre>
+
+<h3><code>-u</code>: só se a origem for mais nova</h3>
+<pre class="term">$ cp Documentos/notas.txt c.txt            « c.txt nasce agora: é mais novo
+$ mv -uv frutas.txt c.txt                  « frutas.txt é de 14 out: mais velho
+$ echo $?
+0                                          « não moveu e não avisou</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Se o destino existe…</th><th>Quando usar</th></tr>
+<tr><td>(nenhuma)</td><td>Substitui em silêncio</td><td>Quando você tem certeza</td></tr>
+<tr><td><code>-i</code></td><td>Pergunta</td><td>Digitando à mão</td></tr>
+<tr><td><code>-n</code></td><td>Não mexe, em silêncio</td><td>Scripts</td></tr>
+<tr><td><code>-u</code></td><td>Substitui só se a origem for mais nova</td><td>Juntar duas pastas mantendo o mais recente</td></tr>
+<tr><td><code>-b</code></td><td>Substitui e guarda o antigo como <code>nome~</code></td><td>Quando você quer as duas versões</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Fazer o mv sempre perguntar</strong>
+<p>Coloque <code>alias mv='mv -i'</code> no seu <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>). O <code>.bashrc</code> padrão do Arch não traz esse apelido.</p>
+</div>
+
+<hr>
+
+<h2>6. Nomes com espaço e maiúsculas</h2>
+<p>O shell separa os argumentos pelos espaços. Para ele, <code>lista de compras.txt</code> são <strong>três</strong> nomes: <code>lista</code>, <code>de</code> e <code>compras.txt</code>. Veja o que acontece:</p>
+
+<pre class="term">$ touch 'lista de compras.txt'
+$ mv lista de compras.txt lista.txt
+mv: alvo 'lista.txt': Arquivo ou diretório inexistente</pre>
+
+<p>O <code>mv</code> recebeu quatro argumentos, achou que eram três origens e um destino, e reclamou que o destino <code>lista.txt</code> não é uma pasta. As três formas de dizer "isto é um nome só":</p>
+
+<pre class="term">$ mv 'lista de compras.txt' lista-de-compras.txt       « aspas simples
+$ mv lista-de-compras.txt "Lista de Compras.txt"       « aspas duplas
+$ mv Lista\ de\ Compras.txt lista.txt                  « barra invertida antes de cada espaço
+$ ls lista*
+lista.txt</pre>
+
+<div class="tip">
+<strong>Deixe o Tab escrever para você</strong>
+<p>Digite <code>mv lis</code> e aperte <kbd>Tab</kbd>: o Bash completa o nome já com as barras invertidas certas. É o jeito mais seguro de lidar com espaços e acentos (veja <a href="caminhos.html">Caminhos</a>).</p>
+</div>
+
+<h3>Só mudar maiúsculas e minúsculas</h3>
+<p>No Linux, <code>FOTO.JPG</code> e <code>foto.jpg</code> são nomes diferentes. Para trocar só a caixa das letras, é um <code>mv</code> normal:</p>
+
+<pre class="term">$ mv -v FOTO.JPG foto.jpg
+renomeado 'FOTO.JPG' -&gt; 'foto.jpg'</pre>
+
+<div class="try" data-setup="touch 'lista de compras.txt'" data-goal="file:~/lista-de-compras.txt,absent:~/lista de compras.txt" data-solucao="mv -v 'lista de compras.txt' lista-de-compras.txt">
+<p class="try-task"><strong>Missão:</strong> existe na pasta pessoal um arquivo chamado <code>lista de compras.txt</code>, com espaços. Renomeie para <code>lista-de-compras.txt</code>, com hifens. Primeiro tente sem aspas para ver o erro; depois resolva.</p>
+</div>
+
+<hr>
+
+<h2>7. Renomear muitos arquivos de uma vez</h2>
+<p>O <code>mv</code> renomeia <strong>um</strong> arquivo por vez. Um comando como <code>mv *.JPG *.jpg</code> <strong>não</strong> funciona: o shell troca os curingas pelos nomes que existem, e o <code>mv</code> recebe uma lista de origens sem uma pasta no fim. Para renomear em lote, há duas formas no Arch.</p>
+
+<h3>Forma 1: um laço <code>for</code> (funciona em qualquer Linux)</h3>
+<p>Um laço repete o <code>mv</code> para cada arquivo. Os laços têm aula própria (<a href="script-lacos.html">Laços</a>); aqui basta entender as partes:</p>
+
+<dl class="anatomy">
+  <dt>for f in *.JPG</dt><dd>Para cada arquivo terminado em <code>.JPG</code>, guarde o nome na variável <code>f</code>…</dd>
+  <dt>do mv -v -- "$f" "${f%.JPG}.jpg"</dt><dd>…renomeie. <code>${f%.JPG}</code> é o nome sem o <code>.JPG</code> do fim; depois cola <code>.jpg</code>. As aspas protegem nomes com espaço, e o <code>--</code> protege nomes que começam com hífen.</dd>
+  <dt>done</dt><dd>Fim do laço.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/fotos">$ ls
+IMG_001.JPG  IMG_002.JPG  IMG_003.JPG
+$ for f in *.JPG; do mv -v -- "$f" "${f%.JPG}.jpg"; done
+renomeado 'IMG_001.JPG' -&gt; 'IMG_001.jpg'
+renomeado 'IMG_002.JPG' -&gt; 'IMG_002.jpg'
+renomeado 'IMG_003.JPG' -&gt; 'IMG_003.jpg'
+$ ls
+IMG_001.jpg  IMG_002.jpg  IMG_003.jpg</pre>
+
+<div class="tip">
+<strong>Teste antes com echo</strong>
+<p>Troque o <code>mv</code> por <code>echo mv</code>: o laço só <strong>mostra</strong> os comandos que rodaria. Se a lista estiver certa, rode de novo sem o <code>echo</code>.</p>
+</div>
+
+<h3>Forma 2: o <code>rename</code> do Arch (util-linux)</h3>
+<p>O Arch já vem com um comando <code>rename</code>, do pacote <code>util-linux</code> (que faz parte do <code>base</code>). Ele troca um <strong>pedaço de texto</strong> do nome por outro:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/rename
+/usr/bin/rename pertence a util-linux 2.42.4-1</pre>
+
+<dl class="anatomy">
+  <dt>rename</dt><dd>O programa.</dd>
+  <dt>-v</dt><dd>Mostra cada troca.</dd>
+  <dt>IMG_</dt><dd>O pedaço do nome a procurar (só a primeira ocorrência em cada nome).</dd>
+  <dt>ferias-</dt><dd>O que pôr no lugar.</dd>
+  <dt>fotos/*.jpg</dt><dd>Os arquivos.</dd>
+</dl>
+
+<pre class="term">$ rename -v IMG_ ferias- fotos/*.jpg
+`fotos/IMG_001.jpg' -&gt; `fotos/ferias-001.jpg'
+`fotos/IMG_002.jpg' -&gt; `fotos/ferias-002.jpg'</pre>
+
+<p>Use <code>-n</code> (<em>no-act</em>) para ver o que seria feito sem mudar nada: <code>rename -n -v .jpg .jpeg fotos/*.jpg</code>.</p>
+
+<div class="note">
+<strong>O rename do Arch não é o do Debian</strong>
+<p>Muitos tutoriais mostram <code>rename 's/\.JPG$/.jpg/' *.JPG</code>, com uma expressão do Perl. Esse é <strong>outro</strong> programa, o "perl-rename", que o Debian e o Ubuntu chamam de <code>rename</code>. No Arch ele não vem instalado e tem outro nome:</p>
+<pre class="term">$ perl-rename
+bash: perl-rename: comando não encontrado
+$ pacman -Ss '^perl-rename$'
+extra/perl-rename 1.16.3-1
+    Renames multiple files using Perl regular expressions</pre>
+<p>Quem quiser usá-lo instala com <code>sudo pacman -S perl-rename</code> (veja <a href="pacman.html">pacman: o Básico</a>) e chama pelo nome <code>perl-rename</code>.</p>
+</div>
+
+<div class="try" data-setup="mkdir fotos;;touch fotos/IMG_001.JPG fotos/IMG_002.JPG fotos/IMG_003.JPG;;cd fotos" data-goal="file:~/fotos/IMG_001.jpg,file:~/fotos/IMG_002.jpg,file:~/fotos/IMG_003.jpg,absent:~/fotos/IMG_001.JPG" data-solucao="for f in *.JPG; do mv -v -- &quot;$f&quot; &quot;${f%.JPG}.jpg&quot;; done;;ls">
+<p class="try-task"><strong>Missão:</strong> você está na pasta <code>fotos</code>, com três arquivos <code>.JPG</code> em maiúsculas. Com um laço <code>for</code>, renomeie todos para terminar em <code>.jpg</code> minúsculo. Dica: rode primeiro com <code>echo mv</code> para conferir.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de mover e renomear</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Forma</th><th>Quando usar</th></tr>
+<tr><td>Renomear um arquivo</td><td><code>mv velho novo</code></td><td>Sempre</td></tr>
+<tr><td>Mover vários</td><td><code>mv a b c pasta/</code> ou <code>mv *.log pasta/</code></td><td>Organizar uma pasta</td></tr>
+<tr><td>Destino primeiro</td><td><code>mv -t pasta/ a b c</code></td><td>Com <code>xargs</code> e <code>find</code></td></tr>
+<tr><td>Renomear em lote (qualquer regra)</td><td><code>for f in …; do mv …; done</code></td><td>Funciona em qualquer Linux, sem instalar nada</td></tr>
+<tr><td>Trocar um pedaço do nome</td><td><code>rename velho novo arquivos</code></td><td>No Arch, já instalado (util-linux)</td></tr>
+<tr><td>Renomear com expressões regulares</td><td><code>perl-rename 's/…/…/' arquivos</code></td><td>Depois de instalar o pacote <code>perl-rename</code></td></tr>
+<tr><td>Copiar e manter o original</td><td><code>cp</code></td><td>Quando o original deve ficar (<a href="copiar.html">Copiar (cp)</a>)</td></tr>
+<tr><td>No desktop</td><td><kbd>F2</kbd> renomeia; arrastar move</td><td>No gerenciador de arquivos</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"não foi possível obter estado de"</strong>
+<pre class="term">$ mv nada x
+mv: não foi possível obter estado de 'nada': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> a origem não existe (nome errado ou outra pasta).</p>
+<p><strong>Como resolver:</strong> confira com <code>ls</code> e use <kbd>Tab</kbd> para completar.</p>
+</div>
+
+<div class="cenario">
+<strong>"alvo …: Arquivo ou diretório inexistente" com nomes com espaço</strong>
+<p><strong>O que aconteceu:</strong> o shell partiu o nome nos espaços e o <code>mv</code> recebeu várias origens (seção 6).</p>
+<p><strong>Como resolver:</strong> ponha o nome entre aspas ou use <kbd>Tab</kbd>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Não é um diretório"</strong>
+<pre class="term">$ mv frutas.txt Doc/
+mv: não foi possível mover 'frutas.txt' para 'Doc/': Não é um diretório</pre>
+<p><strong>O que aconteceu:</strong> a pasta <code>Doc</code> não existe. A barra no fim avisou o <code>mv</code> que o destino devia ser uma pasta.</p>
+<p><strong>Atenção:</strong> sem a barra, <code>mv frutas.txt Doc</code> não dá erro: <strong>renomeia</strong> o arquivo para <code>Doc</code>. Use a barra sempre que o destino for uma pasta.</p>
+</div>
+
+<div class="cenario">
+<strong>"para um subdiretório de si mesmo"</strong>
+<pre class="term">$ mv Documentos Documentos/sub
+mv: não é possível mover 'Documentos' para um subdiretório de si mesmo, 'Documentos/sub'</pre>
+<p><strong>O que aconteceu:</strong> você tentou pôr uma pasta dentro dela mesma.</p>
+<p><strong>Como resolver:</strong> escolha um destino fora da pasta.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term">$ mv frutas.txt /etc/
+mv: não foi possível mover 'frutas.txt' para '/etc/frutas.txt': Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> o <code>/etc</code> pertence ao root. Para mover, você precisa poder escrever na pasta de origem <strong>e</strong> na de destino.</p>
+<p><strong>Como resolver:</strong> confira se o destino está certo; se estiver, use <code>sudo mv</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"não é possível reescrever …: Diretório não vazio"</strong>
+<pre class="term">$ mv Documentos/projetos d1/
+mv: não é possível reescrever 'd1/projetos': Diretório não vazio</pre>
+<p><strong>O que aconteceu:</strong> já existe uma pasta <code>d1/projetos</code> com coisas dentro. O <code>mv</code> só substitui uma pasta por outra se a de destino estiver <strong>vazia</strong>; ele não mistura o conteúdo das duas.</p>
+<p><strong>Como resolver:</strong> renomeie uma das pastas, ou junte o conteúdo com <code>cp -a</code> (ou <code>rsync</code>) e depois apague a origem.</p>
+</div>
+
+<div class="cenario">
+<strong>"cannot overwrite non-directory … with directory" (em inglês)</strong>
+<pre class="term">$ mv Documentos/projetos b.txt
+mv: cannot overwrite non-directory 'b.txt' with directory 'Documentos/projetos'</pre>
+<p><strong>O que aconteceu:</strong> você tentou trocar um <strong>arquivo</strong> (<code>b.txt</code>) por uma <strong>pasta</strong>. Essa mensagem ainda não foi traduzida no coreutils 9.12 do Arch, por isso aparece em inglês no meio das outras em português: "não é possível sobrescrever o não-diretório 'b.txt' com o diretório…".</p>
+<p><strong>Como resolver:</strong> escolha outro nome para a pasta, ou um destino que seja uma pasta. O contrário funciona: <code>mv b.txt Documentos/projetos</code> põe o arquivo <strong>dentro</strong> da pasta.</p>
+</div>
+
+<div class="cenario">
+<strong>"falta o operando arquivo de destino"</strong>
+<pre class="term">$ mv frutas.txt
+mv: falta o operando arquivo de destino após 'frutas.txt'
+Tente "mv --help" para mais informações.</pre>
+<p><strong>Como resolver:</strong> diga para onde mover (ou o nome novo).</p>
+</div>
+
+<div class="cenario">
+<strong>Substituí um arquivo sem querer</strong>
+<p><strong>O que aconteceu:</strong> o destino já existia e foi substituído.</p>
+<p><strong>Como resolver:</strong> pelo terminal não há como desfazer; recupere de um backup ou snapshot (veja <a href="snapshots.html">Snapshots (snapper)</a>). Para a próxima, <code>-i</code>, <code>-n</code> ou <code>-b</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Nome longo</th><th>Descrição</th></tr>
+<tr><td><code>-v</code></td><td><code>--verbose</code></td><td>Mostra o que foi feito (<code>renomeado 'a' -&gt; 'b'</code>)</td></tr>
+<tr><td><code>-i</code></td><td><code>--interactive</code></td><td>Pergunta antes de substituir</td></tr>
+<tr><td><code>-n</code></td><td><code>--no-clobber</code></td><td>Nunca substitui</td></tr>
+<tr><td><code>-u</code></td><td><code>--update</code></td><td>Só substitui se a origem for mais nova</td></tr>
+<tr><td><code>-b</code></td><td><code>--backup</code></td><td>Guarda o destino antigo como <code>nome~</code></td></tr>
+<tr><td><code>-f</code></td><td><code>--force</code></td><td>Não pergunta nada (desfaz um <code>-i</code> anterior, como o de um alias)</td></tr>
+<tr><td><code>-t PASTA</code></td><td><code>--target-directory=PASTA</code></td><td>Destino antes das origens</td></tr>
+<tr><td><code>-T</code></td><td><code>--no-target-directory</code></td><td>Trata o destino como um nome, nunca como "dentro da pasta"</td></tr>
+</table>
+<p>Não existe <code>-r</code> no <code>mv</code>: pastas sempre são movidas inteiras.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Renomear</h3>
+<p>Complete para renomear <code>rascunho.txt</code> para <code>final.txt</code>:</p>
+<div class="ex-code"><input data-answer="mv|mv -v|mv -i" aria-label="comando"> rascunho.txt final.txt</div>
+</div>
+
+<div class="exercise">
+<h3>2. Nome com espaço</h3>
+<p>Complete para renomear o arquivo <code>minhas fotos.zip</code>:</p>
+<div class="ex-code">mv <input data-answer="'minhas fotos.zip'|&quot;minhas fotos.zip&quot;|minhas\ fotos.zip" aria-label="origem"> fotos.zip</div>
+</div>
+
+<div class="exercise">
+<h3>3. Perguntar antes</h3>
+<p>Complete com a opção que pergunta antes de substituir:</p>
+<div class="ex-code">mv <input data-answer="-i|--interactive" aria-label="opção"> novo.txt antigo.txt</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual comando move a pasta <code>projetos</code> para dentro de <code>arquivo/</code>?</p>
+<label><input type="radio" name="q4"> <code>mv -r projetos arquivo/</code></label>
+<label><input type="radio" name="q4"> <code>mv projetos arquivo/</code></label>
+<label><input type="radio" name="q4"> <code>cp -r projetos arquivo/</code></label>
+<label><input type="radio" name="q4"> <code>mv arquivo/ projetos</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você moveu um arquivo para <code>/tmp</code> com <code>mv -v</code> e apareceram as linhas "copiado" e "removido". Por quê?</p>
+<label><input type="radio" name="q5"> Porque faltou permissão para renomear.</label>
+<label><input type="radio" name="q5"> Porque o mv sempre copia e apaga.</label>
+<label><input type="radio" name="q5"> Porque o <code>/tmp</code> do Arch é outro sistema de arquivos (tmpfs, na memória).</label>
+<label><input type="radio" name="q5"> Porque o arquivo era muito grande.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. No Arch, o comando <code>rename 's/a/b/' *.txt</code> não faz o que o tutorial prometia. Por quê?</p>
+<label><input type="radio" name="q6"> O rename não existe no Arch.</label>
+<label><input type="radio" name="q6"> Faltou o <code>sudo</code>.</label>
+<label><input type="radio" name="q6"> O rename só funciona com uma pasta no fim.</label>
+<label><input type="radio" name="q6"> O <code>rename</code> do Arch é o do util-linux; a sintaxe com <code>s/…/…/</code> é do <code>perl-rename</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Mover e renomear são o mesmo comando: <code>mv ORIGEM DESTINO</code> troca o endereço do arquivo.</li>
+  <li>Destino pasta → vai para dentro; destino nome novo → renomeia; destino arquivo existente → <strong>substitui sem perguntar</strong>.</li>
+  <li>Pastas não precisam de <code>-r</code>; o arquivo movido mantém data e permissões.</li>
+  <li>Dentro do mesmo disco é instantâneo; para outro sistema de arquivos (como o <code>/tmp</code>), o mv copia e apaga.</li>
+  <li>Proteção: <code>-i</code>, <code>-n</code>, <code>-u</code>, <code>-b</code>. Nomes com espaço: aspas ou <kbd>Tab</kbd>.</li>
+  <li>Em lote: laço <code>for</code>, ou o <code>rename</code> do util-linux (o <code>perl-rename</code> é outro pacote).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>) descreve o <code>mv</code> e os demais comandos do <code>coreutils</code>. O <code>/tmp</code> em memória é explicado em <a href="https://wiki.archlinux.org/title/Tmpfs">tmpfs</a>, e para renomear muitos arquivos com mais conforto a Wiki lista programas em <a href="https://wiki.archlinux.org/title/List_of_applications/Utilities#File_managers">List of applications/Utilities</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
