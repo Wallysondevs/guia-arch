@@ -18,6 +18,8 @@
     node tools/testes/rodar.js --vm            # força rodar de novo no VM (ignora o cache)
     node tools/testes/rodar.js --diff          # mostra o diff de cada caso diferente
     node tools/testes/rodar.js --lista         # lista os casos diferentes (sem diff)
+    node tools/testes/rodar.js caso --real     # mostra a saída da VM (crua) de cada caso do filtro
+    node tools/testes/rodar.js caso --sim      # mostra a saída do simulador de cada caso do filtro
 
   O VM é chamado UMA vez, com todos os casos que faltam no cache (um processo, com
   timeout), para não pesar na máquina. O cache fica em tools/testes/.cache-lab.json.
@@ -113,7 +115,11 @@ function main(argv) {
     Object.keys(cache).forEach(function (k) { if (!todosIds[k]) delete cache[k]; });
     fs.writeFileSync(CACHE, JSON.stringify(cache, null, 0));
   }
-  var iguais = 0, difs = [];
+  var iguais = 0, difs = [], mostrar = argv.indexOf("--real") >= 0 ? "real" : argv.indexOf("--sim") >= 0 ? "sim" : null;
+  if (mostrar) {
+    casos.forEach(function (c) { console.log("### " + c.arq + "/" + c.nome + " (" + (mostrar === "real" ? "VM" : "simulador") + ")"); console.log(mostrar === "real" ? cache[c.id] : rodarSim(c)); });
+    return 0;
+  }
   casos.forEach(function (c) {
     var real = cache[c.id];
     if (real === undefined) { difs.push({ c: c, real: "(sem resultado do VM)", sim: "" }); return; }

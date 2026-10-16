@@ -185,14 +185,14 @@
   function mkC(dev, mt) { return { t: "c", dev: dev, m: 438, u: 0, g: 0, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; }
   function dataT(Y, M, D, h, m) { return epochDe(Y, M - 1, D, h, m, 0); }
   function tamanho(no) {
-    if (no.t === "d") return no.tam || 4096;
+    if (no.t === "d") return no.tmpfs ? 40 + 20 * Object.keys(no.c).length : (no.tam || 4096); // tmpfs: 40 + 20 por entrada
     if (no.t === "l") return utf8len(no.alvo);
     if (no.t === "c") return 0;
     if (no.d == null) return no.z || 0;
     return no.cacheTam != null && no.cacheD === no.d ? no.cacheTam : (no.cacheD = no.d, no.cacheTam = utf8len(no.d));
   }
   function blocos(no) { // blocos de 1K usados (como du/ls -s)
-    if (no.t === "d") return no.tam != null && no.tam < 4096 ? 0 : 4;
+    if (no.t === "d") return no.tmpfs || (no.tam != null && no.tam < 4096) ? 0 : 4;
     if (no.t !== "f") return 0;
     if (no.blocosReais) return no.blocosReais;
     if (no.d == null) return 0; // esparso (como na VM)
@@ -6556,7 +6556,14 @@
           cam = i === 0 ? (partes[0] === "" ? "/" : partes[0]) : (cam === "/" ? "/" : cam + "/") + partes[i];
           if (cam === "/" || partes[i] === "." || partes[i] === "..") continue;
           var r = sh.resolver(cam, true);
-          if (r.no) { if (r.no.t !== "d") { io.msg("não foi possível criar o diretório " + qa(a) + ": Arquivo existe"); st = 1; return; } continue; }
+          if (r.no) {
+            if (r.no.t !== "d") {
+              // no meio do caminho, um arquivo comum: o real reclama dele ("Não é um diretório")
+              var ultimo = partes.slice(i + 1).every(function (x) { return x === "" || x === "."; });
+              io.msg("não foi possível criar o diretório " + qa(ultimo ? a : cam) + ": " + (ultimo ? "Arquivo existe" : "Não é um diretório")); st = 1; return;
+            }
+            continue;
+          }
           var p = sh.paiDe(cam);
           if (!p.pai || p.pai.t !== "d") { io.msg("não foi possível criar o diretório " + qa(cam) + ": " + errMsg(p.err || "ENOTDIR")); st = 1; return; }
           if (!sh.pode(p.pai, 2)) { io.msg("não foi possível criar o diretório " + qa(cam) + ": Permissão negada"); st = 1; return; }
@@ -6602,7 +6609,7 @@
     if (g.erro) return io.erroOpcao(g.erro);
     if (!g.ops.length) return io.tente("falta o operando arquivo");
     var quando = sh.k.clock, st = 0;
-    if (g.o.d) { var d = interpretarData(g.o.d, sh.k.clock); if (d === null) { io.msg("data inválida " + qa(g.o.d)); return 1; } quando = d; }
+    if (g.o.d) { var d = interpretarData(g.o.d, sh.k.clock); if (d === null) { io.msg("formato de data inválido " + qa(g.o.d)); return 1; } quando = d; }
     if (g.o.t) { var m = /^(?:(\d\d)?(\d\d))?(\d\d)(\d\d)(\d\d)(\d\d)(?:\.(\d\d))?$/.exec(g.o.t); if (!m) { io.msg("formato de data inválido " + qa(g.o.t)); return 1; } var ano = m[2] ? parseInt((m[1] || "20") + m[2], 10) : tm(sh.k.clock).Y; quando = epochDe(ano, +m[3] - 1, +m[4], +m[5], +m[6], +(m[7] || 0)); }
     if (g.o.r) { var rn = sh.no(g.o.r); if (!rn) { io.msg("falha ao obter atributos de " + q1(g.o.r) + ": Arquivo ou diretório inexistente"); return 1; } quando = rn.mt; }
     g.ops.forEach(function (a) {
@@ -6619,10 +6626,15 @@
     });
     return st;
   };
-  function tipoArqIngles(no) { return no.t === "d" ? "directory" : no.t === "l" ? "symbolic link" : (tamanho(no) === 0 ? "regular empty file" : "regular file"); }
+  function tipoArqPt(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? "arquivo especial de caractere" : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
   EXT.rm = function* (args, io) {
     var sh = io.sh, g = getopt(args, "", { recursive: "r", force: "f", interactive: "interactive?=", verbose: "v", dir: "d", "preserve-root": "pr", "no-preserve-root": "npr" }, { validas: "rRfivdI" });
-    if (g.erro) return io.erroOpcao(g.erro);
+    if (g.erro) {
+      // como o coreutils: antes do "Tente --help", sugere "rm ./-nome" para cada argumento que começa com "-" e existe
+      if (g.erro.tipo === "curta") io.msg("opção inválida -- “" + g.erro.op + "”"); else if (g.erro.tipo === "ambigua") io.msg("a opção “" + g.erro.op + "” é ambígua"); else io.msg("opção não reconhecida “" + g.erro.op + "”");
+      args.slice(1).forEach(function (x) { if (x[0] === "-" && x !== "-" && x !== "--" && sh.resolver(x, false).no) io.err("Tente \"rm ./" + x + "\" para remover o arquivo " + q1(x) + ".\n"); });
+      io.err("Tente \"rm --help\" para mais informações.\n"); return 1;
+    }
     var o = g.o; if (o.R) o.r = true;
     if (!g.ops.length) { if (o.f) return 0; return io.tente("falta operando"); }
     var st = 0;
@@ -6630,9 +6642,25 @@
     for (var i = 0; i < g.ops.length; i++) {
       var a = g.ops[i];
       if (/(^|\/)\.\.?\/*$/.test(a)) { io.msg("recusa-se a remover os diretórios '.' ou '..': ignorando " + q1(a)); st = 1; continue; }
-      if (a === "/" ) { io.msg("é perigoso operar recursivamente em '/'"); io.msg("use --no-preserve-root para ignorar esta falha de segurança"); st = 1; continue; }
+      if (a === "/" ) { io.msg("é perigoso operar recursivamente em '/'"); io.msg("use --no-preserve-root para contornar esta segurança"); st = 1; continue; }
       var r = sh.resolver(a, false);
       if (!r.no) { if (!o.f) { io.msg("não foi possível remover " + qn(a) + ": " + errMsg(r.err || "ENOENT")); st = 1; } continue; }
+      if (r.no.t === "l" && /\/$/.test(a)) {
+        // "atalho/" (link para pasta, com barra): o real segue o link; com -r apaga o CONTEÚDO da pasta-alvo
+        // e depois falha ao remover "atalho/" como diretório (ENOTDIR)
+        var rl = sh.resolver(a, true);
+        if (!rl.no) { if (!o.f) { io.msg("não foi possível remover " + qn(a) + ": " + errMsg(rl.err || "ENOENT")); st = 1; } continue; }
+        if (rl.no.t !== "d") { io.msg("não foi possível remover " + qn(a) + ": Não é um diretório"); st = 1; continue; }
+        if (!o.r && !o.d) { io.msg("não foi possível remover " + qn(a) + ": É um diretório"); st = 1; continue; }
+        if (o.r) {
+          if (o.i && Object.keys(rl.no.c).length) { var okl = yield* io.pergunta("rm: entrar no diretório " + qn(a) + "? "); if (!okl) continue; }
+          var nomesL = Object.keys(rl.no.c).sort(cmpBytes), tudoL = true;
+          for (var kl = 0; kl < nomesL.length; kl++) { var okl2 = yield* remover(rl.no.c[nomesL[kl]], rl.no, nomesL[kl], a + nomesL[kl]); if (!okl2) tudoL = false; }
+          if (!tudoL) { st = 1; continue; }
+          if (o.i) { var okl3 = yield* io.pergunta("rm: remover diretório " + qn(a) + "? "); if (!okl3) continue; }
+        }
+        io.msg("não foi possível remover " + qn(a) + ": " + (Object.keys(rl.no.c).length ? "Diretório não vazio" : "Não é um diretório")); st = 1; continue;
+      }
       var res = yield* remover(r.no, r.pai, r.nome, a);
       if (!res) st = 1;
     }
@@ -6640,19 +6668,19 @@
       if (no.t === "d") {
         if (!o.r && !o.d) { io.msg("não foi possível remover " + qn(rot) + ": É um diretório"); return false; }
         if (!o.r && o.d && Object.keys(no.c).length) { io.msg("não foi possível remover " + qn(rot) + ": Diretório não vazio"); return false; }
-        if (o.i && Object.keys(no.c).length) { var ok1 = yield* io.pergunta("rm: descer ao diretório " + qn(rot) + "? "); if (!ok1) return true; }
+        if (o.i && Object.keys(no.c).length) { var ok1 = yield* io.pergunta("rm: entrar no diretório " + qn(rot) + "? "); if (!ok1) return true; }
         var tudo = true, nomes = Object.keys(no.c).sort(cmpBytes);
         for (var k = 0; k < nomes.length; k++) { var ok2 = yield* remover(no.c[nomes[k]], no, nomes[k], rot.replace(/\/+$/, "") + "/" + nomes[k]); if (!ok2) tudo = false; }
         if (!tudo) return false;
         if (Object.keys(no.c).length) return true;
-        if (o.i) { var ok3 = yield* io.pergunta("rm: remover directory " + qn(rot) + "? "); if (!ok3) return true; }
+        if (o.i) { var ok3 = yield* io.pergunta("rm: remover diretório " + qn(rot) + "? "); if (!ok3) return true; }
         if (!sh.pode(pai, 2)) { io.msg("não foi possível remover " + qn(rot) + ": Permissão negada"); return false; }
         delete pai.c[nome]; pai.mt = sh.k.clock;
-        if (o.v) io.out("removido diretório " + qn(rot) + "\n");
+        if (o.v) io.out("foi removido o diretório: " + qn(rot) + "\n");
         return true;
       }
-      if (o.i) { var ok4 = yield* io.pergunta("rm: remover " + tipoArqIngles(no) + " " + qn(rot) + "? "); if (!ok4) return true; }
-      else if (!o.f && no.t === "f" && !sh.pode(no, 2) && isTTY(sh.fds[0])) { var ok5 = yield* io.pergunta("rm: remover " + tipoArqIngles(no) + " protegido contra escrita " + qn(rot) + "? "); if (!ok5) return true; }
+      if (o.i) { var ok4 = yield* io.pergunta("rm: remover " + tipoArqPt(no) + " " + qn(rot) + (no.t === "f" && !sh.pode(no, 2) ? " protegido contra escrita" : "") + "? "); if (!ok4) return true; }
+      else if (!o.f && no.t === "f" && !sh.pode(no, 2) && isTTY(sh.fds[0])) { var ok5 = yield* io.pergunta("rm: remover " + tipoArqPt(no) + " " + qn(rot) + " protegido contra escrita? "); if (!ok5) return true; }
       if (!sh.pode(pai, 2) || !sh.pode(pai, 1)) { io.msg("não foi possível remover " + qn(rot) + ": Permissão negada"); return false; }
       delete pai.c[nome]; pai.mt = pai.ct = sh.k.clock;
       if (no.nl > 1) no.nl--;
@@ -6671,11 +6699,21 @@
     if (!preservar) n.ct = k.clock;
     return n;
   }
+  // sistema de arquivos (ponto de montagem) de um caminho absoluto: mv entre eles copia e apaga
+  var PONTOS_MONT = ["/boot", "/dev/shm", "/dev", "/run/user/1000", "/run", "/tmp", "/proc", "/sys"];
+  function montagemDe(cam) { for (var i = 0; i < PONTOS_MONT.length; i++) { var m = PONTOS_MONT[i]; if (cam === m || cam.indexOf(m + "/") === 0) return m; } return "/"; }
+  // nome da cópia de segurança (--backup): simple "x~", numbered "x.~N~", existing = numbered se já houver
+  function nomeBackup(pai, nome, modo, sufixo) {
+    var maior = 0, re = new RegExp("^" + nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\.~(\\d+)~$");
+    Object.keys(pai.c).forEach(function (n) { var m = re.exec(n); if (m && +m[1] > maior) maior = +m[1]; });
+    if (modo === "numbered" || modo === "t" || ((modo === "existing" || modo === "nil") && maior > 0)) return nome + ".~" + (maior + 1) + "~";
+    return nome + sufixo;
+  }
   // novo arquivo/pasta: dono = usuário do shell
   function donoDe(sh, no) { no.u = sh.uid; no.g = contaDe(sh).gid; return no; }
   SP.copiarMover = function* (args, io, mover) {
     var sh = this, nome = mover ? "mv" : "cp";
-    var g = getopt(args, mover ? "tS" : "tS", { recursive: "r", archive: "a", force: "f", interactive: "i", "no-clobber": "n", verbose: "v", update: "update?=", "target-directory": "t=", "no-target-directory": "T", backup: "backup?=", link: "l", "symbolic-link": "s", preserve: "preserve?=", parents: "parents", "no-dereference": "P", dereference: "L", "remove-destination": "rd", "strip-trailing-slashes": "sts" }, { validas: mover ? "fivnuTbt" : "rRaivnfuTtblsdpPLHx" });
+    var g = getopt(args, mover ? "tS" : "tS", { recursive: "r", archive: "a", force: "f", interactive: "i", "no-clobber": "n", verbose: "v", update: "update?=", "target-directory": "t=", "no-target-directory": "T", backup: "backup?=", suffix: "S=", link: "l", "symbolic-link": "s", preserve: "preserve?=", parents: "parents", "no-dereference": "P", dereference: "L", "remove-destination": "rd", "strip-trailing-slashes": "sts" }, { validas: mover ? "fivnuTbtS" : "rRaivnfuTtblsdpPLHxS" });
     if (g.erro) return io.erroOpcao(g.erro);
     var o = g.o; if (o.R || o.a) o.r = true;
     var ops = g.ops.slice();
@@ -6697,6 +6735,12 @@
       var alvo = destDir ? destino.replace(/\/+$/, "") + "/" + base : destino;
       var ra = sh.resolver(alvo, true);
       var pa = sh.paiDe(alvo);
+      if (!destDir && !rd.no && /\/$/.test(destino) && src.t !== "d") {
+        // "cp x Doc/" com Doc inexistente: a barra exige um diretório
+        if (!mover) io.msg("não foi possível criar arquivo comum " + qn(alvo) + ": Não é um diretório");
+        else io.msg("não foi possível mover " + qn(f) + " para " + qn(alvo) + ": Não é um diretório");
+        st = 1; continue;
+      }
       if (!pa.pai || pa.pai.t !== "d") {
         if (!mover) io.msg("não foi possível criar arquivo comum " + qn(alvo) + ": " + errMsg(pa.err || "ENOENT"));
         else io.msg("não foi possível mover " + qn(f) + " para " + qn(alvo) + ": " + errMsg(pa.err || "ENOENT"));
@@ -6706,17 +6750,34 @@
       if (src.t === "d") {
         // não copiar/mover pasta para dentro de si mesma
         var absF = rf.caminho, absA = sh.abs(alvo);
-        if (absA.indexOf(absF + "/") === 0) { io.msg("não é possível " + (mover ? "mover" : "copiar") + " um diretório, " + qn(f) + ", para dentro de si mesmo, " + qn(alvo)); st = 1; continue; }
+        if (absA.indexOf(absF + "/") === 0) {
+          if (mover) io.msg("não é possível mover " + qn(f) + " para um subdiretório de si mesmo, " + qn(alvo));
+          else {
+            // o cp real copia tudo o que já existia (sem a cópia nova) e só então reclama
+            if (o.r && !ra.no && pa.pai && pa.pai.t === "d" && sh.pode(pa.pai, 2)) { pa.pai.c[pa.nome] = clonarNo(src, sh.k, !!o.a || o.preserve !== undefined || o.p, sh.umask, sh); pa.pai.mt = sh.k.clock; }
+            io.msg("não é possível copiar um diretório, " + qn(f) + ", para si próprio, " + qn(alvo));
+          }
+          st = 1; continue;
+        }
       }
       if (ra.no) {
         if (o.n) { continue; }
         if (o.update === true || o.update === "older" || (o.u && o.update === undefined)) { if (ra.no.mt >= src.mt) continue; }
         if (o.update === "none") continue;
-        if (ra.no.t === "d" && src.t !== "d") { io.msg("não foi possível sobrescrever o diretório " + qn(alvo) + " com um não-diretório"); st = 1; continue; }
-        if (ra.no.t !== "d" && src.t === "d") { io.msg("não foi possível sobrescrever não-diretório " + qn(alvo) + " com diretório " + qn(f)); st = 1; continue; }
+        // (essas duas mensagens não são traduzidas no coreutils 9.12)
+        if (ra.no.t === "d" && src.t !== "d") { io.msg("cannot overwrite directory " + qn(alvo) + " with non-directory " + qn(f)); st = 1; continue; }
+        if (ra.no.t !== "d" && src.t === "d") { io.msg("cannot overwrite non-directory " + qn(alvo) + " with directory " + qn(f)); st = 1; continue; }
         if (o.i && !o.f) { var ok = yield* io.pergunta(nome + ": sobrescrever " + qn(alvo) + "? "); if (!ok) { st = mover || true ? 1 : 0; continue; } }
-        if (o.backup !== undefined || o.b) { pa.pai.c[pa.nome + "~"] = ra.no; }
       }
+      var nomeBk = null;
+      if (ra.no && (o.backup !== undefined || o.b) && o.backup !== "none" && o.backup !== "off" && !(ra.no.t === "d" && src.t === "d")) {
+        var modoBk = typeof o.backup === "string" ? o.backup : (sh.valor("VERSION_CONTROL") || "existing");
+        if (modoBk !== "none" && modoBk !== "off") {
+          nomeBk = nomeBackup(pa.pai, pa.nome, modoBk, typeof o.S === "string" ? o.S : (sh.valor("SIMPLE_BACKUP_SUFFIX") || "~"));
+          pa.pai.c[nomeBk] = ra.no; delete pa.pai.c[pa.nome]; ra = { no: null };
+        }
+      }
+      var sufBk = nomeBk ? " (cópia de segurança: " + qn((/\//.test(alvo) ? alvo.slice(0, alvo.lastIndexOf("/") + 1) : "") + nomeBk) + ")" : "";
       if (!sh.pode(pa.pai, 2)) {
         if (mover) io.msg("não foi possível mover " + qn(f) + " para " + qn(alvo) + ": Permissão negada");
         else io.msg((ra.no ? "não foi possível abrir " + qn(alvo) + " para escrita" : "não foi possível criar arquivo comum " + qn(alvo)) + ": Permissão negada");
@@ -6724,21 +6785,41 @@
       }
       if (mover) {
         if (!sh.pode(rf.pai, 2)) { io.msg("não foi possível mover " + qn(f) + " para " + qn(alvo) + ": Permissão negada"); st = 1; continue; }
-        if (ra.no && ra.no.t === "d" && src.t === "d" && Object.keys(ra.no.c).length) { io.msg("não foi possível mover " + qn(f) + " para " + qn(alvo) + ": Diretório não vazio"); st = 1; continue; }
+        if (ra.no && ra.no.t === "d" && src.t === "d" && Object.keys(ra.no.c).length) { io.msg("não é possível reescrever " + qn(alvo) + ": Diretório não vazio"); st = 1; continue; }
+        var outroFs = montagemDe(rf.caminho || sh.abs(f)) !== montagemDe(sh.abs(pa.dir === "." ? "" : pa.dir));
         delete rf.pai.c[rf.nome];
-        pa.pai.c[pa.nome] = src; src.ct = sh.k.clock;
         rf.pai.mt = pa.pai.mt = sh.k.clock;
-        if (o.v) io.out("renomeado " + qn(f) + " -> " + qn(alvo) + "\n");
+        if (outroFs) {
+          // entre sistemas de arquivos o mv copia (preservando dono, modo e datas) e depois apaga a origem
+          var copia = clonarNo(src, sh.k, true, 0, sh);
+          (function dono(n, o2) { n.u = o2.u; n.g = o2.g; if (n.t === "d") for (var c in n.c) dono(n.c[c], o2.c[c]); })(copia, src);
+          (function tmp(n) { if (pa.pai.tmpfs && n.t === "d") { n.tmpfs = true; for (var c in n.c) tmp(n.c[c]); } })(copia);
+          pa.pai.c[pa.nome] = copia;
+          if (o.v) {
+            var origem = f.replace(/\/+$/, "");
+            (function copiou(no, de, para, raiz) {
+              if (no.t === "d") { io.out("criado o diretório " + qn(para) + "\n"); listarDir(no).forEach(function (n) { copiou(no.c[n], de + "/" + n, para + "/" + n); }); }
+              else io.out("copiado " + qn(de) + " -> " + qn(para) + (raiz ? sufBk : "") + "\n");
+            })(src, origem, alvo, true);
+            (function removeu(no, de) {
+              if (no.t === "d") { Object.keys(no.c).sort(cmpBytes).forEach(function (n) { removeu(no.c[n], de + "/" + n); }); io.out("foi removido o diretório: " + qn(de) + "\n"); }
+              else io.out("removido " + qn(de) + "\n");
+            })(src, origem);
+          }
+        } else {
+          pa.pai.c[pa.nome] = src; src.ct = sh.k.clock;
+          if (o.v) io.out("renomeado " + qn(f) + " -> " + qn(alvo) + sufBk + "\n");
+        }
       } else {
         var preservar = !!o.a || o.preserve !== undefined || o.p;
         if (o.l && src.t !== "d") { pa.pai.c[pa.nome] = src; src.nl = (src.nl || 1) + 1; }
         else if (o.s) { pa.pai.c[pa.nome] = donoDe(sh, mkL(f, sh.k.clock)); }
         else if (ra.no && ra.no.t === "f" && src.t === "f") { ra.no.d = src.d; if (src.d === null) ra.no.z = src.z; else delete ra.no.z; ra.no.mt = preservar ? src.mt : sh.k.clock; if (preservar) ra.no.m = src.m; }
         else if (ra.no && ra.no.t === "d" && src.t === "d") { for (var c in src.c) ra.no.c[c] = clonarNo(src.c[c], sh.k, preservar, sh.umask, sh); }
-        else pa.pai.c[pa.nome] = clonarNo(src, sh.k, preservar, 0, sh);
+        else pa.pai.c[pa.nome] = clonarNo(src, sh.k, preservar, sh.umask, sh);
         pa.pai.mt = sh.k.clock;
         if (o.v) {
-          io.out(qn(f) + " -> " + qn(alvo) + "\n");
+          io.out(qn(f) + " -> " + qn(alvo) + sufBk + "\n");
           if (src.t === "d") (function lista(no, de, para) { Object.keys(no.c).sort(cmpBytes).forEach(function (n) { io.out(qn(de + "/" + n) + " -> " + qn(para + "/" + n) + "\n"); if (no.c[n].t === "d") lista(no.c[n], de + "/" + n, para + "/" + n); }); })(src, f.replace(/\/+$/, ""), alvo);
         }
       }

@@ -1,0 +1,166 @@
+## Itens de .autoria/sim-pendencias.md (rodada 2): cada caso confere um comportamento com a VM.
+### pend-umask-cp
+cp frutas.txt c1; ls -l c1 | cut -c1-10
+cp -r Documentos D2; ls -l D2 | cut -c1-10
+ls -ld D2 D2/projetos | cut -c1-10
+cp -a frutas.txt c2; ls -l c2 | cut -c1-10
+cp -p frutas.txt c3; ls -l c3 | cut -c1-10
+### pend-mkdir-p-arquivo
+touch f1; mkdir -p f1/x; echo $?
+mkdir -p f1/x/y; echo $?
+mkdir f1/x; echo $?
+### pend-touch-data
+touch -d ontem x; echo $?
+touch -d 'amanhã' x; echo $?
+### pend-dev-sda
+ls -l /dev/sda /dev/sda1 /dev/sda3 | cut -c1-10
+### pend-sed-i-perm
+sed -i 's/notebook/estudio/' /etc/hostname; echo $?
+### pend-awk-lc-numeric
+awk --use-lc-numeric 'BEGIN{print 17/2}'
+awk 'BEGIN{print 17/2}'
+LC_ALL=C awk --use-lc-numeric 'BEGIN{print 17/2}'
+### pend-nohup-out
+nohup echo oi; ls -l nohup.out | cut -c1-10; cat nohup.out
+### pend-proc-self-fd
+ls /proc/self/fd
+### pend-cp-backup
+echo a > x; echo b > y
+cp -bv x y; ls y*
+echo c > x; mv -bv x y; ls x* y*
+cp --backup=numbered y z; cp --backup=numbered y z; cp --backup=numbered y z; ls z*
+### pend-cp-pasta-inexistente
+cp frutas.txt Doc/; echo $?
+cp frutas.txt Doc/x; echo $?
+mv frutas.txt Doc/; echo $?
+### pend-cp-si-proprio
+cp -r Documentos Documentos/sub; echo $?
+mv Documentos Documentos/sub; echo $?
+### pend-mv-pasta-sobre-arquivo
+mkdir d1; touch a1; mv d1 a1; echo $?
+mv a1 Documentos/projetos; echo $?
+### pend-mv-nao-vazio
+mkdir -p d1/projetos/x; mv Documentos/projetos d1/; echo $?
+### pend-mv-outro-fs
+touch m1; mkdir m2; touch m2/a
+mv -v m1 /tmp/; mv -v m2 /tmp/
+mv -v /tmp/m1 .
+### pend-rm-i
+touch x; mkdir -p dd/e; echo a > y
+echo n | rm -i x
+echo n | rm -i y
+echo n | rm -ri dd
+echo s | rm -i y; ls y
+### pend-rm-rf-raiz
+rm -rf /; echo $?
+### pend-tail-less
+tail -f nada; echo $?
+less nada; echo $?
+tail nada; echo $?
+### pend-ip-hostname
+ip route get 1.1.1.1
+ip route get 10.0.2.2
+hostname -i
+hostname -I; echo $?
+### pend-getent-hosts
+getent hosts localhost; echo $?
+getent hosts notebook; echo $?
+getent hosts nada.invalid; echo $?
+### pend-pacman-F-drill
+pacman -F drill
+pacman -F dig
+### pend-profile-d
+ls /etc/profile.d
+ls -l /etc/profile.d/70-systemd-shell-extra.sh
+### pend-rm-traco
+touch ./-arquivo; rm -arquivo; echo $?
+rm -arquivo2; echo $?
+### pend-pacman-s
+pacman -s bash; echo $?
+pacman -Q --help
+pacman -S -h
+pacman -R --help
+pacman -h
+### pend-ls-help
+ls --help
+### pend-cal
+cal
+cal 2 2026
+cal -3
+### pend-var-log
+ls /var/log
+ls -ld /root | cut -c1-12
+### pend-find-sem-aspas
+touch foto1.jpg foto2.jpg; find . -name *.jpg; echo $?
+find . -type pasta; echo $?
+find . -maxdepth 1 -exec ls {}; echo $?
+### pend-find-xtype
+mkdir fx; touch fx/a; ln -s a fx/ok; ln -s nada fx/quebrado; ln -s ../frutas.txt fx/fr
+find fx -xtype l
+find fx -type l
+find fx -xtype f
+### pend-ln
+ln -sr frutas.txt Documentos/af; ls -l Documentos/af | cut -d' ' -f9-
+ln -s Meus Documentos x3; echo $?
+ln Documentos docs; echo $?
+echo x > /tmp/x; ln /tmp/x x; echo $?
+ln -sr Documentos/notas.txt na; readlink na
+mkdir -p a/b; ln -sr frutas.txt a/b/; readlink a/b/frutas.txt
+ln -sr /etc/hostname h; readlink h
+### pend-rm-link-pasta
+mkdir alvo; touch alvo/um alvo/dois; ln -s alvo atalho
+rm atalho/; echo $?
+rm -r atalho/; echo $?
+ls alvo; ls -l atalho | cut -c1-10
+### pend-grep
+grep -E "(erro" frutas.txt; echo $?
+grep ELF /usr/bin/bash; echo $?
+grep -c ELF /usr/bin/bash
+grep -E "erro)" frutas.txt; echo $?
+grep "\(erro" frutas.txt; echo $?
+### pend-tr-extra
+tr , ";" frutas.txt; echo $?
+tr -d a frutas.txt; echo $?
+### pend-file-zst
+file /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
+### pend-du-aur
+du -sh aur/*
+### pend-locale
+locale
+locale decimal_point thousands_sep
+locale -a
+### pend-tree
+pacman -Q tree
+tree Documentos
+tree -d Documentos
+tree -L 1 /
+tree -a Documentos
+tree -F --noreport -I "aur|Downloads|Modelos|Música|Público|Vídeos" ~
+tree nada; echo $?
+### pend-rename
+mkdir fotos; touch fotos/IMG_1.jpg fotos/IMG_2.jpg
+rename -v IMG_ ferias- fotos/*.jpg; ls fotos
+rename -n jpg JPG fotos/*; echo $?
+rename x y nada; echo $?
+### pend-crontab
+crontab -l; echo $?
+### pend-sudoedit
+sudoedit; echo $?
+### pend-cp-mv-variantes
+mkdir d1; touch a1; cp -r d1 a1; echo $?
+mv a1 d1x; mkdir d1x2; mv d1x d1x2/; ls d1x2
+mkdir -p e/a1; touch a1; mv a1 e; echo $?
+cp a1 e; echo $?
+mkdir vd; cp -r d1 vd/ ; ls vd
+mkdir -p d3; cp -r d1 nova/; echo $?; ls -d nova
+mv d3 novo/; echo $?; ls -d novo
+cp -bv frutas.txt Documentos/notas.txt; ls Documentos
+cp -b -S .velho frutas.txt Documentos/alunos.csv; ls Documentos
+cp -bv frutas.txt Documentos/notas.txt; ls Documentos
+### pend-mv-outro-fs2
+mkdir -p p/q/r; touch p/q/r/c
+mv -v p /tmp
+mkdir p; ln -s a p/lk; mv -v p /tmp/p/
+ls -la /tmp/p | cut -c1-10
+mv -v /tmp/p/a /tmp/p/a2
+echo z > zz; mv -bv zz /tmp/; echo y > zz; mv -bv zz /tmp/
