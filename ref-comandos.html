@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Referência de comandos do Arch Linux | Guia Arch</title>
+<meta name="description" content="Os comandos usados no Guia Arch, por categoria (instalação, pacotes, AUR, serviços, logs, usuários, rede, discos, Btrfs, LUKS, LVM, boot, containers, desempenho e segurança), com uma linha de descrição, um exemplo e o link para a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Referência de <span class="hl">Comandos</span></h1>
+
+<p class="intro">Todos os comandos que aparecem no guia, agrupados pelo que fazem. Cada linha tem o que o comando faz, um exemplo típico e a aula onde ele é explicado com calma. Para as flags do pacman, veja <a href="ref-pacman.html">pacman × apt × dnf</a>; para os termos, o <a href="glossario.html">Glossário</a>.</p>
+
+<div class="note">
+<strong>Como usar esta página</strong>
+<p>Use a busca do navegador (<kbd>Ctrl</kbd>+<kbd>F</kbd>) para achar um comando. Os exemplos com <code>sudo</code> mudam o sistema: leia a aula antes de rodá-los. Quase todo comando tem manual: <code>man comando</code> (pacote <code>man-db</code>) ou <code>comando --help</code>.</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Categoria</th><th>Pule para</th></tr>
+<tr><td>Instalação e ambiente live</td><td><a href="#instalacao">Instalação</a></td></tr>
+<tr><td>Pacotes, AUR e Flatpak</td><td><a href="#pacotes">Pacotes</a> · <a href="#aur">AUR</a></td></tr>
+<tr><td>Sistema, serviços e logs</td><td><a href="#servicos">Serviços e logs</a> · <a href="#usuarios">Usuários e permissões</a> · <a href="#processos">Processos</a></td></tr>
+<tr><td>Rede</td><td><a href="#rede">Rede e SSH</a></td></tr>
+<tr><td>Discos e armazenamento</td><td><a href="#discos">Discos</a> · <a href="#avancado-discos">Btrfs, LUKS, LVM</a></td></tr>
+<tr><td>Boot e kernel</td><td><a href="#boot">Boot</a></td></tr>
+<tr><td>Servidores, containers, desempenho, segurança</td><td><a href="#servidores">Servidores</a> · <a href="#ajustes">Ajustes</a></td></tr>
+<tr><td>Arquivos e texto</td><td><a href="#arquivos">Arquivos</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="instalacao">Instalação e ambiente live</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>sha256sum</code> / <code>gpg --verify</code></td><td>Confere a integridade e a assinatura da ISO</td><td><code>sha256sum archlinux-x86_64.iso</code></td><td><a href="preparar.html">Baixar e Verificar a ISO</a></td></tr>
+<tr><td><code>loadkeys</code></td><td>Muda o teclado do console (live)</td><td><code>loadkeys br-abnt2</code></td><td><a href="ambiente-live.html">Ambiente Live</a></td></tr>
+<tr><td><code>cat /sys/firmware/efi/fw_platform_size</code></td><td>Confirma o boot em UEFI (64 ou 32)</td><td>—</td><td><a href="ambiente-live.html">Ambiente Live</a></td></tr>
+<tr><td><code>iwctl</code></td><td>Conecta ao Wi-Fi no live (iwd)</td><td><code>iwctl station wlan0 connect MinhaRede</code></td><td><a href="ambiente-live.html">Ambiente Live</a></td></tr>
+<tr><td><code>timedatectl</code></td><td>Relógio, fuso e NTP</td><td><code>timedatectl set-ntp true</code></td><td><a href="ambiente-live.html">Ambiente Live</a></td></tr>
+<tr><td><code>fdisk</code></td><td>Particiona um disco (GPT/MBR)</td><td><code>fdisk /dev/sda</code></td><td><a href="particionar.html">Particionar</a></td></tr>
+<tr><td><code>mkfs.fat</code>, <code>mkfs.ext4</code>, <code>mkfs.btrfs</code>, <code>mkswap</code></td><td>Formata partições</td><td><code>mkfs.fat -F 32 /dev/sda1</code></td><td><a href="formatar-montar.html">Formatar e Montar</a></td></tr>
+<tr><td><code>mount</code> / <code>swapon</code></td><td>Monta a raiz, a ESP e liga a swap</td><td><code>mount --mkdir /dev/sda1 /mnt/boot</code></td><td><a href="formatar-montar.html">Formatar e Montar</a></td></tr>
+<tr><td><code>reflector</code></td><td>Escolhe e ordena espelhos</td><td><code>reflector --country Brazil --latest 10 --sort rate --save /etc/pacman.d/mirrorlist</code></td><td><a href="pacstrap.html">pacstrap</a>, <a href="espelhos.html">Espelhos</a></td></tr>
+<tr><td><code>pacstrap</code></td><td>Instala pacotes no novo sistema</td><td><code>pacstrap -K /mnt base linux linux-firmware</code></td><td><a href="pacstrap.html">pacstrap</a></td></tr>
+<tr><td><code>genfstab</code></td><td>Gera o <code>/etc/fstab</code></td><td><code>genfstab -U /mnt &gt;&gt; /mnt/etc/fstab</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td><code>arch-chroot</code></td><td>Entra no sistema instalado</td><td><code>arch-chroot /mnt</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td><code>ln -sf /usr/share/zoneinfo/…</code> / <code>hwclock</code></td><td>Fuso horário e relógio</td><td><code>hwclock --systohc</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td><code>locale-gen</code></td><td>Gera os idiomas descomentados em <code>/etc/locale.gen</code></td><td><code>locale-gen</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td><code>archinstall</code></td><td>Instalador guiado em texto</td><td><code>archinstall</code></td><td><a href="archinstall.html">archinstall</a></td></tr>
+</table>
+</div>
+
+<h2 id="pacotes">Pacotes</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>pacman -Syu</code></td><td>Atualiza o sistema inteiro</td><td><code>sudo pacman -Syu</code></td><td><a href="atualizar.html">Atualizar</a></td></tr>
+<tr><td><code>pacman -S</code> / <code>-R</code></td><td>Instala / remove</td><td><code>sudo pacman -Rns htop</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>pacman -Q…</code></td><td>Consulta o que está instalado</td><td><code>pacman -Qo /usr/bin/ls</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>pacman -F</code></td><td>Que pacote contém um arquivo</td><td><code>pacman -F bin/lsblk</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>checkupdates</code></td><td>Lista atualizações sem mexer no banco</td><td><code>checkupdates</code></td><td><a href="atualizar.html">Atualizar</a></td></tr>
+<tr><td><code>paccache</code></td><td>Limpa o cache de pacotes</td><td><code>sudo paccache -rk2</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>pacdiff</code></td><td>Mescla arquivos <code>.pacnew</code></td><td><code>sudo DIFFPROG=meld pacdiff</code></td><td><a href="pacnew.html">.pacnew</a></td></tr>
+<tr><td><code>pactree</code></td><td>Árvore de dependências</td><td><code>pactree -r glibc</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>pacman-key</code></td><td>Chaves de assinatura do pacman</td><td><code>sudo pacman-key --populate archlinux</code></td><td><a href="chaves.html">Chaves</a></td></tr>
+<tr><td><code>previa</code> (só no laboratório do guia)</td><td>Mostra a transação real e responde "não"</td><td><code>previa -S firefox</code></td><td><a href="projetos.html">Projetos</a></td></tr>
+<tr><td><code>flatpak</code></td><td>Apps em sandbox (Flathub)</td><td><code>flatpak install flathub org.gimp.GIMP</code></td><td><a href="flatpak.html">Flatpak</a></td></tr>
+<tr><td><code>downgrade</code></td><td>Volta um pacote para uma versão anterior</td><td><code>sudo downgrade nginx</code></td><td><a href="downgrade.html">downgrade</a></td></tr>
+</table>
+</div>
+
+<h2 id="aur">AUR e empacotamento</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>git clone</code></td><td>Baixa a receita de um pacote do AUR</td><td><code>git clone https://aur.archlinux.org/yay-bin.git</code></td><td><a href="makepkg.html">makepkg</a></td></tr>
+<tr><td><code>makepkg</code></td><td>Constrói (e instala com <code>-si</code>) um pacote a partir do PKGBUILD</td><td><code>makepkg -si</code></td><td><a href="makepkg.html">makepkg</a></td></tr>
+<tr><td><code>yay</code> / <code>paru</code></td><td>pacman + AUR</td><td><code>yay -S downgrade</code></td><td><a href="yay-paru.html">yay e paru</a></td></tr>
+<tr><td><code>namcap</code></td><td>Confere PKGBUILDs e pacotes</td><td><code>namcap PKGBUILD</code></td><td><a href="pkgbuild.html">PKGBUILD</a></td></tr>
+<tr><td><code>updpkgsums</code></td><td>Atualiza as somas no PKGBUILD</td><td><code>updpkgsums</code></td><td><a href="pkgbuild.html">PKGBUILD</a></td></tr>
+<tr><td><code>repo-add</code></td><td>Cria/atualiza um repositório local</td><td><code>repo-add meurepo.db.tar.gz *.pkg.tar.zst</code></td><td><a href="repositorio-local.html">Repositório Local</a></td></tr>
+</table>
+</div>
+
+<h2 id="servicos">Serviços, timers e logs</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>systemctl status/start/stop/restart/reload</code></td><td>Controla um serviço agora</td><td><code>sudo systemctl restart nginx</code></td><td><a href="systemd.html">systemctl</a></td></tr>
+<tr><td><code>systemctl enable/disable [--now]</code></td><td>Liga/desliga no boot (e agora)</td><td><code>sudo systemctl enable --now sshd</code></td><td><a href="systemd.html">systemctl</a></td></tr>
+<tr><td><code>systemctl --failed</code></td><td>Lista serviços que falharam</td><td><code>systemctl --failed</code></td><td><a href="systemd.html">systemctl</a></td></tr>
+<tr><td><code>systemctl list-timers</code></td><td>Timers e próxima execução</td><td><code>systemctl list-timers</code></td><td><a href="timers.html">Timers</a></td></tr>
+<tr><td><code>systemctl --user …</code></td><td>Serviços e timers do usuário</td><td><code>systemctl --user enable --now backup.timer</code></td><td><a href="projeto-servidor.html">Servidor Caseiro</a></td></tr>
+<tr><td><code>journalctl</code></td><td>Lê os logs do systemd</td><td><code>journalctl -b -p err</code></td><td><a href="journal.html">Logs</a></td></tr>
+<tr><td><code>journalctl -u</code> / <code>-f</code></td><td>Log de um serviço / acompanhar ao vivo</td><td><code>journalctl -u nginx -f</code></td><td><a href="journal.html">Logs</a></td></tr>
+<tr><td><code>journalctl --vacuum-size</code></td><td>Diminui o journal</td><td><code>sudo journalctl --vacuum-size=200M</code></td><td><a href="journal.html">Logs</a></td></tr>
+<tr><td><code>loginctl</code></td><td>Sessões e lingering do usuário</td><td><code>sudo loginctl enable-linger ana</code></td><td><a href="projeto-servidor.html">Servidor Caseiro</a></td></tr>
+<tr><td><code>hostnamectl</code>, <code>localectl</code></td><td>Nome da máquina; idioma e teclado</td><td><code>localectl set-keymap br-abnt2</code></td><td><a href="primeiro-boot.html">Primeiro Boot</a></td></tr>
+</table>
+</div>
+
+<h2 id="usuarios">Usuários, sudo e permissões</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>useradd</code></td><td>Cria usuário</td><td><code>useradd -m -G wheel ana</code></td><td><a href="sudo-usuarios.html">sudo e Usuários</a></td></tr>
+<tr><td><code>usermod</code></td><td>Altera usuário (grupos)</td><td><code>sudo usermod -aG libvirt ana</code></td><td><a href="usuarios.html">Usuários e Grupos</a></td></tr>
+<tr><td><code>passwd</code></td><td>Define a senha</td><td><code>passwd</code></td><td><a href="sudo-usuarios.html">sudo e Usuários</a></td></tr>
+<tr><td><code>visudo</code></td><td>Edita o sudoers com checagem</td><td><code>EDITOR=nano visudo</code></td><td><a href="sudo-usuarios.html">sudo e Usuários</a></td></tr>
+<tr><td><code>sudo</code> / <code>su</code></td><td>Rodar como root / virar outro usuário</td><td><code>sudo -i</code></td><td><a href="sudo-usuarios.html">sudo e Usuários</a></td></tr>
+<tr><td><code>id</code>, <code>groups</code>, <code>whoami</code></td><td>Quem sou eu, em quais grupos</td><td><code>id</code></td><td><a href="usuarios.html">Usuários e Grupos</a></td></tr>
+<tr><td><code>faillock</code></td><td>Ver/zerar o bloqueio por senhas erradas</td><td><code>faillock --user ana --reset</code></td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td><code>chmod</code>, <code>chown</code>, <code>umask</code></td><td>Permissões e dono</td><td><code>chmod 644 index.html</code></td><td><a href="permissoes.html">Permissões</a></td></tr>
+</table>
+</div>
+
+<h2 id="processos">Processos e travamentos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>ps</code>, <code>pgrep</code></td><td>Lista/procura processos</td><td><code>pgrep -a firefox</code></td><td><a href="processos.html">Processos</a></td></tr>
+<tr><td><code>top</code>, <code>htop</code></td><td>Processos ao vivo</td><td><code>htop</code></td><td><a href="processos.html">Processos</a></td></tr>
+<tr><td><code>kill</code>, <code>pkill</code>, <code>killall</code></td><td>Envia sinais (encerrar)</td><td><code>kill -9 1234</code></td><td><a href="processos.html">Processos</a></td></tr>
+<tr><td><code>free</code>, <code>uptime</code>, <code>nproc</code></td><td>Memória, carga e núcleos</td><td><code>free -h</code></td><td><a href="desempenho.html">Desempenho</a></td></tr>
+<tr><td>Alt+SysRq (REISUB)</td><td>Reinício seguro com o sistema travado</td><td>—</td><td><a href="travamentos.html">Quando o Sistema Trava</a></td></tr>
+</table>
+</div>
+
+<h2 id="rede">Rede e SSH</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>ip a</code>, <code>ip r</code></td><td>Endereços e rotas</td><td><code>ip -br a</code></td><td><a href="rede.html">NetworkManager</a></td></tr>
+<tr><td><code>nmcli</code>, <code>nmtui</code></td><td>Controla o NetworkManager</td><td><code>nmcli device wifi connect MinhaRede --ask</code></td><td><a href="rede.html">NetworkManager</a></td></tr>
+<tr><td><code>ping</code></td><td>Testa a conexão</td><td><code>ping -c 3 archlinux.org</code></td><td><a href="primeiro-boot.html">Primeiro Boot</a></td></tr>
+<tr><td><code>ss</code></td><td>Portas abertas e conexões</td><td><code>sudo ss -tlnup</code></td><td><a href="servidor-web.html">Servidor Web</a></td></tr>
+<tr><td><code>curl</code></td><td>Cliente HTTP</td><td><code>curl -I http://localhost</code></td><td><a href="servidor-web.html">Servidor Web</a></td></tr>
+<tr><td><code>ssh</code>, <code>ssh-keygen</code>, <code>ssh-copy-id</code></td><td>Acesso remoto e chaves</td><td><code>ssh-keygen -t ed25519</code></td><td><a href="ssh.html">SSH</a></td></tr>
+<tr><td><code>nft</code></td><td>Firewall nftables</td><td><code>sudo nft -c -f /etc/nftables.conf</code></td><td><a href="firewall.html">Firewall</a></td></tr>
+<tr><td><code>ufw</code></td><td>Firewall simplificado</td><td><code>sudo ufw allow 22/tcp</code></td><td><a href="firewall.html">Firewall</a></td></tr>
+</table>
+</div>
+
+<h2 id="discos">Discos, montagem e swap</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>lsblk</code></td><td>Discos e partições em árvore</td><td><code>lsblk -f</code></td><td><a href="discos.html">lsblk, df, du</a></td></tr>
+<tr><td><code>df</code>, <code>du</code></td><td>Espaço livre / ocupado</td><td><code>df -h /</code></td><td><a href="discos.html">lsblk, df, du</a></td></tr>
+<tr><td><code>blkid</code></td><td>UUID e tipo de cada partição</td><td><code>sudo blkid</code></td><td><a href="fstab.html">fstab</a></td></tr>
+<tr><td><code>findmnt</code></td><td>O que está montado onde</td><td><code>findmnt /boot</code></td><td><a href="fstab.html">fstab</a></td></tr>
+<tr><td><code>mount</code>, <code>umount</code></td><td>Montar / desmontar</td><td><code>sudo mount -a</code> (testa o fstab)</td><td><a href="fstab.html">fstab</a></td></tr>
+<tr><td><code>swapon</code>, <code>zramctl</code></td><td>Swap ativa e zram</td><td><code>swapon --show</code></td><td><a href="swap-zram.html">Swap e zram</a></td></tr>
+<tr><td><code>fstrim</code></td><td>TRIM em SSD</td><td><code>sudo systemctl enable --now fstrim.timer</code></td><td><a href="desempenho.html">Desempenho</a></td></tr>
+<tr><td><code>truncate</code>, <code>losetup</code></td><td>Disco-imagem para treinar</td><td><code>sudo losetup -f --show disco.img</code></td><td><a href="btrfs.html">Btrfs</a></td></tr>
+</table>
+</div>
+
+<h2 id="avancado-discos">Btrfs, snapshots, LUKS e LVM</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>btrfs subvolume</code></td><td>Cria/lista subvolumes e snapshots</td><td><code>sudo btrfs subvolume list /</code></td><td><a href="btrfs.html">Btrfs</a></td></tr>
+<tr><td><code>btrfs filesystem usage</code></td><td>Espaço real no Btrfs</td><td><code>sudo btrfs filesystem usage /</code></td><td><a href="btrfs.html">Btrfs</a></td></tr>
+<tr><td><code>snapper</code></td><td>Snapshots automáticos e rollback</td><td><code>sudo snapper -c root list</code></td><td><a href="snapshots.html">snapper</a></td></tr>
+<tr><td><code>cryptsetup</code></td><td>Cria/abre volumes LUKS</td><td><code>sudo cryptsetup open /dev/sda3 raiz</code></td><td><a href="luks.html">LUKS</a></td></tr>
+<tr><td><code>pvcreate</code>, <code>vgcreate</code>, <code>lvcreate</code>, <code>lvextend</code></td><td>Volumes LVM</td><td><code>sudo lvextend -r -L +5G vg/home</code></td><td><a href="lvm.html">LVM</a></td></tr>
+</table>
+</div>
+
+<h2 id="boot">Boot, kernel e recuperação</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>grub-install</code></td><td>Instala o GRUB na ESP</td><td><code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code></td><td><a href="bootloader.html">Bootloader</a></td></tr>
+<tr><td><code>grub-mkconfig</code></td><td>Gera o menu do GRUB</td><td><code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code></td><td><a href="bootloader.html">Bootloader</a></td></tr>
+<tr><td><code>bootctl</code></td><td>systemd-boot e estado do Secure Boot</td><td><code>bootctl status</code></td><td><a href="bootloader.html">Bootloader</a></td></tr>
+<tr><td><code>efibootmgr</code></td><td>Entradas de boot da UEFI</td><td><code>efibootmgr -v</code></td><td><a href="recuperar-boot.html">Recuperar o Boot</a></td></tr>
+<tr><td><code>mkinitcpio</code></td><td>Gera o initramfs</td><td><code>sudo mkinitcpio -P</code></td><td><a href="mkinitcpio.html">mkinitcpio</a></td></tr>
+<tr><td><code>uname -r</code></td><td>Kernel em uso</td><td><code>uname -r</code></td><td><a href="kernels.html">Kernels</a></td></tr>
+<tr><td><code>modprobe</code>, <code>lsmod</code></td><td>Carrega / lista módulos do kernel</td><td><code>lsmod | grep kvm</code></td><td><a href="kvm.html">KVM</a></td></tr>
+<tr><td><code>dmesg</code></td><td>Mensagens do kernel</td><td><code>sudo dmesg | grep -i microcode</code></td><td><a href="microcode.html">Microcode</a></td></tr>
+<tr><td><code>arch-chroot</code> (resgate)</td><td>Entra no sistema quebrado a partir do live</td><td><code>arch-chroot /mnt</code></td><td><a href="chroot-resgate.html">Resgate com chroot</a></td></tr>
+</table>
+</div>
+
+<h2 id="servidores">Servidores, containers e VMs</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>nginx -t</code></td><td>Testa a configuração do nginx</td><td><code>sudo nginx -t</code></td><td><a href="servidor-web.html">Servidor Web</a></td></tr>
+<tr><td><code>certbot</code></td><td>Certificados HTTPS (Let's Encrypt)</td><td><code>sudo certbot --nginx -d meusite.com.br</code></td><td><a href="servidor-web.html">Servidor Web</a></td></tr>
+<tr><td><code>podman run/ps/exec/stop/rm</code></td><td>Containers sem root</td><td><code>podman run --rm docker.io/library/alpine echo oi</code></td><td><a href="containers.html">Docker e Podman</a></td></tr>
+<tr><td><code>podman images/rmi/system df</code></td><td>Imagens e espaço</td><td><code>podman system df</code></td><td><a href="containers.html">Docker e Podman</a></td></tr>
+<tr><td><code>docker</code>, <code>docker compose</code></td><td>Docker (com daemon)</td><td><code>docker compose up -d</code></td><td><a href="containers.html">Docker e Podman</a></td></tr>
+<tr><td><code>virsh</code></td><td>VMs do libvirt</td><td><code>virsh list --all</code></td><td><a href="kvm.html">KVM</a></td></tr>
+<tr><td><code>qemu-img</code></td><td>Discos de VM (qcow2)</td><td><code>qemu-img create -f qcow2 disco.qcow2 20G</code></td><td><a href="kvm.html">KVM</a></td></tr>
+<tr><td><code>systemd-detect-virt</code></td><td>Estou numa VM?</td><td><code>systemd-detect-virt</code></td><td><a href="kvm.html">KVM</a></td></tr>
+</table>
+</div>
+
+<h2 id="ajustes">Desempenho e segurança</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>systemd-analyze</code></td><td>Tempo de boot (<code>blame</code>, <code>critical-chain</code>)</td><td><code>systemd-analyze critical-chain</code></td><td><a href="desempenho.html">Desempenho</a></td></tr>
+<tr><td><code>cpupower</code></td><td>Governor e frequência da CPU</td><td><code>cpupower frequency-info</code></td><td><a href="desempenho.html">Desempenho</a></td></tr>
+<tr><td><code>lscpu</code></td><td>Processador (e virtualização)</td><td><code>lscpu | grep -i virt</code></td><td><a href="kvm.html">KVM</a></td></tr>
+<tr><td><code>arch-audit</code></td><td>Pacotes com vulnerabilidades conhecidas</td><td><code>arch-audit -u</code></td><td><a href="seguranca.html">Segurança</a></td></tr>
+<tr><td><code>sbctl</code></td><td>Secure Boot com chaves próprias</td><td><code>sbctl status</code></td><td><a href="seguranca.html">Segurança</a></td></tr>
+</table>
+</div>
+
+<h2 id="arquivos">Arquivos e texto (o básico do terminal)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>ls</code>, <code>cd</code>, <code>pwd</code></td><td>Listar e navegar</td><td><code>ls -l Documentos</code></td><td><a href="comandos-essenciais.html">Comandos Essenciais</a></td></tr>
+<tr><td><code>cp</code>, <code>mv</code>, <code>rm</code>, <code>mkdir</code></td><td>Copiar, mover, apagar, criar pastas</td><td><code>cp -a /etc/fstab ~/fstab.bak</code></td><td><a href="comandos-essenciais.html">Comandos Essenciais</a></td></tr>
+<tr><td><code>cat</code>, <code>less</code>, <code>head</code>, <code>tail</code></td><td>Ler arquivos</td><td><code>tail -n 20 /var/log/pacman.log</code></td><td><a href="comandos-essenciais.html">Comandos Essenciais</a></td></tr>
+<tr><td><code>grep</code></td><td>Procurar texto</td><td><code>grep -n faillock /etc/pam.d/system-auth</code></td><td><a href="comandos-essenciais.html">Comandos Essenciais</a></td></tr>
+<tr><td><code>nano</code>, <code>vim</code></td><td>Editar arquivos de texto</td><td><code>sudo nano /etc/pacman.conf</code></td><td><a href="terminal.html">O Terminal no Arch</a></td></tr>
+<tr><td><code>tar</code></td><td>Empacotar/comprimir</td><td><code>tar --zstd -cf docs.tar.zst Documentos</code></td><td><a href="projeto-servidor.html">Servidor Caseiro</a></td></tr>
+<tr><td><code>tee</code></td><td>Gravar como root a partir de um pipe</td><td><code>echo texto | sudo tee /etc/arquivo</code></td><td><a href="servidor-web.html">Servidor Web</a></td></tr>
+</table>
+</div>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/List_of_applications">List of applications</a> mostra alternativas para cada tarefa; <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> explica os comandos básicos e seus substitutos modernos; e <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a> organiza os próximos passos depois da instalação.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
