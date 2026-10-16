@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch pacman — procurar, instalar, remover e consultar pacotes | Guia Arch</title>
+<meta name="description" content="O básico do pacman no Arch Linux: pacotes, repositórios core/extra/multilib, -S, -R, -Q e o porquê das letras, -Ss, -Si, -Qi, -Ql, -Rs e -Rns, com as saídas reais em português explicadas linha por linha.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>pacman: <span class="hl">o Básico</span></h1>
+
+<p class="intro">No Arch, quase tudo o que você instala passa pelo <strong>pacman</strong> (de <em>package manager</em>, "gerenciador de pacotes", e um trocadilho com o Pac-Man do videogame). É um programa só, rápido e direto, que procura programas nos servidores do Arch, instala junto tudo de que eles precisam, remove e mostra informações sobre o que já está no seu sistema.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são pacote, repositório e dependência, e os repositórios <code>core</code>, <code>extra</code> e <code>multilib</code>.</li>
+  <li>Como o pacman é organizado: operações em letra maiúscula (<code>-S</code>, <code>-R</code>, <code>-Q</code>) e opções em minúscula.</li>
+  <li>Procurar (<code>-Ss</code>), ver detalhes (<code>-Si</code>), instalar (<code>-S</code>) e remover (<code>-R</code>, <code>-Rs</code>, <code>-Rns</code>).</li>
+  <li>Consultar o que está instalado (<code>-Q</code>, <code>-Qi</code>, <code>-Ql</code>).</li>
+  <li>Ler a saída real do pacman linha por linha e resolver os erros mais comuns.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Pacote, repositório e dependência</h2>
+
+<p>Pense numa loja de aplicativos de celular, só que pelo terminal. Três ideias explicam tudo:</p>
+
+<ul>
+  <li>Um <strong>pacote</strong> é um arquivo compactado com o programa pronto, mais uma ficha (nome, versão, do que depende). No Arch, ele termina em <code>.pkg.tar.zst</code>, como <code>htop-3.5.3-1-x86_64.pkg.tar.zst</code>: nome <code>htop</code>, versão <code>3.5.3</code>, lançamento <code>1</code> (a 1ª compilação dessa versão pelo Arch), arquitetura <code>x86_64</code>.</li>
+  <li>Um <strong>repositório</strong> é uma "prateleira" de pacotes num servidor. Os servidores que copiam essas prateleiras pelo mundo se chamam <strong>espelhos</strong> (<em>mirrors</em>; veja <a href="espelhos.html">Espelhos</a>).</li>
+  <li>Uma <strong>dependência</strong> é outro pacote de que o programa precisa para funcionar. O <code>fastfetch</code>, por exemplo, precisa da biblioteca <code>yyjson</code>. O pacman instala as dependências sozinho.</li>
+</ul>
+
+<h3>Os repositórios oficiais</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Repositório</th><th>O que tem</th><th>Ativado de fábrica?</th></tr>
+<tr><td><code>core</code></td><td>O essencial para o sistema iniciar e funcionar: kernel, <code>glibc</code>, <code>bash</code>, <code>systemd</code>, o próprio pacman.</td><td>Sim</td></tr>
+<tr><td><code>extra</code></td><td>Todo o resto: ambientes gráficos, navegadores, <code>htop</code>, <code>nginx</code>, <code>vlc</code>…</td><td>Sim</td></tr>
+<tr><td><code>multilib</code></td><td>Bibliotecas de 32 bits para rodar programas antigos de 32 bits (Steam e Wine são os casos clássicos).</td><td><strong>Não</strong></td></tr>
+<tr><td><code>core-testing</code>, <code>extra-testing</code>…</td><td>Versões em teste, antes de chegarem aos repositórios normais. Não são para o dia a dia.</td><td>Não</td></tr>
+</table>
+</div>
+
+<p>Quem diz quais repositórios estão ligados é o arquivo <code>/etc/pacman.conf</code>. Este é o trecho real da VM do guia (os comentários em inglês vêm do próprio Arch):</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho)">#[core-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+#[extra-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+# If you want to run 32 bit applications on your x86_64 system,
+# enable the multilib repositories as required here.
+
+#[multilib-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+#[multilib]
+#Include = /etc/pacman.d/mirrorlist</pre>
+
+<p>Cada repositório é um bloco com o nome entre colchetes. O <code>#</code> no começo da linha <strong>desliga</strong> (comenta) a linha. Por isso <code>[core]</code> e <code>[extra]</code> estão ligados e <code>[multilib]</code> não. Para ligar o multilib, você apaga o <code>#</code> das duas linhas dele e depois roda <code>sudo pacman -Syu</code> (veja <a href="atualizar.html">Atualizar o Sistema</a>). A linha <code>Include</code> diz "a lista de servidores está no arquivo <code>/etc/pacman.d/mirrorlist</code>".</p>
+
+<div class="tip">
+<strong>E o AUR?</strong>
+<p>Programas que não estão em nenhum repositório oficial costumam estar no <strong>AUR</strong> (<em>Arch User Repository</em>), mantido pelos usuários. O pacman <strong>não</strong> instala do AUR sozinho: isso é assunto de <a href="aur.html">O que é o AUR</a>.</p>
+</div>
+
+<h3>Onde o pacman guarda o que sabe</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>O que é</th></tr>
+<tr><td><code>/var/lib/pacman/sync/</code></td><td>As listas baixadas dos repositórios (<code>core.db</code>, <code>extra.db</code>): o "catálogo da loja".</td></tr>
+<tr><td><code>/var/lib/pacman/local/</code></td><td>Uma pasta por pacote instalado, com a ficha e a lista de arquivos dele: o "inventário da sua casa".</td></tr>
+<tr><td><code>/var/cache/pacman/pkg/</code></td><td>Os <code>.pkg.tar.zst</code> já baixados (veja <a href="cache-orfaos.html">Cache e Órfãos</a>).</td></tr>
+<tr><td><code>/var/log/pacman.log</code></td><td>O histórico de tudo o que foi instalado, atualizado e removido.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ ls /var/lib/pacman/local/htop-3.5.3-1
+desc                        « a ficha: versão, descrição, dependências, motivo da instalação
+files                       « a lista de arquivos que o pacote colocou no sistema
+mtree                       « tamanhos e somas de verificação, para conferir integridade</pre>
+
+<hr>
+
+<h2>Como o pacman é organizado</h2>
+
+<p>O pacman não usa palavras como <code>install</code> ou <code>remove</code>. Ele usa <strong>uma letra maiúscula</strong> para a <strong>operação</strong> (o que fazer) e <strong>letras minúsculas</strong> para as <strong>opções</strong> (como fazer). As letras vêm do inglês:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operação</th><th>Vem de</th><th>Para quê</th></tr>
+<tr><td><code>-S</code></td><td><em>sync</em> (sincronizar)</td><td>Tudo o que envolve os repositórios: procurar, instalar, atualizar.</td></tr>
+<tr><td><code>-R</code></td><td><em>remove</em></td><td>Remover pacotes.</td></tr>
+<tr><td><code>-Q</code></td><td><em>query</em> (consultar)</td><td>Perguntar sobre os pacotes <strong>instalados</strong>.</td></tr>
+<tr><td><code>-F</code></td><td><em>files</em></td><td>Descobrir qual pacote tem um arquivo (<a href="pacman-avancado.html">pacman Avançado</a>).</td></tr>
+<tr><td><code>-U</code></td><td><em>upgrade</em></td><td>Instalar um arquivo <code>.pkg.tar.zst</code> que você já tem (do <a href="makepkg.html">makepkg</a>, por exemplo).</td></tr>
+<tr><td><code>-D</code></td><td><em>database</em></td><td>Mexer no banco de dados (marcar como dependência…).</td></tr>
+</table>
+</div>
+
+<p>A mesma letra minúscula muda de sentido conforme a operação. Juntas, viram "palavras" curtas:</p>
+
+<dl class="anatomy">
+  <dt>-S s</dt><dd><em>sync</em> + <em>search</em>: procurar nos repositórios.</dd>
+  <dt>-S i</dt><dd><em>sync</em> + <em>info</em>: ficha de um pacote do repositório.</dd>
+  <dt>-Q i</dt><dd><em>query</em> + <em>info</em>: ficha de um pacote <strong>instalado</strong>.</dd>
+  <dt>-Q l</dt><dd><em>query</em> + <em>list</em>: arquivos de um pacote instalado.</dd>
+  <dt>-R s</dt><dd><em>remove</em> + <em>recursive</em>: remover junto as dependências que ficarem sem uso.</dd>
+  <dt>-S yu</dt><dd><em>sync</em> + <em>refresh</em> (o <code>y</code>, atualizar o catálogo) + <em>sysupgrade</em> (o <code>u</code>, atualizar tudo).</dd>
+</dl>
+
+<p>A ajuda do próprio pacman mostra as operações (em português, na VM):</p>
+
+<pre class="term">$ pacman -h
+uso:  pacman &lt;operação&gt; [...]
+operações:
+    pacman {-h --help}
+    pacman {-V --version}
+    pacman {-D --database} &lt;opções&gt; &lt;pacote(s)&gt;
+    pacman {-F --files}    [opções] [arquivo(s)]
+    pacman {-Q --query}    [opções] [pacote(s)]
+    pacman {-R --remove}   [opções] &lt;pacote(s)&gt;
+    pacman {-S --sync}     [opções] [pacote(s)]
+    pacman {-T --deptest}  [opções] [pacote(s)]
+    pacman {-U --upgrade}  [opções] &lt;arquivo(s)&gt;
+
+use "pacman {-h --help}" com uma operação para ver as opções disponíveis</pre>
+
+<p>Para ver as opções de uma operação, junte o <code>-h</code> a ela: <code>pacman -Q -h</code>, <code>pacman -S -h</code>. Cada opção tem também um nome longo (<code>-Ss</code> = <code>--sync --search</code>), útil em scripts para ficar legível.</p>
+
+<h3>Quem pode usar o pacman</h3>
+
+<p><strong>Consultar</strong> (<code>-Ss</code>, <code>-Si</code>, <code>-Q…</code>) qualquer usuário pode. <strong>Mudar o sistema</strong> (instalar, remover, atualizar) só o root. Se a ana tentar instalar sem permissão:</p>
+
+<pre class="term">$ pacman -S fastfetch
+erro: você não pode realizar esta operação a menos que seja root.
+$ echo $?
+1</pre>
+
+<p>A solução é colocar <code>sudo</code> na frente: ele roda aquele único comando como root, depois de pedir a senha <strong>da própria ana</strong> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). Por isso, nesta aula, os comandos que mudam o sistema aparecem como <code>sudo pacman …</code>.</p>
+
+<hr>
+
+<h2>Procurar um pacote: -Ss</h2>
+
+<dl class="anatomy">
+  <dt>pacman</dt><dd>O gerenciador.</dd>
+  <dt>-Ss</dt><dd><em>sync search</em>: procura no catálogo dos repositórios.</dd>
+  <dt>fastfetch</dt><dd>O que procurar. É uma <strong>expressão regular</strong>: casa com qualquer parte do <strong>nome ou da descrição</strong>.</dd>
+</dl>
+
+<pre class="term">$ pacman -Ss fastfetch
+extra/fastfetch 2.70.0-1                                     « repositório/nome versão
+    A feature-rich and performance oriented neofetch like system information tool    « descrição
+$ echo $?
+0</pre>
+
+<p>Cada resultado ocupa duas linhas: <code>repositório/nome versão</code> e, recuada, a descrição (em inglês, como vem do Arch). Quando o pacote já está no seu sistema, aparece <code>[instalado]</code> no fim:</p>
+
+<pre class="term">$ pacman -Ss htop
+extra/bashtop 0.9.25-2
+    Linux resource monitor
+extra/evisum 0.6.4-1
+    GUI top/htop-like process viewer using EFL
+extra/htop 3.5.3-1 [instalado]                « você já tem este
+    Interactive process viewer</pre>
+
+<p>O <code>bashtop</code> apareceu porque a <strong>descrição</strong> de outros pacotes também cita "htop". Uma palavra comum devolve muita coisa: <code>pacman -Ss fetch</code> lista 22 pacotes (44 linhas), entre eles o <code>perl</code>, que tem "fetch" na descrição. Para achar só o nome exato, use os marcadores de regex <code>^</code> (começo) e <code>$</code> (fim):</p>
+
+<pre class="term">$ pacman -Ss '^htop$'
+extra/htop 3.5.3-1 [instalado]
+    Interactive process viewer</pre>
+
+<p><strong>Quando não acha nada</strong>, o pacman não escreve nenhuma mensagem: só devolve o código de saída 1.</p>
+
+<pre class="term">$ pacman -Ss xyzabc
+$ echo $?
+1</pre>
+
+<h2>Ver os detalhes: -Si</h2>
+
+<p>Antes de instalar, leia a ficha do pacote com <code>-Si</code> (<em>sync info</em>):</p>
+
+<pre class="term">$ pacman -Si fastfetch
+Repositório          : extra
+Nome                 : fastfetch
+Versão               : 2.70.0-1
+Descrição            : A feature-rich and performance oriented neofetch like system information tool
+Arquitetura          : x86_64
+URL                  : https://github.com/fastfetch-cli/fastfetch
+Licenças             : MIT
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : glibc  yyjson                    « obrigatórias: vêm junto
+Depend. opcionais    : chafa: Image output as ascii art   « opcionais: só se você quiser o recurso
+                       dbus: Bluetooth, Player &amp; Media detection
+                       …                                 « (17 linhas encurtadas aqui)
+                       zlib: Faster image output when using kitty graphics protocol
+Conflita com         : Nenhum
+Substitui            : Nenhum
+Tamanho do download  : 664,76 KiB                       « quanto vai baixar
+Tamanho instalado    : 2054,15 KiB                      « quanto vai ocupar no disco
+Empacotador          : Robin Candau &lt;antiz@archlinux.org&gt;
+Data da compilação   : qua 14 out 2026 05:54:42
+Validado por         : Soma SHA-256  Assinatura</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo</th><th>O que quer dizer</th></tr>
+<tr><td><code>Depende de</code></td><td>Pacotes obrigatórios. O pacman instala os que faltarem.</td></tr>
+<tr><td><code>Depend. opcionais</code></td><td>Pacotes que ativam recursos extras. <strong>Não</strong> são instalados sozinhos; o pacman só os lista no fim da instalação.</td></tr>
+<tr><td><code>Provê</code> / <code>Conflita com</code> / <code>Substitui</code></td><td>Se o pacote "faz o papel" de outro, não pode conviver com outro, ou substitui um pacote antigo.</td></tr>
+<tr><td><code>Empacotador</code></td><td>A pessoa do Arch que preparou o pacote e o <strong>assinou</strong> (veja <a href="chaves.html">Chaves e Assinaturas</a>).</td></tr>
+<tr><td><code>Validado por</code></td><td>Como o pacman confere que o arquivo baixado não foi alterado: soma SHA-256 e assinatura digital.</td></tr>
+</table>
+</div>
+
+<p>Nome errado dá erro e código 1: <code>pacman -Si xyz</code> responde <code>erro: o pacote "xyz" não foi encontrado</code>.</p>
+
+<hr>
+
+<h2>Instalar: -S</h2>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda o comando como root (pede a senha da ana).</dd>
+  <dt>pacman -S</dt><dd><em>sync</em>: instalar do repositório.</dd>
+  <dt>fastfetch</dt><dd>Um ou mais nomes, separados por espaço (<code>pacman -S fastfetch tree</code>).</dd>
+</dl>
+
+<p>Esta é a parte da instalação <strong>antes</strong> da pergunta, exatamente como o pacman da VM mostrou (respondemos "não" para não mexer na VM):</p>
+
+<pre class="term">$ sudo pacman -S fastfetch
+[sudo] senha para ana:                                  « a senha da ana; nada aparece enquanto digita
+resolvendo dependências...                              « descobre do que o fastfetch precisa
+procurando pacotes conflitantes...                      « confere se algo instalado briga com ele
+
+Pacotes (2) yyjson-0.13.0-1  fastfetch-2.70.0-1         « 2 pacotes: o pedido + 1 dependência
+
+Tamanho total download:   0,81 MiB                      « quanto vai baixar
+Tamanho total instalado:  2,68 MiB                      « quanto vai ocupar
+
+:: Continuar a instalação? [S/n] n                      « S ou Enter = sim; n = não</pre>
+
+<p>O <code>[S/n]</code> mostra as respostas possíveis; a letra <strong>maiúscula</strong> é o padrão, a que vale se você só apertar <kbd>Enter</kbd>. A pergunta aparece sempre, mesmo para um pacote só: é a sua chance de ler a lista e desistir. Respondendo <code>n</code>, nada muda e o código de saída é 1.</p>
+
+<p>Programas grandes trazem muitas dependências. O <code>vlc</code>, numa VM sem ambiente gráfico, puxa 88 pacotes:</p>
+
+<pre class="term">$ sudo pacman -S vlc
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (88) a52dec-0.8.0-3  alsa-lib-1.2.16.1-1  alsa-topology-conf-1.2.5.1-4
+             alsa-ucm-conf-1.2.16.1-1  cjson-1.7.19-1
+             …                                          « (80 linhas encurtadas aqui)
+             xkeyboard-config-2.48-1  vlc-3.0.24-1
+
+Tamanho total download:    47,46 MiB
+Tamanho total instalado:  220,01 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<h3>O que acontece depois do "S"</h3>
+
+<p>Na VM do guia não se instala nada de verdade durante as aulas, então o resto vem de execuções reais em separado: o download foi feito com <code>pacman -Sw</code> (só baixa) numa pasta temporária, e a instalação vem do registro da instalação dos pacotes das aulas (210 pacotes, em 16/10/2026). Juntando, a sequência que você vê depois de responder <code>S</code> é esta:</p>
+
+<pre class="term">:: Continuar a instalação? [S/n] S
+:: Obtendo pacotes...
+ yyjson-0.13.0-1-...   165,3 KiB   389 KiB/s 00:00 [######################] 100%
+ fastfetch-2.70.0...   664,8 KiB  1064 KiB/s 00:01 [######################] 100%
+ Total (2/2)           830,0 KiB  1208 KiB/s 00:01 [######################] 100%
+(2/2) verificando chaves no chaveiro               [######################] 100%
+(2/2) verificando integridade do pacote            [######################] 100%</pre>
+
+<ol class="passo">
+  <li><strong>Obtendo pacotes</strong>: uma barra por pacote, com tamanho baixado, velocidade e tempo restante, e uma linha <code>Total</code>. Vários pacotes descem ao mesmo tempo (a opção <code>ParallelDownloads = 5</code> do <code>pacman.conf</code>). Pacotes que já estão no cache não são baixados de novo.</li>
+  <li><strong>verificando chaves no chaveiro</strong>: confere se quem assinou cada pacote é um empacotador conhecido do Arch.</li>
+  <li><strong>verificando integridade</strong>: confere a assinatura de cada arquivo. Um arquivo alterado ou corrompido para tudo aqui, antes de mexer no sistema (veja <a href="chaves.html">Chaves e Assinaturas</a>).</li>
+</ol>
+
+<p>Depois, a instalação propriamente dita. Trecho real da instalação de 210 pacotes na VM (no registro, que não é um terminal, as barras viram linhas de texto):</p>
+
+<pre class="term">verificando conflitos de arquivos...           « nenhum arquivo do pacote pode pertencer a outro
+verificando espaço em disco disponível...
+:: Processando alterações do pacote...
+instalando htop...
+Dependências opcionais para htop               « lembrete: recursos extras que você pode querer
+    lm_sensors: show cpu temperatures [pendente]  « [pendente] = vai ser instalado nesta mesma transação
+    lsof: show files opened by a process
+    strace: attach to a running process
+instalando tree...
+…
+:: Executando hooks pós-transação...           « tarefas automáticas depois de instalar
+( 1/18) Configuring dynamic linker run-time bindings...
+( 2/18) Creating system user accounts...
+…
+(11/18) Updating linux initcpios...            « refaz o initramfs, porque veio um kernel novo
+…
+(18/18) Updating the info directory file...</pre>
+
+<p>Os <strong>hooks</strong> (ganchos) são tarefas que pacotes pedem para rodar depois da transação: atualizar o cache de ícones, criar usuários de sistema, refazer o <a href="mkinitcpio.html">initramfs</a> quando o kernel muda. As mensagens deles vêm em inglês. O número entre parênteses é a contagem (<code>11/18</code> = 11º de 18). Para escrever os seus, veja <a href="hooks.html">Hooks do pacman</a>.</p>
+
+<h3>Instalar o que já está instalado</h3>
+
+<pre class="term">$ sudo pacman -S htop
+atenção: htop-3.5.3-1 está atualizado -- reinstalando     « não é erro: ele reinstalaria a mesma versão
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) htop-3.5.3-1
+
+Tamanho total instalado:  0,41 MiB
+Alteração no tamanho:     0,00 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Reinstalar serve para consertar arquivos apagados por engano. Se você quer o contrário, pular o que já está instalado, use <code>--needed</code>: <code>sudo pacman -S --needed htop</code> responde <code>atenção: htop-3.5.3-1 está atualizado -- ignorando</code> e <code>nada para fazer</code>, com código 0.</p>
+
+<div class="warning">
+<strong>Instale sempre com o sistema atualizado</strong>
+<p>O pacman instala a versão que está no catálogo baixado. Se o catálogo é de semanas atrás e você nunca atualizou, o pacote novo pode esperar bibliotecas mais novas do que as suas. O hábito seguro é <code>sudo pacman -Syu</code> antes, ou instalar junto: <code>sudo pacman -Syu fastfetch</code>. <strong>Nunca</strong> use <code>pacman -Sy pacote</code> (atualizar o catálogo e instalar sem atualizar o resto); o porquê está em <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<hr>
+
+<h2>Remover: -R, -Rs e -Rns</h2>
+
+<dl class="anatomy">
+  <dt>-R</dt><dd><em>remove</em>: remove só o pacote pedido.</dd>
+  <dt>s</dt><dd><em>recursive</em>: remove também as dependências dele que nenhum outro pacote usa.</dd>
+  <dt>n</dt><dd><em>nosave</em>: não guarda cópia <code>.pacsave</code> dos arquivos de configuração que você alterou.</dd>
+</dl>
+
+<p>Veja a diferença com o <code>podman</code>, que trouxe várias dependências só para ele:</p>
+
+<pre class="term">$ sudo pacman -R podman
+verificando dependências...
+
+Pacotes (1) podman-6.1.4-1                       « só o podman
+
+Tamanho total removido:  82,66 MiB
+
+:: Deseja remover estes pacotes? [S/n] n
+$ sudo pacman -Rs podman
+verificando dependências...
+
+Pacotes (16) aardvark-dns-2.1.0-3  abseil-cpp-20260817.0-2  catatonit-0.2.1-2      « 15 dependências
+             conmon-1:2.2.1-1  containers-common-1:0.69.2-1  criu-4.2.1-1      « que só o podman usava
+             crun-1.30.1-1  libbsd-0.12.2-2  libmd-1.3.0-1  libnet-2:1.3-2
+             netavark-2.1.0-3  passt-2026_10_02.cba3570-1  protobuf-36.1-1
+             protobuf-c-1.5.2-15  python-protobuf-36.1-1  podman-6.1.4-1
+
+Tamanho total removido:  133,23 MiB
+
+:: Deseja remover estes pacotes? [S/n] n</pre>
+
+<p>Com <code>-R</code> sozinho, as 15 dependências ficariam esquecidas no disco (são os <strong>órfãos</strong>, assunto de <a href="cache-orfaos.html">Cache e Órfãos</a>). Com <code>-Rs</code>, saem juntas. Repare que o <code>-Rs</code> é cuidadoso: só leva o que <strong>nenhum outro pacote instalado</strong> precisa.</p>
+
+<p>Já o <code>htop</code> não tem dependências exclusivas (a <code>ncurses</code> e a <code>libnl</code> servem a outros programas), então <code>-R</code>, <code>-Rs</code> e <code>-Rns</code> mostram o mesmo resumo:</p>
+
+<pre class="term">$ sudo pacman -Rns htop
+verificando dependências...
+
+Pacotes (1) htop-3.5.3-1
+
+Tamanho total removido:  0,41 MiB
+
+:: Deseja remover estes pacotes? [S/n] n</pre>
+
+<p>E o <code>n</code>? Alguns pacotes declaram arquivos de configuração em <code>/etc</code>. Se você editou um deles e remove o pacote com <code>-R</code> ou <code>-Rs</code>, o pacman guarda a sua versão como <code>arquivo.pacsave</code> (por precaução). Com <code>-Rns</code>, não guarda. Detalhes em <a href="pacnew.html">.pacnew e .pacsave</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Remove</th><th>Quando usar</th></tr>
+<tr><td><code>pacman -R pkg</code></td><td>Só o pacote</td><td>Quando você quer manter as dependências (outro programa seu vai usá-las).</td></tr>
+<tr><td><code>pacman -Rs pkg</code></td><td>Pacote + dependências sem uso</td><td>Remover sem deixar lixo, mas guardando as suas configurações alteradas como <code>.pacsave</code>.</td></tr>
+<tr><td><code>pacman -Rns pkg</code></td><td>Pacote + dependências sem uso + sem <code>.pacsave</code></td><td><strong>O mais usado</strong> para "desinstalar de vez".</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Leia a lista antes do "S"</strong>
+<p>Remover algo de que o sistema precisa é bloqueado pelo pacman: <code>sudo pacman -R glibc</code> responde <code>erro: falha ao preparar a transação (não foi possível satisfazer as dependências)</code> e lista os 289 pacotes que quebrariam (<code>:: a remoção de glibc quebra a dependência "glibc" necessária por bash</code>…). Nunca "force" isso com <code>-Rdd</code> (remover ignorando dependências): é o jeito mais rápido de deixar o sistema sem iniciar.</p>
+</div>
+
+<p>Os arquivos que você criou na sua pasta pessoal (por exemplo <code>~/.config/htop/</code>) nunca são apagados pelo pacman: ele só remove o que o pacote instalou.</p>
+
+<hr>
+
+<h2>Consultar o que está instalado: -Q</h2>
+
+<p>As consultas <code>-Q</code> olham só o "inventário" local, sem internet. Sozinho, <code>-Q</code> lista tudo; com nomes, mostra a versão instalada:</p>
+
+<pre class="term">$ pacman -Q | wc -l
+408                                  « 408 pacotes instalados na VM
+$ pacman -Q bash pacman linux
+bash 5.3.20-1
+pacman 7.1.0.r9.g54d9411-3
+linux 7.2.10.arch1-1                 « a versão do pacote usa ponto onde o uname -r usa hífen
+$ pacman -Q xyz
+erro: o pacote "xyz" não foi encontrado
+$ echo $?
+1</pre>
+
+<p>O código de saída torna <code>pacman -Q</code> útil em scripts: <code>pacman -Q htop &amp;&gt;/dev/null &amp;&amp; echo "tem htop"</code>.</p>
+
+<h3>A ficha do instalado: -Qi</h3>
+
+<pre class="term">$ pacman -Qi htop
+Nome                 : htop
+Versão               : 3.5.3-1
+Descrição            : Interactive process viewer
+Arquitetura          : x86_64
+URL                  : https://htop.dev/
+Licenças             : GPL
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : libcap  libcap.so=2-64  libnl  ncurses  libncursesw.so=6-64
+Depend. opcionais    : lm_sensors: show cpu temperatures [instalado]
+                       lsof: show files opened by a process
+                       strace: attach to a running process
+Necessário para      : Nenhum                     « nenhum pacote depende do htop
+Opcional para        : Nenhum
+Conflita com         : Nenhum
+Substitui            : Nenhum
+Tamanho instalado    : 421,16 KiB
+Empacotador          : Christian Hesse &lt;eworm@archlinux.org&gt;
+Data da compilação   : dom 16 ago 2026 13:15:40
+Data de instalação   : sex 16 out 2026 12:57:10   « quando entrou no seu sistema
+Motivo da instalação : Instalado explicitamente   « você pediu (e não veio como dependência)
+Script de instalação : Não
+Validado por         : Assinatura</pre>
+
+<p>Em relação ao <code>-Si</code>, aparecem campos que só fazem sentido para o que está instalado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo</th><th>O que quer dizer</th></tr>
+<tr><td><code>Necessário para</code></td><td>Quem depende deste pacote. Se não for "Nenhum", remover com <code>-R</code> vai dar erro de dependência.</td></tr>
+<tr><td><code>Data de instalação</code></td><td>Quando foi instalado ou atualizado pela última vez.</td></tr>
+<tr><td><code>Motivo da instalação</code></td><td><code>Instalado explicitamente</code> (você pediu) ou <code>Instalado como dependência de outro pacote</code>. É isso que o <code>-Rs</code> e a busca de órfãos usam.</td></tr>
+<tr><td><code>Depende de</code> com <code>.so=</code></td><td>Dependência de uma <strong>biblioteca</strong> numa versão exata (<code>libncursesw.so=6-64</code> = versão 6, 64 bits). Fica importante em <a href="atualizar.html">Atualizar o Sistema</a>.</td></tr>
+</table>
+</div>
+
+<h3>Os arquivos do pacote: -Ql</h3>
+
+<pre class="term">$ pacman -Ql htop
+htop /usr/
+htop /usr/bin/
+htop /usr/bin/htop                          « o programa
+htop /usr/share/
+htop /usr/share/applications/
+htop /usr/share/applications/htop.desktop   « o atalho no menu do ambiente gráfico
+htop /usr/share/icons/
+htop /usr/share/icons/hicolor/
+htop /usr/share/icons/hicolor/scalable/
+htop /usr/share/icons/hicolor/scalable/apps/
+htop /usr/share/icons/hicolor/scalable/apps/htop.svg
+htop /usr/share/man/
+htop /usr/share/man/man1/
+htop /usr/share/man/man1/htop.1.gz          « o manual (man htop)
+htop /usr/share/pixmaps/
+htop /usr/share/pixmaps/htop.png</pre>
+
+<p>É o jeito de descobrir "onde foi parar" o que você instalou. O caminho inverso (de quem é um arquivo?) é <code>pacman -Qo /usr/bin/ls</code>, visto em <a href="pacman-avancado.html">pacman Avançado</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Opções</th><th>Qual usar?</th></tr>
+<tr><td>Achar um pacote</td><td><code>pacman -Ss</code>; o site <a href="https://archlinux.org/packages/">archlinux.org/packages</a>; <code>pacman -F arquivo</code></td><td><code>-Ss</code> no dia a dia; o site para ver também versões em teste e o histórico; <code>-F</code> quando você sabe o nome do <strong>comando</strong> mas não do pacote.</td></tr>
+<tr><td>Saber se está instalado</td><td><code>pacman -Q nome</code>; <code>pacman -Qs texto</code>; <code>pacman -Ss '^nome$'</code> (mostra <code>[instalado]</code>)</td><td><code>-Q nome</code> quando sabe o nome exato; <code>-Qs</code> quando não sabe.</td></tr>
+<tr><td>Instalar</td><td><code>pacman -S</code>; <code>pacman -Syu pkg</code>; <code>pacman -S --needed</code></td><td><code>-Syu pkg</code> se faz tempo que não atualiza; <code>--needed</code> em listas e scripts.</td></tr>
+<tr><td>Remover</td><td><code>-R</code>, <code>-Rs</code>, <code>-Rns</code></td><td><code>-Rns</code>, salvo motivo para manter dependências ou configurações.</td></tr>
+<tr><td>Interface gráfica</td><td>GNOME Software / KDE Discover (com o plugin de pacotes do Arch), Pamac (AUR)</td><td>Funcionam, mas o próprio Arch recomenda conhecer o pacman: é ele que você usa quando algo dá errado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<p>O terminal abaixo é o simulador do guia, com os pacotes da VM. A senha da ana para o <code>sudo</code> é <code>ana</code>.</p>
+
+<div class="try" data-goal="ran:pacman +-Qi +htop,out:Motivo da instalação" data-solucao="pacman -Qi htop">
+<p class="try-task"><strong>Missão 1:</strong> veja a ficha do <code>htop</code> instalado e descubra o motivo da instalação e o tamanho que ele ocupa.</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Ss,out:extra/fastfetch" data-solucao="pacman -Ss fastfetch">
+<p class="try-task"><strong>Missão 2:</strong> procure nos repositórios um programa chamado <code>fastfetch</code>. De qual repositório ele vem? Ele já está instalado?</p>
+</div>
+
+<div class="try" data-goal="pkg:fastfetch" data-solucao="sudo pacman -S fastfetch;;ana;;S">
+<p class="try-task"><strong>Missão 3:</strong> instale o <code>fastfetch</code>. Tente primeiro sem <code>sudo</code> e leia o erro. Depois, com <code>sudo</code>, leia a lista de pacotes antes de responder <code>S</code>. Confira com <code>pacman -Q fastfetch</code>.</p>
+</div>
+
+<div class="try" data-goal="nopkg:htop" data-solucao="sudo pacman -Rns htop;;ana;;S">
+<p class="try-task"><strong>Missão 4:</strong> remova o <code>htop</code> do jeito "de vez" (com as dependências sem uso e sem guardar <code>.pacsave</code>). Depois confirme que <code>pacman -Q htop</code> dá erro.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"você não pode realizar esta operação a menos que seja root"</strong>
+<pre class="term">$ pacman -S fastfetch
+erro: você não pode realizar esta operação a menos que seja root.</pre>
+<p><strong>O que aconteceu:</strong> instalar, remover e atualizar mudam o sistema inteiro.</p>
+<p><strong>Como resolver:</strong> repita com <code>sudo</code> na frente. Atalho do Bash: <code>sudo !!</code> repete o último comando com <code>sudo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"alvo não encontrado"</strong>
+<pre class="term">$ sudo pacman -S xyz
+erro: alvo não encontrado: xyz</pre>
+<p><strong>O que aconteceu:</strong> não existe pacote com esse nome nos repositórios ligados. Causas comuns: erro de digitação, o nome do pacote é diferente do nome do comando, o pacote está no AUR, ou está no <code>multilib</code> desligado.</p>
+<p><strong>Como confirmar e resolver:</strong> procure por parte do nome (<code>pacman -Ss xy</code>), pelo comando (<code>pacman -F xyz</code>, em <a href="pacman-avancado.html">pacman Avançado</a>) ou no site <a href="https://archlinux.org/packages/">archlinux.org/packages</a>. Se não estiver em lugar nenhum, veja o <a href="aur.html">AUR</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"o pacote … não foi encontrado" (em -Q, -Qi, -Si)</strong>
+<pre class="term">$ pacman -Q fastfetch
+erro: o pacote "fastfetch" não foi encontrado</pre>
+<p><strong>O que aconteceu:</strong> com <code>-Q</code>, o pacote não está <strong>instalado</strong> (pode existir no repositório). Com <code>-Si</code>, não existe no catálogo.</p>
+<p><strong>Como resolver:</strong> para saber se existe para instalar, use <code>pacman -Ss</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível travar a base de dados"</strong>
+<pre class="term">$ sudo pacman -Syu
+:: Sincronizando a base de dados de pacotes...
+erro: falha ao sincronizar todas as bases de dados (não foi possível travar a base de dados)</pre>
+<p>Com <code>-S</code>, a mensagem completa traz a dica (saída real, reproduzida num banco de testes da VM; no seu sistema o caminho é <code>/var/lib/pacman/db.lck</code>):</p>
+<pre class="term">erro: falha ao iniciar a transação (não foi possível travar a base de dados)
+erro: não foi possível travar a base de dados: Arquivo existe
+  se tiver certeza de que um gerenciador de pacotes não esteja
+  em execução, você pode remover /tmp/a4/dby/db.lck</pre>
+<p><strong>O que aconteceu:</strong> enquanto trabalha, o pacman cria a "trava" <code>/var/lib/pacman/db.lck</code>, para dois pacman não mexerem ao mesmo tempo. Ou outro pacman está rodando agora (outro terminal, uma atualização gráfica), ou um pacman anterior foi interrompido à força e a trava ficou para trás. Na VM do guia, foi exatamente isso: um desligamento forçado deixou o arquivo.</p>
+<p><strong>Como confirmar:</strong> veja se há um pacman rodando. Se <code>pgrep -a pacman</code> não mostrar nada, a trava é sobra:</p>
+<pre class="term">$ pgrep -a pacman                                 « nada: nenhum pacman rodando
+$ ls -l /var/lib/pacman/db.lck
+---------- 1 root root 0 16 out 12:40 /var/lib/pacman/db.lck</pre>
+<p><strong>Como resolver:</strong> <strong>só se nenhum pacman estiver rodando</strong>, apague a trava e repita: <code>sudo rm /var/lib/pacman/db.lck</code>. Se houver um pacman rodando, espere ele terminar; apagar a trava nessa hora deixa dois programas escrevendo no mesmo banco de dados.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível satisfazer as dependências" ao remover</strong>
+<pre class="term">$ sudo pacman -R jq
+verificando dependências...
+erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+:: a remoção de jq quebra a dependência "jq" necessária por devtools</pre>
+<p><strong>O que aconteceu:</strong> outro pacote instalado (<code>devtools</code>) precisa do <code>jq</code>.</p>
+<p><strong>Como resolver:</strong> decida se quer remover os dois (<code>sudo pacman -Rs devtools</code> leva o <code>jq</code> junto, se mais ninguém o usar) ou deixe o <code>jq</code> onde está. <code>pacman -Qi jq</code> mostra quem depende dele no campo <code>Necessário para</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Erros de download, de espelho ou de assinatura</strong>
+<p>Mensagens como <code>falha ao obter o arquivo</code>, <code>The requested URL returned error: 404</code> ou <code>a assinatura de "…" é inválida</code> têm aulas próprias: <a href="espelhos.html">Espelhos</a>, <a href="chaves.html">Chaves e Assinaturas</a> e <a href="problemas-update.html">Erros de Atualização</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Root?</th></tr>
+<tr><td><code>pacman -Ss texto</code></td><td>Procura no nome e na descrição (regex)</td><td>Não</td></tr>
+<tr><td><code>pacman -Si pkg</code></td><td>Ficha do pacote no repositório</td><td>Não</td></tr>
+<tr><td><code>pacman -S pkg…</code></td><td>Instala (com dependências)</td><td>Sim</td></tr>
+<tr><td><code>pacman -S --needed pkg…</code></td><td>Instala só o que ainda não está instalado</td><td>Sim</td></tr>
+<tr><td><code>pacman -Syu</code></td><td>Atualiza o sistema inteiro (<a href="atualizar.html">aula própria</a>)</td><td>Sim</td></tr>
+<tr><td><code>pacman -R pkg</code></td><td>Remove só o pacote</td><td>Sim</td></tr>
+<tr><td><code>pacman -Rs pkg</code></td><td>Remove com as dependências sem uso</td><td>Sim</td></tr>
+<tr><td><code>pacman -Rns pkg</code></td><td>Idem, sem guardar <code>.pacsave</code></td><td>Sim</td></tr>
+<tr><td><code>pacman -Q</code> / <code>-Q pkg</code></td><td>Lista os instalados / versão de um</td><td>Não</td></tr>
+<tr><td><code>pacman -Qi pkg</code></td><td>Ficha do pacote instalado</td><td>Não</td></tr>
+<tr><td><code>pacman -Ql pkg</code></td><td>Arquivos do pacote instalado</td><td>Não</td></tr>
+<tr><td><code>pacman -Qs texto</code></td><td>Procura entre os instalados</td><td>Não</td></tr>
+<tr><td><code>pacman -h</code> / <code>pacman -S -h</code></td><td>Ajuda geral / de uma operação</td><td>Não</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Procurar</h3>
+<p>Complete para procurar nos repositórios pacotes com "torrent" no nome ou na descrição:</p>
+<div class="ex-code">pacman <input data-answer="-Ss|--sync --search" aria-label="operação e opção"> torrent</div>
+</div>
+
+<div class="exercise">
+<h3>2. Desinstalar de vez</h3>
+<p>Remova o <code>podman</code> junto com as dependências que só ele usa, sem guardar <code>.pacsave</code>:</p>
+<div class="ex-code">sudo pacman <input data-answer="-Rns|-Rsn" aria-label="opções"> podman</div>
+</div>
+
+<div class="exercise">
+<h3>3. Onde foi parar?</h3>
+<p>Liste os arquivos que o pacote <code>tree</code> instalou:</p>
+<div class="ex-code">pacman <input data-answer="-Ql|-Q -l|--query --list" aria-label="opções"> tree</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Em <code>pacman -Qi</code>, o que quer dizer a letra <code>Q</code>?</p>
+<label><input type="radio" name="q4"> <em>quick</em>: uma consulta rápida pela internet.</label>
+<label><input type="radio" name="q4"> <em>query</em>: consultar os pacotes instalados.</label>
+<label><input type="radio" name="q4"> <em>queue</em>: a fila de downloads.</label>
+<label><input type="radio" name="q4"> <em>quit</em>: sair do pacman.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você roda <code>sudo pacman -S vlc</code> e vê <code>Pacotes (88)</code>. Por que 88, se você pediu um?</p>
+<label><input type="radio" name="q5"> O pacman vai atualizar o sistema inteiro junto.</label>
+<label><input type="radio" name="q5"> São as dependências opcionais, que ele sempre instala.</label>
+<label><input type="radio" name="q5"> O vlc precisa de 87 outros pacotes (dependências obrigatórias) que você ainda não tem.</label>
+<label><input type="radio" name="q5"> É um erro: deveria aparecer só 1.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. <code>pacman -Syu</code> falhou com "não foi possível travar a base de dados". Qual é o primeiro passo?</p>
+<label><input type="radio" name="q6"> Apagar <code>/var/lib/pacman/db.lck</code> imediatamente.</label>
+<label><input type="radio" name="q6"> Reinstalar o pacman.</label>
+<label><input type="radio" name="q6"> Rodar <code>pacman -Syy</code>.</label>
+<label><input type="radio" name="q6"> Verificar com <code>pgrep -a pacman</code> se outro pacman está rodando.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Pacotes vêm dos repositórios <code>core</code> e <code>extra</code> (o <code>multilib</code> vem desligado no <code>/etc/pacman.conf</code>).</li>
+  <li>Maiúscula = operação: <code>-S</code> <em>sync</em>, <code>-R</code> <em>remove</em>, <code>-Q</code> <em>query</em>. Minúscula = opção (<code>s</code> search, <code>i</code> info, <code>l</code> list).</li>
+  <li>Consultar não precisa de root; instalar e remover precisam (<code>sudo</code>).</li>
+  <li>Leia a lista antes de responder ao <code>[S/n]</code>; Enter aceita a letra maiúscula.</li>
+  <li><code>-Rns</code> é o "desinstalar de vez"; o pacman nunca apaga os arquivos da sua pasta pessoal.</li>
+  <li>Trava <code>db.lck</code>: primeiro confira se há outro pacman rodando.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Pacman">pacman</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">pacman (Português)</a>) é a referência completa, com uma seção de dicas em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>. Os repositórios estão descritos em <a href="https://wiki.archlinux.org/title/Official_repositories">Official repositories</a>, e quem vem do Debian ou do Fedora encontra a tradução de cada comando em <a href="https://wiki.archlinux.org/title/Pacman/Rosetta">pacman/Rosetta</a> (veja também <a href="ref-pacman.html">pacman × apt × dnf</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

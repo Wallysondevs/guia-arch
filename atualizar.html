@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch atualizar — pacman -Syu, atualização parcial, notícias e reiniciar | Guia Arch</title>
+<meta name="description" content="Como atualizar o Arch Linux com pacman -Syu, parte por parte; por que a atualização parcial (pacman -Sy pacote) é proibida; checkupdates; ler as notícias; quando reiniciar (uname -r × pacman -Q linux).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Atualizar <span class="hl">o Sistema</span></h1>
+
+<p class="intro">O Arch é <a href="rolling-release.html">rolling release</a>: não existe "Arch 2027" para instalar por cima. O sistema inteiro anda junto, um pouco por semana, com um único comando: <code>sudo pacman -Syu</code>. Nesta aula você aprende o que cada letra faz, por que atualizar "só um pacote" é proibido no Arch, e os hábitos que evitam sustos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que fazem o <code>S</code>, o <code>y</code> e o <code>u</code> de <code>pacman -Syu</code>, e a saída de cada parte.</li>
+  <li>Ver o que tem para atualizar sem atualizar (<code>checkupdates</code>, <code>pacman -Qu</code>).</li>
+  <li>O que é uma <strong>atualização parcial</strong> e por que ela quebra programas.</li>
+  <li>Ler as notícias antes, com que frequência atualizar e quando reiniciar.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>As três letras de -Syu</h2>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Atualizar muda o sistema: precisa de root.</dd>
+  <dt>-S</dt><dd><em>sync</em>: trabalhar com os repositórios.</dd>
+  <dt>y</dt><dd><em>refresh</em>: baixar o catálogo novo (<code>core.db</code>, <code>extra.db</code>) dos espelhos. Sem ele, o pacman não sabe que existem versões novas.</dd>
+  <dt>u</dt><dd><em>sysupgrade</em>: comparar o que está instalado com o catálogo e atualizar <strong>tudo</strong> o que tiver versão nova.</dd>
+</dl>
+
+<p>Em 16/10/2026, a VM do guia estava em dia. A saída real foi esta:</p>
+
+<pre class="term">$ sudo pacman -Syu
+[sudo] senha para ana:
+:: Sincronizando a base de dados de pacotes...          « o "y": baixa o catálogo
+ core está atualizado                                    « o catálogo do core não mudou desde a última vez
+ extra está atualizado
+:: Iniciando atualização completa do sistema...          « o "u": compara instalado × catálogo
+nada para fazer                                          « nenhum pacote tem versão nova
+$ echo $?
+0</pre>
+
+<p>Quando o catálogo mudou, no lugar de <code>está atualizado</code> aparece uma barra de download para cada repositório (o <code>extra.db</code> tem uns 8,5 MiB):</p>
+
+<pre class="term">:: Sincronizando a base de dados de pacotes...
+ core                  127,9 KiB   318 KiB/s 00:00 [######################] 100%
+ extra                   8,5 MiB  2,68 MiB/s 00:03 [######################] 100%</pre>
+
+<h3>Quando há atualizações</h3>
+
+<p>Para mostrar uma atualização sem mexer na VM, fizemos um <strong>exemplo controlado</strong>: uma cópia do banco de dados de pacotes em que o <code>htop</code> e o <code>linux</code> aparecem numa versão anterior. O pacman (de verdade) respondeu assim, e respondemos "não":</p>
+
+<pre class="term">$ sudo pacman -Su                                        « -Su = o -Syu sem baixar o catálogo de novo
+:: Iniciando atualização completa do sistema...
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) htop-3.5.3-1  linux-7.2.10.arch1-1            « as versões NOVAS que vão entrar
+
+Tamanho total instalado:  162,01 MiB
+Alteração no tamanho:       0,00 MiB                       « quanto o disco ganha ou perde
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Não apareceu <code>Tamanho total download</code> porque esses dois arquivos já estavam no cache; normalmente ele aparece. A lista mostra só a versão nova. Para ver também a antiga, ligue a opção <code>VerbosePkgLists</code> no <code>/etc/pacman.conf</code> (veja <a href="pacman-avancado.html">pacman Avançado</a>). A mesma transação fica assim:</p>
+
+<pre class="term">Pacote (2)  Versão antiga  Versão nova       Diferença
+
+extra/htop  3.5.2-1        3.5.3-1            0,00 MiB
+core/linux  7.2.9.arch1-1  7.2.10.arch1-1     0,00 MiB     « um kernel novo: reinicie depois</pre>
+
+<p>Depois do <code>S</code>, a sequência é a mesma da instalação (veja <a href="pacman.html">pacman: o Básico</a>): baixar, conferir chaves e integridade, <code>atualizando htop...</code>, e os <strong>hooks</strong>. Quando o kernel está na lista, um dos hooks refaz o initramfs. Trecho real da VM:</p>
+
+<pre class="term">:: Executando hooks pós-transação...
+…
+(11/18) Updating linux initcpios...
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+==&gt; Using default configuration file: '/etc/mkinitcpio.conf'
+  -&gt; -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
+==&gt; Starting build: '7.2.10-arch1-1'
+…
+==&gt; Initcpio image generation successful</pre>
+
+<div class="warning">
+<strong>Não interrompa no meio</strong>
+<p>Depois de <code>:: Processando alterações do pacote...</code>, não feche o terminal, não aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> e não desligue o computador (notebook na tomada). Uma atualização interrompida pode deixar metade dos arquivos de um pacote novo e metade do velho, e a trava <code>db.lck</code> para trás. Se acontecer, veja <a href="problemas-update.html">Erros de Atualização</a> e <a href="chroot-resgate.html">Resgate com chroot</a>.</p>
+</div>
+
+<hr>
+
+<h2>Ver o que tem para atualizar, sem atualizar</h2>
+
+<h3>checkupdates (o jeito seguro)</h3>
+
+<p>O <code>checkupdates</code> vem no pacote <code>pacman-contrib</code> (instale com <code>sudo pacman -S pacman-contrib</code>). Ele baixa o catálogo novo numa <strong>cópia temporária</strong> em <code>/tmp</code>, sem tocar no catálogo do sistema, e lista o que mudou. Não precisa de root.</p>
+
+<pre class="term">$ checkupdates
+$ echo $?
+2                                       « 2 = não há atualizações</pre>
+
+<p>Nada na tela e código 2: tudo em dia. Quando há atualizações, cada linha mostra <code>nome versão-instalada -&gt; versão-nova</code>, e o código é 0. No exemplo controlado, a lista (tirada com <code>pacman -Qu</code>, que o <code>checkupdates</code> usa por dentro) foi:</p>
+
+<pre class="term">htop 3.5.2-1 -&gt; 3.5.3-1
+linux 7.2.9.arch1-1 -&gt; 7.2.10.arch1-1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código de saída do checkupdates</th><th>Significado</th></tr>
+<tr><td><code>0</code></td><td>Há atualizações (a lista foi impressa).</td></tr>
+<tr><td><code>1</code></td><td>Erro (sem internet, espelho fora do ar…).</td></tr>
+<tr><td><code>2</code></td><td>Nenhuma atualização.</td></tr>
+</table>
+</div>
+
+<h3>pacman -Qu (só com o catálogo que você já tem)</h3>
+
+<p><code>pacman -Qu</code> (<em>query upgrades</em>) faz a mesma comparação, mas com o catálogo que já está no disco, que pode ser velho. Ele não baixa nada:</p>
+
+<pre class="term">$ pacman -Qu
+$ echo $?
+1                                       « 1 = nada (pelo catálogo atual)</pre>
+
+<div class="tip">
+<strong>Por que não "pacman -Sy" para ver se tem novidade?</strong>
+<p>Porque <code>pacman -Sy</code> atualiza o catálogo do sistema <strong>sem</strong> atualizar os pacotes. A partir daí, qualquer <code>pacman -S programa</code> instala a versão do catálogo novo num sistema velho: é a atualização parcial, assunto da próxima seção. O <code>checkupdates</code> existe justamente para evitar isso.</p>
+</div>
+
+<hr>
+
+<h2>Atualização parcial é proibida</h2>
+
+<p>No Arch, todos os pacotes de um mesmo momento são compilados <strong>uns contra os outros</strong>. A Arch Wiki é direta: atualizações parciais <strong>não são suportadas</strong>. Atualização parcial é qualquer situação em que parte do sistema fica numa "época" e parte em outra. As formas mais comuns:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Por que é parcial</th></tr>
+<tr><td><code>pacman -Sy pacote</code></td><td>Baixa o catálogo novo e instala <strong>só</strong> aquele pacote na versão nova, com o resto velho.</td></tr>
+<tr><td><code>pacman -Sy</code> e, dias depois, <code>pacman -S pacote</code></td><td>A mesma coisa, em dois passos.</td></tr>
+<tr><td><code>IgnorePkg = pacote</code> no <code>pacman.conf</code></td><td>O pacote fica parado enquanto o resto anda.</td></tr>
+<tr><td>Instalar um <code>.pkg.tar.zst</code> antigo com <code>pacman -U</code></td><td>Uma peça de outra época (às vezes necessário; veja <a href="downgrade.html">downgrade</a>).</td></tr>
+</table>
+</div>
+
+<h3>Por que quebra: as bibliotecas</h3>
+
+<p>Programas usam <strong>bibliotecas</strong> compartilhadas (arquivos <code>.so</code>, de <em>shared object</em>) que ficam em <code>/usr/lib</code>. O número no nome é a versão da "interface": <code>libncursesw.so.6</code>. Quando a biblioteca muda de forma incompatível, o número sobe (de <code>.so.6</code> para <code>.so.7</code>), e o arquivo antigo <strong>some</strong> na atualização. O pacman anota essa relação nos pacotes:</p>
+
+<pre class="term">$ pacman -Qi htop | grep Depende
+Depende de           : libcap  libcap.so=2-64  libnl  ncurses  libncursesw.so=6-64    « precisa da versão 6</pre>
+
+<p>Agora imagine um exemplo (ilustrativo): a <code>ncurses</code> nova traz <code>libncursesw.so.7</code>. No repositório, o <code>htop</code> e todos os outros programas que a usam são recompilados para a 7 e publicados <strong>juntos</strong>. Se você roda <code>sudo pacman -Sy htop</code>, entra o htop novo (que pede a 7), mas a sua ncurses continua na 6. O pacman até puxaria a ncurses nova como dependência, mas aí todos os <strong>outros</strong> programas, que não foram atualizados, continuam pedindo a 6, que acabou de sumir. O resultado é programa que não abre.</p>
+
+<h3>Um caso real na VM do guia</h3>
+
+<p>Esse problema aconteceu de verdade na VM, com o <code>paru</code> (um ajudante do AUR instalado já compilado, o <code>paru-bin</code>). Ele foi compilado contra a biblioteca do pacman, <code>libalpm.so.15</code>, mas o pacman do sistema já fornece a <code>libalpm.so.16</code>:</p>
+
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory
+$ echo $?
+127
+$ ls /usr/lib/libalpm.so*
+/usr/lib/libalpm.so
+/usr/lib/libalpm.so.16                       « só existe a 16
+/usr/lib/libalpm.so.16.0.1
+$ ldd /usr/bin/paru | grep alpm
+	libalpm.so.15 =&gt; not found               « o paru pede a 15
+$ pacman -Qi pacman | grep Provê
+Provê                : libalpm.so=16-64</pre>
+
+<p>É exatamente a mensagem que você vê depois de uma atualização parcial: <code>error while loading shared libraries: libXXX.so.N: cannot open shared object file</code>. Aqui a causa é o AUR (pacotes do AUR não são recompilados junto com o Arch; veja <a href="yay-paru.html">yay e paru</a>), mas o mecanismo é o mesmo.</p>
+
+<div class="warning">
+<strong>A regra</strong>
+<p>Para instalar algo, use <code>sudo pacman -S pacote</code> (com o catálogo que você já tem) ou, se faz tempo que não atualiza, <code>sudo pacman -Syu pacote</code> (atualiza tudo e instala junto). <strong>Nunca</strong> <code>pacman -Sy pacote</code>. E se você rodou <code>pacman -Sy</code> sozinho, o próximo comando deve ser <code>pacman -Su</code>.</p>
+</div>
+
+<hr>
+
+<h2>Antes de atualizar: as notícias</h2>
+
+<p>Às vezes uma atualização precisa de uma <strong>intervenção manual</strong>: trocar um pacote por outro, editar uma configuração, rodar um comando antes. O Arch avisa em <a href="https://archlinux.org/news/">archlinux.org/news</a> (também por RSS e pela lista de e-mails <em>arch-announce</em>). O hábito é simples: <strong>antes do <code>-Syu</code>, olhe as notícias</strong>. São poucas por mês.</p>
+
+<p>O ajudante <code>yay</code> mostra as notícias não lidas no terminal com <code>yay -Pw</code> (na VM, em 16/10/2026, não havia nenhuma, e a saída foi vazia). O pacman em si não mostra notícias.</p>
+
+<h2>Com que frequência?</h2>
+
+<ul>
+  <li><strong>Uma vez por semana</strong> (ou a cada poucos dias) é o ritmo mais tranquilo: poucas mudanças por vez, fácil de saber o que causou um problema.</li>
+  <li>Evite ficar <strong>meses</strong> sem atualizar: o salto fica grande, as chaves de assinatura podem ficar velhas (veja <a href="chaves.html">Chaves e Assinaturas</a>) e as notícias acumulam.</li>
+  <li>Atualize quando tiver alguns minutos para ler a saída, não às pressas antes de uma reunião.</li>
+  <li>Atualizar automaticamente (por um timer) <strong>não é recomendado</strong> no Arch: ninguém leria as notícias nem os avisos de <code>.pacnew</code>.</li>
+</ul>
+
+<hr>
+
+<h2>Depois de atualizar: reiniciar?</h2>
+
+<p>Programas que já estão rodando continuam usando a versão antiga, carregada na memória. Para a maioria dos programas, basta fechá-los e abrir de novo. Três casos pedem <strong>reiniciar o computador</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote atualizado</th><th>Por que reiniciar</th></tr>
+<tr><td><code>linux</code> (o kernel)</td><td>O kernel em uso é o que foi carregado no boot. A atualização apaga os módulos dele de <code>/usr/lib/modules</code>, e coisas que carregam módulos depois (um pendrive, uma placa nova, o Wi-Fi) param de funcionar até reiniciar.</td></tr>
+<tr><td><code>glibc</code></td><td>É a biblioteca usada por quase todos os programas. Os que estão rodando ficam com a versão antiga na memória.</td></tr>
+<tr><td><code>systemd</code></td><td>O PID 1 e os serviços básicos só passam a usar a versão nova depois de reiniciar.</td></tr>
+</table>
+</div>
+
+<h3>Como saber se o kernel em uso é o instalado</h3>
+
+<p>Compare o kernel <strong>em uso</strong> (<code>uname -r</code>, de <em>release</em>) com o kernel <strong>instalado</strong> (<code>pacman -Q linux</code>):</p>
+
+<pre class="term">$ uname -r
+7.2.10-arch1-1                 « em uso
+$ pacman -Q linux
+linux 7.2.10.arch1-1           « instalado: o mesmo (o pacote escreve ".arch1", o kernel "-arch1")
+$ ls /usr/lib/modules
+6.18.57-1-lts                  « módulos do linux-lts
+7.2.10-arch1-1                 « módulos do kernel em uso</pre>
+
+<p>Se depois de uma atualização o <code>pacman -Q linux</code> mostrar uma versão mais nova que o <code>uname -r</code>, você está rodando um kernel cujos módulos já não existem no disco: reinicie. A mesma comparação revelou um problema real na VM: depois de instalar o <code>linux-lts</code>, o <code>uname -r</code> passou a responder <code>6.18.57-1-lts</code> enquanto o kernel principal instalado era o 7.2.10. O GRUB estava iniciando o LTS por padrão (a história está em <a href="kernels.html">Kernels</a>).</p>
+
+<div class="tip">
+<strong>Reiniciar serviços sem reiniciar o computador</strong>
+<p>Atualizou o <code>nginx</code> ou o <code>openssh</code>? <code>sudo systemctl restart nginx</code> basta (veja <a href="systemd.html">systemctl e Serviços</a>). Reiniciar a máquina inteira é para kernel, glibc e systemd.</p>
+</div>
+
+<hr>
+
+<h2>Os arquivos .pacnew</h2>
+
+<p>Às vezes a atualização termina com uma linha assim:</p>
+
+<pre class="term">atenção: /etc/pacman.d/mirrorlist instalado como /etc/pacman.d/mirrorlist.pacnew</pre>
+
+<p>Não é erro: o pacote trouxe uma versão nova de um arquivo de configuração que <strong>você tinha alterado</strong>, e o pacman não sobrescreveu o seu. Você decide o que juntar. Essa linha ilustra o formato; a aula <a href="pacnew.html">.pacnew e .pacsave</a> mostra um caso real e como resolver com <code>pacdiff</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes de atualizar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>Catálogo + todos os pacotes</td><td><strong>Sempre</strong>, no dia a dia.</td></tr>
+<tr><td><code>sudo pacman -Syu pacote</code></td><td>Atualiza tudo e instala um pacote junto</td><td>Instalar algo quando faz tempo que não atualiza.</td></tr>
+<tr><td><code>sudo pacman -Syyu</code></td><td>Força baixar o catálogo de novo, mesmo "atualizado"</td><td>Só depois de trocar de espelho (veja <a href="espelhos.html">Espelhos</a>).</td></tr>
+<tr><td><code>yay</code> ou <code>paru</code> (sem nada)</td><td><code>-Syu</code> + atualiza os pacotes do AUR</td><td>Se você usa o AUR (veja <a href="yay-paru.html">yay e paru</a>).</td></tr>
+<tr><td><code>checkupdates</code></td><td>Só lista</td><td>Ver antes, em scripts e barras de status.</td></tr>
+<tr><td><code>pacman -Sy pacote</code></td><td>Atualização parcial</td><td><strong>Nunca.</strong></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<p>No simulador, a senha da ana é <code>ana</code>.</p>
+
+<div class="try" data-goal="ran:sudo +pacman +-Syu" data-solucao="sudo pacman -Syu;;ana">
+<p class="try-task"><strong>Missão 1:</strong> atualize o sistema da ana. Leia a saída: o catálogo mudou? Havia pacotes para atualizar?</p>
+</div>
+
+<div class="try" data-goal="ran:uname +-r,ran:pacman +-Q +linux" data-solucao="uname -r;;pacman -Q linux">
+<p class="try-task"><strong>Missão 2:</strong> confira se o kernel em uso é o mesmo que está instalado (dois comandos). É preciso reiniciar?</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"error while loading shared libraries"</strong>
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory</pre>
+<p><strong>O que aconteceu:</strong> o programa pede uma versão de biblioteca que não existe mais. Causas: atualização parcial, ou um pacote do AUR compilado contra a versão antiga.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Qo /usr/bin/paru</code> diz de que pacote é o programa; <code>pacman -Qm</code> diz se ele é do AUR.</p>
+<p><strong>Como resolver:</strong> primeiro <code>sudo pacman -Syu</code> (acaba com qualquer atualização parcial). Se o programa é do AUR, recompile/reinstale o pacote dele (veja <a href="makepkg.html">makepkg</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"falha ao obter o arquivo" / "falha ao sincronizar todas as bases de dados"</strong>
+<p><strong>O que aconteceu:</strong> sem internet, ou o espelho está fora do ar ou desatualizado.</p>
+<p><strong>Como resolver:</strong> confira a rede (<code>ping archlinux.org</code>) e troque de espelho: <a href="espelhos.html">Espelhos (reflector)</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"a assinatura de … tem confiança desconhecida" ou "é inválida"</strong>
+<p><strong>O que aconteceu:</strong> quase sempre, o chaveiro do Arch no seu sistema está velho (você ficou muito tempo sem atualizar).</p>
+<p><strong>Como resolver:</strong> atualize o chaveiro primeiro e depois o resto: <code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code>. Este é o único caso em que <code>-Sy pacote</code> é a recomendação oficial, porque o <code>-Su</code> vem logo em seguida. Detalhes em <a href="chaves.html">Chaves e Assinaturas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"conflitos de arquivos", "existe no sistema de arquivos", dependências que não fecham</strong>
+<p><strong>O que aconteceu:</strong> erros que aparecem no meio de um <code>-Syu</code> e param a transação antes de mexer no sistema.</p>
+<p><strong>Como resolver:</strong> leia a mensagem inteira, procure nas notícias e veja <a href="problemas-update.html">Erros de Atualização</a>, que trata cada um.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível travar a base de dados"</strong>
+<p><strong>O que aconteceu:</strong> outro pacman está rodando, ou um anterior foi interrompido.</p>
+<p><strong>Como resolver:</strong> veja o passo a passo em <a href="pacman.html">pacman: o Básico</a> (confira <code>pgrep -a pacman</code> antes de apagar <code>/var/lib/pacman/db.lck</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>Atualiza o sistema inteiro</td></tr>
+<tr><td><code>sudo pacman -Syu pacote</code></td><td>Atualiza tudo e instala um pacote</td></tr>
+<tr><td><code>sudo pacman -Su</code></td><td>Atualiza os pacotes com o catálogo que já está no disco</td></tr>
+<tr><td><code>checkupdates</code></td><td>Lista as atualizações sem mexer no sistema (código 2 = nenhuma)</td></tr>
+<tr><td><code>pacman -Qu</code></td><td>Lista as atualizações pelo catálogo atual</td></tr>
+<tr><td><code>uname -r</code> × <code>pacman -Q linux</code></td><td>Kernel em uso × instalado</td></tr>
+<tr><td><code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code></td><td>Chaveiro velho: atualiza ele primeiro</td></tr>
+<tr><td><code>grep "full system upgrade" /var/log/pacman.log</code></td><td>Quando você atualizou</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A rotina</h3>
+<p>Complete o comando de atualização do sistema:</p>
+<div class="ex-code">sudo pacman <input data-answer="-Syu|-Suy|--sync --refresh --sysupgrade" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Só olhar</h3>
+<p>Qual comando do <code>pacman-contrib</code> lista as atualizações sem tocar no catálogo do sistema?</p>
+<div class="ex-code"><input data-answer="checkupdates" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Kernel em uso</h3>
+<p>Que comando mostra a versão do kernel que está rodando agora?</p>
+<div class="ex-code">uname <input data-answer="-r|--kernel-release" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você quer instalar o <code>vlc</code>, mas não atualiza há três semanas. Qual comando usar?</p>
+<label><input type="radio" name="q4"> <code>sudo pacman -Sy vlc</code></label>
+<label><input type="radio" name="q4"> <code>sudo pacman -Syy vlc</code></label>
+<label><input type="radio" name="q4"> <code>sudo pacman -Syu vlc</code></label>
+<label><input type="radio" name="q4"> <code>sudo pacman -U vlc</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Depois de um <code>-Syu</code>, <code>uname -r</code> mostra <code>7.2.9-arch1-1</code> e <code>pacman -Q linux</code> mostra <code>linux 7.2.10.arch1-1</code>. O que fazer?</p>
+<label><input type="radio" name="q5"> Rodar <code>pacman -Syu</code> de novo.</label>
+<label><input type="radio" name="q5"> Reiniciar o computador para entrar no kernel novo.</label>
+<label><input type="radio" name="q5"> Voltar o pacote <code>linux</code> para a 7.2.9.</label>
+<label><input type="radio" name="q5"> Nada: é normal as versões serem diferentes para sempre.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>pacman -Sy pacote</code> é perigoso?</p>
+<label><input type="radio" name="q6"> Instala uma versão nova de um pacote num sistema que continua velho, e as bibliotecas podem não bater.</label>
+<label><input type="radio" name="q6"> Apaga o cache de pacotes.</label>
+<label><input type="radio" name="q6"> Instala do AUR sem perguntar.</label>
+<label><input type="radio" name="q6"> Não é perigoso, só é mais lento.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>sudo pacman -Syu</code>: <code>y</code> baixa o catálogo, <code>u</code> atualiza tudo. "nada para fazer" = em dia.</li>
+  <li><code>checkupdates</code> mostra o que há sem mexer no sistema.</li>
+  <li><strong>Nunca</strong> <code>pacman -Sy pacote</code>: atualização parcial quebra bibliotecas (<code>error while loading shared libraries</code>).</li>
+  <li>Leia <a href="https://archlinux.org/news/">archlinux.org/news</a> antes; atualize mais ou menos uma vez por semana.</li>
+  <li>Reinicie depois de atualizar <code>linux</code>, <code>glibc</code> ou <code>systemd</code>; compare <code>uname -r</code> com <code>pacman -Q linux</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/System_maintenance#Upgrading_the_system">System maintenance – Upgrading the system</a> (em português: <a href="https://wiki.archlinux.org/title/System_maintenance_(Portugu%C3%AAs)">Manutenção do sistema</a>) explica os hábitos de atualização, e <a href="https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported">Partial upgrades are unsupported</a> justifica a regra da atualização parcial. Veja também <a href="https://wiki.archlinux.org/title/Pacman#Upgrading_packages">pacman – Upgrading packages</a> e o <code>checkupdates</code> em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
