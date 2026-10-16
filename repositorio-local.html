@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch repositório local — o seu próprio repositório do pacman | Guia Arch</title>
+<meta name="description" content="Crie o seu próprio repositório de pacotes do Arch: repo-add e repo-remove, a seção [meurepo] no pacman.conf, testar sem mexer no sistema (--config e --dbpath), servir por HTTP com python ou nginx, assinar com GPG e usos como vários PCs e cache do AUR.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Seu Próprio <span class="hl">Repositório</span></h1>
+
+<p class="intro">Um repositório do pacman não tem mágica: é uma <strong>pasta com pacotes</strong> e um <strong>arquivo de índice</strong> que diz o que tem lá. Com o comando <code>repo-add</code> você transforma qualquer pasta de <code>.pkg.tar.zst</code> num repositório; com três linhas no <code>pacman.conf</code>, o pacman passa a instalar e atualizar seus pacotes como se fossem do Arch, em quantos computadores você quiser.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como um repositório é organizado (o <code>.db</code> e os pacotes).</li>
+  <li>Criar e atualizar o índice com <code>repo-add</code> e <code>repo-remove</code>.</li>
+  <li>A seção <code>[meurepo]</code> do <code>pacman.conf</code>, e testá-la sem mexer no sistema.</li>
+  <li>Servir o repositório pela rede (HTTP) e assiná-lo com GPG.</li>
+  <li>Para que isso serve: vários PCs, cache dos pacotes do AUR, seus próprios programas.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como é um repositório por dentro</h2>
+
+<p>Quando você roda <code>pacman -Sy</code>, o pacman baixa de cada espelho um arquivo por repositório, o <code>NOME.db</code>, e guarda em <code>/var/lib/pacman/sync</code>:</p>
+
+<pre class="term">$ ls -l /var/lib/pacman/sync
+total 60516
+-rw-r--r-- 1 root root   130987 16 out 09:43 core.db          « índice do core (130 KB)
+-rw-r--r-- 1 root root  1527139 16 out 09:43 core.files       « lista de arquivos (para pacman -F)
+drwx------ 2 alpm alpm     4096 16 out 12:53 download-la4D31
+-rw-r--r-- 1 root root  8888740 16 out 11:13 extra.db
+-rw-r--r-- 1 root root 51411977 16 out 11:13 extra.files</pre>
+
+<p>O <code>.db</code> é um arquivo compactado com uma pasta por pacote, cada uma com os dados (nome, versão, dependências, soma). Os pacotes em si ficam no espelho, na mesma pasta do <code>.db</code>, e só são baixados quando você instala. O endereço vem do <code>pacman.conf</code>:</p>
+
+<pre class="term">$ grep -n -A1 "^\[core\]" /etc/pacman.conf
+78:[core]
+79-Include = /etc/pacman.d/mirrorlist
+$ grep -m1 "^Server" /etc/pacman.d/mirrorlist
+Server = https://mirror.ufscar.br/archlinux/$repo/os/$arch</pre>
+
+<p>O <code>$repo</code> vira o nome entre colchetes (<code>core</code>) e o <code>$arch</code>, <code>x86_64</code>. Ou seja: para ter um repositório, basta uma pasta com os pacotes e um <code>NOME.db</code>, e um <code>[NOME]</code> no <code>pacman.conf</code> apontando para ela.</p>
+
+<hr>
+
+<h2>1. Juntar os pacotes</h2>
+
+<p>Vamos usar os dois pacotes feitos nas aulas anteriores: o <code>ola</code> (de <a href="pkgbuild.html">Escrever um PKGBUILD</a>) e o <code>tarefas</code> (do <a href="projeto-pacote.html">projeto</a>). Na VM, a pasta de testes é <code>/tmp/a5</code>; no seu PC, algo como <code>~/repo</code>.</p>
+
+<pre class="term">$ mkdir -p /tmp/a5/repo
+$ cp /tmp/a5/ola/ola-1.0-1-any.pkg.tar.zst /tmp/a5/projeto/pacote-tarefas/tarefas-1.0-1-any.pkg.tar.zst /tmp/a5/repo/
+$ cd /tmp/a5/repo
+$ ls
+ola-1.0-1-any.pkg.tar.zst  tarefas-1.0-1-any.pkg.tar.zst</pre>
+
+<div class="tip">
+<strong>Mande o makepkg entregar os pacotes direto lá</strong>
+<p>Com <code>PKGDEST=~/repo</code> no seu <code>~/.config/pacman/makepkg.conf</code> (veja <a href="makepkg.html">makepkg</a>), todo pacote que você compilar, do AUR ou seu, vai parar nessa pasta.</p>
+</div>
+
+<h2>2. Criar o índice: repo-add</h2>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ repo-add meurepo.db.tar.gz *.pkg.tar.zst
+==&gt; Adicionando o pacote 'ola-1.0-1-any.pkg.tar.zst'
+  -&gt; Computando somas de verificação...
+  -&gt; Criando a entrada de base de dados 'desc'...
+  -&gt; Criando a entrada de base de dados 'files'...
+==&gt; Adicionando o pacote 'tarefas-1.0-1-any.pkg.tar.zst'
+  -&gt; Computando somas de verificação...
+  -&gt; Criando a entrada de base de dados 'desc'...
+  -&gt; Criando a entrada de base de dados 'files'...
+==&gt; Criando arquivo atualizado da base de dados 'meurepo.db.tar.gz'
+$ echo $?
+0</pre>
+
+<dl class="anatomy">
+  <dt>repo-add</dt><dd>Vem com o pacman. Cria o índice se não existir, ou acrescenta/atualiza pacotes nele.</dd>
+  <dt>meurepo.db.tar.gz</dt><dd>O índice. A parte antes de <code>.db</code> é o <strong>nome do repositório</strong>: tem que ser igual ao <code>[meurepo]</code> do <code>pacman.conf</code>.</dd>
+  <dt>*.pkg.tar.zst</dt><dd>Os pacotes a incluir (o Bash expande para os dois arquivos).</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ ls -l
+total 24
+lrwxrwxrwx 1 ana ana   17 16 out 13:33 meurepo.db -&gt; meurepo.db.tar.gz          « o nome que o pacman procura
+-rw-r--r-- 1 ana ana  618 16 out 13:33 meurepo.db.tar.gz
+lrwxrwxrwx 1 ana ana   20 16 out 13:33 meurepo.files -&gt; meurepo.files.tar.gz
+-rw-r--r-- 1 ana ana  752 16 out 13:33 meurepo.files.tar.gz
+-rw-r--r-- 1 ana ana 6118 16 out 13:33 ola-1.0-1-any.pkg.tar.zst
+-rw-r--r-- 1 ana ana 8019 16 out 13:33 tarefas-1.0-1-any.pkg.tar.zst
+$ tar -tzf meurepo.db.tar.gz
+ola-1.0-1/
+ola-1.0-1/desc
+tarefas-1.0-1/
+tarefas-1.0-1/desc</pre>
+
+<p>O <code>repo-add</code> criou também o <code>.files</code> (a lista de arquivos de cada pacote, usada por <code>pacman -F</code>) e os atalhos sem <code>.tar.gz</code>. Cada <code>desc</code> é texto puro; o do <code>tarefas</code> (parte):</p>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ tar -xzOf meurepo.db.tar.gz tarefas-1.0-1/desc
+%FILENAME%
+tarefas-1.0-1-any.pkg.tar.zst
+
+%NAME%
+tarefas
+…
+%VERSION%
+1.0-1
+
+%DESC%
+Lista de afazeres no terminal, guardada num arquivo de texto
+…
+%SHA256SUM%
+2338faec9a4090f36f7e9cf1f0a12d74cb58c2a33f7ef800f5fd57de4d5292f6
+…
+%DEPENDS%
+bash
+coreutils
+sed</pre>
+
+<p>É dali que o pacman tira o que mostra em <code>-Si</code> e a soma que confere depois de baixar o pacote.</p>
+
+<hr>
+
+<h2>3. Dizer ao pacman: a seção [meurepo]</h2>
+
+<p>No <code>/etc/pacman.conf</code>, depois das seções do Arch, acrescente (exemplo, com a pasta em <code>/home/ana/repo</code>):</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho a acrescentar no final)">[meurepo]
+SigLevel = Optional TrustAll
+Server = file:///home/ana/repo</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Significado</th></tr>
+<tr><td><code>[meurepo]</code></td><td>O nome. Tem que bater com o <code>meurepo.db</code> da pasta.</td></tr>
+<tr><td><code>SigLevel = Optional TrustAll</code></td><td>Assinaturas: confere se existirem (<code>Optional</code>), e aceita qualquer chave conhecida (<code>TrustAll</code>). Para um repositório só seu, na sua máquina, é o comum. Com assinatura (abaixo), use <code>Required</code>.</td></tr>
+<tr><td><code>Server = file:///…</code></td><td>Onde está a pasta: <code>file://</code> + caminho absoluto (por isso três barras). Pela rede: <code>http://…</code> ou <code>https://…</code>.</td></tr>
+</table>
+</div>
+
+<p>A <strong>ordem</strong> das seções importa: se dois repositórios têm um pacote com o mesmo nome, ganha o que vem primeiro. No final, os do Arch têm prioridade; antes do <code>[core]</code>, os seus "passam na frente" (útil para substituir um pacote oficial por uma versão sua, mas perigoso).</p>
+
+<h3>Testar sem mexer no sistema</h3>
+
+<p>Dá para conferir o repositório antes de mexer no <code>/etc/pacman.conf</code> de verdade. O pacman aceita outro arquivo de configuração (<code>--config</code>) e outra pasta de dados (<code>--dbpath</code>); assim nada do sistema é tocado. Foi assim que testamos na VM, com este arquivo:</p>
+
+<pre class="file" data-file="/tmp/a5/pacman-meurepo.conf"># /tmp/a5/pacman-meurepo.conf — um pacman.conf só para testar o repositório
+[options]
+Architecture = auto
+
+[meurepo]
+SigLevel = Optional TrustAll
+Server = file:///tmp/a5/repo</pre>
+
+<pre class="term" data-user="root" data-cwd="/tmp/a5">#> mkdir -p /tmp/a5/db
+#> pacman --config /tmp/a5/pacman-meurepo.conf --dbpath /tmp/a5/db -Sy
+:: Sincronizando a base de dados de pacotes...
+ meurepo               618,0   B   604 KiB/s 00:00 [######################] 100%
+#> pacman --config /tmp/a5/pacman-meurepo.conf --dbpath /tmp/a5/db -Sl meurepo
+meurepo ola 1.0-1
+meurepo tarefas 1.0-1
+#> pacman --config /tmp/a5/pacman-meurepo.conf --dbpath /tmp/a5/db -Ss afazeres
+meurepo/tarefas 1.0-1
+    Lista de afazeres no terminal, guardada num arquivo de texto
+#> pacman --config /tmp/a5/pacman-meurepo.conf --dbpath /tmp/a5/db -Si tarefas
+Repositório          : meurepo            « veio do seu repositório
+Nome                 : tarefas
+Versão               : 1.0-1
+Descrição            : Lista de afazeres no terminal, guardada num arquivo de texto
+Arquitetura          : any
+URL                  : https://example.com/tarefas
+Licenças             : MIT
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : bash  coreutils  sed
+Depend. opcionais    : Nenhum
+Conflita com         : Nenhum
+Substitui            : Nenhum
+Tamanho do download  : 7,83 KiB
+Tamanho instalado    : 4,77 KiB
+Empacotador          : Unknown Packager
+Data da compilação   : sex 16 out 2026 13:33:45
+Validado por         : Soma SHA-256       « a soma do desc confere o download</pre>
+
+<dl class="anatomy">
+  <dt>--config ARQUIVO</dt><dd>Usa outro <code>pacman.conf</code> (aqui, um que só conhece o <code>meurepo</code>).</dd>
+  <dt>--dbpath PASTA</dt><dd>Guarda o índice baixado nessa pasta, e não em <code>/var/lib/pacman</code>.</dd>
+  <dt>-Sl meurepo</dt><dd><em>list</em>: todos os pacotes de um repositório.</dd>
+</dl>
+
+<p>Depois de pôr a seção no <code>/etc/pacman.conf</code> de verdade, o uso é o de sempre (<strong>ilustrativo</strong>; na VM não instalamos): <code>sudo pacman -Syu</code> (atualiza os índices e o sistema) e depois <code>sudo pacman -S tarefas</code>. Lembre da regra da aula <a href="atualizar.html">Atualizar o Sistema</a>: nada de <code>-Sy</code> sem o <code>u</code>.</p>
+
+<div class="try" data-goal="contains:~/meurepo.conf=[meurepo],contains:~/meurepo.conf=Server = file://" data-solucao="printf '[meurepo]\nSigLevel = Optional TrustAll\nServer = file:///home/ana/repo\n' &gt; meurepo.conf;;cat meurepo.conf">
+<p class="try-task"><strong>Missão:</strong> crie em <code>~/meurepo.conf</code> a seção de um repositório chamado <code>meurepo</code>, com <code>SigLevel = Optional TrustAll</code> e o servidor <code>file:///home/ana/repo</code> (uma linha por configuração; <code>printf</code> com <code>\n</code> ajuda). Confira com <code>cat</code>.</p>
+</div>
+
+<hr>
+
+<h2>Atualizar o repositório</h2>
+
+<p>Compilou uma versão nova? Copie o pacote para a pasta e rode o <code>repo-add</code> de novo, só com ele: a entrada antiga é trocada. Com <code>-R</code>, o <code>repo-add</code> também apaga o arquivo da versão antiga. Para tirar um pacote do índice, <code>repo-remove</code> com o <strong>nome</strong> (sem versão). Numa cópia do repositório:</p>
+
+<pre class="term" data-cwd="/tmp/a5/repo2">$ repo-remove meurepo.db.tar.gz ola
+==&gt; Extraindo meurepo.db.tar.gz para um local temporário...
+==&gt; Extraindo meurepo.files.tar.gz para um local temporário...
+==&gt; Procurando o pacote 'ola'...
+  -&gt; Removendo entrada existente 'ola-1.0-1'...
+==&gt; Criando arquivo atualizado da base de dados 'meurepo.db.tar.gz'
+$ tar -tzf meurepo.db.tar.gz
+tarefas-1.0-1/
+tarefas-1.0-1/desc
+$ repo-add -n meurepo.db.tar.gz *.pkg.tar.zst
+==&gt; Extraindo meurepo.db.tar.gz para um local temporário...
+==&gt; Extraindo meurepo.files.tar.gz para um local temporário...
+==&gt; Adicionando o pacote 'ola-1.0-1-any.pkg.tar.zst'
+  -&gt; Computando somas de verificação...
+  -&gt; Criando a entrada de base de dados 'desc'...
+  -&gt; Criando a entrada de base de dados 'files'...
+==&gt; Adicionando o pacote 'tarefas-1.0-1-any.pkg.tar.zst'
+==&gt; ATENÇÃO: Uma entrada para 'tarefas-1.0-1' já existe      « o -n pula o que já está lá
+==&gt; Criando arquivo atualizado da base de dados 'meurepo.db.tar.gz'</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>repo-add REPO.db.tar.gz pacote…</code></td><td>Acrescenta ou atualiza (troca a versão antiga do índice)</td></tr>
+<tr><td><code>repo-add -n …</code></td><td>Só acrescenta os que ainda não estão (<em>new</em>)</td></tr>
+<tr><td><code>repo-add -R …</code></td><td>Atualiza e apaga o arquivo da versão antiga (<em>remove</em>)</td></tr>
+<tr><td><code>repo-remove REPO.db.tar.gz nome</code></td><td>Tira um pacote do índice (o arquivo continua na pasta)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Servir pela rede</h2>
+
+<p>Para outros computadores usarem o repositório, sirva a pasta por HTTP. O jeito mais rápido, para um teste, é o servidor embutido do Python (rode na pasta do repositório):</p>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ python -m http.server 8080
+Serving HTTP on 0.0.0.0 port 8080 (http://0.0.0.0:8080/) ...</pre>
+
+<p>Em outro terminal (ou em outro PC, trocando <code>127.0.0.1</code> pelo IP desta máquina), um <code>pacman.conf</code> de teste com <code>Server = http://127.0.0.1:8080</code> sincroniza pela rede:</p>
+
+<pre class="term" data-user="root">#> pacman --config /tmp/a5/pacman-http.conf --dbpath /tmp/a5/db -Syy
+:: Sincronizando a base de dados de pacotes...
+ meurepo               618,0   B   604 KiB/s 00:00 [######################] 100%</pre>
+
+<p>E o servidor registra os pedidos:</p>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ python -m http.server 8080
+Serving HTTP on 0.0.0.0 port 8080 (http://0.0.0.0:8080/) ...
+127.0.0.1 - - [16/Oct/2026 13:34:40] "GET /meurepo.db HTTP/1.1" 200 -
+127.0.0.1 - - [16/Oct/2026 13:34:40] code 404, message File not found
+127.0.0.1 - - [16/Oct/2026 13:34:40] "GET /meurepo.db.sig HTTP/1.1" 404 -</pre>
+
+<p>O pacman pediu o <code>meurepo.db</code> (200 = achou) e também o <code>meurepo.db.sig</code> (404 = não existe): com <code>SigLevel = Optional</code>, ele <strong>tenta</strong> a assinatura e segue sem ela. <kbd>Ctrl</kbd>+<kbd>C</kbd> para o servidor.</p>
+
+<p>Para um servidor permanente, use o nginx (veja <a href="servidor-web.html">Servidor Web (nginx)</a>). Um bloco mínimo (<strong>ilustrativo</strong>):</p>
+
+<pre class="file" data-file="ilustrativo: /etc/nginx/nginx.conf (dentro de http { … })">server {
+    listen 8080;
+    location /meurepo/ {
+        alias /srv/meurepo/;      # a pasta com o .db e os pacotes
+        autoindex on;             # lista os arquivos no navegador (opcional)
+    }
+}</pre>
+
+<p>E nos clientes: <code>Server = http://IP-DO-SERVIDOR:8080/meurepo</code>. Se o firewall estiver ligado, libere a porta (veja <a href="firewall.html">Firewall</a>).</p>
+
+<hr>
+
+<h2>Assinar o repositório</h2>
+
+<p>Na rede, assine o índice e os pacotes com uma chave GPG sua. Assim os outros PCs só aceitam o que foi feito por você. Na VM, com uma chave de teste criada numa pasta temporária (a variável <code>GNUPGHOME</code> diz ao <code>gpg</code> qual chaveiro usar, para não misturar com o seu):</p>
+
+<pre class="term" data-cwd="/tmp/a5/repo">$ export GNUPGHOME=/tmp/a5/gnupg
+$ gpg --list-secret-keys --keyid-format long
+/tmp/a5/gnupg/pubring.kbx
+-------------------------
+sec   ed25519/E82E69CA4BA7D94E 2026-10-16 [SC]
+      A2AD0CFD89637E4B308F91F2E82E69CA4BA7D94E
+uid               [   plena  ] Ana (repositório) &lt;ana@notebook&gt;
+
+$ for p in *.pkg.tar.zst; do gpg --detach-sign "$p"; done
+$ repo-add --sign --verify meurepo.db.tar.gz *.pkg.tar.zst
+==&gt; Verificando a assinatura da base de dados...
+==&gt; ATENÇÃO: Nenhuma assinatura encontrada, ignorando verificação.
+==&gt; Extraindo meurepo.db.tar.gz para um local temporário...
+…
+==&gt; Adicionando o pacote 'ola-1.0-1-any.pkg.tar.zst'
+==&gt; ATENÇÃO: Uma entrada para 'ola-1.0-1' já existe
+  -&gt; Computando somas de verificação...
+  -&gt; Removendo entrada existente 'ola-1.0-1'...
+…
+==&gt; Criando arquivo atualizado da base de dados 'meurepo.db.tar.gz'
+==&gt; Assinando a base de dados 'meurepo.db.tar.gz'...
+  -&gt; Criado o arquivo de assinatura 'meurepo.db.tar.gz.sig'
+==&gt; Assinando a base de dados 'meurepo.files.tar.gz'...
+  -&gt; Criado o arquivo de assinatura 'meurepo.files.tar.gz.sig'
+$ ls
+meurepo.db             meurepo.files.tar.gz
+meurepo.db.sig         meurepo.files.tar.gz.old
+meurepo.db.tar.gz      meurepo.files.tar.gz.sig
+meurepo.db.tar.gz.old  ola-1.0-1-any.pkg.tar.zst
+meurepo.db.tar.gz.sig  ola-1.0-1-any.pkg.tar.zst.sig
+meurepo.files          tarefas-1.0-1-any.pkg.tar.zst
+meurepo.files.sig      tarefas-1.0-1-any.pkg.tar.zst.sig</pre>
+
+<dl class="anatomy">
+  <dt>gpg --detach-sign arquivo</dt><dd>Cria <code>arquivo.sig</code>, a assinatura separada de cada pacote. (O <code>makepkg --sign</code> faz isso ao compilar.)</dd>
+  <dt>--sign</dt><dd>O <code>repo-add</code> assina o índice (<code>.db.sig</code>).</dd>
+  <dt>--verify</dt><dd>Confere a assinatura do índice antigo antes de mexer nele (o primeiro não tinha, daí o aviso).</dd>
+  <dt>.old</dt><dd>Cópia do índice anterior, guardada pelo <code>repo-add</code>.</dd>
+</dl>
+
+<p>Nos clientes, a seção passa a exigir assinatura (<code>SigLevel = Required</code>), e o pacman precisa conhecer e confiar na sua chave. Sem isso, a sincronização falha. Saída real, com um <code>pacman.conf</code> de teste igual ao de cima, mas com <code>Required</code>, numa pasta de dados nova, respondendo <code>n</code>:</p>
+
+<pre class="term" data-user="root">#> pacman --config /tmp/a5/p-sig.conf --dbpath /tmp/a5/db3 -Sy
+:: Sincronizando a base de dados de pacotes...
+ meurepo               618,0   B   604 KiB/s 00:00 [######################] 100%
+erro: meurepo: a chave "A2AD0CFD89637E4B308F91F2E82E69CA4BA7D94E" é desconhecida
+:: Importar a chave PGP A2AD0CFD89637E4B308F91F2E82E69CA4BA7D94E? [S/n] n
+erro: falha ao sincronizar todas as bases de dados (base de dados inválida ou corrompida (assinatura PGP))</pre>
+
+<p>O jeito certo de confiar na chave, em cada cliente (<strong>ilustrativo</strong>; na VM não mexemos no chaveiro do pacman), é exportá-la do seu PC e importá-la no chaveiro <strong>do pacman</strong> (veja <a href="chaves.html">Chaves e Assinaturas</a>):</p>
+
+<pre class="file" data-file="ilustrativo: confiar na chave do seu repositório">gpg --export --armor A2AD0CFD89637E4B308F91F2E82E69CA4BA7D94E &gt; meurepo.asc   # no PC que assina
+sudo pacman-key --add meurepo.asc                                              # em cada cliente
+sudo pacman-key --lsign-key A2AD0CFD89637E4B308F91F2E82E69CA4BA7D94E           # "eu confio nesta chave"
+# e no pacman.conf do cliente:
+# [meurepo]
+# SigLevel = Required
+# Server = http://192.168.0.10:8080/meurepo</pre>
+
+<hr>
+
+<h2>Para que serve</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Uso</th><th>Como</th></tr>
+<tr><td><strong>Vários PCs</strong> (casa, escola, escritório)</td><td>Compile uma vez, sirva por HTTP, todos instalam com <code>pacman -S</code> e atualizam com <code>pacman -Syu</code></td></tr>
+<tr><td><strong>Cache dos pacotes do AUR</strong></td><td><code>PKGDEST</code> apontando para o repositório + <code>repo-add</code> depois de cada compilação. Reinstalar ou instalar em outro PC não exige recompilar. Ferramentas como <code>aurutils</code> (AUR) e a opção <code>LocalRepo</code> do paru automatizam isso.</td></tr>
+<tr><td><strong>Seus programas</strong></td><td>Scripts e ferramentas da casa, empacotados (como o <code>tarefas</code>), atualizados junto com o sistema</td></tr>
+<tr><td><strong>Sem internet</strong></td><td>Um repositório num HD externo (<code>Server = file:///run/media/ana/HD/repo</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"falha ao obter o arquivo "meurepo.db" … Could not open file"</strong>
+<pre class="term" data-user="root">#> pacman --config /tmp/a5/p-erro.conf --dbpath /tmp/a5/db2 -Syy
+:: Sincronizando a base de dados de pacotes...
+ meurepo.db falhou em ser baixadoerro: falha ao obter o arquivo "meurepo.db" de disco : Could not open file /tmp/a5/naoexiste/meurepo.db
+erro: falha ao sincronizar todas as bases de dados (erro na biblioteca de download)
+#> echo $?
+1</pre>
+<p>(Assim mesmo: o pacman cola o aviso do download e o erro na mesma linha. O <code>p-erro.conf</code> é o arquivo de teste com <code>Server = file:///tmp/a5/naoexiste</code>.)</p>
+<p><strong>O que aconteceu:</strong> o caminho do <code>Server</code> está errado, ou o nome entre colchetes não bate com o arquivo (<code>[meurepo]</code> procura <code>meurepo.db</code>).</p>
+<p><strong>Como resolver:</strong> confira com <code>ls</code> o caminho exato e o nome do <code>.db</code>. Lembre das três barras: <code>file:///</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"a chave … é desconhecida"</strong>
+<p><strong>O que aconteceu:</strong> o repositório é assinado e o chaveiro do pacman não conhece a chave.</p>
+<p><strong>Como resolver:</strong> <code>pacman-key --add</code> + <code>pacman-key --lsign-key</code>, como acima. Não responda <code>S</code> à pergunta de importar sem saber de quem é a chave.</p>
+</div>
+
+<div class="cenario">
+<strong>"OSError: [Errno 98] Address already in use"</strong>
+<pre class="term" data-cwd="/tmp/a5/repo">$ python -m http.server 8080
+Traceback (most recent call last):
+…
+OSError: [Errno 98] Address already in use</pre>
+<p><strong>O que aconteceu:</strong> outro programa (talvez outro <code>http.server</code> esquecido) já usa a porta 8080.</p>
+<p><strong>Como resolver:</strong> feche o outro, ou use outra porta (<code>python -m http.server 8081</code>). Para ver quem usa a porta: <code>ss -ltnp | grep 8080</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O pacote novo não aparece nos clientes</strong>
+<p><strong>O que aconteceu:</strong> você copiou o pacote mas não rodou o <code>repo-add</code>, ou o cliente não sincronizou.</p>
+<p><strong>Como resolver:</strong> no servidor, <code>repo-add</code>; no cliente, <code>sudo pacman -Syu</code>. Para forçar o download do índice mesmo que pareça igual: <code>-Syyu</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / linha</th><th>Descrição</th></tr>
+<tr><td><code>repo-add NOME.db.tar.gz *.pkg.tar.zst</code></td><td>Criar/atualizar o índice</td></tr>
+<tr><td><code>repo-add -R</code> / <code>-n</code> / <code>--sign</code></td><td>Apagar versão antiga / só novos / assinar</td></tr>
+<tr><td><code>repo-remove NOME.db.tar.gz pacote</code></td><td>Tirar do índice</td></tr>
+<tr><td><code>[NOME]</code> + <code>Server = file:///pasta</code></td><td>Seção no <code>pacman.conf</code></td></tr>
+<tr><td><code>SigLevel = Optional TrustAll</code> / <code>Required</code></td><td>Sem / com assinatura obrigatória</td></tr>
+<tr><td><code>pacman --config ARQ --dbpath PASTA -Sy</code></td><td>Testar sem mexer no sistema</td></tr>
+<tr><td><code>pacman -Sl NOME</code></td><td>Listar o repositório</td></tr>
+<tr><td><code>python -m http.server 8080</code></td><td>Servir a pasta (teste)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar o índice</h3>
+<p>Complete o comando que cria o repositório <code>casa</code> com todos os pacotes da pasta:</p>
+<div class="ex-code"><input data-answer="repo-add" aria-label="comando"> casa.db.tar.gz *.pkg.tar.zst</div>
+</div>
+
+<div class="exercise">
+<h3>2. O endereço</h3>
+<p>Complete a linha do <code>pacman.conf</code> para a pasta <code>/srv/casa</code>:</p>
+<div class="ex-code">Server = <input data-answer="file:///srv/casa" aria-label="endereço"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O índice se chama <code>casa.db.tar.gz</code>. Qual deve ser o nome da seção no <code>pacman.conf</code>?</p>
+<label><input type="radio" name="q3"> <code>[casa.db]</code></label>
+<label><input type="radio" name="q3"> <code>[repo]</code></label>
+<label><input type="radio" name="q3"> <code>[casa]</code></label>
+<label><input type="radio" name="q3"> Qualquer nome.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Você copiou um pacote novo para a pasta do repositório. O que falta para os clientes o verem?</p>
+<label><input type="radio" name="q4"> Nada.</label>
+<label><input type="radio" name="q4"> Rodar <code>repo-add</code> no servidor e <code>pacman -Syu</code> nos clientes.</label>
+<label><input type="radio" name="q4"> Reiniciar o nginx.</label>
+<label><input type="radio" name="q4"> Assinar com <code>gpg</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Repositório = pasta com pacotes + <code>NOME.db</code> (feito pelo <code>repo-add</code>).</li>
+  <li>No <code>pacman.conf</code>: <code>[NOME]</code>, <code>SigLevel</code> e <code>Server</code>; a ordem das seções define a prioridade.</li>
+  <li>Teste com <code>--config</code> e <code>--dbpath</code> antes de mexer no sistema.</li>
+  <li>Pela rede: <code>python -m http.server</code> para testar, nginx para ficar.</li>
+  <li>Na rede, assine (<code>gpg --detach-sign</code>, <code>repo-add --sign</code>) e use <code>SigLevel = Required</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a seção <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#Custom_local_repository">Pacman/Tips and tricks § Custom local repository</a> explica o repositório local, e <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#Network_shared_pacman_cache">Network shared pacman cache</a> mostra como compartilhar o cache entre PCs. Para servir pela rede e assinar: <a href="https://wiki.archlinux.org/title/Unofficial_user_repositories">Unofficial user repositories</a> (que também lista repositórios de terceiros, com os mesmos cuidados do AUR) e <a href="https://wiki.archlinux.org/title/Pacman/Package_signing">Pacman/Package signing</a>. A página <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">pacman (Português)</a> descreve as opções do <code>pacman.conf</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
