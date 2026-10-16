@@ -124,10 +124,11 @@ $V -u root 'previa -Rns htop'           # idem para remoção
 | Prompt | `[ana@notebook ~]$` (`PS1='[\u@\h \W]\$ '`); root: `[root@notebook ~]#`; no live: `root@archiso ~ #` (zsh) |
 | `ls -l` | data com o **dia antes do mês**: `15 out 08:47`, `10 out 21:14` |
 | Mensagens | pt_BR (`bash: xyz: comando não encontrado`, `sudo: uma senha é necessária`); pacman em pt_BR (`Tamanho total download:`, `:: Continuar a instalação? [S/n]`, `erro: o pacote "x" não foi encontrado`) |
-| Versões | kernel 7.2.10-arch1-1, linux-lts 6.18.57-1, bash 5.3.20, pacman/libalpm 16.0.1, GRUB (UEFI), yay 13.0.1, paru 2.1.0 |
+| Versões | kernel 7.2.10-arch1-1, linux-lts 6.18.57-1, bash 5.3.20, pacman 7.1.0 (libalpm 16.0.1), GRUB (UEFI), yay 13.0.1, paru 2.1.0 |
 | Base | `base` não traz editor, `sudo`, `man`, `fsck.fat` (dosfstools), `hostname` (inetutils): cada um é um pacote à parte |
 | Home | `useradd -m` cria a pasta com modo **700** e `.bashrc`, `.bash_profile`, `.bash_logout` |
 | AUR -bin | o `paru-bin` 2.1.0 da VM está **quebrado**: `paru --version` → `error while loading shared libraries: libalpm.so.15` (o pacman 7.1 traz `libalpm.so.16`); exemplo real de pacote `-bin` desatualizado frente a uma atualização da biblioteca. `yay-bin` 13.0.1 funciona |
+| AUR × repositório | `yay -Si pfetch` falha porque `extra/pfetch-rs` declara `provides=pfetch`; para o do AUR escreva `aur/pfetch` |
 | base-devel | não é mais grupo (`pacman -Sg base-devel` dá erro): é um meta-pacote |
 | NTP | **desligado** depois da instalação (`timedatectl`: `System clock synchronized: no`, `NTP service: inactive`); liga-se com `timedatectl set-ntp true` (systemd-timesyncd) |
 | GRUB | com dois kernels, o padrão vira o que vier primeiro na ordem (o **LTS**); `GRUB_TOP_LEVEL` resolve; o pacman **não** roda `grub-mkconfig` sozinho |
