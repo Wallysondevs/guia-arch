@@ -254,8 +254,8 @@ disabled                         « de volta ao estado original</pre>
 
 <p>Repare no que o <code>enable</code> realmente faz: cria um <strong>link simbólico</strong> numa pasta <code>multi-user.target.wants</code>. "Wants" = "quer": quando o boot chega ao <code>multi-user.target</code> (o sistema pronto para uso), ele "quer" o nginx junto. Por que esse alvo? Porque o arquivo da unidade diz, na seção <code>[Install]</code>: <code>WantedBy=multi-user.target</code> (você verá abaixo).</p>
 
-<div class="try" data-goal="svc:nginx=enabled,svc:nginx=active" data-solucao="sudo systemctl enable --now nginx">
-<p class="try-task"><strong>Missão:</strong> com um único comando, habilite o <code>nginx</code> para o boot <strong>e</strong> ligue-o agora. (A senha da ana no simulador é <code>ana</code>.)</p>
+<div class="try" data-goal="svc:nginx=active" data-solucao="sudo systemctl start nginx" data-stdin="ana">
+<p class="try-task"><strong>Missão:</strong> ligue o <code>nginx</code> <strong>agora</strong>, só até o próximo desligamento (sem habilitar no boot). Depois, confira com <code>systemctl is-active nginx</code>. (A senha da ana no simulador é <code>ana</code>.)</p>
 </div>
 
 <h3>start × enable: qual usar?</h3>
