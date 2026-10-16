@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto: servidor caseiro com Arch Linux | Guia Arch</title>
+<meta name="description" content="Projeto do Guia Arch: um servidor caseiro na VM com SSH por chave, nginx com uma página, backup diário com timer do systemd --user, um container Podman leve e um firewall nftables planejado e testado com nft -c. Tudo desfeito no fim.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Servidor Caseiro</span></h1>
+
+<p class="intro">Neste projeto, a sua VM vira um pequeno servidor de casa: você entra nela por SSH com chave, ela publica um site com nginx, faz backup diário da pasta Documentos sozinha, roda um serviço num container e tem um firewall pronto para ligar. Tudo foi executado na VM do guia, com as saídas reais, e <strong>desfeito no fim</strong>, como você também vai fazer.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Juntar <code>systemctl</code>, nginx, timers, Podman e nftables num sistema só.</li>
+  <li>Escrever um script de backup e agendá-lo com um timer do <strong>usuário</strong> (<code>systemctl --user</code>).</li>
+  <li>Publicar um serviço num container sem root.</li>
+  <li>Planejar um firewall e testar a sintaxe <strong>sem aplicar</strong> (<code>nft -c</code>).</li>
+  <li>Anotar o estado inicial e desfazer tudo no fim.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Antes de começar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você precisa de</th><th>Aula</th></tr>
+<tr><td>Um Arch instalado (sem desktop serve), com rede e <code>sudo</code></td><td><a href="projeto-instalacao.html">Instalação Completa do Zero</a></td></tr>
+<tr><td>Pacotes: <code>openssh nginx podman nftables</code> (e <code>tar</code>, <code>zstd</code>, que já vêm na <code>base</code>)</td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td>Saber ligar e desligar serviços</td><td><a href="systemd.html">systemctl e Serviços</a></td></tr>
+<tr><td>Um snapshot da VM: "antes-servidor"</td><td><a href="projetos.html">Como Usar os Projetos</a></td></tr>
+</table>
+</div>
+
+<h3>Passo 0: anote o estado inicial</h3>
+<p>Quem administra servidor anota antes de mexer. Na VM do guia, o ponto de partida era:</p>
+
+<pre class="term">#> systemctl is-active nginx; systemctl is-enabled nginx
+inactive
+disabled
+#> cp -a /etc/nginx/nginx.conf /tmp/a9/nginx.conf.orig       « cópia de segurança do original
+$ systemctl --user list-timers --no-pager
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+0 timers listed.
+Pass --all to see loaded but inactive timers, too.
+$ podman images
+REPOSITORY  TAG         IMAGE ID    CREATED     SIZE
+#> nft list ruleset | wc -l
+0                                                             « nenhuma regra de firewall</pre>
+
+<p>Guarde essas respostas no seu <code>~/diario.txt</code>. No fim, o "Desfazer" volta exatamente a elas.</p>
+
+<hr>
+
+<h2>Passo 1: SSH com chave</h2>
+<p>Um servidor é administrado de outro computador. O SSH (<code>sshd</code>) já é o caminho do laboratório: a VM do guia é acessada <strong>só por chave</strong>, e a única porta aberta é a 22:</p>
+
+<pre class="term">$ ls -la ~/.ssh
+total 12
+drwx------  2 ana ana 4096 16 out 12:11 .
+drwx------ 15 ana ana 4096 16 out 13:47 ..
+-rw-r--r--  1 ana ana   90 16 out 12:11 authorized_keys       « a chave pública de quem pode entrar
+#> ss -tlnup
+Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))
+tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
+
+<p>No seu computador (o cliente), o caminho é: <code>ssh-keygen -t ed25519</code>, <code>ssh-copy-id ana@IP-DA-VM</code>, testar o login com chave e só então desligar o login por senha no servidor. Cada passo, com as saídas reais e os erros comuns, está em <a href="ssh.html">SSH</a>. Faça a aula e volte aqui.</p>
+
+<div class="warning">
+<strong>A ordem importa</strong>
+<p>Desligar <code>PasswordAuthentication</code> antes de testar a chave tranca você para fora. Mantenha uma segunda sessão SSH aberta enquanto mexe no <code>sshd_config</code>, e teste a nova configuração com <code>sudo sshd -t</code> antes de reiniciar o serviço.</p>
+</div>
+
+<hr>
+
+<h2>Passo 2: o site com nginx</h2>
+<p>Como em <a href="servidor-web.html">Servidor Web</a>, o site fica numa pasta própria em <code>/srv/http</code> e num arquivo de configuração próprio. Usamos a porta 8080 para não mexer no site padrão.</p>
+
+<ol class="passo">
+<li><strong>A página</strong> (<code>/srv/http/casa/index.html</code>, criada com <code>sudo mkdir -p /srv/http/casa</code> e <code>sudo nano</code>):
+<pre class="file" data-file="/srv/http/casa/index.html">&lt;!doctype html&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;title&gt;Servidor da Ana&lt;/title&gt;
+&lt;h1&gt;Servidor caseiro da Ana&lt;/h1&gt;
+&lt;p&gt;Rodando num Arch Linux.&lt;/p&gt;
+</pre></li>
+<li><strong>O site</strong>, com log de acesso separado:
+<pre class="file" data-file="/etc/nginx/sites-enabled/casa.conf">server {
+    listen 8080;
+    server_name _;
+    root /srv/http/casa;
+    index index.html;
+    access_log /var/log/nginx/casa.access.log;
+}
+</pre>
+<p><code>server_name _;</code> é um nome que não casa com nada: o bloco atende quem chegar na porta 8080, seja qual for o nome usado.</p></li>
+<li><strong>As duas linhas</strong> dentro de <code>http { }</code> no <code>/etc/nginx/nginx.conf</code>, logo abaixo de <code>default_type</code>:
+<pre class="file" data-file="/etc/nginx/nginx.conf (trecho)">    types_hash_max_size 4096;
+    include sites-enabled/*.conf;
+</pre></li>
+<li><strong>Testar, ligar e conferir:</strong>
+<pre class="term">$ sudo nginx -t
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+$ sudo systemctl enable --now nginx
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+$ curl -s http://localhost:8080
+&lt;!doctype html&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;title&gt;Servidor da Ana&lt;/title&gt;
+&lt;h1&gt;Servidor caseiro da Ana&lt;/h1&gt;
+&lt;p&gt;Rodando num Arch Linux.&lt;/p&gt;
+$ curl -s -o /dev/null -w '%{http_code}\n' http://localhost/
+200                                          « o site padrão continua na porta 80
+$ ls -l /var/log/nginx/
+total 8
+-rw-r--r-- 1 root root 86 16 out 13:48 access.log
+-rw-r--r-- 1 root root 86 16 out 13:48 casa.access.log  « um log por site</pre></li>
+</ol>
+
+<p><strong>Conferência:</strong> <code>systemctl is-enabled nginx</code> → <code>enabled</code>, e a página aparece na 8080. Do seu computador, abra <code>http://IP-DA-VM:8080</code> (no VirtualBox com NAT, crie um redirecionamento de porta para a 8080, como fez com a 22).</p>
+
+<hr>
+
+<h2>Passo 3: backup diário com um timer do usuário</h2>
+<p>O backup é da ana e dos arquivos dela, então não precisa de root: usamos o <strong>systemd do usuário</strong> (<code>systemctl --user</code>), que guarda as units em <code>~/.config/systemd/user/</code>. A teoria de timers está em <a href="timers.html">Timers e Tarefas</a>.</p>
+
+<h3>3a. O script</h3>
+<pre class="file" data-file="~/bin/backup-docs.sh">#!/usr/bin/env bash
+# Copia ~/Documentos para um .tar.zst com data e hora; guarda os 7 mais novos.
+set -euo pipefail
+destino=~/backups
+arquivo="$destino/documentos-$(date +%Y-%m-%d_%H%M%S).tar.zst"
+tar --zstd -cf "$arquivo" -C ~ Documentos
+echo "backup criado: $arquivo ($(du -h "$arquivo" | cut -f1))"
+ls -1t "$destino"/documentos-*.tar.zst | tail -n +8 | xargs -r rm --
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>set -euo pipefail</code></td><td>Para no primeiro erro (sem isso, um <code>tar</code> que falha passaria despercebido)</td></tr>
+<tr><td><code>date +%Y-%m-%d_%H%M%S</code></td><td>Data e hora no nome: os arquivos ficam em ordem e nunca se sobrescrevem (a não ser no mesmo segundo)</td></tr>
+<tr><td><code>tar --zstd -cf … -C ~ Documentos</code></td><td>Cria (<code>c</code>) o arquivo (<code>f</code>) comprimido com zstd, entrando em <code>~</code> antes, para o caminho guardado ser <code>Documentos/…</code></td></tr>
+<tr><td><code>ls -1t … | tail -n +8 | xargs -r rm --</code></td><td>Lista do mais novo ao mais velho, pula os 7 primeiros e apaga o resto (<em>rotação</em>)</td></tr>
+</table>
+</div>
+
+<p>Na VM, os arquivos ficaram numa pasta de teste (<code>~/a9</code>), por isso os caminhos abaixo têm <code>a9</code>. Primeiro, teste o script à mão:</p>
+
+<pre class="term">$ mkdir -p ~/a9/bin ~/a9/backups ~/.config/systemd/user
+$ chmod +x ~/a9/bin/backup-docs.sh
+$ ~/a9/bin/backup-docs.sh
+backup criado: /home/ana/a9/backups/documentos-2026-10-16_134902.tar.zst (4,0K)
+$ echo $?
+0</pre>
+
+<h3>3b. O serviço e o timer</h3>
+<pre class="file" data-file="~/.config/systemd/user/backup-docs.service">[Unit]
+Description=Backup da pasta Documentos
+
+[Service]
+Type=oneshot
+ExecStart=%h/a9/bin/backup-docs.sh
+</pre>
+
+<pre class="file" data-file="~/.config/systemd/user/backup-docs.timer">[Unit]
+Description=Backup diário da pasta Documentos
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
+</pre>
+
+<dl class="anatomy">
+  <dt>Type=oneshot</dt><dd>Roda, termina e pronto (não é um serviço que fica ligado).</dd>
+  <dt>%h</dt><dd>A pasta pessoal do usuário (<code>/home/ana</code>). Units não entendem <code>~</code>.</dd>
+  <dt>OnCalendar=daily</dt><dd>Todo dia à meia-noite.</dd>
+  <dt>Persistent=true</dt><dd>Se a máquina estava desligada na hora, roda assim que der.</dd>
+  <dt>RandomizedDelaySec=10min</dt><dd>Sorteia um atraso de até 10 minutos (evita todos os timers dispararem juntos).</dd>
+  <dt>WantedBy=timers.target</dt><dd>O que o <code>enable</code> usa para ligar o timer quando o systemd do usuário sobe.</dd>
+</dl>
+
+<pre class="term">$ systemctl --user daemon-reload
+$ systemctl --user start backup-docs.service
+$ systemctl --user status backup-docs.service --no-pager
+○ backup-docs.service - Backup da pasta Documentos
+     Loaded: loaded (/home/ana/.config/systemd/user/backup-docs.service; static)
+     Active: inactive (dead)                                 « normal para oneshot: já terminou
+
+out 16 13:49:02 notebook systemd[2032]: Starting Backup da pasta Documentos...
+out 16 13:49:02 notebook backup-docs.sh[97140]: backup criado: /home/ana/a9/backups/documentos-2026-10-16_134902.tar.zst (4,0K)
+out 16 13:49:02 notebook systemd[2032]: Finished Backup da pasta Documentos.
+$ systemctl --user enable --now backup-docs.timer
+Created symlink '/home/ana/.config/systemd/user/timers.target.wants/backup-docs.timer' → '/home/ana/.config/systemd/user/backup-docs.timer'.
+$ systemctl --user list-timers --no-pager
+NEXT                        LEFT LAST PASSED UNIT              ACTIVATES
+Sat 2026-10-17 00:01:27 -03  10h -         - backup-docs.timer backup-docs.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+
+<p>Repare: o serviço é <code>static</code> (não tem <code>[Install]</code>: quem o liga é o timer), e a próxima execução ficou para 00:01:27, a meia-noite mais o atraso sorteado. O teste manual e o <code>start</code> rodaram no <strong>mesmo segundo</strong>, então geraram o mesmo nome e há um só arquivo:</p>
+
+<pre class="term">$ ls -l ~/a9/backups
+total 4
+-rw-r--r-- 1 ana ana 722 16 out 13:49 documentos-2026-10-16_134902.tar.zst
+$ tar --zstd -tf "$(ls -1t ~/a9/backups/*.tar.zst | head -1)"
+Documentos/
+Documentos/notas.txt
+Documentos/acesso.log
+Documentos/relatorio.odt
+Documentos/projetos/
+Documentos/projetos/site/
+Documentos/projetos/site/index.html
+Documentos/projetos/site/style.css
+Documentos/projetos/backup.sh
+Documentos/alunos.csv
+$ journalctl --user -u backup-docs.service --no-pager -n 5
+out 16 13:49:02 notebook systemd[2032]: Starting Backup da pasta Documentos...
+out 16 13:49:02 notebook backup-docs.sh[97140]: backup criado: /home/ana/a9/backups/documentos-2026-10-16_134902.tar.zst (4,0K)
+out 16 13:49:02 notebook systemd[2032]: Finished Backup da pasta Documentos.</pre>
+
+<p>O <code>ls</code> diz 722 bytes e o script disse 4,0K: o <code>du</code> mede o espaço ocupado no disco (um bloco de 4 KiB), não o tamanho do conteúdo. O <code>tar -t</code> (<em>list</em>) confere o backup sem extrair: um backup que nunca foi conferido não é backup.</p>
+
+<div class="warning">
+<strong>Timers do usuário só rodam com o usuário "logado"</strong>
+<p>O systemd do usuário existe enquanto a ana tem alguma sessão aberta. Num servidor onde ninguém fica logado, o timer da meia-noite <strong>não</strong> roda. A solução é o <em>lingering</em>: <code>sudo loginctl enable-linger ana</code> faz o systemd da ana subir no boot e ficar ligado (na VM: <code>loginctl show-user ana -p Linger</code> → <code>Linger=no</code>; não foi alterado). Outra opção é um timer do sistema (<code>/etc/systemd/system</code>) com <code>User=ana</code> no serviço.</p>
+</div>
+
+<div class="tip">
+<strong>Backup no mesmo disco não basta</strong>
+<p>Se o disco morrer, os backups morrem junto. Depois de funcionar, troque o destino por um disco externo ou mande uma cópia para outra máquina com <code>rsync -a ~/backups/ outra-maquina:backups/</code> (pelo SSH do passo 1).</p>
+</div>
+
+<hr>
+
+<h2>Passo 4: um serviço num container</h2>
+<p>Vamos rodar um segundo site, isolado num container sem root, com a imagem <code>busybox</code> (menos de 5 MB) e o servidor web minúsculo que ela traz. Veja <a href="containers.html">Docker e Podman</a>.</p>
+
+<pre class="term">$ mkdir -p ~/a9/www
+$ echo 'Olá do container!' &gt; ~/a9/www/index.html
+$ podman run -d --name casa-web -p 8081:8080 -v ~/a9/www:/www:ro docker.io/library/busybox httpd -f -v -p 8080 -h /www
+Trying to pull docker.io/library/busybox:latest...
+Getting image source signatures
+Copying blob sha256:37bb94b0940bd40749eced2b83080d1b9912f281ac499a7247e4ce7c385792cc
+Copying config sha256:aaef90e065235eb0b2d9938be85d1b81add2902cf89affe2cdfa19be33476ac0
+Writing manifest to image destination
+171bf75a3982ccfd22af3ed844a6f5ec351898839dd067881612a8f0727765bb
+$ podman ps
+CONTAINER ID  IMAGE                             COMMAND               CREATED        STATUS       PORTS                   NAMES
+171bf75a3982  docker.io/library/busybox:latest  httpd -f -v -p 80...  3 seconds ago  Up 1 second  0.0.0.0:8081->8080/tcp  casa-web
+$ curl -s http://localhost:8081/
+Olá do container!</pre>
+
+<dl class="anatomy">
+  <dt>-p 8081:8080</dt><dd>A porta 8081 do Arch leva à 8080 do container (porta alta: sem root não dá para usar a 80).</dd>
+  <dt>-v ~/a9/www:/www:ro</dt><dd>Monta a pasta da ana em <code>/www</code> dentro do container, só leitura (<code>ro</code>): o container não consegue alterar o site.</dd>
+  <dt>httpd -f -v -p 8080 -h /www</dt><dd>O servidor web do busybox: em primeiro plano (<code>-f</code>, para o container não terminar), com log (<code>-v</code>), na porta 8080, servindo <code>/www</code>.</dd>
+</dl>
+
+<pre class="term">$ podman exec casa-web ls -l /www
+total 4
+-rw-r--r--    1 root     root            19 Oct 16 16:49 index.html     « o arquivo da ana aparece como "root" lá dentro
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081/nada
+404
+$ podman logs casa-web
+[fd17:625c:f037:2:3074:376a:4fe9:621c]:60170: response:200
+[fd17:625c:f037:2:3074:376a:4fe9:621c]:60184: response:404</pre>
+
+<p>O endereço estranho no log é o IPv6 interno da rede rootless (<code>pasta</code>): para o container, os pedidos vêm "de fora". O <code>ls</code> lá dentro mostra a data em inglês e em UTC (16:49), porque o busybox não tem o fuso nem o idioma do Arch.</p>
+
+<div class="tip">
+<strong>Para o container sobreviver a um reboot</strong>
+<p>Um <code>podman run -d</code> não volta sozinho depois de reiniciar. O jeito do Podman é o <strong>Quadlet</strong>: um arquivo <code>~/.config/containers/systemd/casa-web.container</code> que o systemd transforma num serviço (<code>systemctl --user start casa-web</code>), junto com o lingering do passo 3. A Arch Wiki (Podman) tem o modelo.</p>
+</div>
+
+<h3>Erros reais deste passo</h3>
+<p>Na primeira tentativa, a imagem usada foi a <code>alpine</code>:</p>
+<pre class="term">$ podman run -d --name casa-web -p 8081:8080 -v ~/a9/www:/www:ro docker.io/library/alpine httpd -f -p 8080 -h /www
+…
+Error: crun: executable file `httpd` not found in $PATH: No such file or directory: OCI runtime attempted to invoke a command that was not found
+$ podman rm casa-web                         « o container foi criado mesmo assim: apague antes de tentar de novo
+casa-web
+$ podman run -d --name casa-web -p 8081:8080 -v ~/a9/www:/www:ro docker.io/library/alpine busybox httpd -f -v -p 8080 -h /www
+a707d7016d5a218f7d2e9267b95fdd22c9dd5b4089081bd94bdd7d77012df878
+$ podman ps
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES        « não ficou ligado!
+$ podman logs casa-web
+httpd: applet not found</pre>
+<p>O busybox do Alpine é compilado <strong>sem</strong> o <code>httpd</code> (lá ele está no pacote <code>busybox-extras</code>). A lição: quando um container "some" do <code>podman ps</code>, olhe <code>podman ps -a</code> (ele terminou) e <code>podman logs NOME</code> (por quê). E repare no <code>podman rm</code> entre as tentativas: mesmo quando o comando falha, o container fica criado com aquele nome, e sem apagá-lo o Podman reclamaria que o nome já está em uso.</p>
+
+<hr>
+
+<h2>Passo 5: o firewall planejado</h2>
+<p>Agora há três portas em uso: 22 (SSH), 80 e 8080 (nginx) e 8081 (container). O plano: <strong>bloquear toda entrada</strong> e liberar só SSH e nginx; o container fica acessível apenas da própria máquina (atrás do nginx, se um dia for publicado). Num arquivo:</p>
+
+<pre class="file" data-file="/etc/nftables.conf (planejado)">#!/usr/bin/nft -f
+# Firewall planejado do servidor caseiro (NÃO aplicado no laboratório)
+flush ruleset
+
+table inet filtro {
+    chain entrada {
+        type filter hook input priority filter; policy drop;
+
+        ct state established,related accept   # respostas do que EU pedi
+        ct state invalid drop
+        iif "lo" accept                       # a própria máquina
+        meta l4proto { icmp, ipv6-icmp } accept   # ping e IPv6 funcionando
+
+        tcp dport 22 accept                   # SSH (PRIMEIRO!)
+        tcp dport { 80, 8080 } accept         # nginx: site padrão e site da casa
+        # 8081 (container) fica fechado para fora: só localhost
+    }
+    chain encaminhar {
+        type filter hook forward priority filter; policy drop;
+    }
+    chain saida {
+        type filter hook output priority filter; policy accept;
+    }
+}
+</pre>
+
+<p>Cada regra é explicada em <a href="firewall.html">Firewall (nftables e ufw)</a>. O que importa aqui é o hábito: <strong>testar antes de aplicar</strong>. O <code>-c</code> (<em>check</em>) do <code>nft</code> confere o arquivo inteiro sem mudar nada:</p>
+
+<pre class="term">#> nft -c -f /tmp/a9/servidor.nft
+#> echo $?
+0                                            « sintaxe certa
+#> nft -c -f /tmp/a9/quebrado.nft             « mesmo arquivo, com "aceita" no lugar de "accept"
+/tmp/a9/quebrado.nft:14:64-64: Error: syntax error, unexpected newline
+expected any of: ., ==, !=, &lt;, &gt;, &gt;=, &lt;=, &lt;&lt;, &gt;&gt;, &amp;, ^, !, @, vmap, map, reset, destroy, &lt;number&gt;, &lt;string&gt;, …
+        tcp dport 22 aceita                   # SSH (PRIMEIRO!)
+                                                               ^
+#> echo $?
+1
+#> nft list ruleset | wc -l
+0                                            « nada foi aplicado</pre>
+
+<p>A mensagem aponta arquivo, linha 14 e coluna; a seta <code>^</code> marca onde o <code>nft</code> desistiu de entender. Num servidor de verdade, depois do <code>-c</code>, você aplicaria com <code>sudo systemctl enable --now nftables</code> (que lê <code>/etc/nftables.conf</code>) <strong>com uma segunda sessão SSH aberta</strong>, para conferir que ainda consegue entrar.</p>
+
+<div class="warning">
+<strong>Por que o firewall não foi ligado na VM do guia</strong>
+<p>A VM é compartilhada e acessada por SSH; uma regra errada derrubaria todos os autores. Na sua VM, ligue: é parte do projeto. Se se trancar fora, entre pela janela do VirtualBox (o console local não passa pelo firewall) e rode <code>sudo nft flush ruleset</code>.</p>
+</div>
+
+<hr>
+
+<h2>Checklist do servidor</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Conferência</th><th>Esperado</th></tr>
+<tr><td>SSH só com chave</td><td><code>ssh -o PasswordAuthentication=no ana@IP</code></td><td>Entra sem pedir senha</td></tr>
+<tr><td>nginx no boot</td><td><code>systemctl is-enabled nginx</code></td><td><code>enabled</code></td></tr>
+<tr><td>Site</td><td><code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080</code></td><td><code>200</code></td></tr>
+<tr><td>Timer de backup</td><td><code>systemctl --user list-timers</code></td><td><code>backup-docs.timer</code> com próxima execução</td></tr>
+<tr><td>Backup legível</td><td><code>tar --zstd -tf ARQUIVO</code></td><td>Lista <code>Documentos/…</code></td></tr>
+<tr><td>Container</td><td><code>podman ps</code></td><td><code>casa-web</code>, <code>Up</code></td></tr>
+<tr><td>Firewall</td><td><code>sudo nft list ruleset</code></td><td>A tabela <code>filtro</code> (depois de ligar)</td></tr>
+<tr><td>Portas</td><td><code>sudo ss -tlnup</code></td><td>22, 80, 8080, 8081</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Desfazer (exatamente o que foi feito na VM do guia)</h2>
+<pre class="term">$ systemctl --user disable --now backup-docs.timer
+Removed '/home/ana/.config/systemd/user/timers.target.wants/backup-docs.timer'.
+$ rm ~/.config/systemd/user/backup-docs.service ~/.config/systemd/user/backup-docs.timer
+$ systemctl --user daemon-reload
+$ podman stop casa-web
+time="2026-10-16T13:51:08-03:00" level=warning msg="StopSignal SIGTERM failed to stop container casa-web in 10 seconds, resorting to SIGKILL"
+casa-web
+$ podman rm casa-web
+casa-web
+$ podman rmi docker.io/library/busybox
+Untagged: docker.io/library/busybox:latest
+Deleted: aaef90e065235eb0b2d9938be85d1b81add2902cf89affe2cdfa19be33476ac0
+$ rm -r ~/a9
+#> systemctl disable --now nginx
+Removed '/etc/systemd/system/multi-user.target.wants/nginx.service'.
+#> cp -a /tmp/a9/nginx.conf.orig /etc/nginx/nginx.conf
+#> rm -r /etc/nginx/sites-enabled /srv/http/casa
+#> rm -f /var/log/nginx/access.log /var/log/nginx/casa.access.log
+#> systemctl is-active nginx; systemctl is-enabled nginx
+inactive
+disabled
+#> nginx -t 2>&amp;1 | tail -1
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+#> nft list ruleset | wc -l
+0</pre>
+
+<p>Compare com o Passo 0: tudo voltou ao estado anotado. (O aviso do <code>stop</code> aparece porque o <code>httpd</code>, como processo 1 do container, ignora o SIGTERM; o Podman espera 10 s e usa SIGKILL.) Na sua VM, restaurar o snapshot "antes-servidor" faz o mesmo de uma vez.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"curl: (7) Failed to connect to localhost port 8080"</strong>
+<p><strong>Causa:</strong> nginx parado, ou o <code>include</code> fora do bloco <code>http { }</code>. <strong>Confira:</strong> <code>systemctl status nginx</code>, <code>sudo nginx -T | grep -n 8080</code> (o <code>-T</code> maiúsculo imprime a configuração completa, com os includes). <strong>Resolva:</strong> corrija e <code>sudo systemctl reload nginx</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O timer existe, mas o backup nunca roda à noite</strong>
+<p><strong>Causa:</strong> sem <em>lingering</em>, o systemd da ana não está rodando quando ninguém está logado. <strong>Confira:</strong> <code>loginctl show-user ana -p Linger</code>. <strong>Resolva:</strong> <code>sudo loginctl enable-linger ana</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to connect to bus" no systemctl --user</strong>
+<p><strong>Causa:</strong> você está como root ou num <code>su</code>/<code>sudo -u ana</code>, sem a sessão de usuário. <strong>Resolva:</strong> entre como ana de verdade (SSH ou login) e rode sem <code>sudo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"the container name "casa-web" is already in use"</strong>
+<p><strong>Causa:</strong> um container parado com o mesmo nome. <strong>Resolva:</strong> <code>podman ps -a</code>, <code>podman rm casa-web</code> (ou use <code>--replace</code> no <code>run</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Liguei o firewall e o site sumiu para os outros computadores</strong>
+<p><strong>Causa:</strong> porta não liberada na chain de entrada. <strong>Confira:</strong> <code>sudo nft list ruleset</code>. <strong>Resolva:</strong> acrescente a porta, teste com <code>nft -c -f</code> e recarregue com <code>sudo systemctl reload nftables</code>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Testar sem aplicar</h3>
+<p>Complete para conferir a sintaxe do firewall sem mudar nada:</p>
+<div class="ex-code">sudo nft <input data-answer="-c|--check" aria-label="opção"> -f /etc/nftables.conf</div>
+</div>
+
+<div class="exercise">
+<h3>2. Timer do usuário</h3>
+<p>Complete para ligar o timer agora e em todo login:</p>
+<div class="ex-code">systemctl <input data-answer="--user" aria-label="opção"> enable --now backup-docs.timer</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que o timer do usuário pode não rodar num servidor sem ninguém logado?</p>
+<label><input type="radio" name="q3"> Porque timers só funcionam com root.</label>
+<label><input type="radio" name="q3"> Porque <code>OnCalendar=daily</code> só vale em dias úteis.</label>
+<label><input type="radio" name="q3"> Porque o systemd do usuário só existe enquanto há sessão, a não ser com <code>enable-linger</code>.</label>
+<label><input type="radio" name="q3"> Porque o <code>tar</code> precisa de terminal.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O container sumiu do <code>podman ps</code> logo depois do <code>run -d</code>. O que olhar primeiro?</p>
+<label><input type="radio" name="q4"> <code>podman ps -a</code> e <code>podman logs NOME</code>.</label>
+<label><input type="radio" name="q4"> <code>sudo pacman -Syu</code>.</label>
+<label><input type="radio" name="q4"> <code>nft list ruleset</code>.</label>
+<label><input type="radio" name="q4"> Reiniciar a VM.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Anote o estado inicial; desfaça no fim (ou restaure o snapshot).</li>
+  <li>nginx: site em <code>/srv/http</code>, arquivo em <code>sites-enabled/</code>, <code>nginx -t</code>, <code>enable --now</code>.</li>
+  <li>Backup: script com <code>set -euo pipefail</code> + <code>.service</code> oneshot + <code>.timer</code> em <code>~/.config/systemd/user</code>; lingering para servidores.</li>
+  <li>Container rootless numa porta alta, com volume <code>:ro</code>; <code>podman logs</code> quando ele some.</li>
+  <li>Firewall: política <code>drop</code> na entrada, SSH primeiro, <code>nft -c -f</code> antes de aplicar.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/OpenSSH">OpenSSH</a>, <a href="https://wiki.archlinux.org/title/Nginx">nginx</a>, <a href="https://wiki.archlinux.org/title/Systemd/User">systemd/User</a> (lingering, units do usuário), <a href="https://wiki.archlinux.org/title/Systemd/Timers">systemd/Timers</a>, <a href="https://wiki.archlinux.org/title/Podman">Podman</a> (Quadlet), <a href="https://wiki.archlinux.org/title/Nftables">nftables</a> e, para ir além, <a href="https://wiki.archlinux.org/title/Synchronization_and_backup_programs">Synchronization and backup programs</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
