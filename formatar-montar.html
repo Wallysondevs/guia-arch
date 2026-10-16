@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch formatar e montar — mkfs.fat, mkswap, mkfs.ext4, mount e swapon | Guia Arch</title>
+<meta name="description" content="Formatar as partições do Arch (FAT32 na EFI, swap, ext4 na raiz) com cada linha do mke2fs explicada, montar a raiz em /mnt e a EFI em /mnt/boot na ordem certa, ativar a swap e conferir tudo com lsblk -f.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: <span class="hl">formatar e montar</span></h1>
+
+<p class="intro">As partições criadas na <a href="particionar.html">aula anterior</a> são espaços vazios: ainda não sabem guardar arquivos. <strong>Formatar</strong> é criar dentro de cada uma um <strong>sistema de arquivos</strong>; <strong>montar</strong> é ligar esse sistema de arquivos a uma pasta, para que o instalador possa gravar nele. No fim desta aula, o disco do futuro Arch estará pendurado em <code>/mnt</code>, pronto para receber os pacotes.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um sistema de arquivos e qual usar em cada partição (FAT32, ext4, Btrfs, swap).</li>
+  <li>Formatar com <code>mkfs.fat -F 32</code>, <code>mkswap</code> e <code>mkfs.ext4</code>, entendendo cada linha da saída.</li>
+  <li>Montar a raiz em <code>/mnt</code> e a EFI em <code>/mnt/boot</code>, <strong>nessa ordem</strong>, e ativar a swap.</li>
+  <li>Conferir tudo com <code>lsblk -f</code>, coluna por coluna.</li>
+  <li>Os erros comuns: ordem errada, partição errada, partição já montada.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que é um sistema de arquivos</h2>
+
+<p>Uma partição vazia é como um galpão sem prateleiras. O <strong>sistema de arquivos</strong> é o conjunto de prateleiras, etiquetas e o fichário que diz onde está cada coisa: nomes de arquivos, pastas, tamanhos, permissões, datas. Cada sistema de arquivos organiza isso de um jeito, e cada partição recebe o seu:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema de arquivos</th><th>Comando</th><th>Para quê</th><th>No guia</th></tr>
+<tr><td><strong>FAT32</strong> (<code>vfat</code>)</td><td><code>mkfs.fat -F 32</code></td><td>A partição EFI. O firmware UEFI só lê FAT; não é uma escolha.</td><td><code>/dev/sda1</code></td></tr>
+<tr><td><strong>swap</strong></td><td><code>mkswap</code></td><td>Não guarda arquivos: é uma área de troca de memória.</td><td><code>/dev/sda2</code></td></tr>
+<tr><td><strong>ext4</strong></td><td><code>mkfs.ext4</code></td><td>O sistema de arquivos tradicional do Linux: estável, rápido e fácil de consertar.</td><td><code>/dev/sda3</code> (raiz)</td></tr>
+<tr><td><strong>Btrfs</strong></td><td><code>mkfs.btrfs</code></td><td>Moderno, com <em>snapshots</em> (fotos do sistema para voltar atrás) e compressão. Mais conceitos para aprender.</td><td>tem aula própria: <a href="btrfs.html">Btrfs e Subvolumes</a></td></tr>
+<tr><td>XFS</td><td><code>mkfs.xfs</code></td><td>Bom para arquivos enormes e servidores; não diminui de tamanho.</td><td>—</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Qual usar na raiz?</strong>
+<p>Na primeira instalação, <strong>ext4</strong>: é o que o guia usa, o que mais aparece em tutoriais e o mais simples de recuperar. Quando quiser snapshots (voltar o sistema inteiro para antes de uma atualização), faça uma instalação com Btrfs seguindo <a href="btrfs.html">Btrfs e Subvolumes</a> e <a href="snapshots.html">Snapshots</a>.</p>
+</div>
+
+<div class="warning">
+<strong>Formatar também apaga</strong>
+<p>Formatar cria um fichário novo e vazio por cima do antigo: o que havia na partição fica inacessível. Confira o <strong>número</strong> da partição em cada comando (<code>sda1</code>, <code>sda2</code>, <code>sda3</code>) contra a tabela que você criou. Trocar <code>sda1</code> por <code>sda3</code> formata a partição errada.</p>
+</div>
+
+<hr>
+
+<h2>Formatar a partição EFI: mkfs.fat</h2>
+
+<dl class="anatomy">
+  <dt>mkfs.fat</dt><dd>(<em>make file system</em>, FAT) Cria um sistema de arquivos FAT. Vem do pacote <code>dosfstools</code>, que o live já traz.</dd>
+  <dt>-F 32</dt><dd>Força o FAT <strong>32</strong>, o que a especificação UEFI pede. Sem isso, o <code>mkfs.fat</code> escolhe sozinho pelo tamanho e pode criar FAT16.</dd>
+  <dt>/dev/sda1</dt><dd>A partição EFI (1 GiB).</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.fat -F 32 /dev/sda1
+mkfs.fat 4.2 (2021-01-31)
+#> echo $?
+0
+</pre>
+
+<p>A única linha é o nome e a versão do programa (4.2, de 31/01/2021). Ele não diz "pronto": o código de saída 0 é o que confirma.</p>
+
+<h2>Preparar a swap: mkswap</h2>
+
+<dl class="anatomy">
+  <dt>mkswap</dt><dd>(<em>make swap</em>) Prepara a partição para servir de swap: grava um cabeçalho que identifica a área.</dd>
+  <dt>/dev/sda2</dt><dd>A partição de 4 GiB, do tipo Linux swap.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> mkswap /dev/sda2
+Setting up swapspace version 1, size = 4 GiB (4294963200 bytes)
+no label, UUID=02576132-0458-4975-916f-94e08af9a31c
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Tradução e explicação</th></tr>
+<tr><td><code>Setting up swapspace version 1, size = 4 GiB (4294963200 bytes)</code></td><td>"Preparando a área de troca, versão 1, tamanho 4 GiB". Os bytes são 4 GiB menos 4096: o primeiro pedaço (uma "página" de memória) fica com o cabeçalho.</td></tr>
+<tr><td><code>no label, UUID=02576132-…</code></td><td>"Sem rótulo" (nome); o <strong>UUID</strong> é um identificador único gerado agora. O <code>fstab</code> vai usá-lo para achar a swap em todo boot, mesmo que o disco mude de nome.</td></tr>
+</table>
+</div>
+
+<h2>Formatar a raiz: mkfs.ext4</h2>
+
+<dl class="anatomy">
+  <dt>mkfs.ext4</dt><dd>Cria um sistema de arquivos ext4 (<em>fourth extended file system</em>). É um atalho para o programa <code>mke2fs</code>, do pacote <code>e2fsprogs</code>.</dd>
+  <dt>/dev/sda3</dt><dd>A raiz, com 25 GiB.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.ext4 /dev/sda3
+mke2fs 1.47.4 (6-Mar-2025)
+Discarding device blocks:       0/6553088               done
+Creating filesystem with 6553088 4k blocks and 1638400 inodes
+Filesystem UUID: 75d167c8-1dad-4d0a-a0ae-b063058a18e9
+Superblock backups stored on blocks:
+	32768, 98304, 163840, 229376, 294912, 819200, 884736, 1605632, 2654208,
+	4096000
+
+Allocating group tables:   0/200       done
+Writing inode tables:   0/200       done
+Creating journal (32768 blocks): done
+Writing superblocks and filesystem accounting information:   0/200       done
+
+#> echo $?
+0
+</pre>
+
+<p>Parece muita coisa, mas é só o <code>mke2fs</code> contando o que construiu. Linha por linha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Tradução</th><th>O que quer dizer</th></tr>
+<tr><td><code>mke2fs 1.47.4 (6-Mar-2025)</code></td><td>—</td><td>O programa que faz o trabalho e a versão.</td></tr>
+<tr><td><code>Discarding device blocks: … done</code></td><td>Descartando os blocos do dispositivo: feito</td><td>Avisa ao SSD (ou ao disco virtual) que todo o espaço está livre (o famoso <em>TRIM</em>). Num SSD, isso deixa as gravações futuras mais rápidas. Os números <code>0/6553088</code> são um contador de progresso que se apaga quando termina.</td></tr>
+<tr><td><code>Creating filesystem with 6553088 4k blocks and 1638400 inodes</code></td><td>Criando sistema de arquivos com 6.553.088 blocos de 4k e 1.638.400 inodes</td><td>O ext4 divide a partição em <strong>blocos</strong> de 4 KiB: 6.553.088 × 4 KiB = 25 GiB. Um <strong>inode</strong> é a "ficha" de um arquivo (dono, permissões, onde estão os dados); 1.638.400 inodes = no máximo 1,6 milhão de arquivos, um para cada 16 KiB, o que sobra para um sistema comum.</td></tr>
+<tr><td><code>Filesystem UUID: 75d167c8-…</code></td><td>UUID do sistema de arquivos</td><td>O identificador único desta raiz. Vai aparecer no <code>fstab</code> e no GRUB.</td></tr>
+<tr><td><code>Superblock backups stored on blocks: 32768, 98304, …</code></td><td>Cópias do superbloco gravadas nos blocos…</td><td>O <strong>superbloco</strong> é a ficha principal do sistema de arquivos (tamanho, estado, onde fica cada coisa). Se ele estragar, o <code>fsck</code> usa uma destas cópias para recuperar tudo.</td></tr>
+<tr><td><code>Allocating group tables: 0/200 done</code></td><td>Alocando as tabelas dos grupos</td><td>O ext4 organiza o disco em <strong>grupos de blocos</strong> de 128 MiB (aqui, 200 grupos); cada um tem a sua tabela.</td></tr>
+<tr><td><code>Writing inode tables: 0/200 done</code></td><td>Gravando as tabelas de inodes</td><td>Cria o espaço das fichas, grupo por grupo.</td></tr>
+<tr><td><code>Creating journal (32768 blocks): done</code></td><td>Criando o diário (32.768 blocos)</td><td>O <strong>journal</strong> (diário) tem 32.768 × 4 KiB = 128 MiB. Antes de mudar algo, o ext4 anota no diário o que vai fazer; se a luz acabar no meio, ele refaz ou desfaz a operação no próximo boot, em vez de deixar o disco bagunçado.</td></tr>
+<tr><td><code>Writing superblocks and filesystem accounting information: 0/200 done</code></td><td>Gravando os superblocos e as contas do sistema de arquivos</td><td>Grava a ficha principal, as cópias e a contagem de espaço livre. Pronto.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Dar um nome (rótulo) à partição</strong>
+<p>Com <code>-L</code>, o sistema de arquivos ganha um rótulo que aparece no <code>lsblk -f</code>: <code>mkfs.ext4 -L arch /dev/sda3</code>, <code>mkfs.fat -F 32 -n EFI /dev/sda1</code> (no FAT a opção é <code>-n</code>), <code>mkswap -L swap /dev/sda2</code>. É opcional; o guia não usou.</p>
+</div>
+
+<hr>
+
+<h2>Montar: ligar as partições a pastas</h2>
+
+<p>No Linux, não existem "unidades" C:, D:. Existe uma árvore de pastas só, começando em <code>/</code>, e cada partição é <strong>montada</strong> (encaixada) numa pasta dessa árvore. Tudo o que for gravado naquela pasta vai parar naquela partição.</p>
+
+<p>No live, a pasta <code>/mnt</code> (de <em>mount</em>) existe e está vazia, justamente para isso. Ela vai fazer o papel da raiz do novo sistema: o que hoje é <code>/mnt</code> será <code>/</code> quando o Arch instalado iniciar; o que for <code>/mnt/boot</code> será <code>/boot</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Partição</th><th>Montada no live em</th><th>No sistema instalado será</th></tr>
+<tr><td><code>/dev/sda3</code> (ext4)</td><td><code>/mnt</code></td><td><code>/</code></td></tr>
+<tr><td><code>/dev/sda1</code> (FAT32)</td><td><code>/mnt/boot</code></td><td><code>/boot</code></td></tr>
+<tr><td><code>/dev/sda2</code> (swap)</td><td>— (ativada com <code>swapon</code>)</td><td>swap</td></tr>
+</table>
+</div>
+
+<h3>1. A raiz primeiro</h3>
+
+<dl class="anatomy">
+  <dt>mount</dt><dd>Monta um sistema de arquivos numa pasta.</dd>
+  <dt>/dev/sda3</dt><dd>O que montar: a partição da raiz.</dd>
+  <dt>/mnt</dt><dd>Onde montar (o "ponto de montagem").</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/sda3 /mnt
+</pre>
+
+<h3>2. A EFI dentro da raiz</h3>
+
+<dl class="anatomy">
+  <dt>mount</dt><dd>Monta…</dd>
+  <dt>--mkdir</dt><dd>…criando antes a pasta de destino, se ela não existir. Ela ainda não existe: a raiz acabou de ser formatada e está vazia.</dd>
+  <dt>/dev/sda1</dt><dd>A partição EFI…</dd>
+  <dt>/mnt/boot</dt><dd>…na pasta <code>boot</code> <strong>da nova raiz</strong>.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> mount --mkdir /dev/sda1 /mnt/boot
+</pre>
+
+<p>O <code>--mkdir</code> é recente (util-linux 2.38, de 2022). Em tutoriais antigos você vai ver o mesmo em dois comandos: <code>mkdir /mnt/boot</code> e depois <code>mount /dev/sda1 /mnt/boot</code>. O resultado é igual.</p>
+
+<h3>3. A swap</h3>
+
+<dl class="anatomy">
+  <dt>swapon</dt><dd>(<em>swap on</em>) Liga uma área de swap.</dd>
+  <dt>/dev/sda2</dt><dd>A partição preparada pelo <code>mkswap</code>.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> swapon /dev/sda2
+#> echo $?
+0
+</pre>
+
+<p>Os três comandos não mostram nada quando dão certo (código de saída 0). Ligar a swap agora tem um motivo além de ter mais memória durante a instalação: na <a href="configurar.html">aula seguinte</a>, o <code>genfstab</code> olha o que está montado <strong>e ativo</strong> para escrever o <code>/etc/fstab</code>. Swap desligada = swap fora do fstab.</p>
+
+<h3>Por que /mnt/boot e não /mnt/boot/efi?</h3>
+
+<p>Onde montar a partição EFI é uma escolha, e cada tutorial faz de um jeito. As três convenções:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ponto de montagem</th><th>O que fica na partição EFI</th><th>Prós e contras</th></tr>
+<tr><td><code>/boot</code> (<strong>o do guia</strong>)</td><td>o carregador <strong>e</strong> os kernels e initramfs</td><td>O mais simples; funciona com GRUB e com systemd-boot (que só lê a partição EFI). Precisa de uma EFI grande (por isso 1 GiB).</td></tr>
+<tr><td><code>/efi</code></td><td>só o carregador</td><td>Os kernels ficam em <code>/boot</code>, na raiz. A EFI pode ser pequena. Bom com GRUB; o systemd-boot precisaria de mais configuração.</td></tr>
+<tr><td><code>/boot/efi</code></td><td>só o carregador</td><td>A convenção antiga, ainda usada por Debian, Ubuntu e Fedora. Funciona com GRUB, mas é uma montagem dentro de outra montagem; a Wiki hoje prefere <code>/efi</code>.</td></tr>
+</table>
+</div>
+
+<p>O que importa é ser <strong>coerente</strong>: o diretório escolhido aqui é o mesmo que você vai passar ao instalar o carregador (<code>grub-install --efi-directory=/boot</code>, na aula <a href="bootloader.html">Bootloader</a>). Se você seguir um tutorial que usa <code>/boot/efi</code>, siga-o até o fim com <code>/boot/efi</code>.</p>
+
+<hr>
+
+<h2>Conferir tudo: lsblk -f</h2>
+
+<dl class="anatomy">
+  <dt>lsblk</dt><dd>Lista discos e partições.</dd>
+  <dt>-f</dt><dd>(<em>filesystems</em>) Acrescenta as colunas de sistema de arquivos: tipo, versão, rótulo, UUID e espaço livre.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsblk -f
+NAME   FSTYPE   FSVER            LABEL       UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0  squashfs 4.0                                                                     0   100% /run/archiso/airootfs
+sda
+|-sda1 vfat     FAT32                        C509-6CB1                              1022M     0% /mnt/boot
+|-sda2 swap     1                            02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+`-sda3 ext4     1.0                          75d167c8-1dad-4d0a-a0ae-b063058a18e9   23.2G     0% /mnt
+sr0    iso9660  Joliet Extension ARCH_202606 2026-06-01-15-21-12-00                     0   100% /run/archiso/bootmnt
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que quer dizer</th><th>O que conferir</th></tr>
+<tr><td><code>NAME</code></td><td>O dispositivo</td><td>As três partições do <code>sda</code>.</td></tr>
+<tr><td><code>FSTYPE</code></td><td>Tipo do sistema de arquivos</td><td><code>vfat</code>, <code>swap</code>, <code>ext4</code>. Vazio = partição não formatada.</td></tr>
+<tr><td><code>FSVER</code></td><td>Versão/variante</td><td><code>FAT32</code> (e não FAT16) na EFI. A swap é versão <code>1</code>; o ext4, <code>1.0</code>.</td></tr>
+<tr><td><code>LABEL</code></td><td>Rótulo</td><td>Vazio no guia (não usamos <code>-L</code>). O CD da ISO se chama <code>ARCH_202606</code>.</td></tr>
+<tr><td><code>UUID</code></td><td>Identificador único</td><td>Os mesmos que <code>mkswap</code> e <code>mkfs.ext4</code> mostraram. O do FAT é curto (<code>C509-6CB1</code>): o FAT só tem um número de série de 8 dígitos.</td></tr>
+<tr><td><code>FSAVAIL</code></td><td>Espaço livre</td><td>1022M na EFI, 23.2G na raiz. (Só aparece em sistemas montados.)</td></tr>
+<tr><td><code>FSUSE%</code></td><td>Porcentagem usada</td><td>0%: tudo vazio, como esperado.</td></tr>
+<tr><td><code>MOUNTPOINTS</code></td><td>Onde está montado</td><td><strong>O mais importante</strong>: <code>/mnt/boot</code>, <code>[SWAP]</code> (swap ativa) e <code>/mnt</code>.</td></tr>
+</table>
+</div>
+
+<p>Por que a raiz tem 25 GiB mas mostra 23.2G livres? Parte vai para o journal (128 MiB), as tabelas de inodes e uma <strong>reserva de 5%</strong> que o ext4 guarda para o root, para o sistema não travar quando um usuário enche o disco.</p>
+
+<div class="try" data-goal="ran:^lsblk.* -[a-zA-Z]*f" data-solucao="lsblk -f">
+<p class="try-task"><strong>Missão:</strong> na máquina da ana (já instalada), veja os sistemas de arquivos com <code>lsblk -f</code>. Os UUIDs são os mesmos da instalação? Onde a EFI está montada agora?</p>
+</div>
+
+<hr>
+
+<h2>A ordem importa: raiz antes da EFI</h2>
+
+<p>Montar é como encaixar caixas: primeiro a caixa grande (<code>/mnt</code>), depois a pequena <strong>dentro</strong> dela (<code>/mnt/boot</code>). Ao contrário, dá errado de dois jeitos. Reproduzimos os dois na VM, num disco-imagem igual ao do guia (por isso aparece <code>/dev/loop3p1</code> e <code>/dev/loop3p3</code> no lugar de <code>/dev/sda1</code> e <code>/dev/sda3</code>), com o live em inglês.</p>
+
+<p><strong>Sem o <code>--mkdir</code></strong>, o <code>mount</code> recusa, porque a pasta <code>boot</code> ainda não existe (nem antes, nem depois de montar a raiz recém-formatada):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/loop3p1 /mnt/boot
+mount: /mnt/boot: mount point does not exist.
+       dmesg(1) may have more information after failed mount system call.
+#> echo $?
+32
+</pre>
+
+<p>"O ponto de montagem não existe." Esse erro é inofensivo: nada foi feito. Use <code>mount --mkdir</code>.</p>
+
+<p><strong>Com o <code>--mkdir</code></strong>, o erro é pior porque <strong>não aparece</strong>: a pasta <code>/mnt/boot</code> é criada no live, a EFI é montada nela, e em seguida a raiz é montada <strong>por cima</strong> de <code>/mnt</code>, escondendo tudo:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mount --mkdir /dev/loop3p1 /mnt/boot     « ordem errada: EFI primeiro
+#> mount /dev/loop3p3 /mnt
+#> findmnt -R /mnt
+TARGET      SOURCE       FSTYPE OPTIONS
+/mnt        tmpfs        tmpfs  rw,relatime,inode64,huge=advise
+├─/mnt/boot /dev/loop3p1 vfat   rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+└─/mnt      /dev/loop3p3 ext4   rw,relatime     « a raiz ficou ao lado, não por baixo
+#> df -h /mnt/boot
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/loop3p1     25G   36K   24G   1% /mnt/boot   « 25G? a EFI tem 1 GiB!
+</pre>
+
+<p>O <code>findmnt -R</code> (<em>find mount</em>, recursivo) mostra a árvore de montagens: a EFI e a raiz ficaram <strong>lado a lado</strong>, e não a EFI dentro da raiz. O <code>df -h</code> se confunde e entrega a pista: o tamanho de <code>/mnt/boot</code> é o da raiz (25G), porque quem você enxerga em <code>/mnt/boot</code> agora é uma pasta comum da raiz. O <code>lsblk</code>, por sua vez, continua mostrando <code>/mnt/boot</code> ao lado do <code>sda1</code>, como se estivesse tudo certo. Se você seguir em frente, o <code>pacstrap</code> grava o kernel na raiz, a EFI fica vazia e o computador não inicia.</p>
+
+<p>Na ordem certa, o mesmo <code>df</code> mostra o tamanho da EFI:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/loop3p3 /mnt
+#> mount --mkdir /dev/loop3p1 /mnt/boot
+#> df -h /mnt/boot
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/loop3p1   1022M  4.0K 1022M   1% /mnt/boot
+</pre>
+
+<p><strong>Para consertar</strong> a ordem errada: desmonte tudo com <code>umount -R /mnt</code> (o <code>-R</code> desmonta a árvore inteira, de dentro para fora; repita se ainda sobrar algo em <code>findmnt -R /mnt</code>) e monte de novo na ordem certa.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<p>As mensagens abaixo são reais, reproduzidas na VM em discos-imagem (<code>/dev/loopN</code>) com o idioma do live.</p>
+
+<div class="cenario">
+<strong>"wrong fs type, bad option, bad superblock"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/loop1p3 /mnt
+mount: /mnt: wrong fs type, bad option, bad superblock on /dev/loop1p3, missing codepage or helper program, or other error.
+       dmesg(1) may have more information after failed mount system call.
+</pre>
+<p><strong>O que aconteceu:</strong> "tipo de sistema de arquivos errado, opção errada, superbloco danificado…". Na instalação, quase sempre quer dizer que a partição <strong>não foi formatada</strong> (você pulou o <code>mkfs.ext4</code>) ou que você trocou o número da partição (tentou montar a swap, por exemplo).</p>
+<p><strong>Como confirmar:</strong> <code>lsblk -f</code>: a coluna <code>FSTYPE</code> da partição está vazia ou é outra?</p>
+<p><strong>Como resolver:</strong> formate a partição certa e monte de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>"read swap header failed"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> swapon /dev/loop1p2
+swapon: /dev/loop1p2: read swap header failed
+#> echo $?
+255
+</pre>
+<p><strong>O que aconteceu:</strong> "falha ao ler o cabeçalho da swap": a partição não passou pelo <code>mkswap</code>, ou é a partição errada (o mesmo erro aparece com <code>swapon</code> na partição ext4).</p>
+<p><strong>Como resolver:</strong> confira com <code>lsblk -f</code> qual partição tem <code>FSTYPE</code> <code>swap</code>; se nenhuma tiver, rode <code>mkswap /dev/sda2</code> antes do <code>swapon</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"contains a ext4 file system … Proceed anyway? (y,N)"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.ext4 /dev/loop3p3
+mke2fs 1.47.4 (6-Mar-2025)
+/dev/loop3p3 contains a ext4 file system
+	created on Fri Oct 16 13:26:26 2026
+Proceed anyway? (y,N) n
+</pre>
+<p><strong>O que aconteceu:</strong> a partição já tem um ext4 (de uma tentativa anterior ou de um sistema antigo), e o <code>mke2fs</code> pergunta "continuar mesmo assim?". O <code>N</code> maiúsculo é o padrão: <kbd>Enter</kbd> cancela.</p>
+<p><strong>Como resolver:</strong> leia o nome e a data de criação. Se é mesmo a partição que você quer apagar (por exemplo, está refazendo a instalação), responda <code>y</code>. Se a data é antiga e você não esperava nada ali, <strong>pare</strong> e confira se não errou o disco.</p>
+</div>
+
+<div class="cenario">
+<strong>"is mounted; will not make a filesystem here!"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.ext4 /dev/loop3p3
+mke2fs 1.47.4 (6-Mar-2025)
+/dev/loop3p3 is mounted; will not make a filesystem here!
+#> echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> "está montada; não vou criar um sistema de arquivos aqui!". Você tentou formatar uma partição que está em uso. A proteção é boa: formatar algo montado corromperia tudo.</p>
+<p><strong>Como resolver:</strong> se a intenção é mesmo refazer, desmonte antes: <code>umount -R /mnt</code> (e <code>swapoff /dev/sda2</code> para a swap).</p>
+</div>
+
+<div class="cenario">
+<strong>"target is busy" ao desmontar</strong>
+<pre class="term" data-host="archiso" data-user="root">#> cd /mnt
+#> umount /mnt
+umount: /mnt: target is busy.
+</pre>
+<p><strong>O que aconteceu:</strong> "o alvo está ocupado": algum programa está usando a pasta, e muitas vezes é o próprio terminal, que está <strong>dentro</strong> dela.</p>
+<p><strong>Como resolver:</strong> <code>cd /</code> (ou <code>cd</code>) e desmonte de novo. Lembre também que a EFI está dentro da raiz: <code>umount -R /mnt</code> desmonta as duas na ordem certa.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueci de montar e segui em frente</strong>
+<p><strong>O que aconteceu:</strong> sem nada montado em <code>/mnt</code>, o <code>pacstrap</code> grava os pacotes na pasta <code>/mnt</code> <strong>do live</strong>, que fica na memória RAM: o espaço acaba no meio ou, se couber, tudo some ao reiniciar.</p>
+<p><strong>Como confirmar antes:</strong> <code>findmnt /mnt</code> (ou <code>mountpoint /mnt</code>, que responde <code>/mnt is a mountpoint</code>). Mais na aula <a href="pacstrap.html">Espelhos e pacstrap</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (no live)</th><th>Para quê</th></tr>
+<tr><td><code>mkfs.fat -F 32 /dev/sda1</code></td><td>Formata a EFI em FAT32</td></tr>
+<tr><td><code>mkswap /dev/sda2</code></td><td>Prepara a swap</td></tr>
+<tr><td><code>mkfs.ext4 /dev/sda3</code></td><td>Formata a raiz em ext4 (<code>-L nome</code> dá um rótulo)</td></tr>
+<tr><td><code>mount /dev/sda3 /mnt</code></td><td>Monta a raiz (<strong>primeiro</strong>)</td></tr>
+<tr><td><code>mount --mkdir /dev/sda1 /mnt/boot</code></td><td>Cria <code>/mnt/boot</code> e monta a EFI (<strong>depois</strong>)</td></tr>
+<tr><td><code>swapon /dev/sda2</code></td><td>Liga a swap (para o <code>genfstab</code> enxergá-la)</td></tr>
+<tr><td><code>lsblk -f</code></td><td>Confere tipo, UUID e onde cada partição está montada</td></tr>
+<tr><td><code>findmnt -R /mnt</code></td><td>Mostra a árvore de montagens dentro de <code>/mnt</code></td></tr>
+<tr><td><code>umount -R /mnt</code> / <code>swapoff /dev/sda2</code></td><td>Desfaz tudo (para recomeçar)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. FAT32 para a EFI</h3>
+<p>Complete o comando que formata a partição EFI:</p>
+<div class="ex-code">mkfs.fat <input data-answer="-F 32|-F32" aria-label="opção"> /dev/sda1</div>
+</div>
+
+<div class="exercise">
+<h3>2. Montar a EFI criando a pasta</h3>
+<div class="ex-code">mount <input data-answer="--mkdir" aria-label="opção"> /dev/sda1 <input data-answer="/mnt/boot" aria-label="destino"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual é a ordem certa de montagem?</p>
+<label><input type="radio" name="q3"> <code>/mnt/boot</code> primeiro, depois <code>/mnt</code>.</label>
+<label><input type="radio" name="q3"> Tanto faz: o Linux organiza sozinho.</label>
+<label><input type="radio" name="q3"> <code>/mnt</code> (a raiz) primeiro, depois <code>/mnt/boot</code> (a EFI).</label>
+<label><input type="radio" name="q3"> Só a raiz; a EFI é montada no primeiro boot.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. No <code>lsblk -f</code>, a coluna <code>FSTYPE</code> da <code>sda3</code> está vazia. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> Que ela está montada.</label>
+<label><input type="radio" name="q4"> Que ela ainda não foi formatada.</label>
+<label><input type="radio" name="q4"> Que ela é a swap.</label>
+<label><input type="radio" name="q4"> Que o disco está com defeito.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que ligar a swap com <code>swapon</code> antes de gerar o fstab?</p>
+<label><input type="radio" name="q5"> Porque o <code>genfstab</code> só escreve no fstab o que está montado ou ativo.</label>
+<label><input type="radio" name="q5"> Porque o <code>pacstrap</code> não funciona sem swap.</label>
+<label><input type="radio" name="q5"> Porque o <code>mkswap</code> só termina depois do <code>swapon</code>.</label>
+<label><input type="radio" name="q5"> Não há motivo; é só um costume.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>EFI em <strong>FAT32</strong> (<code>mkfs.fat -F 32</code>), swap com <code>mkswap</code>, raiz em <strong>ext4</strong> (<code>mkfs.ext4</code>).</li>
+  <li>Monte a raiz em <code>/mnt</code> <strong>antes</strong> e a EFI em <code>/mnt/boot</code> <strong>depois</strong> (<code>mount --mkdir</code>).</li>
+  <li><code>swapon /dev/sda2</code> liga a swap, para ela entrar no fstab.</li>
+  <li><code>lsblk -f</code> confere tudo: <code>vfat FAT32 /mnt/boot</code>, <code>swap [SWAP]</code>, <code>ext4 /mnt</code>.</li>
+  <li>Na dúvida, <code>df -h /mnt/boot</code> deve mostrar o tamanho da EFI (cerca de 1 GiB), não o da raiz.</li>
+</ul>
+
+<p>O disco do novo sistema está pronto e montado. Agora é baixar e instalar os pacotes: <a href="pacstrap.html">Espelhos e pacstrap</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> os passos estão em <a href="https://wiki.archlinux.org/title/Installation_guide#Format_the_partitions">Installation guide — Format the partitions</a> e <a href="https://wiki.archlinux.org/title/Installation_guide#Mount_the_file_systems">Mount the file systems</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). Para aprofundar: <a href="https://wiki.archlinux.org/title/File_systems">File systems</a> (<a href="https://wiki.archlinux.org/title/File_systems_(Portugu%C3%AAs)">em português</a>), <a href="https://wiki.archlinux.org/title/Ext4">Ext4</a> (<a href="https://wiki.archlinux.org/title/Ext4_(Portugu%C3%AAs)">em português</a>), <a href="https://wiki.archlinux.org/title/EFI_system_partition#Typical_mount_points">EFI system partition — Typical mount points</a>, <a href="https://wiki.archlinux.org/title/Swap">Swap</a> (<a href="https://wiki.archlinux.org/title/Swap_(Portugu%C3%AAs)">em português</a>) e <a href="https://wiki.archlinux.org/title/Fstab">fstab</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

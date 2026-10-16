@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch particionar — GPT, partição EFI, swap e raiz com fdisk | Guia Arch</title>
+<meta name="description" content="Particionar o disco para o Arch: disco, partição, GPT × MBR, partição EFI, swap × zram, raiz e /home; a sessão real do fdisk (g, n, t, p, w e os tipos 1 e 19), cfdisk como alternativa e os erros que apagam o disco errado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: <span class="hl">particionar</span> o disco</h1>
+
+<p class="intro">Antes de instalar, o disco precisa ser dividido em <strong>partições</strong>: uma para o carregador de boot, uma para a memória de troca (swap) e uma para o sistema. Nesta aula você entende para que serve cada uma e faz a divisão com o <code>fdisk</code>, exatamente como foi feito na VM do guia. É o passo mais perigoso da instalação: leia tudo antes de digitar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são disco, partição e tabela de partições (GPT × MBR).</li>
+  <li>Para que servem a partição EFI, a swap e a raiz, e se vale separar a <code>/home</code>.</li>
+  <li>Identificar o disco certo com <code>lsblk</code> e <code>fdisk -l</code>.</li>
+  <li>Criar as três partições do guia no <code>fdisk</code>, com os comandos <code>g n t p w</code> e os tipos <code>1</code> (EFI) e <code>19</code> (swap).</li>
+  <li>Reconhecer e evitar os erros comuns (disco errado, MBR, tipo esquecido).</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Particionar apaga o disco</strong>
+<p>Criar uma tabela de partições nova faz o sistema "esquecer" tudo o que havia no disco: documentos, fotos, Windows, outro Linux. Não há lixeira nem "desfazer" depois do <code>w</code>. Antes de continuar: <strong>backup feito</strong> (veja <a href="preparar.html">Baixar e Verificar a ISO</a>), <strong>disco certo identificado</strong> (seção abaixo) e, se é a sua primeira vez, de preferência numa <a href="preparar.html#vm">máquina virtual</a>. Este guia instala num <strong>disco inteiro e vazio</strong>; dual boot com o Windows é outro procedimento.</p>
+</div>
+
+<hr>
+
+<h2>Os conceitos</h2>
+
+<h3>Disco e partição</h3>
+<p>Pense no disco como um terreno e nas partições como os lotes cercados dentro dele. Cada partição funciona como um "disco" separado: tem o seu tamanho, o seu sistema de arquivos e o seu uso. No Linux, cada disco e cada partição aparece como um arquivo em <code>/dev</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo de disco</th><th>Nome do disco</th><th>Partições</th></tr>
+<tr><td>SATA/SAS (HD, SSD SATA, pendrive, e o disco da VM do guia)</td><td><code>/dev/sda</code>, <code>/dev/sdb</code>…</td><td><code>/dev/sda1</code>, <code>/dev/sda2</code>…</td></tr>
+<tr><td>SSD NVMe (os SSDs "M.2" rápidos)</td><td><code>/dev/nvme0n1</code></td><td><code>/dev/nvme0n1p1</code>, <code>/dev/nvme0n1p2</code>… (com <strong>p</strong>)</td></tr>
+<tr><td>Disco virtual de VM KVM/QEMU (virtio)</td><td><code>/dev/vda</code></td><td><code>/dev/vda1</code>…</td></tr>
+<tr><td>Cartão SD / eMMC</td><td><code>/dev/mmcblk0</code></td><td><code>/dev/mmcblk0p1</code>…</td></tr>
+</table>
+</div>
+
+<p>Neste guia o disco é <code>/dev/sda</code>. <strong>No seu computador pode ser outro</strong>: troque o nome em todos os comandos.</p>
+
+<h3>Tabela de partições: GPT × MBR</h3>
+<p>A <strong>tabela de partições</strong> é o "mapa do terreno", gravado no começo do disco, que diz onde começa e termina cada partição. Há dois formatos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>GPT (<em>GUID Partition Table</em>)</th><th>MBR (<em>Master Boot Record</em>, "dos")</th></tr>
+<tr><td>Época</td><td>atual, parte do padrão UEFI</td><td>de 1983</td></tr>
+<tr><td>Número de partições</td><td>128</td><td>4 (ou 3 + uma "estendida" com várias "lógicas")</td></tr>
+<tr><td>Tamanho máximo de disco</td><td>na prática, sem limite</td><td>2 TiB</td></tr>
+<tr><td>Cópia de segurança da tabela</td><td>sim, no fim do disco</td><td>não</td></tr>
+<tr><td>Usar com</td><td><strong>UEFI</strong> (este guia)</td><td>BIOS antigo</td></tr>
+</table>
+</div>
+
+<h3>As partições de que o Arch precisa</h3>
+
+<dl class="anatomy">
+  <dt>Partição EFI (ESP)</dt><dd>A <em>EFI System Partition</em>: uma partição pequena, formatada em <strong>FAT32</strong>, onde o firmware UEFI procura o carregador de boot. Neste guia ela será montada em <code>/boot</code> e guarda também o kernel e o initramfs (cada kernel instalado ocupa dezenas de MB ali). A Wiki recomenda <strong>1 GiB</strong>, com folga para mais de um kernel.</dd>
+  <dt>Swap</dt><dd>A "memória de troca": espaço no disco para onde o sistema empurra dados quando a RAM enche, e onde guarda a memória ao <strong>hibernar</strong>. É opcional.</dd>
+  <dt>Raiz (<code>/</code>)</dt><dd>A partição do sistema: programas, configurações e, neste guia, também a pasta pessoal (<code>/home</code>). Fica com o resto do disco.</dd>
+</dl>
+
+<h3>Swap ou zram?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Partição de swap</th><th>zram</th></tr>
+<tr><td>Onde fica</td><td>no disco</td><td>na própria RAM, compactada</td></tr>
+<tr><td>Velocidade</td><td>lenta (é disco)</td><td>rápida</td></tr>
+<tr><td>Permite hibernar</td><td><strong>sim</strong> (se for do tamanho da RAM ou maior)</td><td>não</td></tr>
+<tr><td>Quando criar</td><td>agora, ao particionar</td><td>depois de instalado, sem mexer no disco</td></tr>
+</table>
+</div>
+<p>O guia criou uma swap de <strong>4 GiB</strong>, o mesmo tamanho da RAM da VM, que dá para hibernar. Se você não pretende hibernar, pode pular a swap e usar zram depois (veja <a href="swap-zram.html">Swap e zram</a>): é só não criar a partição 2.</p>
+
+<h3>Separar a /home?</h3>
+<p>Uma partição só para a <code>/home</code> (as pastas pessoais) permite reinstalar o sistema sem tocar nos seus arquivos. O preço é ter que adivinhar agora quanto espaço cada uma vai precisar: se a raiz encher, sobra espaço na <code>/home</code> e vice-versa. Para quem está começando, <strong>uma raiz só</strong> é mais simples (o guia fez assim) e o backup é o que protege os seus arquivos de verdade. Com <a href="btrfs.html">Btrfs</a>, dá para ter os dois: <em>subvolumes</em> separados dentro de uma partição só.</p>
+
+<hr>
+
+<h2>O esquema do guia</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Partição</th><th>Tamanho</th><th>Tipo no <code>fdisk</code></th><th>Sistema de arquivos (próxima aula)</th><th>Onde será montada</th></tr>
+<tr><td><code>/dev/sda1</code></td><td>1 GiB</td><td><code>EFI System</code> (código <code>1</code>)</td><td>FAT32</td><td><code>/boot</code></td></tr>
+<tr><td><code>/dev/sda2</code></td><td>4 GiB</td><td><code>Linux swap</code> (código <code>19</code>)</td><td>swap</td><td>— (ativada com <code>swapon</code>)</td></tr>
+<tr><td><code>/dev/sda3</code></td><td>o resto (25 GiB)</td><td><code>Linux filesystem</code> (o padrão)</td><td>ext4</td><td><code>/</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Antes: qual é o disco?</h2>
+
+<p>Liste os discos com o <code>lsblk</code> (<em>list block devices</em>). Esta é a saída real, no live da VM, antes de particionar:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsblk
+NAME  MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+loop0   7:0    0 986M  1 loop /run/archiso/airootfs   « o sistema do live
+sda     8:0    0  30G  0 disk                         « o disco vazio: é aqui
+sr0    11:0    1 1.5G  1 rom  /run/archiso/bootmnt    « a ISO (o "pendrive")
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que quer dizer</th></tr>
+<tr><td><code>NAME</code></td><td>O nome em <code>/dev</code>.</td></tr>
+<tr><td><code>MAJ:MIN</code></td><td>Números internos do kernel para o dispositivo. Pode ignorar.</td></tr>
+<tr><td><code>RM</code></td><td><code>1</code> = removível (o CD/pendrive).</td></tr>
+<tr><td><code>SIZE</code></td><td>Tamanho. <strong>A melhor pista</strong> para achar o disco certo.</td></tr>
+<tr><td><code>RO</code></td><td><code>1</code> = só leitura.</td></tr>
+<tr><td><code>TYPE</code></td><td><code>disk</code> (disco), <code>part</code> (partição), <code>loop</code> (arquivo usado como disco), <code>rom</code> (CD/DVD).</td></tr>
+<tr><td><code>MOUNTPOINTS</code></td><td>Onde está montado. O disco a instalar <strong>não</strong> deve estar montado.</td></tr>
+</table>
+</div>
+
+<p>Três coisas: <code>loop0</code> (986 MB, só leitura) é o sistema do live (um arquivo compactado, <em>squashfs</em>, lido da ISO e montado); <code>sr0</code> é a ISO, na unidade de CD virtual; <code>sda</code>, com 30 GB e sem nada montado, é o disco vazio da VM. Num computador real, o pendrive aparece como um <code>sdX</code> com o tamanho dele, montado em <code>/run/archiso/bootmnt</code>: <strong>esse não</strong>.</p>
+
+<p>Para ver mais detalhes de um disco (inclusive o modelo e a tabela atual), use <code>fdisk -l</code>:</p>
+
+<dl class="anatomy">
+  <dt>fdisk</dt><dd>O particionador clássico do Linux (<em>fixed disk</em>), do pacote <code>util-linux</code>.</dd>
+  <dt>-l</dt><dd>(<em>list</em>) Só mostra; não muda nada.</dd>
+  <dt>/dev/sda</dt><dd>O disco. Sem ele, lista todos.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> fdisk -l /dev/sda
+Disk /dev/sda: 30 GiB, 32212254720 bytes, 62914560 sectors
+Disk model: VBOX HARDDISK      « o modelo: o disco virtual do VirtualBox
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+</pre>
+
+<p>Tradução: "disco /dev/sda: 30 GiB, 32.212.254.720 bytes, 62.914.560 setores"; "modelo do disco"; "unidades: setores de 512 bytes". Um <strong>setor</strong> é o menor pedaço que o disco lê ou grava. Repare no que <strong>não</strong> aparece: nenhuma linha <code>Disklabel type</code> e nenhuma lista de partições, porque o disco está vazio. Num disco usado, apareceria a tabela com as partições antigas: confira se elas são mesmo o que você quer apagar.</p>
+
+<div class="try" data-goal="ran:^lsblk" data-solucao="lsblk">
+<p class="try-task"><strong>Missão:</strong> o simulador é a máquina da ana <strong>depois</strong> da instalação. Liste os discos com o <code>lsblk</code> e confira: as três partições do esquema acima estão lá, cada uma montada no seu lugar?</p>
+</div>
+
+<hr>
+
+<h2>Particionar com o fdisk</h2>
+
+<p>O <code>fdisk</code> é <strong>interativo</strong>: você o abre num disco e ele pergunta, uma coisa de cada vez, o que fazer. Cada comando é <strong>uma letra</strong> seguida de <kbd>Enter</kbd>. E o mais importante: <strong>nada é gravado até você digitar <code>w</code></strong>. Até lá, tudo fica só na memória, e <code>q</code> sai sem mudar nada.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Em inglês</th><th>O que faz</th></tr>
+<tr><td><code>m</code></td><td><em>menu</em></td><td>Mostra a ajuda com todos os comandos.</td></tr>
+<tr><td><code>g</code></td><td><em>GPT</em></td><td>Cria uma tabela de partições <strong>GPT</strong> nova, vazia (apaga as partições antigas, na memória).</td></tr>
+<tr><td><code>o</code></td><td>—</td><td>Cria uma tabela <strong>MBR</strong> ("dos"). <strong>Não</strong> é a que queremos.</td></tr>
+<tr><td><code>n</code></td><td><em>new</em></td><td>Cria uma partição nova.</td></tr>
+<tr><td><code>t</code></td><td><em>type</em></td><td>Muda o tipo de uma partição.</td></tr>
+<tr><td><code>l</code> / <code>L</code></td><td><em>list</em></td><td>Lista os tipos conhecidos (no comando <code>t</code>, é o <code>L</code>).</td></tr>
+<tr><td><code>d</code></td><td><em>delete</em></td><td>Apaga uma partição.</td></tr>
+<tr><td><code>p</code></td><td><em>print</em></td><td>Mostra como a tabela está (na memória).</td></tr>
+<tr><td><code>w</code></td><td><em>write</em></td><td><strong>Grava</strong> no disco e sai. É o ponto sem volta.</td></tr>
+<tr><td><code>q</code></td><td><em>quit</em></td><td>Sai <strong>sem gravar</strong>.</td></tr>
+</table>
+</div>
+
+<h3>A sessão completa</h3>
+
+<p>Abaixo, a sessão do guia, com o que <strong>você digita</strong> depois de cada pergunta. Onde não há nada depois dos dois-pontos, a resposta foi só <kbd>Enter</kbd> (aceitar o valor padrão, o <code>default</code> entre parênteses). Na VM, as respostas foram enviadas de uma vez, por um <code>printf</code> (veja <a href="#printf">abaixo</a>); as mensagens são as da gravação real, e só as respostas foram recolocadas no lugar em que você as digitaria.</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> fdisk /dev/sda
+
+Welcome to fdisk (util-linux 2.42.1).
+Changes will remain in memory only, until you decide to write them.
+Be careful before using the write command.
+
+Device does not contain a recognized partition table.
+Created a new DOS (MBR) disklabel with disk identifier 0xcc75db60.
+
+Command (m for help): g                                      « 1. tabela GPT nova
+Created a new GPT disklabel (GUID: B4ACDE31-D734-4B75-BD81-9A429F7F3949).
+
+Command (m for help): n                                      « 2. partição 1 (EFI)
+Partition number (1-128, default 1):
+First sector (2048-62914526, default 2048):
+Last sector, +/-sectors or +/-size{K,M,G,T,P} (2048-62914526, default 62912511): +1G
+
+Created a new partition 1 of type 'Linux filesystem' and of size 1 GiB.
+
+Command (m for help): t                                      « 3. tipo da partição 1
+Selected partition 1
+Partition type or alias (type L to list all): 1
+Changed type of partition 'Linux filesystem' to 'EFI System'.
+
+Command (m for help): n                                      « 4. partição 2 (swap)
+Partition number (2-128, default 2):
+First sector (2099200-62914526, default 2099200):
+Last sector, +/-sectors or +/-size{K,M,G,T,P} (2099200-62914526, default 62912511): +4G
+
+Created a new partition 2 of type 'Linux filesystem' and of size 4 GiB.
+
+Command (m for help): t                                      « 5. tipo da partição 2
+Partition number (1,2, default 2): 2
+Partition type or alias (type L to list all): 19
+Changed type of partition 'Linux filesystem' to 'Linux swap'.
+
+Command (m for help): n                                      « 6. partição 3 (raiz), o resto
+Partition number (3-128, default 3):
+First sector (10487808-62914526, default 10487808):
+Last sector, +/-sectors or +/-size{K,M,G,T,P} (10487808-62914526, default 62912511):
+
+Created a new partition 3 of type 'Linux filesystem' and of size 25 GiB.
+
+Command (m for help): p                                      « 7. conferir
+Disk /dev/sda: 30 GiB, 32212254720 bytes, 62914560 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: gpt
+Disk identifier: B4ACDE31-D734-4B75-BD81-9A429F7F3949
+
+Device        Start      End  Sectors Size Type
+/dev/sda1      2048  2099199  2097152   1G EFI System
+/dev/sda2   2099200 10487807  8388608   4G Linux swap
+/dev/sda3  10487808 62912511 52424704  25G Linux filesystem
+
+Command (m for help): w                                      « 8. gravar (sem volta)
+The partition table has been altered.
+Calling ioctl() to re-read partition table.
+Syncing disks.
+
+#> echo $?
+0
+</pre>
+
+<h3>Passo a passo</h3>
+
+<ol class="passo">
+  <li><strong>Abrir e criar a tabela GPT (<code>g</code>).</strong> Ao abrir um disco vazio, o <code>fdisk</code> avisa <em>Device does not contain a recognized partition table</em> ("o dispositivo não contém uma tabela de partições reconhecida") e, por costume antigo, já cria na memória uma tabela <strong>MBR</strong> (<em>DOS disklabel</em>). Não se assuste: o <code>g</code> troca por uma <strong>GPT</strong> (<em>Created a new GPT disklabel</em>). O GUID é um número de identificação único do disco, diferente a cada vez. Num disco usado, o <code>g</code> também é o primeiro passo: ele descarta (na memória) todas as partições antigas.</li>
+  <li><strong>Partição 1 (<code>n</code>).</strong> Três perguntas:
+    <ul>
+      <li><em>Partition number (1-128, default 1)</em>: o número. <kbd>Enter</kbd> aceita o 1.</li>
+      <li><em>First sector (2048-…, default 2048)</em>: onde começa. <kbd>Enter</kbd>. O padrão 2048 (1 MiB do início) deixa a partição "alinhada", o que é melhor para SSDs; o comecinho do disco guarda a própria tabela GPT.</li>
+      <li><em>Last sector, +/-sectors or +/-size{K,M,G,T,P}</em>: onde termina. Em vez de calcular setores, digite o <strong>tamanho</strong> com um <code>+</code> na frente: <code>+1G</code> = 1 GiB a partir do começo.</li>
+    </ul>
+    O <code>fdisk</code> responde que criou a partição 1, <em>of type 'Linux filesystem'</em> ("do tipo sistema de arquivos Linux"), de 1 GiB. Toda partição nasce com esse tipo; o próximo passo corrige.</li>
+  <li><strong>Tipo da partição 1 (<code>t</code>).</strong> Como só há uma partição, o <code>fdisk</code> já a escolhe (<em>Selected partition 1</em>). Na pergunta <em>Partition type or alias</em> ("tipo ou apelido da partição"), digite <code>1</code>, o código de <strong>EFI System</strong>. Resposta: <em>Changed type … to 'EFI System'</em>.</li>
+  <li><strong>Partição 2 (<code>n</code>).</strong> <kbd>Enter</kbd>, <kbd>Enter</kbd> e <code>+4G</code>. Repare que o primeiro setor sugerido agora é 2099200: logo depois do fim da partição 1.</li>
+  <li><strong>Tipo da partição 2 (<code>t</code>).</strong> Agora há duas partições, então ele pergunta qual (<em>Partition number (1,2, default 2)</em>): <code>2</code> (ou <kbd>Enter</kbd>, que já é o 2). Depois o código <code>19</code>, <strong>Linux swap</strong>.</li>
+  <li><strong>Partição 3 (<code>n</code>).</strong> Três <kbd>Enter</kbd>: número 3, começa logo depois da swap e, no último setor, o padrão é <strong>o fim do disco</strong>. Resultado: 25 GiB. O tipo padrão, <em>Linux filesystem</em>, já é o certo para a raiz.</li>
+  <li><strong>Conferir (<code>p</code>).</strong> Leia a tabela com calma (veja a seguir). É a última chance de mudar algo.</li>
+  <li><strong>Gravar (<code>w</code>).</strong> <em>The partition table has been altered</em> ("a tabela de partições foi alterada"); <em>Calling ioctl() to re-read partition table</em> (o <code>fdisk</code> pede ao kernel que releia a tabela); <em>Syncing disks</em> (garante que tudo foi gravado). O <code>fdisk</code> sai e o prompt volta.</li>
+</ol>
+
+<div class="tip">
+<strong>Tela estreita? A pergunta do último setor "anda"</strong>
+<p>A pergunta <em>Last sector, +/-sectors or +/-size{K,M,G,T,P} (…)</em> é longa. Num terminal estreito, o <code>fdisk</code> rola a linha para a esquerda enquanto você digita e ela aparece cortada, começando com <code>&lt;size{K,M,G,T,P}</code> ou parecido (vimos isso ao repetir a sessão na VM). É só aparência: digite o tamanho normalmente.</p>
+</div>
+
+<h3>Lendo a tabela (o comando p)</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que quer dizer</th><th>No guia</th></tr>
+<tr><td><code>Disklabel type</code></td><td>O tipo de tabela</td><td><code>gpt</code> ✔ (se aparecer <code>dos</code>, é MBR: errado para este guia)</td></tr>
+<tr><td><code>Device</code></td><td>O nome que a partição vai ter</td><td><code>/dev/sda1</code> a <code>sda3</code></td></tr>
+<tr><td><code>Start</code> / <code>End</code></td><td>Primeiro e último setor</td><td>uma começa logo depois da outra</td></tr>
+<tr><td><code>Sectors</code></td><td>Quantos setores. × 512 bytes = tamanho</td><td>2.097.152 × 512 = 1 GiB</td></tr>
+<tr><td><code>Size</code></td><td>Tamanho, arredondado</td><td>1G, 4G, 25G</td></tr>
+<tr><td><code>Type</code></td><td>O tipo</td><td><code>EFI System</code>, <code>Linux swap</code>, <code>Linux filesystem</code></td></tr>
+</table>
+</div>
+
+<p>Depois do <code>w</code>, confira de fora do <code>fdisk</code>: as três partições já aparecem (ainda vazias, sem sistema de arquivos):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsblk /dev/sda
+NAME   MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+sda      8:0    0  30G  0 disk
+|-sda1   8:1    0   1G  0 part
+|-sda2   8:2    0   4G  0 part
+`-sda3   8:3    0  25G  0 part
+</pre>
+
+<p>(As linhas <code>|-</code> e <code>`-</code> desenham a "árvore": as partições pertencem ao <code>sda</code>. Num terminal com UTF-8, elas saem como <code>├─</code> e <code>└─</code>.)</p>
+
+<h3>Os códigos de tipo (e os apelidos)</h3>
+
+<p>Os números <code>1</code> e <code>19</code> vêm da lista que o <code>L</code> mostra dentro do comando <code>t</code>. O começo dela, conferido na VM:</p>
+
+<pre class="term" data-host="archiso" data-user="root">Partition type or alias (type L to list all): L
+  1 EFI System                     C12A7328-F81F-11D2-BA4B-00A0C93EC93B   « a partição EFI
+  2 MBR partition scheme           024DEE41-33E7-11D3-9D69-0008C781F39F
+  3 Intel Fast Flash               D3BFE2DE-3DAF-11DF-BA40-E3A556D89593
+  4 BIOS boot                      21686148-6449-6E6F-744E-656564454649
+…
+ 11 Microsoft basic data           EBD0A0A2-B9E5-4433-87C0-68B6B72699C7   « partição do Windows
+…
+ 19 Linux swap                     0657FD6D-A4AB-43C4-84E5-0933C84B4F4F   « a swap
+ 20 Linux filesystem               0FC63DAF-8483-4772-8E79-3D69D8477DE4   « o padrão
+…
+</pre>
+
+<p>A lista é longa (mais de 200 tipos); aperte <kbd>q</kbd> para sair dela. O código longo é o GUID do tipo: é ele que fica gravado no disco. Os números podem mudar entre versões do <code>fdisk</code>; por isso existem também <strong>apelidos</strong> (<em>aliases</em>), que funcionam no lugar do número (conferido na VM):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Apelido</th><th>Tipo</th></tr>
+<tr><td><code>uefi</code></td><td>EFI System</td></tr>
+<tr><td><code>swap</code></td><td>Linux swap</td></tr>
+<tr><td><code>linux</code></td><td>Linux filesystem</td></tr>
+<tr><td><code>home</code></td><td>Linux home</td></tr>
+<tr><td><code>lvm</code> / <code>raid</code></td><td>Linux LVM / Linux RAID</td></tr>
+</table>
+</div>
+
+<p>Ou seja, <code>t</code> → <code>uefi</code> faz o mesmo que <code>t</code> → <code>1</code>.</p>
+
+<h3>A ajuda (m)</h3>
+
+<p>Se esquecer uma letra, <code>m</code> mostra o menu (trecho, conferido na VM com uma tabela GPT):</p>
+
+<pre class="term" data-host="archiso" data-user="root">Command (m for help): m
+
+Help:
+
+  GPT
+   M   enter protective/hybrid MBR
+
+  Generic
+   d   delete a partition
+   F   list free unpartitioned space
+   l   list known partition types
+   n   add a new partition
+   p   print the partition table
+   t   change a partition type
+   v   verify the partition table
+   i   print information about a partition
+   e   resize a partition
+   T   discard (trim) sectors
+…
+  Save &amp; Exit
+   w   write table to disk and exit
+   q   quit without saving changes
+
+  Create a new label
+   g   create a new empty GPT partition table
+   G   create a new empty SGI (IRIX) partition table
+   o   create a new empty MBR (DOS) partition table
+   s   create a new empty Sun partition table
+</pre>
+
+<h3 id="printf">Sem digitar: as respostas num printf</h3>
+
+<p>Na VM, a sessão acima foi feita sem interação, mandando todas as respostas de uma vez para o <code>fdisk</code>. Fica registrado aqui para você entender o log, não como recomendação: digitando, você vê cada pergunta e pode corrigir.</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> printf 'g\nn\n\n\n+1G\nt\n1\nn\n\n\n+4G\nt\n2\n19\nn\n\n\n\np\nw\n' | fdisk /dev/sda
+</pre>
+
+<p>Cada <code>\n</code> é um <kbd>Enter</kbd>; dois <code>\n</code> seguidos são um <kbd>Enter</kbd> "vazio" (aceitar o padrão). O <code>|</code> (pipe) entrega esse texto ao <code>fdisk</code> como se fosse o teclado. Para scripts, a ferramenta própria é o <code>sfdisk</code> (veja a tabela abaixo).</p>
+
+<hr>
+
+<h2>Se o disco já foi usado</h2>
+
+<p>Ao criar uma partição por cima de uma antiga, o <code>fdisk</code> pode encontrar restos do sistema de arquivos anterior (a "assinatura") e perguntar se deve apagá-los. Saída real, repetindo o particionamento num disco-imagem da VM que já tinha sido formatado:</p>
+
+<pre class="term" data-host="archiso" data-user="root">Created a new partition 1 of type 'Linux filesystem' and of size 1 GiB.
+Partition #1 contains a vfat signature.
+
+Do you want to remove the signature? [Y]es/[N]o: Y
+
+The signature will be removed by a write command.
+</pre>
+
+<p>"A partição 1 contém uma assinatura vfat. Quer remover a assinatura?" Responda <code>Y</code> (<em>yes</em>): numa instalação limpa, você quer começar do zero. No <code>p</code>, o <code>fdisk</code> lembra: <code>Filesystem/RAID signature on partition 1 will be wiped.</code> ("a assinatura será apagada"), o que acontece no <code>w</code>.</p>
+
+<hr>
+
+<h2>Outras formas de particionar</h2>
+
+<h3>cfdisk: o fdisk com menus</h3>
+
+<p>O <code>cfdisk</code> (do mesmo pacote <code>util-linux</code>) mostra o disco numa tela de texto com menus, navegada pelas setas. Para iniciantes, costuma ser mais fácil de visualizar. O roteiro abaixo é <strong>ilustrativo</strong> (a VM foi particionada com o <code>fdisk</code>):</p>
+
+<ol class="passo">
+  <li><code>cfdisk /dev/sda</code>. Num disco vazio, ele pergunta o tipo de tabela (<em>Select label type</em>): escolha <strong>gpt</strong>.</li>
+  <li>Com <em>Free space</em> selecionado, escolha <strong>[ New ]</strong> embaixo, digite <code>1G</code> e <kbd>Enter</kbd>.</li>
+  <li>Com a nova partição selecionada, <strong>[ Type ]</strong> → <em>EFI System</em>.</li>
+  <li>Desça para o <em>Free space</em> e repita: <strong>[ New ]</strong> <code>4G</code>, <strong>[ Type ]</strong> → <em>Linux swap</em>.</li>
+  <li><em>Free space</em> de novo, <strong>[ New ]</strong> e <kbd>Enter</kbd> no tamanho sugerido (o resto). O tipo já é <em>Linux filesystem</em>.</li>
+  <li><strong>[ Write ]</strong>, digite <code>yes</code> por extenso para confirmar e depois <strong>[ Quit ]</strong>.</li>
+</ol>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Como é</th><th>Quando usar</th></tr>
+<tr><td><code>fdisk</code></td><td>perguntas e respostas, uma letra por comando</td><td>o padrão da Wiki; está em todo Linux. É a usada no guia.</td></tr>
+<tr><td><code>cfdisk</code></td><td>tela com menus e setas</td><td>quem prefere <strong>ver</strong> o disco enquanto divide</td></tr>
+<tr><td><code>sfdisk</code></td><td>lê a descrição das partições de um arquivo ou pipe</td><td>scripts e instalações repetidas</td></tr>
+<tr><td><code>gdisk</code> / <code>cgdisk</code></td><td>como o <code>fdisk</code>/<code>cfdisk</code>, só para GPT, com códigos de 4 dígitos (<code>ef00</code> = EFI, <code>8200</code> = swap, <code>8300</code> = Linux)</td><td>quem vem de tutoriais antigos que usam esses códigos</td></tr>
+<tr><td><code>parted</code></td><td>comandos completos numa linha</td><td>redimensionar partições, scripts</td></tr>
+<tr><td>GParted / Discos do GNOME</td><td>gráficos</td><td>não existem no live; só de outro sistema com interface gráfica</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="warning">
+<strong>O erro que não tem conserto: o disco errado</strong>
+<p>Tudo o que existe abaixo tem solução, menos isso. Num computador com dois discos (um SSD com o Windows e um HD de arquivos, por exemplo), <code>fdisk /dev/sdb</code> em vez de <code>/dev/sda</code> apaga o disco errado inteiro no <code>w</code>. Antes de abrir o <code>fdisk</code>: confira o tamanho e o modelo no <code>fdisk -l</code>; se puder, <strong>desconecte</strong> fisicamente os discos que não serão usados (e os HDs externos). Dentro do <code>fdisk</code>, antes do <code>w</code>, leia a primeira linha do <code>p</code>: <code>Disk /dev/…</code> e o tamanho são os que você espera?</p>
+</div>
+
+<div class="cenario">
+<strong>"Disklabel type: dos" no <code>p</code> (MBR em vez de GPT)</strong>
+<p><strong>O que aconteceu:</strong> você esqueceu o <code>g</code> (ou usou o <code>o</code>). O <code>fdisk</code> criou uma tabela MBR, a que ele cria sozinho num disco vazio. Os sinais, conferidos na VM: <code>Disklabel type: dos</code>, a pergunta extra <em>Partition type: p primary, e extended</em> ao criar partição, uma coluna <code>Id</code> e o tipo <code>83 Linux</code> em vez de <code>Linux filesystem</code>.</p>
+<p><strong>Como resolver:</strong> se ainda não gravou, <code>q</code> e comece de novo com <code>g</code>. Se já gravou, abra o <code>fdisk</code> de novo e faça tudo a partir do <code>g</code> (o disco ainda está vazio, então não se perde nada).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o tipo EFI (a partição 1 ficou "Linux filesystem")</strong>
+<p><strong>O que aconteceu:</strong> faltou o <code>t</code> → <code>1</code>. Muitos firmwares UEFI só procuram o carregador numa partição marcada como <em>EFI System</em>; o <code>grub-install</code> pode funcionar e o computador, mesmo assim, não iniciar.</p>
+<p><strong>Como confirmar:</strong> <code>fdisk -l /dev/sda</code> mostra <code>Linux filesystem</code> na linha do <code>sda1</code>.</p>
+<p><strong>Como resolver:</strong> não precisa refazer nada: <code>fdisk /dev/sda</code>, <code>t</code>, <code>1</code> (a partição), <code>1</code> (o tipo), <code>w</code>. Mudar o tipo não apaga dados.</p>
+</div>
+
+<div class="cenario">
+<strong>"Value out of range." e perguntas que se repetem</strong>
+<pre class="term" data-host="archiso" data-user="root">Last sector, +/-sectors or +/-size{K,M,G,T,P} (2048-62914526, default 62912511): +40G
+Value out of range.
+Last sector, +/-sectors or +/-size{K,M,G,T,P} (2048-62914526, default 62912511):
+</pre>
+<p><strong>O que aconteceu:</strong> (saída real, num disco-imagem de 30 GiB na VM) a partição não cabe no espaço livre ("valor fora do intervalo"). Se você digitar algo que o <code>fdisk</code> não entende, como <code>1 G</code> com espaço, ele simplesmente repete a pergunta, sem mensagem.</p>
+<p><strong>Como resolver:</strong> digite o tamanho junto, com <code>+</code> e a unidade em maiúscula: <code>+1G</code>, <code>+512M</code>. Sem o <code>+</code>, o número é lido como uma <strong>posição</strong> no disco, não como tamanho.</p>
+</div>
+
+<div class="cenario">
+<strong>Partição EFI pequena demais</strong>
+<p><strong>O que aconteceu:</strong> tutoriais antigos usam 100 ou 300 MiB para a partição EFI. Funciona no começo, mas, montada em <code>/boot</code> como neste guia, ela guarda os kernels e os initramfs; com um segundo kernel (por exemplo o <a href="kernels.html">linux-lts</a>), o espaço acaba e a atualização falha.</p>
+<p><strong>Como resolver:</strong> use 1 GiB desde o começo. Aumentar depois é trabalhoso (a partição seguinte está colada nela).</p>
+</div>
+
+<div class="cenario">
+<strong>Errou alguma coisa antes do w</strong>
+<p><strong>Como resolver:</strong> <code>q</code> sai sem gravar nada; abra de novo. Ou, dentro do <code>fdisk</code>, <code>d</code> apaga uma partição (na memória) e você a cria de novo.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / tecla</th><th>Para quê</th></tr>
+<tr><td><code>lsblk</code></td><td>Lista discos e partições (ache o disco pelo tamanho)</td></tr>
+<tr><td><code>fdisk -l /dev/sda</code></td><td>Mostra modelo e tabela de um disco, sem mudar nada</td></tr>
+<tr><td><code>fdisk /dev/sda</code></td><td>Abre o disco para particionar</td></tr>
+<tr><td><code>g</code> / <code>n</code> / <code>t</code> / <code>p</code> / <code>w</code></td><td>GPT nova / partição nova / tipo / mostrar / gravar</td></tr>
+<tr><td><code>d</code> / <code>q</code> / <code>m</code></td><td>Apagar partição / sair sem gravar / ajuda</td></tr>
+<tr><td><code>+1G</code>, <code>+4G</code>, <kbd>Enter</kbd></td><td>Tamanho da partição; <kbd>Enter</kbd> no último setor = até o fim</td></tr>
+<tr><td>tipo <code>1</code> (<code>uefi</code>) / <code>19</code> (<code>swap</code>) / <code>20</code> (<code>linux</code>)</td><td>EFI System / Linux swap / Linux filesystem</td></tr>
+<tr><td><code>cfdisk /dev/sda</code></td><td>O mesmo, com menus</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A sequência</h3>
+<p>Complete as letras do <code>fdisk</code>: criar uma tabela GPT, criar uma partição e, no fim, gravar.</p>
+<div class="ex-code">Command (m for help): <input data-answer="g" aria-label="tabela GPT" size="2"> … <input data-answer="n" aria-label="nova partição" size="2"> … <input data-answer="w" aria-label="gravar" size="2"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O tamanho da EFI</h3>
+<p>Na pergunta do último setor da partição 1, o que digitar para ela ter 1 GiB?</p>
+<div class="ex-code">Last sector, +/-sectors or +/-size{K,M,G,T,P} (2048-62914526, default 62912511): <input data-answer="+1G|+1024M" aria-label="tamanho"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O código da swap</h3>
+<p>No comando <code>t</code> da partição 2, qual código (número) deixa o tipo como <em>Linux swap</em>?</p>
+<div class="ex-code">Partition type or alias (type L to list all): <input data-answer="19|swap" aria-label="código"></div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Você criou as partições no <code>fdisk</code>, mas percebeu que escolheu o disco errado. Ainda não digitou <code>w</code>. O que fazer?</p>
+<label><input type="radio" name="q4"> Desligar o computador da tomada.</label>
+<label><input type="radio" name="q4"> Digitar <code>d</code> três vezes e depois <code>w</code>.</label>
+<label><input type="radio" name="q4"> Nada: o disco já foi apagado.</label>
+<label><input type="radio" name="q4"> Digitar <code>q</code>: sai sem gravar e o disco fica como estava.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Num notebook com SSD NVMe, como se chama a primeira partição do disco?</p>
+<label><input type="radio" name="q5"> <code>/dev/sda1</code></label>
+<label><input type="radio" name="q5"> <code>/dev/nvme0n1p1</code></label>
+<label><input type="radio" name="q5"> <code>/dev/nvme0n11</code></label>
+<label><input type="radio" name="q5"> <code>/dev/nvme1</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>UEFI → tabela <strong>GPT</strong>; o guia usa EFI 1 GiB + swap 4 GiB + raiz com o resto.</li>
+  <li>Identifique o disco pelo tamanho e modelo (<code>lsblk</code>, <code>fdisk -l</code>) antes de tudo.</li>
+  <li>No <code>fdisk</code>: <code>g</code>, depois <code>n</code> + <code>t</code> para cada partição (tipos <code>1</code> e <code>19</code>), <code>p</code> para conferir e <code>w</code> para gravar.</li>
+  <li>Até o <code>w</code>, nada muda no disco; <code>q</code> desiste.</li>
+  <li><code>Disklabel type: gpt</code> e <code>EFI System</code> na partição 1 são as duas coisas a conferir no <code>p</code>.</li>
+</ul>
+
+<p>As partições existem, mas ainda estão vazias, sem sistema de arquivos. Próximo passo: <a href="formatar-montar.html">Formatar e Montar</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> o passo está em <a href="https://wiki.archlinux.org/title/Installation_guide#Partition_the_disks">Installation guide — Partition the disks</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>); os conceitos, em <a href="https://wiki.archlinux.org/title/Partitioning">Partitioning</a> (<a href="https://wiki.archlinux.org/title/Partitioning_(Portugu%C3%AAs)">em português</a>); as ferramentas, em <a href="https://wiki.archlinux.org/title/Fdisk">fdisk</a> (<a href="https://wiki.archlinux.org/title/Fdisk_(Portugu%C3%AAs)">em português</a>) e <a href="https://wiki.archlinux.org/title/GPT_fdisk">GPT fdisk</a>; a partição EFI, em <a href="https://wiki.archlinux.org/title/EFI_system_partition">EFI system partition</a> (<a href="https://wiki.archlinux.org/title/EFI_system_partition_(Portugu%C3%AAs)">em português</a>); e os nomes dos discos, em <a href="https://wiki.archlinux.org/title/Device_file#Block_device_names">Device file — Block device names</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

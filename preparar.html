@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch preparar — baixar, verificar e gravar a ISO | Guia Arch</title>
+<meta name="description" content="Antes de instalar o Arch: baixar a ISO de um espelho brasileiro, conferir o SHA256 e a assinatura PGP, gravar no pendrive com dd, Ventoy, Rufus ou Etcher, ou criar a VM do VirtualBox com EFI; BIOS, UEFI, Secure Boot e backup.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">preparar</span>: baixar e verificar a ISO</h1>
+
+<p class="intro">Toda instalação do Arch começa igual: você baixa um arquivo <strong>ISO</strong> (a "imagem" do disco de instalação), confere se ele chegou inteiro e é mesmo do Arch, grava num pendrive (ou liga numa máquina virtual) e inicia o computador por ele. Parece burocracia, mas é aqui que se evitam os dois piores erros da instalação: um arquivo corrompido e apagar o disco errado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Onde baixar a ISO oficial e quais arquivos vêm junto (<code>.sig</code>, <code>sha256sums.txt</code>).</li>
+  <li>Conferir o <strong>SHA256</strong> com <code>sha256sum</code> e entender o <code>OK</code>/<code>FAILED</code>.</li>
+  <li>Conferir a <strong>assinatura PGP</strong> com <code>gpg --verify</code> e <code>pacman-key -v</code>.</li>
+  <li>Gravar o pendrive com <code>dd</code> (sem apagar o disco errado), Ventoy, Rufus ou Etcher.</li>
+  <li>Criar a mesma VM do guia no VirtualBox e acertar UEFI, Secure Boot e backup.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que você precisa</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Mínimo</th><th>O que o guia usou</th></tr>
+<tr><td>Processador</td><td>64 bits (x86_64). O Arch oficial não roda em processadores de 32 bits nem em ARM.</td><td>2 núcleos (VM)</td></tr>
+<tr><td>Memória</td><td>512 MiB para iniciar o live; 2 GB ou mais para usar com conforto</td><td>4 GB</td></tr>
+<tr><td>Disco</td><td>uns 2 GiB para o sistema mínimo; 20 GiB ou mais na prática</td><td>30 GB</td></tr>
+<tr><td>Internet</td><td>obrigatória: a ISO só traz o instalador, os pacotes são baixados na hora</td><td>cabo (na VM, a rede NAT)</td></tr>
+<tr><td>Pendrive</td><td>2 GB ou mais (a ISO tem cerca de 1,5 GB) — <strong>tudo nele será apagado</strong></td><td>não precisou (VM)</td></tr>
+</table>
+</div>
+
+<h3>Antes de tudo: backup</h3>
+
+<div class="warning">
+<strong>Faça backup antes de começar</strong>
+<p>Nas próximas aulas você vai <strong>apagar e particionar um disco inteiro</strong>. Um erro de letra (<code>sdb</code> no lugar de <code>sda</code>) apaga outro disco sem perguntar nada. Copie para um HD externo ou para a nuvem tudo o que você não pode perder: documentos, fotos, senhas salvas no navegador, chaves SSH. Se for a sua primeira instalação, o mais seguro é treinar numa <a href="#vm">máquina virtual</a> ou num computador que não tem nada importante.</p>
+</div>
+
+<hr>
+
+<h2>Baixar a ISO</h2>
+
+<p>A página oficial é <a href="https://archlinux.org/download/">archlinux.org/download</a>. Uma ISO nova sai <strong>todo mês, no dia 1º</strong>; o nome traz a data: <code>archlinux-2026.06.01-x86_64.iso</code> é a de 1º de junho de 2026, a que este guia usou. Como o Arch é <a href="rolling-release.html">rolling release</a>, qualquer ISO recente serve: o instalador baixa os pacotes mais novos de qualquer jeito. Quanto mais antiga a ISO, porém, mais chances de problema com o chaveiro (veja <a href="pacstrap.html">pacstrap</a>).</p>
+
+<p>Na página há duas formas de baixar:</p>
+<ul>
+  <li><strong>BitTorrent</strong> (link <em>Magnet</em> ou arquivo <code>.torrent</code>): o próprio programa de torrent confere os pedaços enquanto baixa.</li>
+  <li><strong>HTTP direto, de um espelho</strong> (<em>mirror</em>): servidores espalhados pelo mundo com uma cópia de tudo. Escolha um do Brasil, que costuma ser mais rápido.</li>
+</ul>
+
+<p>Alguns espelhos brasileiros (os mesmos que aparecem na lista de espelhos da <a href="pacstrap.html">aula do pacstrap</a>, em outubro de 2026):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Espelho</th><th>Quem mantém</th></tr>
+<tr><td><code>https://mirror.ufscar.br/archlinux/iso/latest/</code></td><td>UFSCar (São Carlos, SP)</td></tr>
+<tr><td><code>https://archlinux.c3sl.ufpr.br/iso/latest/</code></td><td>C3SL, UFPR (Curitiba, PR)</td></tr>
+<tr><td><code>https://mirrors.ic.unicamp.br/archlinux/iso/latest/</code></td><td>Instituto de Computação da Unicamp (Campinas, SP)</td></tr>
+<tr><td><code>https://archive.archlinux.org/iso/</code></td><td>o arquivo oficial do Arch: guarda <strong>todas</strong> as ISOs antigas (os espelhos guardam só as mais recentes)</td></tr>
+</table>
+</div>
+
+<p>Dentro da pasta de uma versão você encontra estes arquivos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>O que é</th><th>Precisa baixar?</th></tr>
+<tr><td><code>archlinux-2026.06.01-x86_64.iso</code></td><td>a imagem de instalação (o nome com a data)</td><td>sim</td></tr>
+<tr><td><code>archlinux-x86_64.iso</code></td><td>o <strong>mesmo arquivo</strong>, com um nome sem data (é por isso que o SHA256 dos dois é igual)</td><td>não, se já baixou o outro</td></tr>
+<tr><td><code>archlinux-2026.06.01-x86_64.iso.sig</code></td><td>a <strong>assinatura PGP</strong> da ISO (141 bytes)</td><td>sim, para conferir quem fez</td></tr>
+<tr><td><code>sha256sums.txt</code> / <code>b2sums.txt</code></td><td>as <strong>somas de verificação</strong> (SHA256 e BLAKE2) de cada arquivo da pasta</td><td>sim, para conferir se chegou inteiro</td></tr>
+<tr><td><code>archlinux-bootstrap-…tar.zst</code></td><td>um Arch mínimo compactado, para instalar a partir de outro Linux (uso avançado)</td><td>não</td></tr>
+</table>
+</div>
+
+<p>Pelo navegador, basta clicar. Pelo terminal de um Linux que você já usa, o <code>curl</code> baixa cada arquivo para a pasta atual:</p>
+
+<pre class="term" data-cwd="~/Downloads">$ curl -O https://archive.archlinux.org/iso/2026.06.01/archlinux-2026.06.01-x86_64.iso
+$ curl -sS -O https://archive.archlinux.org/iso/2026.06.01/sha256sums.txt
+$ curl -sS -O https://archive.archlinux.org/iso/2026.06.01/archlinux-2026.06.01-x86_64.iso.sig
+</pre>
+
+<dl class="anatomy">
+  <dt>curl</dt><dd>Programa que baixa (e envia) arquivos pela rede; o nome vem de "<em>see URL</em>".</dd>
+  <dt>-O</dt><dd>(<em>remote name</em>) Salva com o mesmo nome do arquivo no servidor. Sem ele, o <code>curl</code> joga o conteúdo na tela.</dd>
+  <dt>-sS</dt><dd><code>-s</code> (<em>silent</em>) esconde a barra de progresso; <code>-S</code> volta a mostrar os erros. Útil para arquivos pequenos.</dd>
+</dl>
+
+<p>Quando dá certo, o <code>curl</code> não diz nada (com <code>-sS</code>) e o código de saída é 0. As duas últimas linhas são exatamente as que usamos para buscar os arquivos de conferência da ISO deste guia. Aqui o endereço é o do arquivo oficial, porque a ISO de junho já saiu dos espelhos; para a ISO do mês, troque por um espelho, por exemplo <code>https://mirror.ufscar.br/archlinux/iso/latest/</code> seguido do nome do arquivo.</p>
+
+<hr>
+
+<h2>Por que conferir? Soma de verificação × assinatura</h2>
+
+<p>Pense numa caixa de remédio. A <strong>soma de verificação</strong> é como conferir se a caixa não foi aberta nem amassada no caminho: prova que o arquivo que chegou é <strong>bit por bit</strong> igual ao que estava no servidor. A <strong>assinatura</strong> é o lacre do fabricante: prova <strong>quem</strong> fez a caixa. As duas se completam:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>SHA256 (<code>sha256sum</code>)</th><th>Assinatura PGP (<code>gpg --verify</code>)</th></tr>
+<tr><td>Pega download corrompido (rede ruim, pendrive com defeito)</td><td>sim</td><td>sim</td></tr>
+<tr><td>Pega um espelho invadido, que trocou a ISO <strong>e</strong> a lista de somas</td><td>não (o invasor troca as duas)</td><td>sim (ele não tem a chave secreta do Arch)</td></tr>
+<tr><td>Precisa de</td><td>só o <code>sha256sums.txt</code></td><td>o <code>.sig</code> e a chave pública de quem assinou</td></tr>
+</table>
+</div>
+
+<p>Uma <strong>soma de verificação</strong> (<em>checksum</em> ou <em>hash</em>) é uma "impressão digital" de 64 caracteres calculada a partir de todo o conteúdo do arquivo. Mudou um único bit, a impressão digital muda inteira. SHA256 é o nome do cálculo (<em>Secure Hash Algorithm</em>, 256 bits).</p>
+
+<h3>Conferir o SHA256</h3>
+
+<dl class="anatomy">
+  <dt>sha256sum</dt><dd>Calcula o SHA256 de cada arquivo que você passar.</dd>
+  <dt>archlinux-2026.06.01-x86_64.iso</dt><dd>O arquivo a conferir.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/Downloads">$ sha256sum archlinux-2026.06.01-x86_64.iso
+ec7a9c89aed7a59a76266ccf723c5e88480e47d7088c4482436f882fa37c3989  archlinux-2026.06.01-x86_64.iso
+$ cat sha256sums.txt
+ec7a9c89aed7a59a76266ccf723c5e88480e47d7088c4482436f882fa37c3989  archlinux-2026.06.01-x86_64.iso   « esta é a linha que importa
+ec7a9c89aed7a59a76266ccf723c5e88480e47d7088c4482436f882fa37c3989  archlinux-x86_64.iso
+e68ba918c9f7deede8eccd2cd8ce259df104d84b0791cff3a2bc7579ced34849  archlinux-bootstrap-2026.06.01-x86_64.tar.zst
+e68ba918c9f7deede8eccd2cd8ce259df104d84b0791cff3a2bc7579ced34849  archlinux-bootstrap-x86_64.tar.zst
+</pre>
+
+<p>A saída do <code>sha256sum</code> tem duas partes: a soma (64 caracteres hexadecimais) e, depois de <strong>dois espaços</strong>, o nome do arquivo. Para 1,5 GB, o cálculo leva uns 30 segundos num disco lento (no computador do guia, 35 s). Agora compare com a linha do <code>sha256sums.txt</code> que tem o mesmo nome: <code>ec7a9c89…37c3989</code> nos dois. Conferiu.</p>
+
+<p>Comparar 64 caracteres de olho é cansativo e fácil de errar. O próprio <code>sha256sum</code> compara para você com a opção <code>-c</code>:</p>
+
+<dl class="anatomy">
+  <dt>-c</dt><dd>(<em>check</em>) Lê um arquivo de somas e confere cada arquivo listado nele.</dd>
+  <dt>--ignore-missing</dt><dd>Pula as linhas de arquivos que você não baixou (o bootstrap, a cópia sem data). Sem ela, cada arquivo ausente vira um erro.</dd>
+  <dt>sha256sums.txt</dt><dd>A lista oficial baixada do mesmo lugar.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/Downloads">$ sha256sum -c --ignore-missing sha256sums.txt
+archlinux-2026.06.01-x86_64.iso: OK
+$ echo $?
+0
+</pre>
+
+<p><code>OK</code> e código de saída <strong>0</strong>: a ISO é idêntica à oficial. Veja como fica quando a soma não bate (para mostrar, trocamos um caractere da lista):</p>
+
+<pre class="term" data-cwd="~/Downloads">$ sha256sum -c --ignore-missing errado.txt
+archlinux-2026.06.01-x86_64.iso: FAILED
+sha256sum: WARNING: 1 computed checksum did NOT match
+sha256sum: errado.txt: no file was verified
+$ echo $?
+1
+</pre>
+
+<p><code>FAILED</code> ("falhou"), o aviso "1 soma calculada NÃO bateu" e código de saída <strong>1</strong>. E sem o <code>--ignore-missing</code>, os arquivos que você não baixou viram erro (<code>No such file or directory</code> … <code>FAILED open or read</code> e <code>WARNING: 3 listed files could not be read</code>), mesmo com a ISO perfeita: por isso a opção.</p>
+
+<div class="note">
+<strong>Inglês ou português?</strong>
+<p>O computador em que conferimos a ISO estava com o <code>sha256sum</code> em inglês. Num Arch em português (como a VM do guia), as mesmas mensagens saem traduzidas:</p>
+<pre class="term" data-cwd="/tmp">$ sha256sum -c soma.txt
+teste.iso: SUCESSO
+$ echo "mudou" &gt;&gt; teste.iso
+$ sha256sum -c soma.txt
+teste.iso: FALHOU
+sha256sum: AVISO: 1 soma de verificação calculada NÃO coincide
+</pre>
+</div>
+
+<h3>No Windows e no macOS</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th>Comando</th></tr>
+<tr><td>Linux</td><td><code>sha256sum arquivo.iso</code> ou <code>sha256sum -c --ignore-missing sha256sums.txt</code></td></tr>
+<tr><td>Windows (Prompt de Comando)</td><td><code>certutil -hashfile archlinux-2026.06.01-x86_64.iso SHA256</code></td></tr>
+<tr><td>Windows (PowerShell)</td><td><code>Get-FileHash .\archlinux-2026.06.01-x86_64.iso</code> (o padrão já é SHA256)</td></tr>
+<tr><td>macOS</td><td><code>shasum -a 256 archlinux-2026.06.01-x86_64.iso</code></td></tr>
+</table>
+</div>
+
+<p>No Windows, o resultado aparece em <strong>maiúsculas</strong> (<code>EC7A9C89…</code>). Não tem problema: hexadecimal maiúsculo e minúsculo são o mesmo número.</p>
+
+<div class="try" data-setup="cd Downloads;;printf 'imagem de teste\n' &gt; arch-teste.iso;;sha256sum arch-teste.iso &gt; sha256sums.txt" data-goal="ran:sha256sum +-c" data-solucao="sha256sum -c sha256sums.txt">
+<p class="try-task"><strong>Missão:</strong> você está na pasta <code>Downloads</code>, que tem um <code>arch-teste.iso</code> e a lista <code>sha256sums.txt</code>. Peça para o <code>sha256sum</code> conferir o arquivo usando a lista (e depois veja o código de saída com <code>echo $?</code>).</p>
+</div>
+
+<hr>
+
+<h2>Conferir a assinatura PGP</h2>
+
+<p>Cada ISO é assinada por um desenvolvedor do Arch com a chave <strong>PGP</strong> dele (<em>Pretty Good Privacy</em>; o programa livre que usa esse padrão é o <strong>GnuPG</strong>, comando <code>gpg</code>). A chave tem duas metades: a <strong>secreta</strong>, que só o desenvolvedor tem e usa para assinar, e a <strong>pública</strong>, que qualquer um baixa para conferir. O arquivo <code>.sig</code> é a assinatura, separada da ISO (uma assinatura "destacada", <em>detached</em>).</p>
+
+<dl class="anatomy">
+  <dt>gpg</dt><dd>O GnuPG.</dd>
+  <dt>--keyserver-options auto-key-retrieve</dt><dd>Se a chave pública de quem assinou não estiver no seu chaveiro, busca sozinho na internet (pelo e-mail do assinante e nos servidores de chaves).</dd>
+  <dt>--verify</dt><dd>Conferir uma assinatura.</dd>
+  <dt>archlinux-…iso.sig</dt><dd>A assinatura (primeiro).</dd>
+  <dt>archlinux-…iso</dt><dd>O arquivo assinado (depois).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/Downloads">$ gpg --keyserver-options auto-key-retrieve --verify archlinux-2026.06.01-x86_64.iso.sig archlinux-2026.06.01-x86_64.iso
+gpg: Assinatura feita seg 01 jun 2026 12:23:29 -03
+gpg:                usando EDDSA chave 3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C
+gpg:                emissor "pierre@archlinux.org"
+gpg: chave 76A5EF9054449A5C: chave pública "Pierre Schmitz &lt;pierre@archlinux.org&gt;" importada
+gpg: chave 7F2D434B9741E8AC: chave pública "Pierre Schmitz &lt;pierre@archlinux.org&gt;" importada
+gpg: chave 76A5EF9054449A5C: "Pierre Schmitz &lt;pierre@archlinux.org&gt;" não mudada
+gpg: chave 7F2D434B9741E8AC: "Pierre Schmitz &lt;pierre@archlinux.org&gt;" não mudada
+gpg: Número total processado: 4
+gpg:               importados: 2
+gpg:              não modificados: 2
+gpg: ultimamente não encontradas chaves confiáveis
+gpg: Assinatura correta de "Pierre Schmitz &lt;pierre@archlinux.org&gt;" [desconhecido]   « o que importa
+gpg: AVISO: A ID de utilizador da chave não está certificada com uma assinatura confiável!
+gpg:          Não há indicação de que a assinatura pertence ao dono.
+Impressão digital da chave primária: 3E80 CA1A 8B89 F69C BA57  D98A 76A5 EF90 5444 9A5C
+$ echo $?
+0
+</pre>
+
+<p>Essa saída é real, de um chaveiro vazio (por isso a chave foi importada na hora). Uma linha de cada vez:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>Assinatura feita seg 01 jun 2026 12:23:29 -03</code></td><td>Quando a ISO foi assinada (no horário do seu computador): o dia da ISO.</td></tr>
+<tr><td><code>usando EDDSA chave 3E80…9A5C</code> / <code>emissor "pierre@archlinux.org"</code></td><td>Qual chave assinou e o e-mail do dono. EdDSA é o tipo de chave.</td></tr>
+<tr><td><code>chave … importada</code>, <code>Número total processado</code></td><td>O <code>auto-key-retrieve</code> baixou a chave pública do Pierre Schmitz, que gera as ISOs do Arch. Na segunda vez que você conferir, essas linhas somem.</td></tr>
+<tr><td><code>Assinatura correta de "Pierre Schmitz …"</code></td><td><strong>O resultado</strong>: a ISO não foi alterada desde que essa chave a assinou.</td></tr>
+<tr><td><code>[desconhecido]</code> e o <code>AVISO</code></td><td>O GnuPG avisa que <strong>você</strong> nunca disse que confia nessa chave. É normal num chaveiro novo; não é erro. Quem garante que a chave é mesmo do Arch é a impressão digital, na linha de baixo.</td></tr>
+<tr><td><code>Impressão digital da chave primária: 3E80 CA1A …</code></td><td>Compare com a que aparece na página <a href="https://archlinux.org/download/">archlinux.org/download</a> ("PGP fingerprint"). Se for igual, a ISO é oficial.</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>"Assinatura correta" + impressão digital certa = pode usar</strong>
+<p>São só duas coisas a olhar. O resto da saída é o GnuPG contando o que fez. A impressão digital da chave do Pierre Schmitz (<code>3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C</code>) também está no <a href="https://archlinux.org/people/developers/">perfil dele</a> no site do Arch.</p>
+</div>
+
+<h3>Já tem um Arch? Use o pacman-key</h3>
+
+<p>Num Arch já instalado, o <code>pacman-key</code> confere assinaturas usando o <strong>chaveiro do pacman</strong>, que já vem com as chaves dos desenvolvedores marcadas como confiáveis (veja <a href="chaves.html">Chaves e Assinaturas</a>):</p>
+
+<pre class="term" data-cwd="~/Downloads">#> pacman-key -v archlinux-2026.06.01-x86_64.iso.sig
+</pre>
+
+<p>Ele procura a ISO pelo nome do <code>.sig</code> sem a extensão. Não rodamos esse comando com a ISO (ela não estava dentro da VM), mas o formato da resposta é o mesmo de qualquer arquivo assinado. Esta é a saída real conferindo um pacote do cache do pacman:</p>
+
+<pre class="term" data-cwd="/var/cache/pacman/pkg" data-user="root">#> pacman-key -v nano-9.2-1-x86_64.pkg.tar.zst.sig
+==&gt; Checking nano-9.2-1-x86_64.pkg.tar.zst.sig... (detached)
+gpg: Assinatura feita em sex 31 jul 2026 07:13:08 -03
+gpg:        usando a chave RSA de ADC8A1FCC15E01D45310419E94657AB20F2A092B
+gpg: Assinatura válida de "Andreas Radke &lt;andyrtr@archlinux.org&gt;" [completa]   « confiança completa
+gpg:                 aka "Andreas Radke &lt;andreas.radke@mailbox.org&gt;" [indefinida]
+gpg:                 aka "Andreas Radke &lt;andyrtr@mailbox.org&gt;" [indefinida]
+#> echo $?
+0
+</pre>
+
+<p>Repare na diferença: aqui a confiança é <code>[completa]</code> e não há <code>AVISO</code>, porque o chaveiro do pacman já confia nas chaves do Arch. ("Assinatura válida" e "Assinatura correta" são a mesma mensagem, traduzida de jeitos diferentes em versões diferentes do GnuPG.)</p>
+
+<hr>
+
+<h2 id="pendrive">Gravar no pendrive</h2>
+
+<p>A ISO não se "copia" para o pendrive como um arquivo comum: ela precisa ser gravada <strong>no dispositivo inteiro</strong>, por cima de tudo o que existe nele, para que o computador consiga iniciar por ela. Há várias formas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Onde</th><th>Quando usar</th></tr>
+<tr><td><code>dd</code></td><td>qualquer Linux (e macOS)</td><td>o método da Wiki; nada a instalar. Exige atenção total ao nome do disco.</td></tr>
+<tr><td><strong>Ventoy</strong></td><td>Linux e Windows</td><td>você prepara o pendrive uma vez e depois só <strong>copia</strong> as ISOs para ele (várias distros no mesmo pendrive, menu na hora do boot).</td></tr>
+<tr><td><strong>Rufus</strong></td><td>Windows</td><td>o mais usado no Windows. Quando ele perguntar como gravar uma imagem "ISOHybrid", escolha <strong>modo DD</strong> (<em>Write in DD Image mode</em>).</td></tr>
+<tr><td><strong>balenaEtcher</strong></td><td>Linux, Windows, macOS</td><td>três cliques (imagem, pendrive, gravar) e confere a gravação no fim.</td></tr>
+<tr><td>Discos do GNOME</td><td>Linux com GNOME</td><td>menu do pendrive → "Restaurar imagem de disco".</td></tr>
+</table>
+</div>
+
+<h3>Com dd: primeiro descubra o nome do pendrive</h3>
+
+<div class="warning">
+<strong>O dd apaga sem perguntar</strong>
+<p>O <code>dd</code> grava exatamente onde você mandar. Se você escrever o nome do seu HD em vez do pendrive, ele apaga o HD — sem confirmação, sem lixeira, sem volta. Antes de rodar, confira o nome <strong>duas vezes</strong>, pelo tamanho e pelo modelo, com o pendrive conectado e desconectado.</p>
+</div>
+
+<p>O jeito seguro é comparar a lista de discos <strong>antes</strong> e <strong>depois</strong> de espetar o pendrive. A saída abaixo é <strong>ilustrativa</strong> (um notebook com um SSD NVMe e um pendrive de 16 GB):</p>
+
+<pre class="term">$ lsblk -d -o NAME,SIZE,MODEL,TRAN
+NAME      SIZE MODEL                 TRAN
+nvme0n1 476,9G KINGSTON SNV2S500G    nvme   « o disco do computador
+$ lsblk -d -o NAME,SIZE,MODEL,TRAN
+NAME      SIZE MODEL                 TRAN
+sda      14,6G Cruzer Blade          usb    « apareceu depois de espetar: é o pendrive
+nvme0n1 476,9G KINGSTON SNV2S500G    nvme
+</pre>
+
+<dl class="anatomy">
+  <dt>lsblk</dt><dd>(<em>list block devices</em>) Lista discos e partições. Veja mais em <a href="discos.html">lsblk, df, du</a>.</dd>
+  <dt>-d</dt><dd>Só os discos, sem as partições.</dd>
+  <dt>-o NAME,SIZE,MODEL,TRAN</dt><dd>As colunas: nome, tamanho, modelo e tipo de conexão (<code>usb</code>, <code>sata</code>, <code>nvme</code>).</dd>
+</dl>
+
+<p>O pendrive é o que <strong>apareceu</strong>, com o tamanho e o modelo de um pendrive e conexão <code>usb</code>. Atenção: num computador com HD SATA, o próprio HD costuma ser <code>sda</code> e o pendrive vira <code>sdb</code>. Nunca chute.</p>
+
+<p>Se o pendrive tiver partições montadas (muitos sistemas montam sozinhos), desmonte-as antes. Agora, a gravação (o comando recomendado pela Wiki; <code>sdX</code> é o seu pendrive):</p>
+
+<pre class="term" data-cwd="~/Downloads">$ sudo dd bs=4M if=archlinux-2026.06.01-x86_64.iso of=/dev/sdX conv=fsync oflag=direct status=progress
+</pre>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Gravar direto num disco exige o administrador.</dd>
+  <dt>dd</dt><dd>Copia dados bloco a bloco, de uma entrada para uma saída.</dd>
+  <dt>bs=4M</dt><dd>(<em>block size</em>) Copia de 4 em 4 MiB, o que é bem mais rápido que o padrão de 512 bytes.</dd>
+  <dt>if=…iso</dt><dd>(<em>input file</em>) De onde ler: a ISO.</dd>
+  <dt>of=/dev/sdX</dt><dd>(<em>output file</em>) Onde gravar: o <strong>disco inteiro</strong> do pendrive. É <code>/dev/sdb</code>, <strong>nunca</strong> <code>/dev/sdb1</code> (uma partição dele).</dd>
+  <dt>conv=fsync</dt><dd>Só termina depois de garantir que tudo foi parar no pendrive (não fica "na memória").</dd>
+  <dt>oflag=direct</dt><dd>Grava sem passar pelo cache do sistema, o que deixa o progresso mais honesto.</dd>
+  <dt>status=progress</dt><dd>Mostra quantos bytes já foram e a velocidade.</dd>
+</dl>
+
+<p>Durante a gravação aparece uma linha de progresso que vai se atualizando; no fim, o <code>dd</code> diz quantos registros copiou e quanto tempo levou (cerca de 1,5 GB). Só retire o pendrive depois que o prompt voltar.</p>
+
+<div class="note">
+<strong>Depois, o pendrive "parece estragado"</strong>
+<p>Gravado com <code>dd</code>, o pendrive passa a ter o formato da ISO (ISO 9660), que o Windows não sabe ler e oferece para "formatar". Está tudo certo. Para usá-lo de novo como pendrive comum, apague e formate (no Windows, pelo Gerenciamento de Disco; no Linux, por exemplo, com <code>wipefs --all /dev/sdX</code> e depois um particionador).</p>
+</div>
+
+<h3>Com Ventoy</h3>
+<ol class="passo">
+  <li>Baixe o Ventoy em <a href="https://www.ventoy.net/">ventoy.net</a> e instale-o no pendrive (isso apaga o pendrive uma vez).</li>
+  <li>O pendrive aparece como um disco comum. <strong>Copie</strong> a ISO para ele, como qualquer arquivo.</li>
+  <li>Inicie o computador pelo pendrive: o Ventoy mostra um menu com as ISOs que estão nele. Escolha a do Arch.</li>
+</ol>
+<p>Se o Ventoy der problema com alguma versão da ISO, grave com <code>dd</code>: é o método que a Wiki do Arch garante.</p>
+
+<hr>
+
+<h2 id="vm">Ou: usar uma máquina virtual</h2>
+
+<p>Uma <strong>máquina virtual</strong> (VM) é um computador "de mentira" que roda dentro do seu, numa janela. Nada que você fizer nela afeta o seu disco de verdade: é o lugar ideal para a primeira instalação. O guia inteiro foi feito numa VM do <strong>VirtualBox</strong> chamada <code>arch-guia</code>, com esta configuração (conferida com <code>VBoxManage showvminfo arch-guia</code>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Configuração no VirtualBox</th><th>Valor no guia</th><th>Por quê</th></tr>
+<tr><td>Tipo / versão</td><td>Linux / <strong>Arch Linux (64-bit)</strong></td><td>ajusta os padrões para um Linux de 64 bits</td></tr>
+<tr><td>Memória (RAM)</td><td><strong>4096 MB</strong></td><td>sobra para o live, o <code>pacstrap</code> e, mais tarde, um desktop</td></tr>
+<tr><td>Processadores</td><td><strong>2</strong></td><td>compilar e instalar fica mais rápido</td></tr>
+<tr><td><strong>Habilitar EFI</strong></td><td><strong>ligado</strong> (<code>firmware="EFI"</code>)</td><td>o guia instala em modo UEFI, como os computadores atuais. Sem isso, a VM inicia em modo BIOS antigo e as aulas de partição EFI e GRUB não batem.</td></tr>
+<tr><td>Disco rígido</td><td><strong>30 GB</strong>, VDI, dinamicamente alocado</td><td>o arquivo cresce aos poucos; 30 GB cabem EFI + swap + raiz (veja <a href="particionar.html">Particionar</a>)</td></tr>
+<tr><td>Unidade óptica</td><td>a ISO <code>archlinux-2026.06.01-x86_64.iso</code></td><td>é o "pendrive" da VM</td></tr>
+<tr><td>Rede</td><td>NAT</td><td>a VM usa a internet do computador; dentro dela a placa se chama <code>enp0s3</code></td></tr>
+<tr><td>Encaminhamento de porta (opcional)</td><td>TCP 127.0.0.1:2223 → 22</td><td>para entrar na VM por SSH a partir do computador (veja <a href="ambiente-live.html#ssh">SSH no live</a>)</td></tr>
+</table>
+</div>
+
+<p>No assistente de "Nova máquina" do VirtualBox, a opção <strong>Habilitar EFI</strong> fica na parte de hardware; depois de criada, está em <em>Configurações → Sistema → Placa-mãe → Recursos estendidos</em>. Se você usa outro programa (GNOME Boxes, virt-manager/KVM, VMware), procure a opção equivalente: "UEFI" ou "OVMF". Veja também <a href="kvm.html">Máquinas Virtuais (KVM)</a>.</p>
+
+<hr>
+
+<h2>BIOS, UEFI e Secure Boot</h2>
+
+<p>O <strong>firmware</strong> é o programa gravado na placa-mãe que liga o computador e procura um sistema para iniciar. Existem dois tipos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>BIOS (antigo, também chamado "Legacy" ou "CSM")</th><th>UEFI (atual)</th></tr>
+<tr><td>Computadores</td><td>até por volta de 2012</td><td>praticamente todos os de hoje</td></tr>
+<tr><td>Tabela de partições comum</td><td>MBR</td><td>GPT</td></tr>
+<tr><td>Onde fica o carregador de boot</td><td>no começo do disco</td><td>numa partição própria, a <strong>partição EFI</strong> (FAT32)</td></tr>
+<tr><td>Neste guia</td><td>não usado</td><td><strong>usado</strong></td></tr>
+</table>
+</div>
+
+<p>Para entrar na configuração do firmware ("setup"), aperte a tecla certa logo ao ligar: geralmente <kbd>F2</kbd>, <kbd>Del</kbd>, <kbd>Esc</kbd> ou <kbd>F10</kbd>, conforme o fabricante. Para escolher por onde iniciar uma única vez (o "menu de boot"), costuma ser <kbd>F12</kbd>, <kbd>F11</kbd> ou <kbd>F8</kbd>. Lá dentro, confira:</p>
+
+<ol class="passo">
+  <li><strong>Modo de boot UEFI</strong> ligado, e "CSM"/"Legacy" desligado (assim o pendrive inicia em UEFI). No live você vai <a href="ambiente-live.html">confirmar isso</a> com um comando.</li>
+  <li><strong>Secure Boot desligado.</strong> O Secure Boot só deixa iniciar sistemas assinados com chaves que a placa conhece (as da Microsoft, em geral). A ISO do Arch não vem assinada assim, então, com ele ligado, o pendrive é recusado. Dá para configurar Secure Boot no Arch depois, com chaves próprias, mas isso é assunto avançado (veja <a href="seguranca.html">Segurança</a>).</li>
+  <li>A ordem de boot põe o pendrive (USB) antes do disco, ou use o menu de boot.</li>
+</ol>
+
+<hr>
+
+<h2>Dual boot (Arch junto com o Windows)</h2>
+
+<div class="warning">
+<strong>Dual boot é para depois da primeira instalação</strong>
+<p>Instalar o Arch ao lado do Windows exige encolher a partição do Windows, <strong>reaproveitar</strong> a partição EFI que já existe (e não criar outra nem formatá-la) e desligar a "Inicialização rápida" do Windows, que deixa o disco num estado inconsistente. Um passo errado e o Windows para de iniciar. Este guia instala o Arch num disco <strong>inteiro e vazio</strong>. Se você precisa de dual boot, faça backup, treine antes na VM e siga a página da Wiki <a href="https://wiki.archlinux.org/title/Dual_boot_with_Windows">Dual boot with Windows</a> (<a href="https://wiki.archlinux.org/title/Dual_boot_with_Windows_(Portugu%C3%AAs)">em português</a>).</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O SHA256 não bate (<code>FAILED</code> / <code>FALHOU</code>)</strong>
+<p><strong>O que aconteceu:</strong> o download veio incompleto ou corrompido, ou você está comparando com a lista de <strong>outra data</strong> (a ISO de junho com o <code>sha256sums.txt</code> de julho).</p>
+<p><strong>Como confirmar:</strong> o tamanho do arquivo (<code>ls -l</code>) é menor que o do servidor? A data no nome da ISO é a mesma da pasta de onde veio a lista?</p>
+<p><strong>Como resolver:</strong> baixe a lista certa ou baixe a ISO de novo, de preferência de outro espelho ou por torrent. <strong>Não use</strong> uma ISO que não conferiu.</p>
+</div>
+
+<div class="cenario">
+<strong>"Impossível verificar assinatura: Sem chave pública"</strong>
+<pre class="term" data-cwd="~/Downloads">$ gpg --verify archlinux-2026.06.01-x86_64.iso.sig archlinux-2026.06.01-x86_64.iso
+gpg: Assinatura feita seg 01 jun 2026 12:23:29 -03
+gpg:                usando EDDSA chave 3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C
+gpg:                emissor "pierre@archlinux.org"
+gpg: Impossível verificar assinatura: Sem chave pública
+$ echo $?
+2
+</pre>
+<p><strong>O que aconteceu:</strong> o seu chaveiro não tem a chave pública de quem assinou, e você não pediu para buscá-la.</p>
+<p><strong>Como resolver:</strong> acrescente <code>--keyserver-options auto-key-retrieve</code>, como na seção acima. Outra forma, a que a página de download sugere, é buscar a chave antes, pelo e-mail: <code>gpg --auto-key-locate clear,wkd -v --locate-external-key pierre@archlinux.org</code>, e depois repetir o <code>--verify</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Assimanatura ERRADA" (sim, com esse erro de digitação)</strong>
+<pre class="term" data-cwd="~/Downloads">$ gpg --verify archlinux-2026.06.01-x86_64.iso.sig falso.iso
+gpg: Assinatura feita seg 01 jun 2026 12:23:29 -03
+gpg:                usando EDDSA chave 3E80CA1A8B89F69CBA57D98A76A5EF9054449A5C
+gpg:                emissor "pierre@archlinux.org"
+gpg: Assimanatura ERRADA de "Pierre Schmitz &lt;pierre@archlinux.org&gt;" [desconhecido]
+$ echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não é o que foi assinado: foi alterado, está corrompido ou é outro arquivo (aqui, de propósito, conferimos a assinatura da ISO contra outro arquivo). O "Assimanatura" é um erro real na tradução em português do GnuPG; em inglês a mensagem é <code>BAD signature</code>.</p>
+<p><strong>Como resolver:</strong> confira se passou os dois arquivos certos (o <code>.sig</code> e a ISO da mesma data). Se sim, jogue a ISO fora e baixe de novo de outro lugar.</p>
+</div>
+
+<div class="cenario">
+<strong>O computador não inicia pelo pendrive</strong>
+<p><strong>Causas comuns:</strong> Secure Boot ligado (às vezes aparece "Secure Boot Violation" ou "Invalid signature"); o pendrive foi gravado numa <strong>partição</strong> (<code>of=/dev/sdb1</code>) em vez do disco (<code>of=/dev/sdb</code>); o Rufus gravou em modo ISO em vez de modo DD; o pendrive não está na ordem de boot.</p>
+<p><strong>Como resolver:</strong> desligue o Secure Boot, regrave com <code>of=/dev/sdX</code> (disco inteiro) ou no modo DD do Rufus e escolha o pendrive no menu de boot (<kbd>F12</kbd> e parecidos). No menu, se o pendrive aparecer duas vezes, escolha a opção que começa com "UEFI".</p>
+</div>
+
+<div class="cenario">
+<strong>A VM abre num "UEFI Interactive Shell" ou diz que não há sistema</strong>
+<p><strong>O que aconteceu:</strong> a VM ligou com EFI, mas não achou nada para iniciar: a ISO não está na unidade óptica (ou foi ejetada).</p>
+<p><strong>Como resolver:</strong> desligue a VM, em <em>Configurações → Armazenamento</em> escolha a ISO na unidade óptica e ligue de novo.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>sha256sum arquivo.iso</code></td><td>Calcula o SHA256 (compare com o <code>sha256sums.txt</code>)</td></tr>
+<tr><td><code>sha256sum -c --ignore-missing sha256sums.txt</code></td><td>Confere sozinho: <code>OK</code>/<code>SUCESSO</code> (saída 0) ou <code>FAILED</code>/<code>FALHOU</code> (saída 1)</td></tr>
+<tr><td><code>gpg --keyserver-options auto-key-retrieve --verify X.iso.sig X.iso</code></td><td>Confere a assinatura PGP, buscando a chave se faltar</td></tr>
+<tr><td><code>pacman-key -v X.iso.sig</code></td><td>O mesmo, num Arch já instalado, com o chaveiro do pacman</td></tr>
+<tr><td><code>lsblk -d -o NAME,SIZE,MODEL,TRAN</code></td><td>Descobre o nome do pendrive (antes e depois de conectar)</td></tr>
+<tr><td><code>sudo dd bs=4M if=X.iso of=/dev/sdX conv=fsync oflag=direct status=progress</code></td><td>Grava a ISO no pendrive inteiro (<strong>apaga tudo nele</strong>)</td></tr>
+<tr><td><code>certutil -hashfile X.iso SHA256</code></td><td>SHA256 no Windows</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Conferir sozinho</h3>
+<p>Complete o comando que confere a ISO com a lista oficial, ignorando os arquivos que você não baixou:</p>
+<div class="ex-code">sha256sum <input data-answer="-c" aria-label="opção de conferir"> --ignore-missing <input data-answer="sha256sums.txt" aria-label="arquivo de somas"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O destino do dd</h3>
+<p>O seu pendrive é o <code>sdb</code>. Complete o destino do <code>dd</code>:</p>
+<div class="ex-code">sudo dd bs=4M if=archlinux-x86_64.iso of=<input data-answer="/dev/sdb" aria-label="destino"> conv=fsync oflag=direct status=progress</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O <code>gpg --verify</code> mostrou <code>Assinatura correta</code> e um <code>AVISO</code> de que a chave "não está certificada". O que fazer?</p>
+<label><input type="radio" name="q3"> Baixar a ISO de novo, porque a assinatura falhou.</label>
+<label><input type="radio" name="q3"> Conferir se a impressão digital é a mesma da página de download; se for, pode usar.</label>
+<label><input type="radio" name="q3"> Desligar o Secure Boot.</label>
+<label><input type="radio" name="q3"> Rodar o <code>sha256sum</code> com <code>sudo</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que o SHA256 <strong>não</strong> consegue detectar sozinho?</p>
+<label><input type="radio" name="q4"> Um download que parou no meio.</label>
+<label><input type="radio" name="q4"> Um bit trocado por defeito no pendrive.</label>
+<label><input type="radio" name="q4"> Um espelho invadido que trocou a ISO e também o <code>sha256sums.txt</code>.</label>
+<label><input type="radio" name="q4"> Uma ISO de outra data.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para a VM do guia funcionar como as aulas mostram, qual opção do VirtualBox é indispensável?</p>
+<label><input type="radio" name="q5"> Habilitar EFI.</label>
+<label><input type="radio" name="q5"> Rede em modo "Somente hospedeiro".</label>
+<label><input type="radio" name="q5"> 8 processadores.</label>
+<label><input type="radio" name="q5"> Disco de tamanho fixo.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Baixe a ISO de <a href="https://archlinux.org/download/">archlinux.org/download</a> (torrent ou espelho brasileiro), junto com <code>sha256sums.txt</code> e o <code>.sig</code>.</li>
+  <li><code>sha256sum -c --ignore-missing sha256sums.txt</code> → <code>OK</code> prova que chegou inteira.</li>
+  <li><code>gpg … --verify X.sig X.iso</code> → <code>Assinatura correta</code> + a impressão digital certa provam que é oficial.</li>
+  <li>Grave no pendrive <strong>inteiro</strong> (<code>/dev/sdX</code>, não <code>sdX1</code>), depois de conferir o nome com <code>lsblk</code> antes e depois de espetá-lo.</li>
+  <li>Na VM: EFI ligado, 2 CPUs, 4 GB, 30 GB. No computador real: UEFI, Secure Boot desligado e backup feito.</li>
+</ul>
+
+<p>Com a ISO conferida e o pendrive (ou a VM) pronto, é hora de iniciar por ele: <a href="ambiente-live.html">O Ambiente Live</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> o roteiro oficial começa em <a href="https://wiki.archlinux.org/title/Installation_guide#Pre-installation">Installation guide — Pre-installation</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>); a gravação do pendrive, com todas as ferramentas, está em <a href="https://wiki.archlinux.org/title/USB_flash_installation_medium">USB flash installation medium</a> (<a href="https://wiki.archlinux.org/title/USB_flash_installation_medium_(Portugu%C3%AAs)">em português</a>); a VM, em <a href="https://wiki.archlinux.org/title/VirtualBox">VirtualBox</a> e <a href="https://wiki.archlinux.org/title/VirtualBox/Install_Arch_Linux_as_a_guest">Install Arch Linux as a guest</a>; firmware e Secure Boot, em <a href="https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface">UEFI</a> e <a href="https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot">Secure Boot</a>; o GnuPG, em <a href="https://wiki.archlinux.org/title/GnuPG">GnuPG</a>; e o dual boot, em <a href="https://wiki.archlinux.org/title/Dual_boot_with_Windows">Dual boot with Windows</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

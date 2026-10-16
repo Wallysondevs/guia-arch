@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch pacstrap — espelhos, reflector e os pacotes da instalação | Guia Arch</title>
+<meta name="description" content="Escolher os espelhos com reflector (e entender os avisos de tempo esgotado), instalar o sistema com pacstrap -K, o que é cada pacote (base, linux, firmware, microcode, NetworkManager, sudo, editor, man, GRUB) e cada fase da saída real de 193 pacotes, incluindo o aviso do vconsole.conf.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: espelhos e <span class="hl">pacstrap</span></h1>
+
+<p class="intro">Com o disco formatado e montado em <code>/mnt</code>, chegou a hora de colocar o Arch lá dentro. O <code>pacstrap</code> faz isso: baixa os pacotes da internet e os instala em <code>/mnt</code>, não no live. Antes, vale escolher bons <strong>espelhos</strong> (os servidores de onde os pacotes vêm). Nesta aula você vê a instalação real da VM do guia, com 193 pacotes, fase por fase.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são espelhos, onde fica a lista (<code>/etc/pacman.d/mirrorlist</code>) e como o <code>reflector</code> a monta.</li>
+  <li>Por que o <code>reflector</code> mostra avisos de "tempo esgotado" e por que eles não são erro.</li>
+  <li>O comando <code>pacstrap -K /mnt …</code>, o que o <code>-K</code> faz e o que é cada pacote da lista.</li>
+  <li>As fases da saída: chaveiro, sincronização, dependências, download, verificação, instalação e hooks (com o <code>mkinitcpio</code>).</li>
+  <li>Os erros comuns: chaveiro desatualizado, sem internet, disco cheio, nome de pacote errado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Espelhos</h2>
+
+<p>Os pacotes do Arch ficam em centenas de servidores pelo mundo, cada um com uma cópia idêntica de tudo: os <strong>espelhos</strong> (<em>mirrors</em>). O <code>pacman</code> (e o <code>pacstrap</code>, que usa o <code>pacman</code>) baixa de um deles, na ordem do arquivo <code>/etc/pacman.d/mirrorlist</code>: tenta o primeiro; se falhar, o segundo; e assim por diante. Um espelho rápido e próximo no topo da lista faz a instalação levar minutos em vez de uma hora.</p>
+
+<p>O live já cuida disso sozinho: logo depois de conectar à internet, ele roda o <code>reflector</code>, que escolhe os 20 espelhos HTTPS sincronizados mais recentemente no mundo e os ordena por velocidade. Funciona, mas pode pôr espelhos de outros continentes no topo. Na VM do guia, refizemos a lista só com espelhos do Brasil.</p>
+
+<h3>reflector</h3>
+
+<dl class="anatomy">
+  <dt>reflector</dt><dd>Programa que baixa a lista oficial de espelhos (com o estado de cada um), filtra, ordena e grava um <code>mirrorlist</code>. O nome vem de "refletor", outra palavra para espelho.</dd>
+  <dt>--country Brazil</dt><dd>Só espelhos do Brasil. Aceita vários: <code>--country Brazil,Chile</code> (ou os códigos <code>BR,CL</code>).</dd>
+  <dt>--protocol https</dt><dd>Só os que usam HTTPS (conexão criptografada).</dd>
+  <dt>--latest 5</dt><dd>Dos que sobraram, os 5 sincronizados há menos tempo (os mais em dia com o servidor principal).</dd>
+  <dt>--sort rate</dt><dd>Ordena por velocidade, medida na hora: o <code>reflector</code> baixa um arquivo de teste de cada um.</dd>
+  <dt>--save /etc/pacman.d/mirrorlist</dt><dd>Grava o resultado no lugar do <code>mirrorlist</code> do live.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> reflector --country Brazil --protocol https --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
+[2026-10-16 15:02:03] WARNING: failed to rate http(s) download (https://archlinux.c3sl.ufpr.br/extra/os/x86_64/extra.db): Download timed out after 5 second(s).
+[2026-10-16 15:02:09] WARNING: failed to rate http(s) download (https://mirrors.ic.unicamp.br/archlinux/extra/os/x86_64/extra.db): Download timed out after 5 second(s).
+#> echo $?
+0
+</pre>
+
+<p>Os dois avisos assustam, mas o código de saída 0 diz que o <code>reflector</code> terminou bem. Traduzindo: "AVISO: falha ao medir a velocidade do download (endereço): o download excedeu o tempo depois de 5 segundos".</p>
+
+<ul>
+  <li>Para medir a velocidade, o <code>reflector</code> baixa de cada espelho o arquivo <code>extra.db</code> (a lista de pacotes do repositório <em>extra</em>, alguns MB).</li>
+  <li>Cada medição tem um limite de <strong>5 segundos</strong> (o padrão de <code>--download-timeout</code>). Naquele momento, os espelhos da UFPR e da Unicamp estavam lentos para a rede da VM e não terminaram a tempo.</li>
+  <li>Um espelho que não foi medido não é descartado: ele fica com velocidade "zero" e vai para o <strong>fim</strong> da lista. Continua lá como reserva.</li>
+</ul>
+
+<p>Se todos derem tempo esgotado (rede lenta, Wi-Fi fraco), aumente o limite: <code>--download-timeout 15</code>.</p>
+
+<h3>O mirrorlist resultante</h3>
+
+<pre class="term" data-host="archiso" data-user="root">#> cat /etc/pacman.d/mirrorlist
+################################################################################
+################# Arch Linux mirrorlist generated by Reflector #################
+################################################################################
+
+# With:       reflector --country Brazil --protocol https --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
+# When:       2026-10-16 15:02:14 UTC
+# From:       https://archlinux.org/mirrors/status/json/
+# Retrieved:  2026-10-16 15:01:55 UTC
+# Last Check: 2026-10-16 14:40:28 UTC
+
+Server = https://mirror.ufscar.br/archlinux/$repo/os/$arch         « o mais rápido: usado primeiro
+Server = https://br.mirrors.cicku.me/archlinux/$repo/os/$arch
+Server = https://archlinux.c3sl.ufpr.br/$repo/os/$arch             « os dois que deram tempo esgotado,
+Server = https://mirrors.ic.unicamp.br/archlinux/$repo/os/$arch    « no fim
+</pre>
+
+<ul>
+  <li>As linhas com <code>#</code> são comentários: o comando usado (<em>With</em>), quando (<em>When</em>), de onde veio a lista (<em>From</em>) e quando o site do Arch conferiu os espelhos pela última vez (<em>Last Check</em>).</li>
+  <li>Cada <code>Server =</code> é um espelho. <code>$repo</code> e <code>$arch</code> são trocados pelo <code>pacman</code> na hora: <code>core</code> ou <code>extra</code>, e <code>x86_64</code>.</li>
+  <li>Pedimos 5 e vieram 4: depois dos filtros (Brasil, HTTPS, totalmente sincronizado), só havia 4 espelhos naquele momento.</li>
+</ul>
+
+<p>Também dá para editar o arquivo à mão (<code>nano /etc/pacman.d/mirrorlist</code>) e subir um espelho que você sabe que é bom. A lista do live é <strong>copiada</strong> para o sistema instalado pelo <code>pacstrap</code>. Mais sobre o <code>reflector</code> no sistema instalado em <a href="espelhos.html">Espelhos (reflector)</a>.</p>
+
+<hr>
+
+<h2>O pacstrap</h2>
+
+<p>O <code>pacstrap</code> (do pacote <code>arch-install-scripts</code>, que vem no live) é o <code>pacman</code> apontado para outra pasta: em vez de instalar no sistema que está rodando, ele instala tudo dentro de <code>/mnt</code>, criando ali as pastas <code>/etc</code>, <code>/usr</code>, <code>/var</code>… do novo sistema. O nome junta <em>pac</em> (de pacman) e <em>bootstrap</em> ("dar a partida").</p>
+
+<div class="warning">
+<strong>Antes de rodar: /mnt está montado?</strong>
+<p>Confira com <code>lsblk -f</code> (ou <code>findmnt /mnt</code>) se a raiz está em <code>/mnt</code> e a EFI em <code>/mnt/boot</code> (veja <a href="formatar-montar.html">Formatar e Montar</a>). O <code>pacstrap</code> não verifica: se nada estiver montado, ele instala na memória RAM do live, e tudo se perde.</p>
+</div>
+
+<p>O comando usado na VM do guia:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux linux-firmware intel-ucode networkmanager sudo nano vim man-db man-pages texinfo grub efibootmgr openssh
+</pre>
+
+<dl class="anatomy">
+  <dt>pacstrap</dt><dd>Instala pacotes numa nova raiz.</dd>
+  <dt>-K</dt><dd>Cria um <strong>chaveiro</strong> do pacman novo e vazio dentro de <code>/mnt</code> (e o preenche com as chaves oficiais quando o pacote <code>archlinux-keyring</code> é instalado). Sem o <code>-K</code>, o novo sistema herdaria o chaveiro do live. Veja abaixo.</dd>
+  <dt>/mnt</dt><dd>A nova raiz: onde instalar.</dd>
+  <dt>base linux …</dt><dd>Os pacotes. O <code>pacman</code> acrescenta sozinho as dependências de cada um.</dd>
+</dl>
+
+<h3>O que é cada pacote</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>O que é</th><th>Precisa?</th></tr>
+<tr><td><code>base</code></td><td>O mínimo para um Arch: <code>bash</code>, <code>coreutils</code>, <code>systemd</code>, <code>pacman</code>, <code>glibc</code>, o chaveiro… (veja a lista abaixo)</td><td><strong>obrigatório</strong></td></tr>
+<tr><td><code>linux</code></td><td>O <strong>kernel</strong> (e os módulos). Alternativas: <code>linux-lts</code> (suporte longo), <code>linux-zen</code>… (veja <a href="kernels.html">Kernels</a>)</td><td><strong>obrigatório</strong> (um kernel; numa VM ou container você até poderia não ter, mas não neste guia)</td></tr>
+<tr><td><code>linux-firmware</code></td><td>Arquivos de <em>firmware</em> que placas de Wi-Fi, vídeo, Bluetooth etc. carregam para funcionar. Hoje é dividido em pacotes por fabricante (<code>linux-firmware-intel</code>, <code>-amdgpu</code>, <code>-realtek</code>…)</td><td><strong>recomendado</strong> em computador real; a VM não precisa</td></tr>
+<tr><td><code>intel-ucode</code> ou <code>amd-ucode</code></td><td>O <strong>microcode</strong>: correções que o fabricante manda para o processador a cada boot (veja <a href="microcode.html">Microcode</a>). Escolha <strong>um</strong>, conforme o seu processador. A VM usou <code>intel-ucode</code> porque o computador do guia é Intel</td><td><strong>recomendado</strong></td></tr>
+<tr><td><code>networkmanager</code></td><td>Gerencia a rede (cabo e Wi-Fi) no sistema instalado. O <code>iwctl</code> do live <strong>não</strong> vem junto</td><td><strong>na prática, obrigatório</strong>: sem um gerenciador de rede, o Arch reinicia sem internet</td></tr>
+<tr><td><code>sudo</code></td><td>Para o seu usuário rodar comandos como administrador (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>)</td><td>recomendado</td></tr>
+<tr><td><code>nano</code> / <code>vim</code></td><td>Editores de texto no terminal. O <code>base</code> <strong>não traz editor nenhum</strong>, e a próxima aula edita arquivos</td><td><strong>pelo menos um</strong></td></tr>
+<tr><td><code>man-db</code>, <code>man-pages</code></td><td>O comando <code>man</code> e os manuais (o <code>base</code> também não traz)</td><td>recomendado</td></tr>
+<tr><td><code>texinfo</code></td><td>O comando <code>info</code> (outro formato de manual, usado pelos programas GNU)</td><td>opcional</td></tr>
+<tr><td><code>grub</code>, <code>efibootmgr</code></td><td>O carregador de boot e a ferramenta que o registra no firmware UEFI (veja <a href="bootloader.html">Bootloader</a>)</td><td>um carregador é obrigatório; com <strong>systemd-boot</strong>, que já vem no <code>systemd</code>, estes dois são dispensáveis</td></tr>
+<tr><td><code>openssh</code></td><td>O <code>ssh</code> (cliente) e o servidor <code>sshd</code> (veja <a href="ssh.html">SSH</a>)</td><td>opcional (o guia usa para controlar a VM)</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Dois pacotes que valem a pena acrescentar</strong>
+<p><code>dosfstools</code> traz o <code>fsck.fat</code>, que confere a partição EFI. Sem ele, o sistema instalado não consegue verificá-la (foi um ajuste que a VM do guia precisou depois). E <code>base-devel</code> traz as ferramentas para compilar pacotes do <a href="aur.html">AUR</a>. Os dois também podem ser instalados depois, com o <code>pacman</code>.</p>
+</div>
+
+<p>Quer conferir o que o <code>base</code> puxa? No sistema já instalado (aqui, a VM do guia, em português):</p>
+
+<pre class="term">$ pacman -Qi base
+Nome                 : base
+Versão               : 3-3
+Descrição            : Minimal package set to define a basic Arch Linux installation
+Arquitetura          : any
+URL                  : https://www.archlinux.org
+Licenças             : GPL
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : filesystem  gcc-libs  glibc  bash  coreutils  file  findutils  gawk  grep  procps-ng  sed  tar  gettext  pciutils  psmisc  shadow  util-linux  bzip2  gzip  xz  licenses  pacman  archlinux-keyring  systemd  systemd-sysvcompat  iputils  iproute2
+Depend. opcionais    : linux: bare metal support [instalado]
+…
+Tamanho instalado    : 0,00 B
+…
+</pre>
+
+<p>O <code>base</code> é um <strong>metapacote</strong>: não tem arquivo nenhum (<code>Tamanho instalado: 0,00 B</code>), só a lista <code>Depende de</code>. Instalá-lo é instalar essas 27 dependências (e as dependências delas). Repare que não há editor, <code>sudo</code> nem <code>man</code>.</p>
+
+<div class="try" data-goal="ran:^pacman +-Qi +base" data-solucao="pacman -Qi base">
+<p class="try-task"><strong>Missão:</strong> na máquina da ana, veja as informações do pacote <code>base</code> e procure na linha <code>Depende de</code>: o <code>sudo</code> está lá?</p>
+</div>
+
+<hr>
+
+<h2>A saída, fase por fase</h2>
+
+<p>A saída real tem mais de 600 linhas. Abaixo ela aparece em trechos, na ordem, com <code>…</code> onde cortamos. Na VM, a instalação inteira levou uns 7 minutos.</p>
+
+<h3>1. O chaveiro (por causa do -K)</h3>
+
+<pre class="term" data-host="archiso" data-user="root">==&gt; Creating install root at /mnt
+gpg: /mnt//etc/pacman.d/gnupg/trustdb.gpg: trustdb created
+gpg: no ultimately trusted keys found
+gpg: starting migration from earlier GnuPG versions
+gpg: porting secret keys from '/mnt//etc/pacman.d/gnupg/secring.gpg' to gpg-agent
+gpg: migration succeeded
+==&gt; Generating pacman master key. This may take some time.
+gpg: Generating pacman keyring master key...
+gpg: directory '/mnt//etc/pacman.d/gnupg/openpgp-revocs.d' created
+gpg: revocation certificate stored as '/mnt//etc/pacman.d/gnupg/openpgp-revocs.d/BFBDF82322D207663E214B7FA4C900C8CB4BE992.rev'
+gpg: Done
+==&gt; Updating trust database...
+gpg: marginals needed: 3  completes needed: 1  trust model: pgp
+gpg: depth: 0  valid:   1  signed:   0  trust: 0-, 0q, 0n, 0m, 0f, 1u
+</pre>
+
+<p>"Criando a raiz da instalação em /mnt" e, por causa do <code>-K</code>, um chaveiro novo em <code>/mnt/etc/pacman.d/gnupg</code>: o <code>pacman</code> gera uma <strong>chave mestra</strong> própria desta instalação (<em>Generating pacman master key</em>), que ele vai usar para "assinar embaixo" das chaves dos desenvolvedores do Arch. As linhas de <code>gpg</code> (<em>trustdb created</em>, <em>no ultimately trusted keys found</em>, <em>migration</em>) são o GnuPG montando um chaveiro do zero; parecem erros, mas são normais. O <code>/mnt//etc</code> com duas barras também é inofensivo.</p>
+
+<p>Por que um chaveiro <strong>próprio</strong>? Cada instalação deve ter a sua chave mestra secreta. Sem o <code>-K</code>, o novo sistema herdaria o chaveiro do live, que é o mesmo em todas as cópias daquela ISO.</p>
+
+<h3>2. Sincronizar e resolver dependências</h3>
+
+<pre class="term" data-host="archiso" data-user="root">==&gt; Installing packages to /mnt
+:: Synchronizing package databases...
+ core downloading...
+ extra downloading...
+resolving dependencies...
+:: There are 2 providers available for libxtables.so=12-64:
+:: Repository core
+   1) iptables  2) iptables-legacy
+
+Enter a number (default=1):
+:: There are 3 providers available for initramfs:
+:: Repository core
+   1) mkinitcpio
+:: Repository extra
+   2) booster  3) dracut
+
+Enter a number (default=1):
+looking for conflicting packages...
+</pre>
+
+<ul>
+  <li><em>Synchronizing package databases</em>: baixa as listas de pacotes dos repositórios <code>core</code> (o essencial) e <code>extra</code> (o resto) do primeiro espelho.</li>
+  <li><em>resolving dependencies</em>: calcula tudo o que os pacotes pedidos precisam.</li>
+  <li><em>There are 2 providers available for…</em>: "há 2 fornecedores para…". Alguma dependência pode ser satisfeita por mais de um pacote, e o <code>pacman</code> pergunta qual. Aqui: qual <code>iptables</code> (o normal ou o legado) e qual gerador de <strong>initramfs</strong> (o <code>mkinitcpio</code>, padrão do Arch, ou as alternativas <code>booster</code> e <code>dracut</code>).</li>
+  <li><em>Enter a number (default=1):</em> sem resposta: o <code>pacstrap</code> roda o <code>pacman</code> em modo não interativo, que aceita o padrão (o 1) e as confirmações sozinho. É o que você quer. Para responder você mesmo, use <code>pacstrap -i</code>.</li>
+  <li><em>looking for conflicting packages</em>: confere se dois pacotes não brigam pelo mesmo arquivo.</li>
+</ul>
+
+<h3>3. O resumo</h3>
+
+<pre class="term" data-host="archiso" data-user="root">Packages (193) acl-2.4.0-1  archlinux-keyring-20260909-1  attr-2.6.0-1  audit-4.2.1-1  bash-5.3.20-1  binutils-2.47-4  …  base-3-3  efibootmgr-18-4  grub-2:2.16-1  intel-ucode-20260925-1  linux-7.2.10.arch1-1  linux-firmware-20260916-1  man-db-2.13.1-2  man-pages-6.19-1  nano-9.2-1  networkmanager-1.58.1-2  openssh-10.6p1-2  sudo-1.9.17.p2-6  texinfo-7.3-1  vim-9.2.1178-1
+
+Total Download Size:    765.50 MiB
+Total Installed Size:  1397.21 MiB
+
+:: Proceed with installation? [Y/n]
+</pre>
+
+<p>Dos 14 pacotes pedidos, saíram <strong>193</strong>: os outros 179 são dependências (a lista foi encurtada no <code>…</code>; os pedidos aparecem no fim). Para baixar: <strong>765,50 MiB</strong>; depois de instalado: <strong>1.397,21 MiB</strong>. A pergunta "Continuar a instalação?" é respondida sozinha com o padrão (<code>Y</code>, sim). Repare no formato <code>nome-versão-lançamento</code>, como <code>linux-7.2.10.arch1-1</code>; <code>grub-2:2.16-1</code> tem um <code>2:</code> na frente, a "época", usada quando a numeração de versão de um programa muda de esquema.</p>
+
+<h3>4. Baixar (e um tropeço real)</h3>
+
+<pre class="term" data-host="archiso" data-user="root">:: Retrieving packages...
+ linux-7.2.10.arch1-1-x86_64 downloading...
+ linux-firmware-intel-20260916-1-any downloading...
+ linux-firmware-nvidia-20260916-1-any downloading...
+…
+checking keyring...
+error: failed retrieving file 'linux-firmware-broadcom-20260916-1-any.pkg.tar.zst' from mirror.ufscar.br : Operation too slow. Less than 1 bytes/sec transferred the last 10 seconds
+error: failed retrieving file 'vim-runtime-9.2.1178-1-x86_64.pkg.tar.zst' from mirror.ufscar.br : Operation too slow. Less than 1 bytes/sec transferred the last 10 seconds
+checking package integrity...
+</pre>
+
+<p>Cada pacote é um arquivo <code>.pkg.tar.zst</code> (um pacote compactado com zstd). No meio, dois <code>error</code> reais: "falha ao baixar o arquivo … de mirror.ufscar.br: operação lenta demais, menos de 1 byte/s nos últimos 10 segundos". O primeiro espelho engasgou com dois arquivos, e o <code>pacman</code> fez o que devia: <strong>pegou os dois no espelho seguinte</strong> da lista. Tanto que a instalação continuou e terminou com código 0. Esse tipo de <code>error</code> só é um problema se todos os espelhos falharem.</p>
+
+<h3>5. Conferir antes de instalar</h3>
+
+<pre class="term" data-host="archiso" data-user="root">checking keyring...
+checking package integrity...
+loading package files...
+checking for file conflicts...
+checking available disk space...
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Tradução</th><th>O que confere</th></tr>
+<tr><td><code>checking keyring</code></td><td>conferindo o chaveiro</td><td>se as chaves de quem assinou cada pacote estão no chaveiro</td></tr>
+<tr><td><code>checking package integrity</code></td><td>conferindo a integridade</td><td>a <strong>assinatura</strong> de cada pacote: é aqui que um chaveiro velho dá erro (veja <a href="#erros">Quando não funciona</a>)</td></tr>
+<tr><td><code>loading package files</code></td><td>carregando os arquivos</td><td>a lista de arquivos de cada pacote</td></tr>
+<tr><td><code>checking for file conflicts</code></td><td>procurando conflitos</td><td>se algum arquivo já existe ou pertence a dois pacotes</td></tr>
+<tr><td><code>checking available disk space</code></td><td>conferindo o espaço</td><td>se cabe tudo em <code>/mnt</code></td></tr>
+</table>
+</div>
+
+<h3>6. Instalar</h3>
+
+<pre class="term" data-host="archiso" data-user="root">:: Processing package changes...
+installing iana-etc...
+installing filesystem...
+installing linux-api-headers...
+installing tzdata...
+Optional dependencies for tzdata
+    bash: for tzselect [pending]
+    glibc: for zdump, zic [pending]
+installing glibc...
+…
+installing systemd...
+Initializing machine ID from random generator.
+Creating group 'sys' with GID 3.
+…
+Creating user 'systemd-timesync' (systemd Time Synchronization) with UID 973 and GID 973.
+…
+installing archlinux-keyring...
+==&gt; Appending keys from archlinux.gpg...
+==&gt; Locally signing trusted keys in keyring...
+  -&gt; Locally signed 5 keys.
+==&gt; Importing owner trust values...
+…
+==&gt; Disabling revoked keys in keyring...
+  -&gt; Disabled 38 keys.
+…
+installing linux...
+…
+installing grub...
+:: Install your bootloader and generate configuration with:
+     # grub-install ...
+     # grub-mkconfig -o /boot/grub/grub.cfg
+…
+installing openssh...
+</pre>
+
+<ul>
+  <li><em>installing X...</em>: um pacote por linha, na ordem das dependências (o <code>filesystem</code>, que cria as pastas básicas, vem logo no começo).</li>
+  <li><em>Optional dependencies for X</em>: "dependências opcionais": pacotes que <strong>acrescentam</strong> recursos, mas não são necessários. <code>[pending]</code> = vai ser instalado nesta mesma transação; <code>[installed]</code> = já está. Os sem marca não serão instalados. Só informação.</li>
+  <li><em>installing systemd</em>: cria o identificador da máquina e os <strong>grupos e usuários de sistema</strong> (<code>wheel</code>, <code>audio</code>, <code>systemd-timesync</code>…) que os serviços usam.</li>
+  <li><em>installing archlinux-keyring</em>: aqui o chaveiro criado pelo <code>-K</code> é preenchido. A chave mestra da instalação "assina embaixo" das 5 chaves mestras do Arch (<em>Locally signed 5 keys</em>), e 38 chaves revogadas (de ex-desenvolvedores, por exemplo) são desativadas.</li>
+  <li><em>installing grub</em>: o pacote avisa que só instalá-lo não basta: é preciso rodar <code>grub-install</code> e <code>grub-mkconfig</code>, o que você vai fazer na aula <a href="bootloader.html">Bootloader</a>.</li>
+</ul>
+
+<h3>7. Os hooks e o mkinitcpio</h3>
+
+<p>Depois de instalar tudo, o <code>pacman</code> roda os <strong>hooks</strong> (ganchos): tarefas que alguns pacotes pedem para executar no fim (veja <a href="hooks.html">Hooks do pacman</a>).</p>
+
+<pre class="term" data-host="archiso" data-user="root">:: Running post-transaction hooks...
+( 1/18) Generating the configured locale...
+Generating locales...
+Generation complete.
+( 2/18) Configuring dynamic linker run-time bindings...
+( 3/18) Creating iconv module configuration cache...
+( 4/18) Creating system user accounts...
+…
+( 8/18) Applying kernel sysctl settings...
+  Skipped: Running in chroot.
+…
+(15/18) Updating linux initcpios...
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+==&gt; Using default configuration file: '/etc/mkinitcpio.conf'
+  -&gt; -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
+==&gt; Starting build: '7.2.10-arch1-1'
+  -&gt; Running build hook: [base]
+  -&gt; Running build hook: [systemd]
+  -&gt; Running build hook: [autodetect]
+  -&gt; Running build hook: [microcode]
+  -&gt; Running build hook: [modconf]
+  -&gt; Running build hook: [kms]
+  -&gt; Running build hook: [keyboard]
+  -&gt; Running build hook: [sd-vconsole]
+==&gt; WARNING: sd-vconsole: "/etc/vconsole.conf" not found, will use default values   « normal nesta etapa
+  -&gt; Running build hook: [block]
+  -&gt; Running build hook: [filesystems]
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
+  -&gt; Early uncompressed CPIO image generation successful
+==&gt; Initcpio image generation successful
+(16/18) Reloading system bus configuration...
+  Skipped: Running in chroot.
+(17/18) Checking for old perl modules...
+(18/18) Updating the info directory file...
+#> echo $?
+0
+</pre>
+
+<ul>
+  <li><em>Skipped: Running in chroot</em>: "pulado: rodando em chroot". Alguns hooks recarregariam serviços do sistema em execução; como o novo sistema ainda não está rodando (o <code>pacstrap</code> trabalha "de fora", num <em>chroot</em>), não há o que recarregar. Normal.</li>
+  <li><em>(15/18) Updating linux initcpios</em>: o pacote <code>linux</code> pede para gerar o <strong>initramfs</strong>, um pequeno sistema que o carregador entrega ao kernel junto com ele, com o que for preciso para achar e montar a raiz. Quem gera é o <code>mkinitcpio</code> (veja <a href="mkinitcpio.html">mkinitcpio e initramfs</a>).</li>
+  <li><em>-k /boot/vmlinuz-linux -g /boot/initramfs-linux.img</em>: o kernel e o initramfs ficam em <code>/boot</code>, ou seja, na <strong>partição EFI</strong> montada em <code>/mnt/boot</code>. É por isso que a ordem de montagem importa.</li>
+  <li><em>Running build hook: […]</em>: cada "gancho" do initramfs acrescenta uma parte: o <code>[microcode]</code> embute o <code>intel-ucode</code>; o <code>[keyboard]</code>, o suporte a teclado; o <code>[filesystems]</code>, os módulos de ext4… Só a predefinição <code>'default'</code> é gerada: as versões atuais do <code>mkinitcpio</code> não geram mais a imagem <em>fallback</em> por padrão.</li>
+  <li><strong><em>WARNING: sd-vconsole: "/etc/vconsole.conf" not found, will use default values</em></strong>: "AVISO: /etc/vconsole.conf não encontrado, usando os valores padrão". O <code>vconsole.conf</code> guarda o teclado e a fonte do console, e você ainda não o criou: isso acontece na <a href="configurar.html">próxima aula</a> (<code>KEYMAP=br-abnt2</code>). Lá o initramfs é gerado de novo, já com o teclado certo. <strong>Pode ignorar</strong> aqui.</li>
+  <li><em>Initcpio image generation successful</em>: o initramfs foi criado.</li>
+</ul>
+
+<p>O <code>pacstrap</code> termina sem nenhuma frase de "pronto": o código de saída 0 confirma. O novo Arch está instalado em <code>/mnt</code>, mas ainda não sabe o seu fuso, idioma, nome, senha nem como iniciar.</p>
+
+<hr>
+
+<h2 id="erros">Quando não funciona</h2>
+
+<p>A instalação da VM correu bem, então as mensagens abaixo são <strong>ilustrativas</strong> (o texto é o do <code>pacman</code> em inglês, com nomes e números de exemplo), exceto onde indicado.</p>
+
+<div class="cenario">
+<strong>Assinatura "unknown trust" ou "invalid": chaveiro desatualizado</strong>
+<pre class="term" data-host="archiso" data-user="root">checking package integrity...
+error: openssh: signature from "Fulano de Tal &lt;fulano@archlinux.org&gt;" is unknown trust
+:: File /mnt/var/cache/pacman/pkg/openssh-10.6p1-2-x86_64.pkg.tar.zst is corrupted (invalid or corrupted package (PGP signature)).
+Do you want to delete it? [Y/n]
+error: failed to commit transaction (invalid or corrupted package (PGP signature))
+Errors occurred, no packages were upgraded.
+==&gt; ERROR: Failed to install packages to new root
+</pre>
+<p><strong>O que aconteceu:</strong> o pacote foi assinado por uma chave que o chaveiro do live não conhece ou não considera válida ("confiança desconhecida"). Acontece com <strong>ISOs antigas</strong>: o chaveiro delas é de meses atrás, e um desenvolvedor novo (ou uma chave renovada) assinou o pacote depois. O arquivo não está corrompido de verdade; o <code>pacman</code> só não consegue provar que é legítimo.</p>
+<p><strong>Como resolver:</strong> atualize o chaveiro <strong>do live</strong> e rode o <code>pacstrap</code> de novo:</p>
+<pre class="term" data-host="archiso" data-user="root">#> pacman -Sy archlinux-keyring
+</pre>
+<p>Instalar um pacote só com <code>-Sy</code> (sem atualizar o resto) é perigoso num sistema de verdade (veja <a href="atualizar.html">Atualizar o Sistema</a>); no live, que é descartável, é a solução indicada pela Wiki. Ainda melhor: use uma ISO recente. Também confira o relógio (<code>timedatectl</code>): com a data errada, chaves válidas parecem vencidas.</p>
+</div>
+
+<div class="cenario">
+<strong>"failed to synchronize all databases": sem internet</strong>
+<pre class="term" data-host="archiso" data-user="root">:: Synchronizing package databases...
+error: failed retrieving file 'core.db' from mirror.ufscar.br : Could not resolve host: mirror.ufscar.br
+…
+error: failed to synchronize all databases (download library error)
+==&gt; ERROR: Failed to install packages to new root
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>pacman</code> não conseguiu baixar nem a lista de pacotes: "não foi possível resolver o nome" = sem internet ou sem DNS.</p>
+<p><strong>Como resolver:</strong> volte ao <a href="ambiente-live.html#ping">teste com ping</a>. Se a internet funciona e só os espelhos falham (todos com <code>Operation too slow</code> ou <code>timed out</code>, como os avisos reais acima), refaça a lista com o <code>reflector</code> sem o filtro de país, ou com <code>--download-timeout 15</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"not enough free disk space": disco cheio ou /mnt não montado</strong>
+<pre class="term" data-host="archiso" data-user="root">checking available disk space...
+error: Partition / too full: 357700 blocks needed, 61200 blocks free
+error: not enough free disk space
+error: failed to commit transaction (not enough free disk space)
+Errors occurred, no packages were upgraded.
+==&gt; ERROR: Failed to install packages to new root
+</pre>
+<p><strong>O que aconteceu:</strong> não cabe. Se a partição citada é <code>/</code> (a do live) e não <code>/mnt</code>, quase sempre é porque <strong>nada está montado em <code>/mnt</code></strong>: o <code>pacstrap</code> tentou instalar na memória do live, que tem pouco espaço. Se a partição é <code>/mnt</code>, a raiz que você criou é pequena demais (a instalação do guia ocupa 1,4 GiB, e um desktop leva vários GiB).</p>
+<p><strong>Como resolver:</strong> <code>findmnt /mnt</code> e <code>lsblk -f</code>; monte a raiz e a EFI (veja <a href="formatar-montar.html">Formatar e Montar</a>) e rode de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>"target not found": nome de pacote errado</strong>
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux networkmanger
+…
+error: target not found: networkmanger
+==&gt; ERROR: Failed to install packages to new root
+</pre>
+<p><strong>O que aconteceu:</strong> "alvo não encontrado": não existe pacote com esse nome (aqui faltou um <code>a</code> em <code>networkmanager</code>). Nada é instalado: o <code>pacman</code> só começa quando todos os nomes existem.</p>
+<p><strong>Como resolver:</strong> corrija o nome. Para procurar: <code>pacman -Ss networkmanager</code> (funciona no live).</p>
+</div>
+
+<div class="cenario">
+<strong>Caiu no meio: "unable to lock database"</strong>
+<p><strong>O que aconteceu:</strong> se o <code>pacstrap</code> foi interrompido (queda de energia, <kbd>Ctrl</kbd>+<kbd>C</kbd>, SSH caiu), o <code>pacman</code> pode ter deixado para trás o arquivo de trava <code>/mnt/var/lib/pacman/db.lck</code>, que impede outro <code>pacman</code> de rodar ao mesmo tempo. Na VM do guia isso aconteceu de verdade, mais tarde, no sistema instalado e em português: <code>erro: falha ao sincronizar todas as bases de dados (não foi possível travar a base de dados)</code>.</p>
+<p><strong>Como resolver:</strong> confira que nenhum <code>pacman</code> está rodando (<code>pgrep -a pacman</code> não mostra nada), apague a trava (<code>rm /mnt/var/lib/pacman/db.lck</code>) e rode o mesmo <code>pacstrap</code> de novo: ele reinstala o que faltou.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (no live)</th><th>Para quê</th></tr>
+<tr><td><code>reflector --country Brazil --protocol https --latest 5 --sort rate --save /etc/pacman.d/mirrorlist</code></td><td>Lista de espelhos brasileiros, do mais rápido ao mais lento</td></tr>
+<tr><td><code>reflector … --download-timeout 15</code></td><td>Mais paciência para medir espelhos (rede lenta)</td></tr>
+<tr><td><code>cat /etc/pacman.d/mirrorlist</code></td><td>Ver a lista (o primeiro <code>Server</code> é o usado)</td></tr>
+<tr><td><code>pacstrap -K /mnt base linux linux-firmware …</code></td><td>Instala o sistema em <code>/mnt</code>, com chaveiro novo</td></tr>
+<tr><td><code>pacstrap -i …</code></td><td>O mesmo, respondendo você às perguntas do <code>pacman</code></td></tr>
+<tr><td><code>pacman -Sy archlinux-keyring</code></td><td>Atualiza o chaveiro do live (erros de assinatura)</td></tr>
+<tr><td><code>findmnt /mnt</code></td><td>Confere se há algo montado em <code>/mnt</code> antes do <code>pacstrap</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O comando</h3>
+<p>Complete a instalação mínima, com chaveiro novo, na raiz montada:</p>
+<div class="ex-code">pacstrap <input data-answer="-K" aria-label="opção"> <input data-answer="/mnt" aria-label="destino"> base linux linux-firmware</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só espelhos do Brasil</h3>
+<div class="ex-code">reflector --country <input data-answer="Brazil|BR" aria-label="país"> --protocol https --latest 5 --sort <input data-answer="rate" aria-label="ordenar por"> --save /etc/pacman.d/mirrorlist</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O <code>reflector</code> mostrou <code>WARNING: failed to rate http(s) download … Download timed out after 5 second(s).</code> e terminou com código 0. O que aconteceu?</p>
+<label><input type="radio" name="q3"> A lista de espelhos não foi gravada.</label>
+<label><input type="radio" name="q3"> Um espelho não respondeu a tempo para ser medido; ele vai para o fim da lista, e a lista foi gravada.</label>
+<label><input type="radio" name="q3"> A internet caiu.</label>
+<label><input type="radio" name="q3"> O espelho foi apagado do Arch.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. No fim do <code>pacstrap</code> aparece <code>WARNING: sd-vconsole: "/etc/vconsole.conf" not found</code>. O que fazer?</p>
+<label><input type="radio" name="q4"> Rodar o <code>pacstrap</code> de novo.</label>
+<label><input type="radio" name="q4"> Formatar a partição EFI.</label>
+<label><input type="radio" name="q4"> Instalar o pacote <code>vconsole</code>.</label>
+<label><input type="radio" name="q4"> Nada agora: o arquivo é criado na configuração, e o initramfs é gerado de novo depois.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual destes o pacote <code>base</code> <strong>não</strong> traz, e por isso precisa estar na lista do <code>pacstrap</code>?</p>
+<label><input type="radio" name="q5"> Um editor de texto (<code>nano</code> ou <code>vim</code>).</label>
+<label><input type="radio" name="q5"> O <code>bash</code>.</label>
+<label><input type="radio" name="q5"> O <code>systemd</code>.</label>
+<label><input type="radio" name="q5"> O <code>pacman</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Os espelhos ficam em <code>/etc/pacman.d/mirrorlist</code>; o primeiro <code>Server</code> é tentado primeiro, e a lista vai junto para o sistema instalado.</li>
+  <li><code>reflector --country Brazil … --sort rate --save …</code> monta a lista; os avisos <code>Download timed out</code> só mandam aquele espelho para o fim.</li>
+  <li><code>pacstrap -K /mnt base linux linux-firmware intel-ucode networkmanager sudo nano …</code>: o <code>-K</code> cria um chaveiro próprio; o <code>base</code> não traz editor, <code>sudo</code>, <code>man</code> nem gerenciador de rede.</li>
+  <li>Na VM: 193 pacotes, 765,50 MiB de download, 1.397,21 MiB instalados; código de saída 0.</li>
+  <li>O aviso do <code>vconsole.conf</code> no <code>mkinitcpio</code> é esperado; erros de assinatura se resolvem com <code>pacman -Sy archlinux-keyring</code> no live.</li>
+</ul>
+
+<p>O sistema está no disco, mas ainda "cru". Próximo passo: entrar nele e configurar fuso, idioma, teclado, nome e senhas em <a href="configurar.html">Configurar o Sistema (chroot)</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> os passos estão em <a href="https://wiki.archlinux.org/title/Installation_guide#Installation">Installation guide — Installation</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). Para aprofundar: <a href="https://wiki.archlinux.org/title/Mirrors">Mirrors</a> (<a href="https://wiki.archlinux.org/title/Mirrors_(Portugu%C3%AAs)">em português</a>), <a href="https://wiki.archlinux.org/title/Reflector">Reflector</a> (<a href="https://wiki.archlinux.org/title/Reflector_(Portugu%C3%AAs)">em português</a>), <a href="https://wiki.archlinux.org/title/Pacman/Package_signing">Pacman/Package signing</a> (inclusive a seção sobre chaveiro desatualizado), <a href="https://wiki.archlinux.org/title/Meta_package_and_package_group">Meta package and package group</a>, <a href="https://wiki.archlinux.org/title/Microcode">Microcode</a> e <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a> (<a href="https://wiki.archlinux.org/title/Mkinitcpio_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

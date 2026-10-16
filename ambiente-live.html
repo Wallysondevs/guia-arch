@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch ambiente live — teclado, UEFI, rede e relógio | Guia Arch</title>
+<meta name="description" content="O ambiente live da ISO do Arch explicado linha por linha: login automático como root, teclado br-abnt2, fonte maior, confirmar UEFI, rede por cabo e Wi-Fi com iwctl, ping, relógio com timedatectl e SSH para instalar de outro computador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: o <span class="hl">ambiente live</span></h1>
+
+<p class="intro">Quando o computador inicia pelo pendrive do Arch, você não cai num instalador com botões: cai num <strong>terminal</strong>, já logado como administrador. Esse sistema temporário é o <strong>ambiente live</strong>. É dele que você vai preparar o disco e instalar o Arch. Nesta aula você aprende a se orientar nele e a deixar quatro coisas prontas antes de mexer no disco: teclado, modo de boot, internet e relógio.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o ambiente live e o que cada linha da tela inicial quer dizer.</li>
+  <li>Trocar o teclado para ABNT2 (<code>loadkeys br-abnt2</code>) e aumentar a fonte.</li>
+  <li>Confirmar que iniciou em modo UEFI (<code>fw_platform_size</code>).</li>
+  <li>Conectar à internet por cabo ou Wi-Fi (<code>iwctl</code>) e testar com <code>ping</code>.</li>
+  <li>Conferir o relógio (<code>timedatectl</code>) e, se quiser, instalar de outro computador por SSH.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>O live fala inglês</strong>
+<p>Diferente do sistema que você vai instalar (que estará em português), o ambiente live mostra tudo em inglês. Nesta aula, cada saída real aparece em inglês, como você vai vê-la, e é traduzida e explicada logo abaixo. As saídas vêm da instalação real da VM do guia (ISO de 1º de junho de 2026); o que não deu para rodar na VM está marcado como <strong>ilustrativo</strong>.</p>
+</div>
+
+<hr>
+
+<h2>Iniciar pelo pendrive</h2>
+
+<p>Escolha o pendrive no menu de boot do computador (<kbd>F12</kbd>, <kbd>F11</kbd>, <kbd>F8</kbd>… veja <a href="preparar.html">Baixar e Verificar a ISO</a>) ou, na VM, só ligue a máquina com a ISO na unidade óptica. Aparece primeiro um pequeno menu da ISO; a primeira opção, <em>Arch Linux install medium (x86_64, UEFI)</em>, inicia sozinha em alguns segundos. Depois de uma rolagem de mensagens do kernel, você chega a esta tela:</p>
+
+<figure><img src="img/live-boot.png" alt="Tela preta de texto: Arch Linux 7.0.10-arch1-1 (tty1), archiso login: root (automatic login), instruções em inglês sobre o guia de instalação, iwctl e mmcli, uma faixa de blocos coloridos e o prompt root@archiso ~ #" loading="lazy"><figcaption>A tela real do ambiente live, na VM do guia, logo depois do boot da ISO 2026.06.01.</figcaption></figure>
+
+<p>Linha por linha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na tela</th><th>Tradução</th><th>O que quer dizer</th></tr>
+<tr><td><code>Arch Linux 7.0.10-arch1-1 (tty1)</code></td><td>—</td><td>O nome do sistema, a versão do <strong>kernel</strong> que veio na ISO e o terminal em que você está (<code>tty1</code>, o primeiro console de texto). O sistema instalado terá um kernel mais novo, baixado na hora.</td></tr>
+<tr><td><code>archiso login: root (automatic login)</code></td><td>login em archiso: root (login automático)</td><td><code>archiso</code> é o nome da máquina no live. Você já entrou como <strong>root</strong>, o administrador, sem senha.</td></tr>
+<tr><td><code>To install Arch Linux follow the installation guide: https://wiki.archlinux.org/title/Installation_guide</code></td><td>Para instalar o Arch Linux, siga o guia de instalação: …</td><td>O roteiro oficial, que este guia acompanha passo a passo.</td></tr>
+<tr><td><code>For Wi-Fi, authenticate to the wireless network using the iwctl utility.</code></td><td>Para Wi-Fi, autentique-se na rede sem fio com o utilitário iwctl.</td><td>Veja <a href="#wifi">Wi-Fi com iwctl</a>, abaixo.</td></tr>
+<tr><td><code>For mobile broadband (WWAN) modems, connect with the mmcli utility.</code></td><td>Para modems de banda larga móvel (WWAN), conecte com o mmcli.</td><td>Para notebooks com chip 4G/5G. Raro.</td></tr>
+<tr><td><code>Ethernet, WLAN and WWAN interfaces using DHCP should work automatically.</code></td><td>Interfaces cabeadas, sem fio e móveis com DHCP devem funcionar sozinhas.</td><td>Com <strong>cabo</strong>, a internet já deve estar funcionando. (DHCP é o serviço do roteador que entrega um endereço para a máquina.)</td></tr>
+<tr><td><code>After connecting to the internet, the installation guide can be accessed via the convenience script Installation_guide.</code></td><td>Depois de conectar, o guia de instalação pode ser lido pelo script <code>Installation_guide</code>.</td><td>Digitar <code>Installation_guide</code> abre a página da Wiki num navegador de texto, no próprio terminal.</td></tr>
+<tr><td>a faixa de blocos coloridos</td><td>—</td><td>Só decoração: mostra as cores que o console consegue exibir.</td></tr>
+<tr><td><code>root@archiso ~ #</code></td><td>—</td><td>O <strong>prompt</strong>: usuário <code>root</code>, máquina <code>archiso</code>, pasta atual <code>~</code> (a pasta pessoal do root) e <code>#</code>, o símbolo de administrador.</td></tr>
+</table>
+</div>
+
+<h3>O que é, afinal, o ambiente live</h3>
+<ul>
+  <li>É um Arch completo e mínimo que roda <strong>da memória RAM</strong>, lido do pendrive. Ele não toca no seu disco até você mandar.</li>
+  <li><strong>Nada fica salvo</strong>: tudo o que você mudar nele (teclado, senha, arquivos) some ao desligar. O que importa é o que você gravar no disco durante a instalação.</li>
+  <li>O shell é o <strong>zsh</strong> (não o Bash), com completação por <kbd>Tab</kbd> bem esperta: <code>loadkeys br-<kbd>Tab</kbd></code> lista os teclados. Os comandos desta aula funcionam igual nos dois.</li>
+  <li>Você é <strong>root</strong> o tempo todo: não existe <code>sudo</code> aqui, e nada pede confirmação. Atenção redobrada a partir da aula de <a href="particionar.html">partições</a>.</li>
+  <li>Há seis consoles de texto: <kbd>Alt</kbd>+<kbd>F2</kbd> abre outro, já logado (útil para ler a Wiki num enquanto instala no outro); <kbd>Alt</kbd>+<kbd>F1</kbd> volta.</li>
+</ul>
+
+<p>Você vai ver isso no <code>lsblk</code> da <a href="particionar.html">próxima aula</a>: o sistema do live é um arquivo compactado montado em <code>/run/archiso/airootfs</code>, e o pendrive (na VM, o "CD" <code>sr0</code>) fica em <code>/run/archiso/bootmnt</code>.</p>
+
+<hr>
+
+<h2>Teclado: loadkeys br-abnt2</h2>
+
+<p>O live começa com o teclado <strong>americano</strong> (US). Num teclado brasileiro ABNT2, várias teclas saem trocadas: o <code>ç</code> não existe, <code>/</code> e <code>?</code> mudam de lugar, os acentos não funcionam. Antes de digitar qualquer coisa importante, troque o mapa de teclas:</p>
+
+<dl class="anatomy">
+  <dt>loadkeys</dt><dd>(<em>load keys</em>, "carregar teclas") Troca o mapa de teclado do console de texto.</dd>
+  <dt>br-abnt2</dt><dd>O mapa brasileiro ABNT2 (o teclado com <kbd>Ç</kbd>, o mais comum no Brasil).</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> loadkeys br-abnt2
+#> echo $?
+0
+</pre>
+
+<p>Não aparece nada: no Linux, silêncio costuma querer dizer sucesso, e o código de saída 0 confirma. Teste digitando <code>ç</code> e <code>/</code>. (O hífen de <code>br-abnt2</code> fica no mesmo lugar nos dois teclados, à direita do <kbd>0</kbd>, então dá para digitar o comando mesmo com o mapa americano.)</p>
+
+<p>Outros mapas brasileiros e o do teclado americano com acentos (comum em notebooks importados). A lista é do pacote <code>kbd</code>, o mesmo no live e no sistema instalado (conferida na VM):</p>
+
+<pre class="term">$ localectl list-keymaps | grep -i '^br'
+br-abnt
+br-abnt2
+br-latin1-abnt2
+br-latin1-us
+$ localectl list-keymaps | grep -i acentos
+us-acentos
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Seu teclado</th><th>Comando</th></tr>
+<tr><td>Brasileiro ABNT2 (tem <kbd>Ç</kbd>)</td><td><code>loadkeys br-abnt2</code></td></tr>
+<tr><td>Americano, mas você quer acentos (US internacional)</td><td><code>loadkeys us-acentos</code></td></tr>
+<tr><td>Americano, sem acentos</td><td>não precisa fazer nada (é o padrão)</td></tr>
+</table>
+</div>
+
+<p>Essa troca vale <strong>só para o live</strong>. Para o sistema instalado, o teclado é gravado em <code>/etc/vconsole.conf</code> na aula <a href="configurar.html">Configurar o Sistema</a>.</p>
+
+<h3>Letras pequenas demais? setfont</h3>
+
+<p>Em telas de alta resolução (notebooks com tela 2K/4K), as letras do console ficam minúsculas. O live traz a fonte <strong>Terminus</strong> em vários tamanhos; a maior é a de 32 pixels de altura:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> setfont ter-132b
+</pre>
+
+<dl class="anatomy">
+  <dt>setfont</dt><dd>Troca a fonte do console de texto.</dd>
+  <dt>ter-132b</dt><dd>Terminus (<code>ter</code>), conjunto de caracteres 1 (Europa ocidental, com acentos), <code>32</code> pixels de altura, <code>b</code> de <em>bold</em> (negrito). Há também <code>ter-124b</code>, <code>ter-128b</code>…</dd>
+</dl>
+
+<p>Esse comando é <strong>ilustrativo</strong> neste guia: a VM tem resolução baixa e não precisou dele. Para ver todas as fontes: <code>ls /usr/share/kbd/consolefonts/</code>. <code>setfont</code> sozinho volta à fonte padrão.</p>
+
+<hr>
+
+<h2>Confirmar o modo de boot: UEFI</h2>
+
+<p>O guia instala em modo <strong>UEFI</strong> (veja <a href="preparar.html">BIOS, UEFI e Secure Boot</a>). Se o pendrive tiver iniciado em modo BIOS antigo, a partição EFI e o GRUB das próximas aulas não vão funcionar. Por isso, confira antes:</p>
+
+<dl class="anatomy">
+  <dt>cat</dt><dd>Mostra o conteúdo de um arquivo.</dd>
+  <dt>/sys/firmware/efi/fw_platform_size</dt><dd>Um "arquivo" que o kernel cria em <code>/sys</code> <strong>só quando o computador iniciou em UEFI</strong>. Ele contém o tamanho da plataforma do firmware.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> cat /sys/firmware/efi/fw_platform_size
+64
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Resultado</th><th>O que quer dizer</th><th>O que fazer</th></tr>
+<tr><td><code>64</code></td><td>UEFI de 64 bits (o normal; o da VM do guia)</td><td>siga em frente</td></tr>
+<tr><td><code>32</code></td><td>UEFI de 32 bits (alguns tablets e notebooks baratos antigos)</td><td>dá para instalar, mas só com GRUB (veja <a href="bootloader.html">Bootloader</a>)</td></tr>
+<tr><td><code>cat: /sys/firmware/efi/fw_platform_size: No such file or directory</code> ("arquivo ou diretório inexistente")</td><td>iniciou em modo <strong>BIOS</strong> (Legacy/CSM)</td><td>reinicie, desligue o CSM/Legacy no firmware e escolha a entrada "UEFI" do pendrive; na VM, ligue "Habilitar EFI"</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Internet</h2>
+
+<p>A ISO não traz os pacotes do sistema: eles são baixados durante a instalação. Sem internet, não há instalação.</p>
+
+<h3>Ver as placas de rede: ip link</h3>
+
+<dl class="anatomy">
+  <dt>ip</dt><dd>A ferramenta de rede do Linux (do pacote <code>iproute2</code>).</dd>
+  <dt>link</dt><dd>Mostra as placas de rede ("interfaces") e o estado de cada uma, sem os endereços.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> ip link
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000   « a placa com cabo
+    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
+    altname enx08002774b203
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>O que quer dizer</th></tr>
+<tr><td><code>1: lo</code></td><td>A interface <em>loopback</em>: uma rede "de mentira" da máquina com ela mesma. Sempre existe; ignore.</td></tr>
+<tr><td><code>2: enp0s3</code></td><td>A placa de rede <strong>com cabo</strong>. O nome segue uma regra: <code>en</code> = Ethernet (cabo), <code>p0</code> = barramento PCI 0, <code>s3</code> = encaixe (<em>slot</em>) 3. Uma placa Wi-Fi começa com <code>wl</code> (por exemplo <code>wlan0</code> ou <code>wlp2s0</code>); um modem 4G, com <code>ww</code>.</td></tr>
+<tr><td><code>&lt;…UP,LOWER_UP&gt;</code></td><td><code>UP</code>: a placa está ligada. <code>LOWER_UP</code>: há sinal no cabo. Sem <code>LOWER_UP</code>, o cabo está solto ou o outro lado está desligado.</td></tr>
+<tr><td><code>state UP</code></td><td>Pronta para usar.</td></tr>
+<tr><td><code>link/ether 08:00:27:74:b2:03</code></td><td>O endereço físico (MAC) da placa. <code>08:00:27</code> é o começo dos MACs do VirtualBox.</td></tr>
+<tr><td><code>altname enx08002774b203</code></td><td>Um nome alternativo para a mesma placa, montado a partir do MAC.</td></tr>
+</table>
+</div>
+
+<p><strong>Com cabo</strong>, é só isso: o live pede um endereço ao roteador sozinho (DHCP). Pule para <a href="#ping">testar com ping</a>.</p>
+
+<h3 id="wifi">Wi-Fi com iwctl</h3>
+
+<p>Para Wi-Fi, o live traz o <strong>iwd</strong> (<em>iNet wireless daemon</em>), um serviço da Intel para redes sem fio, e o <code>iwctl</code>, o programa para conversar com ele. A VM do guia não tem placa Wi-Fi, então a sessão abaixo é <strong>ilustrativa</strong> (o formato é o do <code>iwctl</code>; o nome da rede e o MAC são inventados). Primeiro, entre no <code>iwctl</code>; o prompt muda para <code>[iwd]#</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> iwctl
+[iwd]# device list
+                                    Devices
+--------------------------------------------------------------------------------
+  Name                  Address               Powered     Adapter     Mode
+--------------------------------------------------------------------------------
+  wlan0                 3c:a9:f4:12:34:56     on          phy0        station
+[iwd]# station wlan0 scan
+[iwd]# station wlan0 get-networks
+                               Available networks
+--------------------------------------------------------------------------------
+      Network name                      Security            Signal
+--------------------------------------------------------------------------------
+      CasaDaAna                         psk                 ****
+      Vizinho_5G                        psk                 ***
+[iwd]# station wlan0 connect CasaDaAna
+Passphrase: ********
+[iwd]# station wlan0 show
+…
+            State                 connected
+            Connected network     CasaDaAna
+…
+[iwd]# exit
+</pre>
+
+<ol class="passo">
+  <li><code>device list</code> — lista as placas Wi-Fi. Anote o nome (<code>wlan0</code>). Se <code>Powered</code> estiver <code>off</code>, ligue com <code>device wlan0 set-property Powered on</code>.</li>
+  <li><code>station wlan0 scan</code> — manda a placa procurar redes. Não mostra nada; espere um ou dois segundos.</li>
+  <li><code>station wlan0 get-networks</code> — mostra as redes encontradas: nome, segurança (<code>psk</code> = com senha; <code>open</code> = aberta) e sinal (mais <code>*</code>, melhor).</li>
+  <li><code>station wlan0 connect CasaDaAna</code> — conecta. Pede a senha (<em>Passphrase</em>), que não aparece enquanto você digita. Rede com espaço no nome: use aspas, <code>connect "Casa da Ana"</code>.</li>
+  <li><code>station wlan0 show</code> — confira o <code>State</code>: tem que ser <code>connected</code>.</li>
+  <li><code>exit</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd>) — volta para o prompt do live. A conexão continua.</li>
+</ol>
+
+<p>A palavra <code>station</code> é o modo "cliente" da placa (a que se conecta num roteador). Tudo também funciona numa linha só, sem entrar no <code>iwctl</code>, o que é bom para copiar:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> iwctl --passphrase 'minha senha' station wlan0 connect CasaDaAna
+</pre>
+
+<p>No sistema instalado, o Wi-Fi fica por conta do NetworkManager (veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a> e <a href="rede.html">NetworkManager e iwd</a>).</p>
+
+<h3 id="ping">Testar a conexão: ping</h3>
+
+<dl class="anatomy">
+  <dt>ping</dt><dd>Manda pacotes de teste para um endereço e mede quanto tempo a resposta leva.</dd>
+  <dt>-c 3</dt><dd>(<em>count</em>) Manda só 3 pacotes e para. Sem o <code>-c</code>, o <code>ping</code> não para nunca: interrompa com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</dd>
+  <dt>archlinux.org</dt><dd>Um endereço que sempre existe. Testar um nome (e não um número) confere também o DNS.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes of data.
+64 bytes from 209.126.35.79: icmp_seq=1 ttl=64 time=44.0 ms
+64 bytes from 209.126.35.79: icmp_seq=2 ttl=64 time=42.5 ms
+64 bytes from 209.126.35.79: icmp_seq=3 ttl=64 time=55.2 ms
+
+--- archlinux.org ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 5616ms   « 0% perdidos: internet ok
+rtt min/avg/max/mdev = 42.522/47.247/55.200/5.656 ms
+#> echo $?
+0
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>PING archlinux.org (209.126.35.79)</code></td><td>O nome virou um número (IP): o <strong>DNS funciona</strong>.</td></tr>
+<tr><td><code>64 bytes from … icmp_seq=1 ttl=64 time=44.0 ms</code></td><td>Uma resposta chegou: pacote número 1, em 44 milissegundos.</td></tr>
+<tr><td><code>3 packets transmitted, 3 received, 0% packet loss</code></td><td>3 enviados, 3 recebidos, nenhum perdido. <strong>A internet funciona.</strong></td></tr>
+<tr><td><code>rtt min/avg/max/mdev</code></td><td>O tempo de ida e volta (<em>round-trip time</em>): mínimo, médio, máximo e variação.</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="ran:^ip +(a|addr|address|link)" data-solucao="ip a">
+<p class="try-task"><strong>Missão:</strong> o simulador é a máquina já instalada, não o live, mas o comando é o mesmo. Descubra o nome da placa de rede com cabo da ana (com <code>ip link</code> ou <code>ip a</code>).</p>
+</div>
+
+<hr>
+
+<h2>O relógio: timedatectl</h2>
+
+<p>Parece detalhe, mas um relógio errado quebra a instalação: os sites seguros (HTTPS) e as assinaturas dos pacotes têm data de validade, e um computador "no ano errado" acha que tudo está vencido ou ainda não vale. O live acerta o relógio sozinho pela internet (NTP); só confira:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> timedatectl
+               Local time: Fri 2026-10-16 15:01:23 UTC
+           Universal time: Fri 2026-10-16 15:01:23 UTC
+                 RTC time: Fri 2026-10-16 15:01:23
+                Time zone: UTC (UTC, +0000)
+System clock synchronized: yes   « sincronizado pela internet
+              NTP service: active
+          RTC in local TZ: no
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Tradução</th><th>O que quer dizer</th></tr>
+<tr><td><code>Local time</code></td><td>hora local</td><td>A hora no fuso configurado. No live o fuso é UTC, por isso fica 3 horas à frente de Brasília (15:01 UTC = 12:01 em São Paulo).</td></tr>
+<tr><td><code>Universal time</code></td><td>hora universal</td><td>A hora em UTC, a referência mundial.</td></tr>
+<tr><td><code>RTC time</code></td><td>hora do RTC</td><td>A hora do relógio da placa-mãe (<em>Real-Time Clock</em>), que funciona com a bateria mesmo desligado.</td></tr>
+<tr><td><code>Time zone: UTC (UTC, +0000)</code></td><td>fuso horário</td><td>O fuso do live. O de São Paulo é configurado no sistema instalado (<a href="configurar.html">Configurar o Sistema</a>).</td></tr>
+<tr><td><code>System clock synchronized: yes</code></td><td>relógio sincronizado: sim</td><td><strong>O que importa</strong>: o relógio foi acertado pela internet.</td></tr>
+<tr><td><code>NTP service: active</code></td><td>serviço NTP: ativo</td><td>O serviço que acerta o relógio (<em>Network Time Protocol</em>) está rodando.</td></tr>
+<tr><td><code>RTC in local TZ: no</code></td><td>RTC no fuso local: não</td><td>O relógio da placa guarda UTC, o padrão do Linux. (O Windows guarda a hora local; em dual boot isso dá diferença de horas.)</td></tr>
+</table>
+</div>
+
+<p>Se aparecer <code>System clock synchronized: no</code> logo depois do boot, espere alguns segundos (e confira a internet) e rode de novo.</p>
+
+<div class="try" data-goal="ran:^timedatectl" data-solucao="timedatectl">
+<p class="try-task"><strong>Missão:</strong> veja o relógio da máquina da ana com o <code>timedatectl</code>. Compare com o do live: qual é o fuso horário dela?</p>
+</div>
+
+<hr>
+
+<h2 id="ssh">Opcional: instalar de outro computador (SSH)</h2>
+
+<p>Digitar comandos longos no console do live, sem copiar e colar, é chato. Se você tem outro computador na mesma rede, dá para controlar o live de lá por <strong>SSH</strong> (<em>Secure Shell</em>, acesso remoto ao terminal) e colar os comandos deste guia. Foi assim que a instalação do guia foi feita. Os passos abaixo são <strong>ilustrativos</strong> (a sessão de SSH não foi gravada nos logs), mas as mensagens são as do Arch.</p>
+
+<ol class="passo">
+  <li>No live, crie uma <strong>senha para o root</strong>. Ela só vale até desligar:
+<pre class="term" data-host="archiso" data-user="root">#> passwd
+New password:
+Retype new password:
+passwd: password updated successfully
+</pre>
+  (Digite a senha duas vezes; nada aparece enquanto você digita.)</li>
+  <li>Garanta que o servidor SSH está rodando. Na ISO oficial ele já costuma iniciar sozinho; rodar de novo não faz mal:
+<pre class="term" data-host="archiso" data-user="root">#> systemctl start sshd
+</pre></li>
+  <li>Descubra o endereço IP do live com <code>ip -brief addr</code> (procure algo como <code>192.168.0.15/24</code> na linha da placa).</li>
+  <li>No <strong>outro</strong> computador, conecte:
+<pre class="term">$ ssh root@192.168.0.15
+</pre>
+  Na primeira vez, o SSH mostra a impressão digital da máquina e pergunta <code>Are you sure you want to continue connecting (yes/no/[fingerprint])?</code>: responda <code>yes</code>. Depois, a senha que você criou. O prompt passa a ser <code>root@archiso ~ #</code>, agora numa janela onde dá para colar.</li>
+</ol>
+
+<p>Na VM do guia, a rede é NAT, então o outro computador é o próprio hospedeiro, pela porta encaminhada (veja a <a href="preparar.html#vm">tabela da VM</a>): <code>ssh -p 2223 root@127.0.0.1</code>.</p>
+
+<div class="warning">
+<strong>Senha fraca + rede pública = má ideia</strong>
+<p>Com a senha definida, qualquer um na mesma rede pode tentar entrar no live como root. Em casa, tudo bem. Numa rede pública (faculdade, café), use uma senha forte ou não use SSH. Ao reiniciar, a senha some. Mais sobre SSH em <a href="ssh.html">SSH</a>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Unable to open file" no loadkeys</strong>
+<pre class="term" data-host="archiso" data-user="root">#> loadkeys br-abnt3
+loadkeys: Unable to open file: br-abnt3: No such file or directory
+#> echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> o nome do mapa está errado ("não foi possível abrir o arquivo … arquivo ou diretório inexistente"). (Saída real, conferida na VM com o live em inglês.)</p>
+<p><strong>Como resolver:</strong> use <code>localectl list-keymaps | grep br</code> ou o <kbd>Tab</kbd> do zsh (<code>loadkeys br-<kbd>Tab</kbd></code>) para ver os nomes certos.</p>
+</div>
+
+<div class="cenario">
+<strong>As teclas continuam trocadas depois do loadkeys</strong>
+<p><strong>O que aconteceu:</strong> o seu teclado não é ABNT2. Notebooks importados costumam ter teclado americano (sem <kbd>Ç</kbd>, com a tecla <kbd>'</kbd> ao lado do <kbd>Enter</kbd>).</p>
+<p><strong>Como resolver:</strong> <code>loadkeys us-acentos</code>, ou volte ao padrão com <code>loadkeys us</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>ping</code> diz "Temporary failure in name resolution"</strong>
+<p><strong>O que aconteceu:</strong> o live não está conectado ou não recebeu o endereço do DNS ("falha temporária na resolução de nomes"). Mensagem <strong>ilustrativa</strong>: a rede da VM funcionou de primeira.</p>
+<p><strong>Como confirmar:</strong> <code>ip link</code> mostra a placa com <code>LOWER_UP</code>? <code>ip -brief addr</code> mostra um endereço IP na placa? Se a placa não tiver IP, o DHCP não funcionou: confira o cabo, o roteador ou a conexão Wi-Fi.</p>
+<p><strong>Como resolver:</strong> reconecte o cabo (ou refaça o <code>station wlan0 connect</code>), espere alguns segundos e teste de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>iwctl</code> não mostra nenhuma placa, ou ela não liga</strong>
+<p><strong>O que aconteceu:</strong> a placa Wi-Fi está bloqueada (pela tecla de "modo avião" do notebook, por exemplo) ou o live não tem o driver dela.</p>
+<p><strong>Como confirmar e resolver:</strong> <code>rfkill list</code> mostra <code>Soft blocked: yes</code> ou <code>Hard blocked: yes</code>? O bloqueio por software sai com <code>rfkill unblock wifi</code>; o por hardware, só com a tecla ou chave do notebook. Se a placa nem aparece em <code>ip link</code>, use um cabo (ou o celular conectado por USB, com "ancoragem USB"), que funciona como placa com cabo.</p>
+</div>
+
+<div class="cenario">
+<strong>A tela fica preta logo depois do menu da ISO</strong>
+<p><strong>O que aconteceu:</strong> algumas placas de vídeo (principalmente NVIDIA) não se dão bem com o modo gráfico do kernel no live.</p>
+<p><strong>Como resolver:</strong> no menu da ISO, com a primeira opção selecionada, aperte <kbd>e</kbd> (ou <kbd>Tab</kbd>, conforme o menu), acrescente <code>nomodeset</code> ao fim da linha e aperte <kbd>Enter</kbd>. A tela fica com resolução baixa, mas funciona.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (no live)</th><th>Para quê</th></tr>
+<tr><td><code>loadkeys br-abnt2</code></td><td>Teclado brasileiro ABNT2 (só no live)</td></tr>
+<tr><td><code>setfont ter-132b</code></td><td>Fonte grande, para telas de alta resolução</td></tr>
+<tr><td><code>cat /sys/firmware/efi/fw_platform_size</code></td><td><code>64</code> = UEFI; arquivo inexistente = BIOS</td></tr>
+<tr><td><code>ip link</code> / <code>ip -brief addr</code></td><td>Placas de rede e estado / endereços IP</td></tr>
+<tr><td><code>iwctl</code> → <code>device list</code>, <code>station wlan0 scan</code>, <code>get-networks</code>, <code>connect REDE</code></td><td>Conectar ao Wi-Fi</td></tr>
+<tr><td><code>ping -c 3 archlinux.org</code></td><td>Testar a internet e o DNS</td></tr>
+<tr><td><code>timedatectl</code></td><td>Conferir o relógio (<code>synchronized: yes</code>)</td></tr>
+<tr><td><code>passwd</code> + <code>systemctl start sshd</code></td><td>Permitir acesso por SSH ao live</td></tr>
+<tr><td><code>Installation_guide</code></td><td>Abre o guia de instalação da Wiki no terminal</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Teclado brasileiro</h3>
+<p>Complete o comando que deixa o teclado do live no padrão ABNT2:</p>
+<div class="ex-code"><input data-answer="loadkeys" aria-label="comando"> <input data-answer="br-abnt2" aria-label="mapa"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Conectar ao Wi-Fi</h3>
+<p>Dentro do <code>iwctl</code>, a placa é <code>wlan0</code> e a rede é <code>CasaDaAna</code>. Complete:</p>
+<div class="ex-code">[iwd]# station wlan0 <input data-answer="connect" aria-label="subcomando"> CasaDaAna</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. <code>cat /sys/firmware/efi/fw_platform_size</code> respondeu <code>No such file or directory</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q3"> A ISO está corrompida.</label>
+<label><input type="radio" name="q3"> Falta a internet.</label>
+<label><input type="radio" name="q3"> O computador iniciou em modo BIOS; é preciso reiniciar em modo UEFI.</label>
+<label><input type="radio" name="q3"> O teclado está no padrão americano.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Na saída do <code>ping</code>, qual linha prova que a internet está funcionando?</p>
+<label><input type="radio" name="q4"> <code>--- archlinux.org ping statistics ---</code></label>
+<label><input type="radio" name="q4"> <code>3 packets transmitted, 3 received, 0% packet loss</code></label>
+<label><input type="radio" name="q4"> <code>PING archlinux.org (209.126.35.79) 56(84) bytes of data.</code></label>
+<label><input type="radio" name="q4"> Nenhuma: o <code>ping</code> só testa o cabo.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Você trocou o teclado e criou uma senha de root no live, e reiniciou o computador. O que acontece?</p>
+<label><input type="radio" name="q5"> As duas mudanças somem: o live roda da memória e não guarda nada.</label>
+<label><input type="radio" name="q5"> As duas ficam gravadas no pendrive.</label>
+<label><input type="radio" name="q5"> O teclado fica, a senha some.</label>
+<label><input type="radio" name="q5"> Elas são copiadas para o sistema instalado.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O live é um Arch temporário que roda da memória: você já é root, o shell é o zsh e nada fica salvo.</li>
+  <li><code>loadkeys br-abnt2</code> acerta o teclado (só no live).</li>
+  <li><code>cat /sys/firmware/efi/fw_platform_size</code> → <code>64</code> confirma o modo UEFI.</li>
+  <li>Cabo funciona sozinho; Wi-Fi, com <code>iwctl</code> (<code>station wlan0 scan / get-networks / connect</code>).</li>
+  <li><code>ping -c 3 archlinux.org</code> testa a internet; <code>timedatectl</code> deve dizer <code>synchronized: yes</code>.</li>
+  <li>Opcional: <code>passwd</code> + <code>systemctl start sshd</code> para instalar de outro computador.</li>
+</ul>
+
+<p>Teclado, UEFI, internet e relógio prontos: hora de preparar o disco em <a href="particionar.html">Particionar o Disco</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> esta aula cobre as seções 1.4 a 1.8 do <a href="https://wiki.archlinux.org/title/Installation_guide#Boot_the_live_environment">Installation guide</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). Para ir além: o teclado e as fontes do console em <a href="https://wiki.archlinux.org/title/Linux_console/Keyboard_configuration">Linux console/Keyboard configuration</a> e <a href="https://wiki.archlinux.org/title/Linux_console#Fonts">Linux console — Fonts</a>; o Wi-Fi em <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>); a rede em <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a>; o relógio em <a href="https://wiki.archlinux.org/title/System_time">System time</a> (<a href="https://wiki.archlinux.org/title/System_time_(Portugu%C3%AAs)">em português</a>); e a instalação por SSH em <a href="https://wiki.archlinux.org/title/Install_Arch_Linux_via_SSH">Install Arch Linux via SSH</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
