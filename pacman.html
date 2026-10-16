@@ -515,11 +515,11 @@ htop /usr/share/pixmaps/htop.png</pre>
 <p class="try-task"><strong>Missão 2:</strong> procure nos repositórios um programa chamado <code>fastfetch</code>. De qual repositório ele vem? Ele já está instalado?</p>
 </div>
 
-<div class="try" data-goal="pkg:fastfetch" data-solucao="sudo pacman -S fastfetch;;ana;;S">
+<div class="try" data-goal="pkg:fastfetch" data-solucao="sudo pacman -S fastfetch" data-stdin="ana\nS">
 <p class="try-task"><strong>Missão 3:</strong> instale o <code>fastfetch</code>. Tente primeiro sem <code>sudo</code> e leia o erro. Depois, com <code>sudo</code>, leia a lista de pacotes antes de responder <code>S</code>. Confira com <code>pacman -Q fastfetch</code>.</p>
 </div>
 
-<div class="try" data-goal="nopkg:htop" data-solucao="sudo pacman -Rns htop;;ana;;S">
+<div class="try" data-goal="nopkg:htop" data-solucao="sudo pacman -Rns htop" data-stdin="ana\nS">
 <p class="try-task"><strong>Missão 4:</strong> remova o <code>htop</code> do jeito "de vez" (com as dependências sem uso e sem guardar <code>.pacsave</code>). Depois confirme que <code>pacman -Q htop</code> dá erro.</p>
 </div>
 
