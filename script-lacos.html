@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Laços — for, while, until, read, break e continue no Bash | Guia Arch</title>
+<meta name="description" content="Repetir tarefas em scripts Bash no Arch Linux: for sobre serviços, pacotes do AUR e arquivos .pkg.tar.zst, while, until, ler a saída do pacman linha por linha com read, break e continue, com cada parte explicada, saídas reais e terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Laços</span></h1>
+
+<p class="intro">Um <strong>laço</strong> (em inglês, <em>loop</em>) repete comandos. É ele que transforma "ver se o sshd está rodando" em "ver todos os serviços importantes", e "conferir um pacote do AUR" em "conferir todos". O Bash tem três laços: <code>for</code>, <code>while</code> e <code>until</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A estrutura do <code>for</code>, parte por parte, e cinco jeitos de montar a lista que ele percorre (serviços, pacotes, arquivos…).</li>
+  <li>Como percorrer arquivos com nomes que têm espaço sem quebrar nada.</li>
+  <li>Quando usar <code>while</code> e <code>until</code>, e como ler um arquivo ou a saída do <code>pacman</code> linha por linha.</li>
+  <li>Como interromper (<code>break</code>), pular (<code>continue</code>) e escapar de um laço infinito.</li>
+</ul>
+</div>
+
+<p>Antes, leia <a href="script-variaveis.html">Variáveis e Argumentos</a> e <a href="script-condicionais.html">Condicionais</a>. Os exemplos rodam na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>; as saídas vêm de um Arch Linux real.</p>
+
+<hr>
+
+<h2>A ideia: "para cada item, faça"</h2>
+<p>Pense numa lista de compras. Você pega o <strong>primeiro</strong> item, coloca no carrinho, pega o <strong>próximo</strong>, coloca no carrinho… até a lista acabar. O <code>for</code> faz isso com qualquer lista de palavras.</p>
+
+<pre class="syntax">for VARIÁVEL in LISTA; do
+  comandos que usam $VARIÁVEL
+done</pre>
+
+<dl class="anatomy">
+  <dt>for servico</dt><dd>"Para cada…": cria a variável <code>servico</code>, que vai receber um item por vez.</dd>
+  <dt>in sshd NetworkManager nginx</dt><dd>A lista. Cada palavra separada por espaço é um item.</dd>
+  <dt>; do</dt><dd>"Faça": começa o bloco que será repetido.</dd>
+  <dt>echo "$servico: $(systemctl is-active "$servico")"</dt><dd>O comando repetido. <code>$servico</code> vale "sshd", depois "NetworkManager", depois "nginx".</dd>
+  <dt>; done</dt><dd>"Feito": fim do bloco.</dd>
+</dl>
+
+<pre class="term">$ for servico in sshd NetworkManager nginx; do echo "$servico: $(systemctl is-active "$servico")"; done
+sshd: active                                        « 1ª volta: servico=sshd
+NetworkManager: active                              « 2ª volta: servico=NetworkManager
+nginx: inactive                                     « 3ª volta: servico=nginx</pre>
+
+<p>Cada repetição se chama <strong>volta</strong> ou <strong>iteração</strong>. Quando a lista acaba, o Bash segue para o que vem depois do <code>done</code>.</p>
+
+<p>Em scripts, escrevemos o mesmo laço em várias linhas, com o bloco recuado. Fica bem mais fácil de ler:</p>
+
+<pre class="file" data-file="servicos.sh">#!/usr/bin/env bash
+for servico in sshd NetworkManager nginx; do
+  echo "$servico: $(systemctl is-active "$servico")"
+done</pre>
+
+<hr>
+
+<h2>Cinco formas de montar a lista do for</h2>
+
+<h3>1. Palavras escritas à mão (ou um array)</h3>
+<p>Como acima. Se a lista é usada em vários lugares, guarde-a num array e percorra com <code>"${lista[@]}"</code>, entre aspas (veja <a href="script-variaveis.html">Variáveis</a>):</p>
+<pre class="file" data-file="trecho">servicos=(sshd NetworkManager nginx)
+for s in "${servicos[@]}"; do
+  echo "$s: $(systemctl is-active "$s")"
+done</pre>
+
+<h3>2. Sequência com chaves <code>{1..5}</code></h3>
+<p>As chaves geram a lista antes de o laço começar (veja <a href="criar.html">touch e mkdir</a>):</p>
+<pre class="term">$ for i in {1..3}; do echo "Tentativa $i"; done
+Tentativa 1
+Tentativa 2
+Tentativa 3</pre>
+
+<h3>3. Arquivos e pastas com curinga <code>*</code></h3>
+<p>É o uso mais comum. O curinga vira a lista de caminhos que casam com ele, em ordem alfabética (veja <a href="curingas.html">Curingas</a>). A Ana compilou três pacotes do AUR em <code>~/aur</code> (veja <a href="makepkg.html">makepkg</a>):</p>
+<pre class="term">$ for pasta in ~/aur/*/; do echo "Achei: $pasta"; done
+Achei: /home/ana/aur/downgrade/                     « a / no fim do curinga pega só pastas
+Achei: /home/ana/aur/paru-bin/
+Achei: /home/ana/aur/yay-bin/
+$ for f in ~/aur/*/*.pkg.tar.zst; do echo "${f##*/}"; done
+downgrade-12.0.4-1-any.pkg.tar.zst                  « ${f##*/}: só o nome, sem a pasta
+paru-bin-2.1.0-1-x86_64.pkg.tar.zst
+paru-bin-debug-2.1.0-1-x86_64.pkg.tar.zst
+yay-bin-13.0.1-1-x86_64.pkg.tar.zst
+yay-bin-debug-13.0.1-1-x86_64.pkg.tar.zst</pre>
+
+<h3>4. A saída de um comando <code>$(…)</code></h3>
+<pre class="term">$ for p in $(pacman -Qqm); do echo "do AUR: $p"; done
+do AUR: downgrade
+do AUR: paru-bin
+do AUR: yay-bin
+do AUR: yay-bin-debug</pre>
+<p>Cuidado: <code>$(…)</code> quebra a saída em <strong>cada espaço</strong>, não só em cada linha. Aqui funciona porque nomes de pacotes nunca têm espaço (e o <code>-q</code> tira a versão). Com nomes de arquivo, <strong>não</strong> funciona: veja "Quando não funciona", mais abaixo.</p>
+
+<h3>5. Estilo C: contador com início, condição e passo</h3>
+<dl class="anatomy">
+  <dt>for ((</dt><dd>Abre o laço em estilo C (parênteses duplos).</dd>
+  <dt>i = 0;</dt><dd>Início: a variável começa em 0.</dd>
+  <dt>i &lt; 10;</dt><dd>Condição: continua enquanto <code>i</code> for menor que 10.</dd>
+  <dt>i += 3</dt><dd>Passo: soma 3 depois de cada volta.</dd>
+  <dt>)); do … done</dt><dd>Fecha os parênteses e define o bloco.</dd>
+</dl>
+<pre class="term">$ for ((i = 0; i &lt; 10; i += 3)); do echo "i vale $i"; done
+i vale 0
+i vale 3
+i vale 6
+i vale 9                                            « 12 não é menor que 10: o laço para</pre>
+
+<div class="try" data-goal="ran:^\s*for\b,out:yay-bin-debug 13.0.1-1" data-solucao="for p in $(pacman -Qqm); do pacman -Q &quot;$p&quot;; done">
+<p class="try-task"><strong>Missão:</strong> use um <code>for</code> para mostrar a versão de cada pacote do AUR: percorra <code>$(pacman -Qqm)</code> e, dentro do laço, rode <code>pacman -Q "$p"</code>. Depois experimente <code>for d in ~/aur/*/; do echo "$d"; done</code> e <code>for i in {1..5}; do echo "volta $i"; done</code>.</p>
+</div>
+
+<hr>
+
+<h2>Exemplo prático: o relatório do AUR</h2>
+<p>Pacotes do AUR não são atualizados pelo <code>pacman -Syu</code>: quem cuida deles é você (ou o seu ajudante, como o <a href="yay-paru.html">yay</a>). Este script mostra quando cada um foi instalado e qual versão está no <code>PKGBUILD</code> que ficou guardado em <code>~/aur</code>. São dois laços: um sobre os pacotes, outro sobre as pastas.</p>
+
+<pre class="file" data-file="~/.local/bin/aur-info">#!/usr/bin/env bash
+# aur-info — os pacotes do AUR, a data de instalação e a versão do PKGBUILD guardado
+for p in $(pacman -Qqm); do
+  data=$(pacman -Qi "$p" | grep '^Data de instalação' | cut -d: -f2-)
+  echo "$p:$data"
+done
+echo
+for pasta in ~/aur/*/; do
+  nome=$(basename "$pasta")
+  pkgbuild=$(grep -m1 '^pkgver=' "$pasta/PKGBUILD" | cut -d= -f2)
+  instalado=$(pacman -Q "$nome" 2&gt;/dev/null | cut -d' ' -f2)
+  echo "$nome: PKGBUILD $pkgbuild, instalado ${instalado:-nenhum}"
+done</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>pacman -Qi "$p" | grep '^Data de instalação'</code></td><td>Da ficha do pacote, só a linha da data (o <code>^</code> exige que ela comece assim).</td></tr>
+<tr><td><code>cut -d: -f2-</code></td><td>Corta no <code>:</code> e fica do 2º pedaço até o fim (<code>2-</code>), para não perder os <code>:</code> da hora.</td></tr>
+<tr><td><code>for pasta in ~/aur/*/</code></td><td>Cada pasta de <code>~/aur</code>.</td></tr>
+<tr><td><code>grep -m1 '^pkgver=' …/PKGBUILD | cut -d= -f2</code></td><td>A primeira linha <code>pkgver=</code> do PKGBUILD, só o valor (veja <a href="pkgbuild.html">PKGBUILD</a>).</td></tr>
+<tr><td><code>pacman -Q "$nome" 2&gt;/dev/null | cut -d' ' -f2</code></td><td>A versão instalada (o 2º campo), calando o erro se o pacote não estiver instalado.</td></tr>
+<tr><td><code>${instalado:-nenhum}</code></td><td>Se a variável ficou vazia, mostra "nenhum".</td></tr>
+</table>
+</div>
+
+<pre class="term">$ aur-info
+downgrade: sex 16 out 2026 13:00:48
+paru-bin: sex 16 out 2026 13:00:23
+yay-bin: sex 16 out 2026 12:59:44
+yay-bin-debug: sex 16 out 2026 12:59:44
+
+downgrade: PKGBUILD 12.0.4, instalado 12.0.4-1
+paru-bin: PKGBUILD 2.1.0, instalado 2.1.0-1
+yay-bin: PKGBUILD 13.0.1, instalado 13.0.1-1</pre>
+
+<p>O <code>-1</code> a mais na versão instalada é o <code>pkgrel</code>, o número de lançamento do pacote. Os <code>-debug</code> não têm pasta própria: o <code>makepkg</code> os gerou junto com o pacote principal.</p>
+
+<div class="tip">
+<strong>Teste antes de fazer de verdade</strong>
+<p>Quando o laço vai <strong>mudar</strong> algo (apagar, mover, instalar), troque o comando por um <code>echo</code> na primeira vez: <code>echo rm "$f"</code>. O laço só mostra o que <em>faria</em>. Se a lista estiver certa, tire o <code>echo</code>.</p>
+</div>
+
+<div class="tryscript" data-file="servicos.sh" data-goal="out:cronie: parado,out:sshd: rodando,src:\bfor\b">
+<p class="try-task"><strong>Missão:</strong> acrescente o serviço <code>cronie</code> à lista e troque a resposta em inglês por <code>rodando</code> ou <code>parado</code>: dentro do laço, use um <code>if systemctl is-active --quiet "$s"; then … else … fi</code>. A saída deve ter linhas como <code>sshd: rodando</code> e <code>cronie: parado</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+servicos=(sshd NetworkManager nginx)
+
+for s in "${servicos[@]}"; do
+  echo "$s: $(systemctl is-active "$s")"
+done
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+servicos=(sshd NetworkManager nginx cronie)
+
+for s in "${servicos[@]}"; do
+  if systemctl is-active --quiet "$s"; then
+    echo "$s: rodando"
+  else
+    echo "$s: parado"
+  fi
+done
+</pre>
+</div>
+
+<hr>
+
+<h2>while: repetir enquanto for verdade</h2>
+<p>O <code>while</code> ("enquanto") não percorre uma lista: ele repete enquanto um comando ou teste der certo. Use quando você não sabe de antemão quantas voltas serão.</p>
+
+<pre class="syntax">while CONDIÇÃO; do
+  comandos
+done</pre>
+
+<p>Um caso real do Arch: o seu script quer rodar o pacman, mas outro pacman (uma atualização aberta em outro terminal) está trabalhando. Em vez de falhar, o script espera a trava sumir:</p>
+
+<pre class="file" data-file="espera-pacman.sh">#!/usr/bin/env bash
+while [ -e /var/lib/pacman/db.lck ]; do
+  echo "pacman ocupado, esperando..."
+  sleep 5
+done
+echo "O pacman está livre."</pre>
+
+<dl class="anatomy">
+  <dt>while [ -e /var/lib/pacman/db.lck ]</dt><dd>Enquanto o arquivo de trava existir…</dd>
+  <dt>sleep 5</dt><dd>…espera 5 segundos e testa de novo.</dd>
+  <dt>done</dt><dd>Quando o teste der falso (a trava sumiu), o laço termina e o script segue.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./espera-pacman.sh
+O pacman está livre.                                « não havia trava: zero voltas</pre>
+
+<p>Repare: se a condição já é falsa de início, o <code>while</code> não dá nenhuma volta. (Se a trava ficou de um desligamento forçado, ela nunca some sozinha: o laço esperaria para sempre. Ponha um limite de tentativas, como no próximo exemplo.)</p>
+
+<h3>Um contador</h3>
+<pre class="file" data-file="contagem.sh">#!/usr/bin/env bash
+n=3
+while [ "$n" -gt 0 ]; do
+  echo "Faltam $n..."
+  n=$((n - 1))
+done
+echo "Pronto!"</pre>
+
+<dl class="anatomy">
+  <dt>while [ "$n" -gt 0 ]</dt><dd>Enquanto <code>n</code> for maior que 0…</dd>
+  <dt>n=$((n - 1))</dt><dd>…diminui 1. Sem essa linha, o laço nunca terminaria.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./contagem.sh
+Faltam 3...
+Faltam 2...
+Faltam 1...
+Pronto!</pre>
+
+<h3>Ler linha por linha</h3>
+<p>Este é o uso mais importante do <code>while</code>. O <code>read</code> lê uma linha por vez, e o laço acaba quando as linhas acabam. Você pode ler um arquivo, como a lista salva pelo <code>lista-pacotes</code> da aula de <a href="script-variaveis.html">Variáveis</a>:</p>
+
+<pre class="file" data-file="ler.sh">#!/usr/bin/env bash
+numero=1
+while IFS= read -r linha; do
+  echo "$numero: $linha"
+  numero=$((numero + 1))
+done &lt; ~/backups/aur-2026-10-16.txt</pre>
+
+<dl class="anatomy">
+  <dt>IFS=</dt><dd>Não corta os espaços do começo e do fim da linha.</dd>
+  <dt>read -r linha</dt><dd>Lê uma linha para a variável <code>linha</code>. O <code>-r</code> não trata a barra <code>\</code> como especial.</dd>
+  <dt>done &lt; arquivo</dt><dd>O arquivo entra no laço inteiro pelo <code>&lt;</code> (veja <a href="redirecionamento.html">Redirecionamento</a>).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./ler.sh
+1: downgrade
+2: paru-bin
+3: yay-bin
+4: yay-bin-debug</pre>
+
+<h3>Ler a saída de um comando, separando os campos</h3>
+<p>O <code>read</code> também separa a linha em pedaços: com duas variáveis, a primeira palavra vai para a primeira e o resto para a segunda. E, em vez de um arquivo, o laço pode ler a saída de um comando com <code>&lt; &lt;(comando)</code>:</p>
+
+<pre class="term">$ while read -r nome versao; do echo "$nome está na versão $versao"; done &lt; &lt;(pacman -Qm)
+downgrade está na versão 12.0.4-1
+paru-bin está na versão 2.1.0-1
+yay-bin está na versão 13.0.1-1
+yay-bin-debug está na versão 13.0.1-1</pre>
+
+<dl class="anatomy">
+  <dt>read -r nome versao</dt><dd>Cada linha do <code>pacman -Qm</code> é "nome versão": a 1ª palavra vai para <code>nome</code>, o resto para <code>versao</code>.</dd>
+  <dt>&lt; &lt;(pacman -Qm)</dt><dd>Duas partes: o <code>&lt;(…)</code> transforma a saída do comando num "arquivo" temporário, e o primeiro <code>&lt;</code> o entrega ao laço. Repare no espaço entre os dois <code>&lt;</code>.</dd>
+</dl>
+
+<p>Por que não um simples <code>pacman -Qm | while …</code>? Funciona para mostrar coisas, mas as variáveis criadas lá dentro somem no fim (veja "Quando não funciona").</p>
+
+<div class="tryscript" data-file="confere.sh" data-setup="printf 'htop\nfirefox\nvim\n' &gt; pacotes.txt" data-goal="out:htop: instalado,out:firefox: falta instalar,src:\bwhile\b">
+<p class="try-task"><strong>Missão:</strong> o arquivo <code>pacotes.txt</code> tem um pacote por linha. O laço já lê cada linha; complete-o para mostrar <code>htop: instalado</code> ou <code>firefox: falta instalar</code>, usando <code>if pacman -Qi "$pacote" &gt; /dev/null 2&gt;&amp;1</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+while IFS= read -r pacote; do
+  echo "Li: $pacote"
+done &lt; pacotes.txt
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+while IFS= read -r pacote; do
+  if pacman -Qi "$pacote" &gt; /dev/null 2&gt;&amp;1; then
+    echo "$pacote: instalado"
+  else
+    echo "$pacote: falta instalar"
+  fi
+done &lt; pacotes.txt
+</pre>
+</div>
+
+<h3>until: repetir até ficar verdade</h3>
+<p><code>until</code> ("até que") é o contrário do <code>while</code>: repete enquanto a condição for <strong>falsa</strong>.</p>
+<pre class="term">$ n=1; until [ $n -gt 3 ]; do echo "n=$n"; n=$((n+1)); done
+n=1
+n=2
+n=3</pre>
+<p>Um uso real: esperar a rede voltar antes de atualizar, <code>until ping -c 1 archlinux.org &gt; /dev/null 2&gt;&amp;1; do sleep 5; done; echo "A rede voltou"</code> (o <code>ping</code> vem do pacote <code>iputils</code>; veja <a href="ip.html">ip, ping, ss</a>).</p>
+
+<hr>
+
+<h2>Controlar o laço: break e continue</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>break</code></td><td>Sai do laço na hora ("quebra" o laço).</td></tr>
+<tr><td><code>continue</code></td><td>Pula o resto desta volta e vai para a próxima.</td></tr>
+</table>
+</div>
+
+<p>O <code>continue</code> é ótimo para filtrar. Aqui, os pacotes <code>-debug</code> (que só têm símbolos de depuração) são pulados:</p>
+
+<pre class="term">$ for p in $(pacman -Qqm); do [[ $p == *-debug ]] &amp;&amp; continue; echo "$p"; done
+downgrade
+paru-bin
+yay-bin                                             « yay-bin-debug foi pulado</pre>
+
+<p>O <code>break</code> serve para parar no primeiro achado. "Qual é o primeiro serviço da lista que está parado?":</p>
+
+<pre class="term">$ for s in sshd NetworkManager nginx cronie; do if ! systemctl is-active --quiet "$s"; then echo "Primeiro serviço parado: $s"; break; fi; echo "$s ok"; done
+sshd ok
+NetworkManager ok
+Primeiro serviço parado: nginx                      « o break encerrou: o cronie nem foi testado</pre>
+
+<div class="tryscript" data-file="aur.sh" data-goal="out:Total: 3,src:\bcontinue\b">
+<p class="try-task"><strong>Missão:</strong> o script conta 4 pacotes do AUR, mas dois deles são o mesmo programa (<code>yay-bin</code> e <code>yay-bin-debug</code>). Use <code>continue</code> no começo do laço para pular os nomes terminados em <code>-debug</code>, de modo que o total fique <code>Total: 3</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+total=0
+for p in $(pacman -Qqm); do
+  echo "$p"
+  total=$((total + 1))
+done
+echo "Total: $total"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+total=0
+for p in $(pacman -Qqm); do
+  [[ $p == *-debug ]] &amp;&amp; continue
+  echo "$p"
+  total=$((total + 1))
+done
+echo "Total: $total"
+</pre>
+</div>
+
+<h3>Laço infinito (de propósito)</h3>
+<p><code>while true</code> nunca termina sozinho. É útil para vigiar algo de tempos em tempos, como o estado de um serviço enquanto você mexe na configuração dele. Para parar, aperte <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+<pre class="term">$ while true; do echo "$(date +%T) nginx: $(systemctl is-active nginx)"; sleep 2; done
+14:30:00 nginx: inactive
+14:30:02 nginx: inactive
+14:30:04 nginx: inactive
+^C                                                  « Ctrl+C interrompe</pre>
+<p>(Saída ilustrativa: as horas dependem de quando você roda.)</p>
+
+<hr>
+
+<h2>Formas diferentes de processar vários arquivos</h2>
+<p>Tarefa: mostrar cada <code>.pkg.tar.zst</code> que o <code>makepkg</code> gerou dentro de <code>~/aur</code>, em qualquer subpasta, sem quebrar nomes com espaço.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td>for com curinga</td><td><code>for f in ~/aur/*/*.pkg.tar.zst; do …; done</code></td><td>Você sabe a profundidade (aqui, uma pasta abaixo). É a forma mais simples e segura.</td></tr>
+<tr><td>for com <code>**</code></td><td><code>shopt -s globstar; for f in ~/aur/**/*.pkg.tar.zst; do …; done</code></td><td>Incluir subpastas de qualquer profundidade, ainda com for.</td></tr>
+<tr><td>find + while read</td><td><code>find ~/aur -name '*.pkg.tar.zst' -print0 | while IFS= read -r -d '' f; do …; done</code></td><td>Muitas pastas e filtros do <code>find</code> (data, tamanho).</td></tr>
+<tr><td>find -exec</td><td><code>find ~/aur -name '*.pkg.tar.zst' -exec ls -l {} \;</code></td><td>Um comando só por arquivo, sem laço (veja <a href="find.html">find</a>).</td></tr>
+<tr><td>xargs</td><td><code>find ~/aur -name '*.pkg.tar.zst' -print0 | xargs -0 ls -l</code></td><td>Passar muitos arquivos de uma vez a um comando (veja <a href="pipes.html">Pipes e xargs</a>).</td></tr>
+</table>
+</div>
+
+<pre class="term">$ shopt -s globstar
+$ for f in ~/aur/**/*.pkg.tar.zst; do echo "${f#$HOME/}"; done
+aur/downgrade/downgrade-12.0.4-1-any.pkg.tar.zst
+aur/paru-bin/paru-bin-2.1.0-1-x86_64.pkg.tar.zst
+aur/paru-bin/paru-bin-debug-2.1.0-1-x86_64.pkg.tar.zst
+aur/yay-bin/yay-bin-13.0.1-1-x86_64.pkg.tar.zst
+aur/yay-bin/yay-bin-debug-13.0.1-1-x86_64.pkg.tar.zst
+$ find ~/aur -name '*.pkg.tar.zst' -print0 | while IFS= read -r -d '' f; do echo "-&gt; ${f##*/}"; done
+-&gt; downgrade-12.0.4-1-any.pkg.tar.zst
+-&gt; yay-bin-13.0.1-1-x86_64.pkg.tar.zst
+-&gt; yay-bin-debug-13.0.1-1-x86_64.pkg.tar.zst
+-&gt; paru-bin-debug-2.1.0-1-x86_64.pkg.tar.zst
+-&gt; paru-bin-2.1.0-1-x86_64.pkg.tar.zst</pre>
+<p>O curinga sai em ordem alfabética; o <code>find</code> não ordena: a ordem depende de como os arquivos estão gravados no disco (na sua máquina, e no terminal simulado, pode ser outra).</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Nomes com espaço viraram dois itens</strong>
+<pre class="term" data-cwd="~/teste">$ ls
+'Meu Relatório.pdf'
+$ for f in $(ls); do echo "[$f]"; done
+[Meu]                                               « "Meu Relatório.pdf" foi partido
+[Relatório.pdf]</pre>
+<p><strong>O que aconteceu:</strong> <code>$(ls …)</code> devolve um texto, e o Bash corta esse texto em cada espaço. Com nomes de pacotes isso não acontece (eles não têm espaço), com arquivos sim.</p>
+<p><strong>Como resolver:</strong> nunca use <code>$(ls)</code> num laço. Use o curinga direto: <code>for f in *; do echo "[$f]"; done</code>. E sempre <code>"$f"</code> entre aspas dentro do laço.</p>
+</div>
+
+<div class="cenario">
+<strong>O laço rodou uma vez com "*.pkg.tar.zst"</strong>
+<pre class="term">$ for f in ~/Downloads/*.pkg.tar.zst; do echo "Achei: $f"; done
+Achei: /home/ana/Downloads/*.pkg.tar.zst</pre>
+<p><strong>O que aconteceu:</strong> não havia nenhum pacote em <code>Downloads</code>. Quando o curinga não encontra nada, o Bash entrega o texto como está, e o laço roda uma vez com ele.</p>
+<p><strong>Como resolver:</strong> no começo do script, ative <code>shopt -s nullglob</code> (curinga sem resultado vira lista vazia). Outra opção é testar dentro do laço: <code>[ -e "$f" ] || continue</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A variável "perdeu" o valor depois do laço</strong>
+<pre class="term">$ total=0; pacman -Qqm | while read -r p; do total=$((total+1)); done; echo "total=$total"
+total=0</pre>
+<p><strong>O que aconteceu:</strong> com <code>|</code>, o <code>while</code> roda num processo separado (um "subshell"). O <code>total</code> que ele contou some quando o laço termina, e sobra o 0 de antes.</p>
+<p><strong>Como resolver:</strong> entregue a saída com <code>&lt; &lt;(…)</code> em vez de <code>|</code>:</p>
+<pre class="term">$ total=0; while read -r p; do total=$((total+1)); done &lt; &lt;(pacman -Qqm); echo "total=$total"
+total=4</pre>
+</div>
+
+<div class="cenario">
+<strong>A última linha do arquivo sumiu</strong>
+<p><strong>O que aconteceu:</strong> a última linha não termina com "Enter" (quebra de linha). O <code>read</code> leu o texto, mas devolveu código 1, e o <code>while</code> parou antes de usá-lo. Acontece com arquivos criados no Windows ou em alguns editores.</p>
+<p><strong>Como resolver:</strong> <code>while read -r l || [ -n "$l" ]; do …; done &lt; arquivo</code> processa também essa última linha.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro de sintaxe próximo ao token inesperado `done'"</strong>
+<pre class="term">$ for i in 1 2 3 do echo $i; done
+bash: erro de sintaxe próximo ao token inesperado `done'</pre>
+<p><strong>O que aconteceu:</strong> faltou o <code>;</code> antes do <code>do</code>. O Bash achou que "do" e "echo" eram mais itens da lista.</p>
+<p><strong>Como resolver:</strong> <code>for i in 1 2 3; do echo $i; done</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O laço não para</strong>
+<p><strong>O que aconteceu:</strong> num <code>while</code>, a condição nunca fica falsa: você esqueceu de mudar a variável (o <code>n=$((n - 1))</code> do exemplo), ou espera por algo que nunca acontece (uma trava <code>db.lck</code> esquecida).</p>
+<p><strong>Como resolver:</strong> <kbd>Ctrl</kbd>+<kbd>C</kbd> interrompe. Se o laço estiver rodando em segundo plano, encontre e encerre o processo (veja <a href="kill.html">Encerrar Programas</a>). Em laços de espera, ponha um limite: <code>tentativas=0; while … &amp;&amp; (( tentativas++ &lt; 12 )); do sleep 5; done</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estrutura</th><th>Sintaxe</th></tr>
+<tr><td>for em lista</td><td><code>for s in sshd nginx; do …; done</code></td></tr>
+<tr><td>for em array</td><td><code>for s in "${lista[@]}"; do …; done</code></td></tr>
+<tr><td>for em sequência</td><td><code>for i in {1..10}; do …; done</code></td></tr>
+<tr><td>for em arquivos</td><td><code>for f in ~/aur/*/*.pkg.tar.zst; do …; done</code></td></tr>
+<tr><td>for em pacotes</td><td><code>for p in $(pacman -Qqm); do …; done</code></td></tr>
+<tr><td>for estilo C</td><td><code>for ((i=0; i&lt;10; i++)); do …; done</code></td></tr>
+<tr><td>while</td><td><code>while COND; do …; done</code></td></tr>
+<tr><td>Ler linhas</td><td><code>while IFS= read -r l; do …; done &lt; arq</code></td></tr>
+<tr><td>Ler um comando</td><td><code>while read -r a b; do …; done &lt; &lt;(pacman -Qm)</code></td></tr>
+<tr><td>until</td><td><code>until COND; do …; done</code></td></tr>
+<tr><td>Infinito</td><td><code>while true; do …; done</code></td></tr>
+<tr><td>Sair / pular</td><td><code>break</code> / <code>continue</code></td></tr>
+<tr><td>Curinga vazio</td><td><code>shopt -s nullglob</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Completar o for</h3>
+<p>Complete para percorrer os pacotes do AUR (só os nomes):</p>
+<div class="ex-code">for p in <input data-answer="$(pacman -Qqm)|`pacman -Qqm`" aria-label="lista">; do echo "$p"; done</div>
+</div>
+
+<div class="exercise">
+<h3>2. Palavras que faltam</h3>
+<p>Complete as duas palavras-chave do laço:</p>
+<div class="ex-code">for s in sshd nginx; <input data-answer="do" aria-label="início do bloco"> systemctl is-active "$s"; <input data-answer="done" aria-label="fim do bloco"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Ler linha por linha</h3>
+<p>Complete para ler <code>pacotes.txt</code> linha por linha:</p>
+<div class="ex-code">while IFS= read -r linha; do echo "$linha"; done <input data-answer="&lt;" aria-label="redirecionamento"> pacotes.txt</div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que <code>for f in $(ls)</code> é perigoso, mas <code>for p in $(pacman -Qqm)</code> funciona?</p>
+<label><input type="radio" name="q4"> Porque o <code>ls</code> é mais lento que o pacman.</label>
+<label><input type="radio" name="q4"> Porque o <code>ls</code> não mostra arquivos ocultos.</label>
+<label><input type="radio" name="q4"> Porque o pacman ordena a saída.</label>
+<label><input type="radio" name="q4"> Porque <code>$( )</code> corta nos espaços: nomes de arquivo podem ter espaço, nomes de pacote não.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que o <code>continue</code> faz dentro de um laço?</p>
+<label><input type="radio" name="q5"> Pula o resto da volta atual e segue para a próxima.</label>
+<label><input type="radio" name="q5"> Encerra o laço.</label>
+<label><input type="radio" name="q5"> Encerra o script.</label>
+<label><input type="radio" name="q5"> Repete a volta atual.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. <code>pacman -Qqm | while read -r p; do total=$((total+1)); done</code> deixa <code>total</code> vazio depois do laço. Por quê?</p>
+<label><input type="radio" name="q6"> Porque o <code>read</code> precisa de <code>-n</code>.</label>
+<label><input type="radio" name="q6"> Porque o <code>pacman -Qqm</code> não mostrou nada.</label>
+<label><input type="radio" name="q6"> Porque, depois do <code>|</code>, o laço roda num subshell, e as variáveis dele somem.</label>
+<label><input type="radio" name="q6"> Porque <code>$(( ))</code> não funciona em laços.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>for</code> percorre uma lista: palavras, um array, <code>{1..10}</code>, arquivos com <code>*</code> ou a saída de <code>$(…)</code> (bom para pacotes, ruim para arquivos).</li>
+  <li>Para arquivos, use o curinga direto e <code>"$f"</code> entre aspas; nunca <code>$(ls)</code>.</li>
+  <li><code>while</code> repete enquanto der certo; <code>while IFS= read -r l … &lt; arquivo</code> lê linha por linha; <code>&lt; &lt;(comando)</code> lê a saída de um comando sem perder as variáveis.</li>
+  <li><code>until</code> repete até dar certo; <code>break</code> sai, <code>continue</code> pula.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>C</kbd> interrompe um laço que não para.</li>
+</ul>
+
+<p><strong>Para ir mais fundo:</strong> no Guia Bash, veja <a href="https://wallysondevs.github.io/guia-bash/for.html">for</a>, <a href="https://wallysondevs.github.io/guia-bash/while.html">while e until</a>, <a href="https://wallysondevs.github.io/guia-bash/ler-linhas.html">ler linhas</a>, <a href="https://wallysondevs.github.io/guia-bash/break-continue.html">break e continue</a> e <a href="https://wallysondevs.github.io/guia-bash/substituicao-processo.html">substituição de processo (<code>&lt;( )</code>)</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> os pacotes "de fora" que esses laços percorrem estão em <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> (<a href="https://wiki.archlinux.org/title/Arch_User_Repository_(Portugu%C3%AAs)">em português</a>); a página <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a> traz vários laços e pipes prontos sobre a lista de pacotes (por tamanho, por data, órfãos); e <a href="https://wiki.archlinux.org/title/Bash">Bash</a> fala das opções do shell, como o <code>globstar</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
