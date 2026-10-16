@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch projeto — empacotar um programa seu do zero | Guia Arch</title>
+<meta name="description" content="Projeto passo a passo: transformar um script Bash com --help (o tarefas) num pacote do Arch, com PKGBUILD, makepkg, check(), namcap, .SRCINFO, teste com pacman -U, um repositório local e como seria publicar no AUR, tudo com saídas reais da VM.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Empacotar um Programa Seu</span></h1>
+
+<p class="intro">Neste laboratório você pega um programa de verdade, o <strong>tarefas</strong> (uma lista de afazeres no terminal, escrita em Bash), e faz todo o caminho que um empacotador do Arch faz: preparar um lançamento, escrever o PKGBUILD, compilar, testar, corrigir o que o <code>namcap</code> e os testes apontarem, instalar, pôr num repositório seu e, por fim, ver como seria publicá-lo no AUR. Tudo foi feito na VM do guia; os erros que aparecem no caminho são reais.</p>
+
+<div class="note">
+<strong>O que você vai praticar</strong>
+<ul>
+  <li>Preparar um programa para ser empacotado (<code>--help</code>, <code>--version</code>, licença, lançamento <code>.tar.gz</code>).</li>
+  <li>Escrever um PKGBUILD com <code>check()</code> e <code>package()</code> (veja <a href="pkgbuild.html">Escrever um PKGBUILD</a>).</li>
+  <li>Corrigir avisos do <code>namcap</code> e um teste que falha de verdade.</li>
+  <li>Instalar com <code>pacman -U</code> e servir num <a href="repositorio-local.html">repositório local</a>.</li>
+  <li>O caminho (ilustrativo) para publicar no AUR.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Antes de começar</strong>
+<p>Você precisa de <code>base-devel</code>, <code>pacman-contrib</code> (para o <code>updpkgsums</code>) e <code>namcap</code>: <code>sudo pacman -S --needed base-devel pacman-contrib namcap</code>. Na VM, o trabalho foi feito em <code>/tmp/a5/projeto</code>; no seu PC, use algo como <code>~/projetos</code>.</p>
+</div>
+
+<hr>
+
+<h2>Etapa 1: o programa</h2>
+
+<p>O <code>tarefas</code> é o projeto final do <a href="https://wallysondevs.github.io/guia-bash/projeto-cli.html">Guia Bash</a>, com duas mudanças para virar pacote: aceita <code>--help</code> e <code>--version</code> (o costume dos programas de terminal) e declara a licença MIT.</p>
+
+<ol class="passo">
+<li><strong>A pasta do projeto</strong> tem o programa, o completar do Bash (para a tecla <kbd>Tab</kbd> sugerir os comandos), a licença e um README:
+<pre class="term" data-cwd="/tmp/a5/projeto/tarefas">$ ls -l
+total 16
+-rw-r--r-- 1 ana ana 1060 16 out 13:32 LICENSE
+-rw-r--r-- 1 ana ana  115 16 out 13:32 README
+-rwxr-xr-x 1 ana ana 3224 16 out 13:32 tarefas
+-rw-r--r-- 1 ana ana  481 16 out 13:32 tarefas.bash</pre></li>
+
+<li><strong>O programa</strong>, completo:
+<pre class="file" data-file="tarefas">#!/usr/bin/env bash
+# tarefas — uma lista de tarefas guardada num arquivo de texto.
+# Licença: MIT. Requer bash 4.0+.
+set -euo pipefail
+
+readonly VERSAO=1.0
+readonly PROG=${0##*/}
+arquivo=${TAREFAS_ARQUIVO:-${XDG_DATA_HOME:-$HOME/.local/share}/tarefas/tarefas.txt}
+
+uso() {
+  cat &lt;&lt;FIM
+Uso: $PROG [-f ARQUIVO] COMANDO [ARGUMENTOS]
+
+Comandos:
+  add TEXTO...   acrescenta uma tarefa
+  list [-a]      mostra as tarefas pendentes (-a: todas)
+  done N         marca a tarefa N como feita
+  rm N           apaga a tarefa N
+
+Opções:
+  -f ARQUIVO     usa outro arquivo (padrão: $arquivo)
+  -h, --help     mostra esta ajuda
+  -V, --version  mostra a versão
+
+Códigos de saída: 0 = ok, 1 = erro, 2 = uso errado.
+FIM
+}
+
+erro()       { printf '%s: %s\n' "$PROG" "$*" &gt;&amp;2; }
+falhar()     { erro "$*"; exit 1; }
+uso_errado() { erro "$*"; echo "Tente '$PROG --help'." &gt;&amp;2; exit 2; }
+
+# confere que $1 é o número de uma tarefa que existe
+validar_numero() {
+  local n=$1 total
+  [[ $n =~ ^[1-9][0-9]*$ ]] || uso_errado "número de tarefa inválido: '$n'"
+  total=$(wc -l &lt; "$arquivo")
+  (( n &lt;= total )) || falhar "não existe a tarefa $n (a lista tem $total)"
+}
+
+cmd_add() {
+  (( $# &gt; 0 )) || uso_errado "add: falta o texto da tarefa"
+  printf '[ ] %s\n' "$*" &gt;&gt; "$arquivo"
+  echo "Tarefa $(wc -l &lt; "$arquivo") adicionada: $*"
+}
+
+cmd_list() {
+  local todas=0 opt OPTIND=1
+  while getopts ':a' opt; do
+    case $opt in
+      a) todas=1 ;;
+      *) uso_errado "list: opção inválida: -$OPTARG" ;;
+    esac
+  done
+  local n=0 pendentes=0 linha
+  while IFS= read -r linha; do
+    n=$(( n + 1 ))
+    if [[ $linha == '[ ] '* ]]; then
+      pendentes=$(( pendentes + 1 ))
+      printf '%3d  [ ] %s\n' "$n" "${linha#'[ ] '}"
+    elif (( todas )); then
+      printf '%3d  %s\n' "$n" "$linha"
+    fi
+  done &lt; "$arquivo"
+  if (( pendentes == 0 &amp;&amp; ! todas )); then
+    echo "Nenhuma tarefa pendente."
+  fi
+}
+
+cmd_done() {
+  (( $# == 1 )) || uso_errado "done: informe um número (ex.: $PROG done 2)"
+  validar_numero "$1"
+  local linha
+  linha=$(sed -n "${1}p" "$arquivo")
+  [[ $linha == '[ ] '* ]] || falhar "a tarefa $1 já estava feita"
+  sed -i "${1}s/^\[ \]/[x]/" "$arquivo"
+  echo "Feito: ${linha#'[ ] '}"
+}
+
+cmd_rm() {
+  (( $# == 1 )) || uso_errado "rm: informe um número (ex.: $PROG rm 2)"
+  validar_numero "$1"
+  local linha
+  linha=$(sed -n "${1}p" "$arquivo")
+  sed -i "${1}d" "$arquivo"
+  echo "Apagada: ${linha:4}"
+}
+
+main() {
+  case ${1-} in
+    --help)    uso; exit 0 ;;
+    --version) echo "$PROG $VERSAO"; exit 0 ;;
+  esac
+
+  local opt
+  while getopts ':f:hV' opt; do
+    case $opt in
+      f)  arquivo=$OPTARG ;;
+      h)  uso; exit 0 ;;
+      V)  echo "$PROG $VERSAO"; exit 0 ;;
+      :)  uso_errado "a opção -$OPTARG precisa de um valor" ;;
+      \?) uso_errado "opção inválida: -$OPTARG" ;;
+    esac
+  done
+  shift $(( OPTIND - 1 ))
+  (( $# &gt; 0 )) || { uso &gt;&amp;2; exit 2; }
+
+  mkdir -p -- "$(dirname -- "$arquivo")"
+  touch -- "$arquivo"
+
+  local comando=$1
+  shift
+  case $comando in
+    add)       cmd_add "$@" ;;
+    list|ls)   cmd_list "$@" ;;
+    done)      cmd_done "$@" ;;
+    rm)        cmd_rm "$@" ;;
+    help)      uso ;;
+    *)         uso_errado "comando desconhecido: '$comando'" ;;
+  esac
+}
+
+main "$@"</pre>
+<p>O que importa para o empacotamento: o arquivo começa com <code>#!/usr/bin/env bash</code> (roda de qualquer pasta), guarda os dados em <code>~/.local/share/tarefas/</code> (nunca dentro de <code>/usr</code>, que é do pacman), tem uma variável <code>TAREFAS_ARQUIVO</code> para trocar o arquivo (vai ser útil nos testes) e devolve códigos de saída diferentes para erro (1) e uso errado (2).</p></li>
+
+<li><strong>Teste à mão</strong>, antes de empacotar qualquer coisa. Para não sujar a sua lista de verdade, use um arquivo de teste com a variável:
+<pre class="term" data-cwd="/tmp/a5/projeto/tarefas">$ ./tarefas --help
+Uso: tarefas [-f ARQUIVO] COMANDO [ARGUMENTOS]
+
+Comandos:
+  add TEXTO...   acrescenta uma tarefa
+  list [-a]      mostra as tarefas pendentes (-a: todas)
+  done N         marca a tarefa N como feita
+  rm N           apaga a tarefa N
+
+Opções:
+  -f ARQUIVO     usa outro arquivo (padrão: /home/ana/.local/share/tarefas/tarefas.txt)
+  -h, --help     mostra esta ajuda
+  -V, --version  mostra a versão
+
+Códigos de saída: 0 = ok, 1 = erro, 2 = uso errado.
+$ echo $?
+0
+$ ./tarefas --version
+tarefas 1.0
+$ export TAREFAS_ARQUIVO=/tmp/a5/projeto/teste.txt
+$ ./tarefas add Comprar café
+Tarefa 1 adicionada: Comprar café
+$ ./tarefas add Estudar PKGBUILD
+Tarefa 2 adicionada: Estudar PKGBUILD
+$ ./tarefas done 1
+Feito: Comprar café
+$ ./tarefas list -a
+  1  [x] Comprar café
+  2  [ ] Estudar PKGBUILD
+$ ./tarefas voar
+tarefas: comando desconhecido: 'voar'
+Tente 'tarefas --help'.
+$ echo $?
+2
+$ unset TAREFAS_ARQUIVO
+$ rm /tmp/a5/projeto/teste.txt</pre></li>
+</ol>
+
+<div class="tryscript" data-file="mini-tarefas.sh" data-args="--version" data-goal="out:tarefas 1.0,exit:0">
+<p class="try-task"><strong>Experimente:</strong> esta é uma versão mínima do começo do <code>main</code>. Ela já entende <code>--help</code>. Acrescente um caso <code>--version</code> que mostre <code>tarefas 1.0</code> (use a variável <code>VERSAO</code>) e saia com código 0. O argumento já está preenchido com <code>--version</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+readonly VERSAO=1.0
+
+case ${1-} in
+  --help)
+    echo "Uso: tarefas COMANDO"
+    exit 0 ;;
+esac
+
+echo "comando: ${1-nenhum}"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+readonly VERSAO=1.0
+
+case ${1-} in
+  --help)
+    echo "Uso: tarefas COMANDO"
+    exit 0 ;;
+  --version)
+    echo "tarefas $VERSAO"
+    exit 0 ;;
+esac
+
+echo "comando: ${1-nenhum}"
+</pre>
+</div>
+
+<hr>
+
+<h2>Etapa 2: o lançamento</h2>
+
+<p>Um pacote não empacota "a pasta onde estou trabalhando": empacota uma <strong>versão lançada</strong>, um arquivo fixo que todo mundo pode baixar e conferir pela soma. No GitHub, isso é o <code>.tar.gz</code> de uma <em>release</em>. Aqui, fazemos o nosso:</p>
+
+<ol class="passo">
+<li><strong>Crie o arquivo do lançamento</strong> com a pasta no nome <code>tarefas-1.0</code> (o costume: <code>nome-versão</code>), dentro da pasta onde ficará a receita:
+<pre class="term" data-cwd="/tmp/a5/projeto">$ cp -r tarefas tarefas-1.0
+$ tar -czvf pacote-tarefas/tarefas-1.0.tar.gz tarefas-1.0
+tarefas-1.0/
+tarefas-1.0/tarefas
+tarefas-1.0/tarefas.bash
+tarefas-1.0/LICENSE
+tarefas-1.0/README
+$ rm -r tarefas-1.0</pre>
+<dl class="anatomy">
+  <dt>tar -c</dt><dd><em>create</em>: cria um arquivo.</dd>
+  <dt>-z</dt><dd>Compacta com gzip (<code>.gz</code>).</dd>
+  <dt>-v</dt><dd>Mostra cada arquivo incluído.</dd>
+  <dt>-f pacote-tarefas/tarefas-1.0.tar.gz</dt><dd>O nome do arquivo a criar.</dd>
+</dl>
+</li>
+</ol>
+
+<hr>
+
+<h2>Etapa 3: o PKGBUILD</h2>
+
+<ol class="passo">
+<li><strong>Escreva a receita</strong> na pasta <code>pacote-tarefas</code>, com as somas vazias (esta é a primeira versão, que vai precisar de duas correções):
+<pre class="file" data-file="pacote-tarefas/PKGBUILD (primeira versão)"># Maintainer: Ana &lt;ana@notebook&gt;
+pkgname=tarefas
+pkgver=1.0
+pkgrel=1
+pkgdesc="Lista de tarefas no terminal, guardada num arquivo de texto"
+arch=('any')
+url="https://example.com/tarefas"
+license=('MIT')
+depends=('bash' 'coreutils' 'sed')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=()
+
+check() {
+  cd "$pkgname-$pkgver"
+  export TAREFAS_ARQUIVO="$srcdir/teste.txt"
+  ./tarefas --version
+  ./tarefas add "Testar o pacote"
+  ./tarefas done 1
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 tarefas "$pkgdir/usr/bin/tarefas"
+  install -Dm644 tarefas.bash "$pkgdir/usr/share/bash-completion/completions/tarefas"
+  install -Dm644 README "$pkgdir/usr/share/doc/$pkgname/README"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escolha</th><th>Por quê</th></tr>
+<tr><td><code>arch=('any')</code></td><td>É um script: roda em qualquer processador</td></tr>
+<tr><td><code>depends=('bash' 'coreutils' 'sed')</code></td><td>O script chama <code>bash</code>, <code>wc</code>, <code>mkdir</code>, <code>touch</code>, <code>dirname</code> (coreutils) e <code>sed</code></td></tr>
+<tr><td><code>source=("$pkgname-$pkgver.tar.gz")</code></td><td>Vira <code>tarefas-1.0.tar.gz</code>; o makepkg o extrai em <code>src/tarefas-1.0/</code>, por isso o <code>cd "$pkgname-$pkgver"</code></td></tr>
+<tr><td><code>check()</code></td><td>Usa o próprio programa como teste, num arquivo dentro de <code>$srcdir</code></td></tr>
+<tr><td><code>package()</code></td><td>Programa em <code>/usr/bin</code>; completar em <code>/usr/share/bash-completion/completions/</code> (o Bash carrega sozinho); README em <code>/usr/share/doc</code>; licença em <code>/usr/share/licenses</code></td></tr>
+</table>
+</div></li>
+
+<li><strong>Calcule a soma</strong>:
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ ls
+PKGBUILD  tarefas-1.0.tar.gz
+$ updpkgsums
+==&gt; Obtendo fontes...
+  -&gt; Encontrado tarefas-1.0.tar.gz
+==&gt; Gerando somas de verificação para os arquivos fonte...
+$ grep sha256sums PKGBUILD
+sha256sums=('9345310a1398fb24d657323d98d2388a015107350e00351ec9bc48d8b0518b66')</pre></li>
+</ol>
+
+<hr>
+
+<h2>Etapa 4: compilar e conferir</h2>
+
+<ol class="passo">
+<li><strong>Gere o pacote</strong>. Repare na saída do <code>check()</code>, no meio:
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ makepkg
+==&gt; Criando o pacote: tarefas 1.0-1 (sex 16 out 2026 13:33:01)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Verificando as dependências de tempo de compilação...
+==&gt; Obtendo fontes...
+  -&gt; Encontrado tarefas-1.0.tar.gz
+==&gt; Validando source arquivos com sha256sums...
+    tarefas-1.0.tar.gz ... Passou
+==&gt; Extraindo fontes...
+  -&gt; Extraindo tarefas-1.0.tar.gz com bsdtar
+==&gt; Iniciando check()...
+tarefas 1.0                                « as três linhas são do seu teste
+Tarefa 1 adicionada: Testar o pacote
+Feito: Testar o pacote
+==&gt; Entrando no ambiente de fakeroot...
+==&gt; Iniciando package()...
+==&gt; Organizando a instalação...
+  -&gt; Removendo arquivos libtool...
+  -&gt; Removendo arquivos de biblioteca estática...
+  -&gt; Expurgando arquivos indesejados...
+  -&gt; Removendo símbolos desnecessários dos executáveis e bibliotecas...
+  -&gt; Comprimindo páginas de man e info...
+==&gt; Verificando problemas de empacotamento...
+==&gt; Criando o pacote "tarefas"...
+  -&gt; Gerando o arquivo .PKGINFO...
+  -&gt; Gerando o arquivo .BUILDINFO...
+  -&gt; Gerando o arquivo .MTREE ...
+  -&gt; Compactando o pacote...
+==&gt; Saindo do ambiente de fakeroot.
+==&gt; Compilação concluída: tarefas 1.0-1 (sex 16 out 2026 13:33:03)
+$ echo $?
+0</pre></li>
+
+<li><strong>Confira os arquivos</strong> que o pacote vai instalar:
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ pacman -Qlp tarefas-1.0-1-any.pkg.tar.zst
+tarefas /usr/
+tarefas /usr/bin/
+tarefas /usr/bin/tarefas
+tarefas /usr/share/
+tarefas /usr/share/bash-completion/
+tarefas /usr/share/bash-completion/completions/
+tarefas /usr/share/bash-completion/completions/tarefas
+tarefas /usr/share/doc/
+tarefas /usr/share/doc/tarefas/
+tarefas /usr/share/doc/tarefas/README
+tarefas /usr/share/licenses/
+tarefas /usr/share/licenses/tarefas/
+tarefas /usr/share/licenses/tarefas/LICENSE</pre></li>
+
+<li><strong>Rode o namcap</strong> na receita e no pacote:
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ namcap PKGBUILD
+PKGBUILD (tarefas) W: Description should not contain the package name.
+$ namcap tarefas-1.0-1-any.pkg.tar.zst
+tarefas W: Description should not contain the package name.
+tarefas W: Dependency included, but may not be needed ('coreutils')
+tarefas W: Dependency included, but may not be needed ('sed')</pre>
+<p>Dois tipos de aviso:</p>
+<ul>
+  <li><strong>"Description should not contain the package name"</strong>: a descrição diz "Lista de <strong>tarefas</strong>…", e o nome já aparece ao lado dela em toda listagem. Procede: vamos reescrever.</li>
+  <li><strong>"Dependency included, but may not be needed"</strong>: o namcap só "enxerga" bibliotecas e o interpretador de scripts; ele não vê que o script chama <code>sed</code> e <code>wc</code> pelo nome. Aqui é falso alarme: o programa usa os dois, então eles ficam.</li>
+</ul></li>
+
+<li><strong>Corrija a descrição</strong> e gere de novo (com <code>-f</code>, porque o pacote já existe, e <code>-c</code> para limpar):
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ sed -i "s/^pkgdesc=.*/pkgdesc=\"Lista de afazeres no terminal, guardada num arquivo de texto\"/" PKGBUILD
+$ grep pkgdesc PKGBUILD
+pkgdesc="Lista de afazeres no terminal, guardada num arquivo de texto"
+$ makepkg -fc 2&gt;&amp;1 | tail -2
+==&gt; ERRO: Uma falha ocorreu em check().
+    Abortando...</pre>
+<p>O teste, que tinha passado, falhou! Ver a saída inteira explica:</p>
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ makepkg -f
+…
+==&gt; Extraindo fontes...
+  -&gt; Extraindo tarefas-1.0.tar.gz com bsdtar
+==&gt; Removendo diretório $pkgdir/ existente...
+==&gt; Iniciando check()...
+tarefas 1.0
+Tarefa 3 adicionada: Testar o pacote          « 3? deveria ser 1
+tarefas: a tarefa 1 já estava feita
+==&gt; ERRO: Uma falha ocorreu em check().
+    Abortando...
+$ echo $?
+4
+$ cat src/teste.txt
+[x] Testar o pacote
+[ ] Testar o pacote
+[ ] Testar o pacote</pre>
+<p>O arquivo de teste fica em <code>src/</code>, e o makepkg <strong>não</strong> apaga a <code>src/</code> entre uma compilação e outra (só com <code>-C</code>). Cada rodada acrescentou uma tarefa, e na terceira o <code>done 1</code> encontrou a tarefa 1 já feita: o programa devolveu erro (corretamente) e o <code>check()</code> parou. O teste dependia de estado velho.</p></li>
+
+<li><strong>Corrija o teste</strong> para sempre começar do zero. O <code>check()</code> final:
+<pre class="file" data-file="pacote-tarefas/PKGBUILD (trecho corrigido)">check() {
+  cd "$pkgname-$pkgver"
+  export TAREFAS_ARQUIVO="$srcdir/teste.txt"
+  rm -f "$TAREFAS_ARQUIVO"          # começa sempre de uma lista vazia
+  ./tarefas --version
+  ./tarefas add "Testar o pacote"
+  ./tarefas done 1
+}</pre>
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ makepkg -f 2&gt;&amp;1 | sed -n "/check/,/fakeroot/p"
+==&gt; Iniciando check()...
+tarefas 1.0
+Tarefa 1 adicionada: Testar o pacote
+Feito: Testar o pacote
+==&gt; Entrando no ambiente de fakeroot...
+$ makepkg -f 2&gt;&amp;1 | tail -1
+==&gt; Compilação concluída: tarefas 1.0-1 (sex 16 out 2026 13:33:47)
+$ namcap tarefas-1.0-1-any.pkg.tar.zst
+tarefas W: Dependency included, but may not be needed ('coreutils')
+tarefas W: Dependency included, but may not be needed ('sed')</pre>
+<p>Teste estável (pode rodar quantas vezes quiser) e só sobraram os dois falsos alarmes, que você já sabe explicar.</p></li>
+
+<li><strong>Gere o <code>.SRCINFO</code></strong> e limpe as pastas de trabalho:
+<pre class="term" data-cwd="/tmp/a5/projeto/pacote-tarefas">$ makepkg --printsrcinfo &gt; .SRCINFO
+$ rm -rf src pkg
+$ ls -a
+.  ..  PKGBUILD  .SRCINFO  tarefas-1.0-1-any.pkg.tar.zst  tarefas-1.0.tar.gz</pre></li>
+</ol>
+
+<hr>
+
+<h2>Etapa 5: instalar</h2>
+
+<ol class="passo">
+<li><strong>Instale com <code>pacman -U</code></strong>. Na VM, o pacman mostrou o resumo e a resposta foi "n":
+<pre class="term" data-user="root">#> pacman -U /tmp/a5/projeto/pacote-tarefas/tarefas-1.0-1-any.pkg.tar.zst
+carregando pacotes...
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) tarefas-1.0-1
+
+Tamanho total instalado:  0,00 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+<p>No seu PC: <code>sudo pacman -U tarefas-1.0-1-any.pkg.tar.zst</code> e <code>S</code>.</p></li>
+
+<li><strong>Confira como qualquer pacote</strong> (<strong>ilustrativo</strong>, na VM não foi instalado): <code>tarefas --version</code> de qualquer pasta, <code>pacman -Qi tarefas</code>, <code>pacman -Qo /usr/bin/tarefas</code>, e <code>tarefas d</code> + <kbd>Tab</kbd> completando para <code>done</code> (abra um terminal novo para o completar carregar). Para remover: <code>sudo pacman -R tarefas</code>; a sua lista em <code>~/.local/share/tarefas</code> fica, porque não é do pacote.</li>
+</ol>
+
+<hr>
+
+<h2>Etapa 6: um repositório com ele</h2>
+
+<ol class="passo">
+<li><strong>Junte o pacote aos outros</strong> e crie o índice (detalhes em <a href="repositorio-local.html">Seu Próprio Repositório</a>):
+<pre class="term" data-cwd="/tmp/a5/repo">$ repo-add meurepo.db.tar.gz *.pkg.tar.zst
+==&gt; Adicionando o pacote 'ola-1.0-1-any.pkg.tar.zst'
+…
+==&gt; Adicionando o pacote 'tarefas-1.0-1-any.pkg.tar.zst'
+  -&gt; Computando somas de verificação...
+  -&gt; Criando a entrada de base de dados 'desc'...
+  -&gt; Criando a entrada de base de dados 'files'...
+==&gt; Criando arquivo atualizado da base de dados 'meurepo.db.tar.gz'</pre></li>
+<li><strong>Confira pelo pacman</strong>, com o <code>pacman.conf</code> de teste:
+<pre class="term" data-user="root">#> pacman --config /tmp/a5/pacman-meurepo.conf --dbpath /tmp/a5/db -Ss afazeres
+meurepo/tarefas 1.0-1
+    Lista de afazeres no terminal, guardada num arquivo de texto</pre>
+<p>Com <code>[meurepo]</code> no <code>/etc/pacman.conf</code> de cada PC da casa, todos instalam com <code>sudo pacman -S tarefas</code> e recebem as versões novas no <code>sudo pacman -Syu</code>.</p></li>
+</ol>
+
+<hr>
+
+<h2>Etapa 7: publicar no AUR (ilustrativo)</h2>
+
+<div class="warning">
+<strong>Nada desta etapa foi feito de verdade</strong>
+<p>O <code>tarefas</code> é um exemplo de aula: publicá-lo poluiria o AUR, que é de todos. Os comandos abaixo mostram o caminho real, para quando você tiver um programa útil para outras pessoas. Leia antes as <a href="https://wiki.archlinux.org/title/AUR_submission_guidelines">regras de envio</a>: o pacote não pode já existir (nem nos repositórios oficiais), precisa ser útil para mais gente e não pode conter binários compilados por você.</p>
+</div>
+
+<ol class="passo">
+<li><strong>Publique o código num lugar público</strong> (GitHub, Codeberg, GitLab) e crie a release <code>v1.0</code>. O AUR só guarda a receita; o <code>source</code> precisa apontar para um endereço que qualquer um baixe. A linha muda para algo como:
+<pre class="file" data-file="ilustrativo: source apontando para a release">url="https://github.com/ana/tarefas"
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")</pre>
+<p>O <code>nome::endereço</code> diz ao makepkg com que nome salvar o download. Depois disso, <code>updpkgsums</code> (a soma muda, porque o arquivo agora é o do GitHub), <code>makepkg</code>, <code>namcap</code> e <code>.SRCINFO</code> de novo.</p></li>
+
+<li><strong>Crie a conta</strong> em <code>aur.archlinux.org</code> ("Register") e uma chave SSH só para o AUR:
+<pre class="file" data-file="ilustrativo: chave SSH para o AUR">ssh-keygen -t ed25519 -f ~/.ssh/aur -C "ana@aur"
+cat ~/.ssh/aur.pub          # cole esta linha em "My Account" → "SSH Public Key"</pre>
+<p>E diga ao SSH para usar essa chave com o AUR:</p>
+<pre class="file" data-file="~/.ssh/config (ilustrativo)">Host aur.archlinux.org
+  IdentityFile ~/.ssh/aur
+  User aur</pre></li>
+
+<li><strong>Clone o repositório (vazio) do nome escolhido</strong>. No AUR, o pacote é criado no primeiro <code>push</code>:
+<pre class="file" data-file="ilustrativo: criar o pacote no AUR">git -c init.defaultBranch=master clone ssh://aur@aur.archlinux.org/tarefas.git aur-tarefas
+cd aur-tarefas
+cp ../pacote-tarefas/PKGBUILD ../pacote-tarefas/.SRCINFO .
+git add PKGBUILD .SRCINFO
+git commit -m "Versão inicial: tarefas 1.0-1"
+git push</pre>
+<p>Só entram a receita, o <code>.SRCINFO</code> e arquivos pequenos de que a receita precisa (patches, um <code>.install</code>). Nada de <code>.tar.gz</code>, <code>.pkg.tar.zst</code>, <code>src/</code> ou <code>pkg/</code>: crie um <code>.gitignore</code> como o do <code>yay-bin</code>. O branch tem que ser <code>master</code>, e o servidor recusa o <code>push</code> se o <code>.SRCINFO</code> estiver faltando.</p></li>
+
+<li><strong>Cuide do pacote</strong>. A cada versão nova do programa: <code>pkgver=1.1</code>, <code>pkgrel=1</code>, <code>updpkgsums</code>, <code>makepkg</code> (de preferência num chroot limpo, veja <a href="aur-seguranca.html">AUR com Segurança</a>), <code>namcap</code>, <code>makepkg --printsrcinfo &gt; .SRCINFO</code>, <code>git commit</code> e <code>git push</code>. Responda os comentários; se não puder mais manter, use "Disown Package" para deixá-lo órfão em vez de abandoná-lo.</li>
+</ol>
+
+<hr>
+
+<h2>O caminho todo, resumido</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Comando</th><th>Resultado</th></tr>
+<tr><td>Testar o programa</td><td><code>./tarefas --help</code>, <code>TAREFAS_ARQUIVO=… ./tarefas add …</code></td><td>Funciona fora do pacote</td></tr>
+<tr><td>Lançar</td><td><code>tar -czf tarefas-1.0.tar.gz tarefas-1.0</code></td><td>Uma versão fixa</td></tr>
+<tr><td>Somas</td><td><code>updpkgsums</code></td><td><code>sha256sums</code> preenchido</td></tr>
+<tr><td>Compilar e testar</td><td><code>makepkg</code></td><td><code>tarefas-1.0-1-any.pkg.tar.zst</code></td></tr>
+<tr><td>Conferir</td><td><code>namcap PKGBUILD</code>, <code>namcap *.pkg.tar.zst</code></td><td>Avisos entendidos ou corrigidos</td></tr>
+<tr><td>Metadados</td><td><code>makepkg --printsrcinfo &gt; .SRCINFO</code></td><td><code>.SRCINFO</code></td></tr>
+<tr><td>Instalar</td><td><code>sudo pacman -U …</code></td><td>Pacote no sistema</td></tr>
+<tr><td>Distribuir</td><td><code>repo-add</code> / <code>git push</code> no AUR</td><td>Outros PCs / outras pessoas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Desafios</h2>
+
+<div class="exercise">
+<h3>1. Versão 1.1</h3>
+<p>Você corrigiu um bug no <code>tarefas</code> e lançou a 1.1. Como ficam as duas variáveis?</p>
+<div class="ex-code">pkgver=<input data-answer="1.1" aria-label="pkgver"> pkgrel=<input data-answer="1" aria-label="pkgrel"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Só a receita</h3>
+<p>Você esqueceu de instalar o README e corrigiu só o <code>package()</code>. Qual o novo <code>pkgrel</code> (era 1)?</p>
+<div class="ex-code">pkgrel=<input data-answer="2" aria-label="pkgrel"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que o <code>check()</code> passou na primeira vez e falhou na terceira?</p>
+<label><input type="radio" name="q3"> O namcap alterou o script.</label>
+<label><input type="radio" name="q3"> A descrição nova quebrou o programa.</label>
+<label><input type="radio" name="q3"> O arquivo de teste em <code>src/</code> sobrou das rodadas anteriores.</label>
+<label><input type="radio" name="q3"> O <code>-f</code> desliga os testes.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Para publicar no AUR, o que vai no repositório git do pacote?</p>
+<label><input type="radio" name="q4"> O <code>.pkg.tar.zst</code> pronto.</label>
+<label><input type="radio" name="q4"> O <code>PKGBUILD</code>, o <code>.SRCINFO</code> e arquivos pequenos da receita.</label>
+<label><input type="radio" name="q4"> O código-fonte inteiro e a pasta <code>src/</code>.</label>
+<label><input type="radio" name="q4"> Só o <code>README</code>.</label>
+</div>
+
+<p><strong>Para ir além:</strong> acrescente uma página de manual (<code>tarefas.1</code>) instalada em <code>/usr/share/man/man1/</code> (o makepkg a comprime sozinho, a fase "Comprimindo páginas de man"); escreva um <a href="hooks.html">hook</a> que avise quando o <code>tarefas</code> for atualizado; compile num chroot limpo com <code>extra-x86_64-build</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Prepare o programa: <code>--help</code>, <code>--version</code>, dados fora de <code>/usr</code>, licença, lançamento <code>nome-versão.tar.gz</code>.</li>
+  <li>PKGBUILD com <code>check()</code> que não depende de sobras de rodadas anteriores.</li>
+  <li><code>namcap</code>: corrija o que procede, entenda os falsos alarmes.</li>
+  <li><code>.SRCINFO</code> sempre atualizado; <code>pacman -U</code> para testar; <code>repo-add</code> para distribuir em casa.</li>
+  <li>No AUR: <code>source</code> público, conta, chave SSH, <code>git push</code> do <code>PKGBUILD</code> e do <code>.SRCINFO</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o roteiro completo está em <a href="https://wiki.archlinux.org/title/Creating_packages">Creating packages</a> e as regras em <a href="https://wiki.archlinux.org/title/Arch_package_guidelines">Arch package guidelines</a>. Para publicar, leia <a href="https://wiki.archlinux.org/title/AUR_submission_guidelines">AUR submission guidelines</a> (como criar a conta, a chave SSH e o primeiro <code>push</code>) e, para scripts como este, a página <a href="https://wiki.archlinux.org/title/PKGBUILD">PKGBUILD</a> (em português: <a href="https://wiki.archlinux.org/title/PKGBUILD_(Portugu%C3%AAs)">PKGBUILD (Português)</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
