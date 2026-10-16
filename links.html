@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Links (ln) — atalhos e links físicos | Guia Arch</title>
+<meta name="description" content="Aprenda links simbólicos e físicos no Arch Linux com ln: ln -s, ls -l com a seta, inode com ls -i, links quebrados, readlink, e os links do próprio Arch (/bin, /etc/localtime, sh → bash, systemctl enable). Saídas reais e terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Links (ln)</span></h1>
+
+<p class="intro">Um <strong>link</strong> é um segundo nome para um arquivo ou pasta que já existe. Parece o atalho da área de trabalho do Windows, só que funciona para qualquer programa, inclusive no terminal. O comando que cria links é o <code>ln</code> (de <em>link</em>, "ligação"). O próprio Arch está cheio deles: o <code>/bin</code>, o fuso horário e o <code>sh</code> são links.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre link <strong>simbólico</strong> (atalho) e link <strong>físico</strong> (outro nome para os mesmos dados).</li>
+  <li>Ler um link no <code>ls -l</code> (a seta <code>-&gt;</code>) e o número do inode com <code>ls -i</code>.</li>
+  <li>Criar, atualizar e apagar links com segurança.</li>
+  <li>Por que um link "quebra", e como evitar com caminhos relativos e absolutos.</li>
+  <li>Onde o Arch usa links: <code>/bin</code>, <code>/etc/localtime</code>, <code>/usr/bin/sh</code> e o <code>systemctl enable</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Antes do comando: nome, dados e inode</h2>
+<p>Para entender links, é preciso saber como o Linux guarda um arquivo. Pense numa biblioteca: o livro fica numa prateleira com um número (os <strong>dados</strong>, no disco), e o fichário tem uma ficha com o título apontando para esse número (o <strong>nome</strong>, na pasta). O número da prateleira se chama <strong>inode</strong> (de <em>index node</em>, "nó de índice"). O nome que você vê numa pasta é só a ficha.</p>
+
+<p>Daí saem os dois tipos de link:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Link simbólico (<code>ln -s</code>)</th><th>Link físico (<code>ln</code>)</th></tr>
+<tr><td>O que é</td><td>Um arquivinho que guarda o <strong>caminho</strong> de outro</td><td>Uma segunda ficha para o <strong>mesmo inode</strong></td></tr>
+<tr><td>Parece com</td><td>Atalho do Windows; um bilhete "o livro está na sala 3"</td><td>O mesmo livro com dois títulos no fichário</td></tr>
+<tr><td>Se o original for apagado</td><td>O link quebra</td><td>Os dados continuam acessíveis pelo outro nome</td></tr>
+<tr><td>Funciona com pastas?</td><td>Sim</td><td>Não</td></tr>
+<tr><td>Funciona entre discos/partições?</td><td>Sim</td><td>Não</td></tr>
+<tr><td>Como aparece no <code>ls -l</code></td><td><code>l</code> no começo e <code>-&gt;</code> mostrando o destino</td><td>Igual a um arquivo comum, com o contador de links maior que 1</td></tr>
+</table>
+</div>
+
+<p>No dia a dia, você vai usar o <strong>simbólico</strong> em 95% dos casos. O <code>ln</code> vem no pacote <code>coreutils</code>, parte do <code>base</code>:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/ln
+/usr/bin/ln pertence a coreutils 9.12-2</pre>
+
+<hr>
+
+<h2>Criar um link simbólico</h2>
+
+<dl class="anatomy">
+  <dt>ln</dt><dd>O programa que cria links.</dd>
+  <dt>-s</dt><dd>Link <strong>simbólico</strong> (de <em>symbolic</em>). Sem o <code>-s</code>, vira link físico.</dd>
+  <dt>Documentos/trabalho/2026/projeto-site</dt><dd>O <strong>alvo</strong>: para onde o link vai apontar. Vem primeiro.</dd>
+  <dt>projeto</dt><dd>O <strong>nome do link</strong>: o atalho que será criado. Vem por último.</dd>
+</dl>
+
+<p>A ordem é a mesma do <a href="copiar.html"><code>cp</code></a>: primeiro o que já existe, depois o nome novo. Uma forma de lembrar: "<code>ln -s</code> <em>de onde vem</em> <em>como vai se chamar</em>".</p>
+
+<pre class="term">$ ln -s Documentos/trabalho/2026/projeto-site projeto
+$ ls -l projeto
+lrwxrwxrwx 1 ana ana 37 16 out 15:02 projeto -&gt; Documentos/trabalho/2026/projeto-site</pre>
+
+<p>Quando dá certo, o <code>ln</code> não mostra nada (e devolve 0). Leia a linha do <code>ls -l</code>, coluna por coluna:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedaço</th><th>O que significa num link simbólico</th></tr>
+<tr><td><code>l</code></td><td>O primeiro caractere é o tipo: <code>l</code> = link. (<code>-</code> seria arquivo, <code>d</code> pasta.)</td></tr>
+<tr><td><code>rwxrwxrwx</code></td><td>Sempre assim em links simbólicos. Não quer dizer que todos podem tudo: o que vale são as permissões do <strong>alvo</strong>.</td></tr>
+<tr><td><code>1</code></td><td>Quantos nomes (links físicos) o próprio link tem.</td></tr>
+<tr><td><code>ana ana</code></td><td>Dono e grupo do link.</td></tr>
+<tr><td><code>37</code></td><td>O tamanho do link: o número de caracteres do caminho guardado (<code>Documentos/trabalho/2026/projeto-site</code> tem 37).</td></tr>
+<tr><td><code>16 out 15:02</code></td><td>Quando o link foi criado (no Arch em pt_BR, o dia vem antes do mês).</td></tr>
+<tr><td><code>projeto -&gt; Documentos/…</code></td><td>O nome do link, uma seta, e o caminho para onde ele aponta.</td></tr>
+</table>
+</div>
+
+<h3>O link funciona como se fosse a pasta</h3>
+<p>Uma barra no fim faz toda a diferença: <code>ls -l projeto</code> mostra o <strong>link</strong>; <code>ls -l projeto/</code> entra nele e mostra o <strong>conteúdo do alvo</strong>:</p>
+
+<pre class="term">$ ls -l projeto/
+total 0
+-rw-r--r-- 1 ana ana 0 16 out 15:02 index.html
+-rw-r--r-- 1 ana ana 0 16 out 15:02 style.css
+$ cd projeto
+$ pwd
+/home/ana/projeto                                   « o caminho "pelo atalho"
+$ pwd -P
+/home/ana/Documentos/trabalho/2026/projeto-site     « o caminho real</pre>
+
+<p>O <code>-P</code> (de <em>physical</em>) mostra onde você está de verdade, sem atalhos. Repare que o prompt mostrou <code>projeto</code>: o Bash lembra o caminho por onde você entrou.</p>
+
+<div class="try" data-setup="mkdir -p Documentos/trabalho/2026/projeto-site;;touch Documentos/trabalho/2026/projeto-site/index.html" data-goal="link:~/projeto,ran:ls" data-solucao="ln -s Documentos/trabalho/2026/projeto-site projeto;;ls -l projeto;;ls projeto/">
+<p class="try-task"><strong>Missão 1:</strong> crie na pasta pessoal um atalho chamado <code>projeto</code> para a pasta <code>Documentos/trabalho/2026/projeto-site</code>. Depois compare <code>ls -l projeto</code> com <code>ls projeto/</code>.</p>
+</div>
+
+<hr>
+
+<h2>Descobrir para onde um link aponta</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que mostra</th></tr>
+<tr><td><code>ls -l link</code></td><td>O link e o destino, depois de <code>-&gt;</code></td></tr>
+<tr><td><code>readlink link</code></td><td>Só o destino, exatamente como foi gravado</td></tr>
+<tr><td><code>readlink -f link</code></td><td>O caminho final, completo, seguindo links em cadeia</td></tr>
+<tr><td><code>file link</code></td><td>Diz "symbolic link to …" (o <code>file</code> descreve qualquer arquivo)</td></tr>
+</table>
+</div>
+
+<h3>Os links do próprio Arch</h3>
+<p>O Arch usa links em pontos muito importantes do sistema. Vale a pena olhar cada um.</p>
+
+<p><strong>1. <code>/bin</code>, <code>/sbin</code> e <code>/lib</code>.</strong> Antigamente os programas ficavam espalhados entre <code>/bin</code>, <code>/sbin</code>, <code>/usr/bin</code> e <code>/usr/sbin</code>. O Arch juntou tudo em <code>/usr/bin</code> (em 2013) e deixou os nomes antigos como links, para os scripts velhos continuarem funcionando:</p>
+
+<pre class="term">$ ls -ld /bin /sbin /lib /lib64
+lrwxrwxrwx 1 root root 7 12 out  2025 /bin -&gt; usr/bin
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib -&gt; usr/lib
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib64 -&gt; usr/lib
+lrwxrwxrwx 1 root root 7 12 out  2025 /sbin -&gt; usr/bin    « sbin também vai para bin!
+$ readlink /bin
+usr/bin</pre>
+
+<p>O <code>-d</code> é importante: sem ele, <code>ls -l /bin</code> entraria no link e listaria os milhares de programas de <code>/usr/bin</code>. Repare na diferença do Arch: o <code>/sbin</code> aponta para <code>usr/bin</code>, não para <code>usr/sbin</code> (que também é um link para <code>bin</code>). No Debian, por exemplo, o <code>/sbin</code> aponta para <code>usr/sbin</code>, que ainda é uma pasta separada. Veja <a href="estrutura-diretorios.html">Estrutura de Diretórios</a>.</p>
+
+<p><strong>2. O fuso horário, <code>/etc/localtime</code>.</strong> Na instalação, você mesmo criou este link, dentro do <code>arch-chroot</code> (veja <a href="configurar.html">Configurar o Sistema</a>):</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="~">#> arch-chroot /mnt ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime</pre>
+
+<pre class="term">$ ls -l /etc/localtime
+lrwxrwxrwx 1 root root 37 16 out 12:09 /etc/localtime -&gt; /usr/share/zoneinfo/America/Sao_Paulo
+$ readlink /etc/localtime
+/usr/share/zoneinfo/America/Sao_Paulo</pre>
+
+<p>Trocar de fuso é trocar o alvo do link (o <code>timedatectl set-timezone</code> faz exatamente isso por você).</p>
+
+<p><strong>3. O <code>sh</code> do Arch é o Bash.</strong> Scripts que começam com <code>#!/bin/sh</code> rodam no Bash, porque <code>/usr/bin/sh</code> é um link para <code>bash</code>. (No Debian e no Ubuntu, o <code>sh</code> aponta para outro shell, o <code>dash</code>.) Siga a cadeia toda com <code>readlink -f</code>:</p>
+
+<pre class="term">$ ls -l /usr/bin/sh
+lrwxrwxrwx 1 root root 4 15 set 16:47 /usr/bin/sh -&gt; bash
+$ readlink -f /bin/sh
+/usr/bin/bash                « /bin → usr/bin, e sh → bash
+$ readlink -f /sbin/init
+/usr/lib/systemd/systemd     « o primeiro programa do boot é o systemd
+$ file /bin /usr/bin/sh
+/bin:        symbolic link to usr/bin
+/usr/bin/sh: symbolic link to bash</pre>
+
+<p><strong>4. Versões de programas.</strong> Quem digita <code>python3</code> recebe a versão atual. Quando o Python for atualizado, o pacote só muda o link:</p>
+
+<pre class="term">$ ls -l /usr/bin/python3 /etc/os-release
+lrwxrwxrwx 1 root root 21 16 out 12:09 /etc/os-release -&gt; ../usr/lib/os-release
+lrwxrwxrwx 1 root root 10  2 out 07:23 /usr/bin/python3 -&gt; python3.14</pre>
+
+<p><strong>5. Ligar um serviço é criar um link.</strong> O <code>systemctl enable</code> (veja <a href="systemd.html">systemctl e Serviços</a>) não edita nenhuma configuração: ele cria um link simbólico numa pasta <code>.wants</code>, e o <code>disable</code> apaga esse link:</p>
+
+<pre class="term">$ sudo systemctl enable nginx
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+$ ls -l /etc/systemd/system/multi-user.target.wants/nginx.service
+lrwxrwxrwx 1 root root 37 16 out 15:01 /etc/systemd/system/multi-user.target.wants/nginx.service -&gt; /usr/lib/systemd/system/nginx.service
+$ sudo systemctl disable nginx
+Removed '/etc/systemd/system/multi-user.target.wants/nginx.service'.</pre>
+
+<div class="try" data-goal="out:/usr/bin/bash" data-solucao="ls -l /usr/bin/sh;;readlink -f /bin/sh">
+<p class="try-task"><strong>Missão 2:</strong> descubra qual programa responde de verdade quando um script chama <code>/bin/sh</code>. Olhe o <code>/usr/bin/sh</code> com <code>ls -l</code> e depois siga a cadeia toda com <code>readlink -f</code>.</p>
+</div>
+
+<hr>
+
+<h2>Relativo ou absoluto: a causa nº 1 de links quebrados</h2>
+<p>O caminho que você escreve como alvo é gravado <strong>do jeito que foi digitado</strong>. Se for relativo, ele é lido a partir da <strong>pasta onde o link está</strong>, e não de onde você estava quando o criou.</p>
+
+<pre class="term">$ ln -s frutas.txt Documentos/atalho-frutas
+$ cat Documentos/atalho-frutas
+cat: Documentos/atalho-frutas: Arquivo ou diretório inexistente
+$ ls -l Documentos/atalho-frutas
+lrwxrwxrwx 1 ana ana 10 16 out 15:02 Documentos/atalho-frutas -&gt; frutas.txt     « procura Documentos/frutas.txt</pre>
+
+<p>O link mora em <code>Documentos/</code> e aponta para <code>frutas.txt</code>. Então ele procura <code>Documentos/frutas.txt</code>, que não existe. O <code>/etc/os-release</code> que você viu acima faz do jeito certo: <code>../usr/lib/os-release</code> sobe de <code>/etc</code> para <code>/</code> e desce em <code>usr/lib</code>. Três formas de acertar:</p>
+
+<pre class="term">$ ln -sf ../frutas.txt Documentos/atalho-frutas      « relativo ao link
+$ head -2 Documentos/atalho-frutas
+banana
+maçã
+$ ln -sfr frutas.txt Documentos/atalho-frutas        « o -r faz a conta
+$ ls -l Documentos/atalho-frutas
+lrwxrwxrwx 1 ana ana 13 16 out 15:02 Documentos/atalho-frutas -&gt; ../frutas.txt
+$ ln -sf ~/frutas.txt Documentos/atalho-frutas       « absoluto
+$ ls -l Documentos/atalho-frutas
+lrwxrwxrwx 1 ana ana 20 16 out 15:02 Documentos/atalho-frutas -&gt; /home/ana/frutas.txt</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Comando</th><th>Quando usar</th></tr>
+<tr><td>Caminho absoluto</td><td><code>ln -s ~/frutas.txt Documentos/atalho</code></td><td>O alvo nunca muda de lugar. É o mais simples (o <code>/etc/localtime</code> é assim).</td></tr>
+<tr><td>Relativo ao link</td><td><code>ln -s ../frutas.txt Documentos/atalho</code></td><td>Você vai mover a pasta inteira junto (projetos, backups, pendrive). O <code>/bin -&gt; usr/bin</code> é assim.</td></tr>
+<tr><td>Deixar o ln calcular</td><td><code>ln -sr frutas.txt Documentos/atalho</code></td><td>Quer relativo sem fazer a conta. O <code>-r</code> (<em>relative</em>) calcula sozinho.</td></tr>
+</table>
+</div>
+
+<p>O <code>~</code> é trocado pelo shell por <code>/home/ana</code> antes de o <code>ln</code> rodar, por isso vira um caminho absoluto. O <code>-f</code> (de <em>force</em>) substituiu o link que já existia; ele é explicado logo abaixo.</p>
+
+<hr>
+
+<h2>Link físico</h2>
+
+<dl class="anatomy">
+  <dt>ln</dt><dd>Sem <code>-s</code>: link físico.</dd>
+  <dt>original.txt</dt><dd>O arquivo que já existe.</dd>
+  <dt>outro-nome.txt</dt><dd>O novo nome para os mesmos dados.</dd>
+</dl>
+
+<pre class="term">$ echo ideia &gt; original.txt
+$ ln original.txt outro-nome.txt
+$ ls -li original.txt outro-nome.txt
+1314927 -rw-r--r-- 2 ana ana 6 16 out 15:02 original.txt
+1314927 -rw-r--r-- 2 ana ana 6 16 out 15:02 outro-nome.txt
+ « mesmo inode (1314927) e contador de links = 2</pre>
+
+<p>O <code>-i</code> do <code>ls</code> (de <em>inode</em>) mostra o número do inode, na primeira coluna. Os dois nomes têm o <strong>mesmo</strong> número: são o mesmo arquivo, a mesma "prateleira". O <code>2</code> depois das permissões diz quantos nomes ele tem. Na sua máquina o número do inode será outro; o que importa é ser igual nos dois.</p>
+
+<p>Compare com um link simbólico: ele ganha um inode <strong>próprio</strong>, porque é um arquivinho separado que só guarda um caminho:</p>
+
+<pre class="term">$ ln -s frutas.txt simbolico.txt
+$ ls -li frutas.txt simbolico.txt
+1314249 -rw-rw-r-- 1 ana ana 47 14 out 16:05 frutas.txt
+1314929 lrwxrwxrwx 1 ana ana 10 16 out 15:02 simbolico.txt -&gt; frutas.txt</pre>
+
+<p>Agora o teste de verdade com o link físico: mexer por um nome e apagar o outro.</p>
+
+<pre class="term">$ echo "mais uma" &gt;&gt; outro-nome.txt
+$ cat original.txt
+ideia
+mais uma                              « a mudança aparece pelos dois nomes
+$ rm original.txt
+$ cat outro-nome.txt
+ideia
+mais uma                              « os dados continuam lá
+$ ls -li outro-nome.txt
+1314927 -rw-r--r-- 1 ana ana 15 16 out 15:02 outro-nome.txt     « contador voltou para 1</pre>
+
+<p>O <code>rm</code>, na verdade, só apaga uma ficha (por isso existe também o comando <code>unlink</code>, "desligar"). Os dados só são liberados quando o último nome é removido.</p>
+
+<div class="note">
+<strong>Link físico não é backup</strong>
+<p>Como é o mesmo arquivo, editar por um nome altera o outro. Para ter uma cópia independente, use <a href="copiar.html"><code>cp</code></a>.</p>
+</div>
+
+<div class="tip">
+<strong>Por que as pastas têm contador maior que 1?</strong>
+<p>Em <code>drwxrwxr-x 3 ana ana 4096 15 out 09:07 Documentos</code>, o <code>3</code> conta os nomes da pasta: <code>Documentos</code> (dentro da pasta pessoal), o <code>.</code> dentro dela mesma e o <code>..</code> dentro da subpasta <code>projetos</code>. Esses são os únicos links físicos para pastas que existem, e só o sistema pode criá-los.</p>
+</div>
+
+<div class="try" data-setup="echo nome,valor &gt; dados.csv;;mkdir -p backup" data-goal="file:~/backup/dados.csv,ran:^ln +[^-\s]" data-solucao="ln dados.csv backup/dados.csv;;ls -li dados.csv backup/dados.csv">
+<p class="try-task"><strong>Missão 3:</strong> crie um link <strong>físico</strong> do arquivo <code>dados.csv</code> dentro da pasta <code>backup</code>, com o mesmo nome. Confira com <code>ls -li</code> que os dois têm o mesmo inode e o contador 2.</p>
+</div>
+
+<hr>
+
+<h2>Atualizar e apagar links</h2>
+
+<h3>O nome já existe: <code>-f</code> e <code>-i</code></h3>
+<p>Se o nome do link já existe, o <code>ln</code> recusa e devolve 1. O <code>-f</code> (<em>force</em>) apaga o antigo e cria o novo; o <code>-i</code> (<em>interactive</em>) pergunta antes:</p>
+<pre class="term">$ ln -s frutas.txt atalho.txt
+$ ln -s frutas.txt atalho.txt
+ln: falha ao criar link simbólico 'atalho.txt': Arquivo existe
+$ echo $?
+1
+$ ln -sf frutas.txt atalho.txt
+$ echo $?
+0
+$ ln -si frutas.txt atalho.txt
+ln: substituir 'atalho.txt'?             « responda s ou n</pre>
+
+<h3>Link para pasta: <code>-n</code></h3>
+<p>Com links para <strong>pastas</strong> existe uma armadilha. Se o nome do link aponta para uma pasta, o <code>ln</code> entra nela e cria o link novo <strong>lá dentro</strong>, mesmo com <code>-f</code>, sem erro nenhum:</p>
+
+<pre class="term">$ ln -s ~/Documentos/v1 atual
+$ ln -sf ~/Documentos/v2 atual
+$ ls -l atual
+lrwxrwxrwx 1 ana ana 23 16 out 15:02 atual -&gt; /home/ana/Documentos/v1     « não mudou!
+$ ls -l Documentos/v1
+total 0
+lrwxrwxrwx 1 ana ana 23 16 out 15:02 v2 -&gt; /home/ana/Documentos/v2     « um link perdido dentro da v1
+$ ln -sfn ~/Documentos/v2 atual
+$ ls -l atual
+lrwxrwxrwx 1 ana ana 23 16 out 15:02 atual -&gt; /home/ana/Documentos/v2     « agora sim</pre>
+
+<p>O <code>-n</code> (<em>no-dereference</em>, "não seguir") manda o <code>ln</code> tratar <code>atual</code> como um nome, sem entrar nele. Para trocar o destino de um link de pasta, decore: <strong><code>ln -sfn</code></strong>.</p>
+
+<h3>Apagar um link</h3>
+<p>Apagar o link <strong>não</strong> apaga o alvo. Use <code>rm</code> ou <code>unlink</code> no nome do link, <strong>sem barra no fim</strong>:</p>
+
+<pre class="term">$ rm projeto/
+rm: não foi possível remover 'projeto/': É um diretório
+$ rm projeto
+$ ls Documentos/trabalho/2026/
+projeto-site                         « a pasta original continua lá</pre>
+
+<div class="warning">
+<strong>Nunca use <code>rm -r</code> num link com barra no fim</strong>
+<p>Com a barra, o <code>rm -r</code> entra na pasta apontada e apaga o <strong>conteúdo real</strong>. Depois ainda reclama, e o atalho continua lá, apontando para uma pasta agora vazia:</p>
+<pre class="term">$ ls alvo
+importante.txt
+$ ln -s alvo atalho
+$ rm -r atalho/
+rm: não foi possível remover 'atalho/': Não é um diretório
+$ ls alvo
+$                                    « o importante.txt sumiu
+$ ls -l atalho
+lrwxrwxrwx 1 ana ana 4 16 out 15:02 atalho -&gt; alvo</pre>
+<p>Para remover um atalho, é sempre <code>rm atalho</code>, sem <code>-r</code> e sem barra. Veja também <a href="remover.html">rm e rmdir</a>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de criar atalhos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td>Link simbólico</td><td><code>ln -s ~/Documentos/trabalho ~/trabalho</code></td><td>Quer um atalho que funcione no terminal e em qualquer programa.</td></tr>
+<tr><td>Link físico</td><td><code>ln dados.csv backup/dados.csv</code></td><td>Precisa que o arquivo continue existindo mesmo se um nome for apagado, na mesma partição.</td></tr>
+<tr><td>Favorito no gerenciador de arquivos</td><td>Arraste a pasta para a barra lateral, ou <kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Só quer acesso rápido no Nautilus/Dolphin (se você tem um <a href="desktop.html">desktop</a>).</td></tr>
+<tr><td>alias no <code>.bashrc</code></td><td><code>alias trab='cd ~/Documentos/trabalho'</code></td><td>Quer um "comando" que leve até a pasta. Veja <a href="bashrc.html">.bashrc, alias, PATH</a>.</td></tr>
+<tr><td>Comando do sistema</td><td><code>timedatectl set-timezone</code>, <code>systemctl enable</code></td><td>O link é do sistema: deixe a ferramenta certa criar, em vez de fazer à mão.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" ao abrir um link que existe</strong>
+<pre class="term">$ ls -l ideias.txt
+lrwxrwxrwx 1 ana ana 22 16 out 15:02 ideias.txt -&gt; /home/ana/rascunho.txt
+$ cat ideias.txt
+cat: ideias.txt: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o link está <strong>quebrado</strong>: o alvo (<code>rascunho.txt</code>) foi apagado, renomeado ou movido. No terminal colorido, links quebrados aparecem em vermelho.</p>
+<p><strong>Como confirmar:</strong> o <code>-xtype l</code> do <a href="find.html"><code>find</code></a> lista só os links quebrados:</p>
+<pre class="term">$ find . -maxdepth 1 -xtype l
+./ideias.txt</pre>
+<p><strong>Como resolver:</strong> recrie apontando para o lugar certo: <code>ln -sf ~/Documentos/rascunho.txt ideias.txt</code>. Ou apague o link: <code>rm ideias.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"falha ao criar link simbólico … Arquivo existe"</strong>
+<pre class="term">$ ln -s frutas.txt atalho.txt
+ln: falha ao criar link simbólico 'atalho.txt': Arquivo existe</pre>
+<p><strong>Como resolver:</strong> escolha outro nome, ou substitua de propósito com <code>ln -sf</code> (<code>ln -sfn</code> se for um link de pasta).</p>
+</div>
+
+<div class="cenario">
+<strong>"não são permitidos links físicos para diretórios"</strong>
+<pre class="term">$ ln Documentos docs
+ln: Documentos: não são permitidos links físicos para diretórios</pre>
+<p><strong>O que aconteceu:</strong> faltou o <code>-s</code>. Links físicos não podem apontar para pastas.</p>
+<p><strong>Como resolver:</strong> <code>ln -s Documentos docs</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Link entre dispositivos inválido"</strong>
+<pre class="term">$ echo teste &gt; /tmp/x.txt
+$ ln /tmp/x.txt x.txt
+ln: falha ao criar link físico 'x.txt' =&gt; '/tmp/x.txt': Link entre dispositivos inválido</pre>
+<p><strong>O que aconteceu:</strong> um link físico é outra ficha para o mesmo inode, e inodes só valem dentro de uma partição. No Arch, o <code>/tmp</code> é um <code>tmpfs</code> (fica na memória RAM), um "dispositivo" diferente da sua pasta pessoal. O mesmo vale para um HD externo ou outra partição.</p>
+<p><strong>Como resolver:</strong> use um link simbólico (<code>ln -s /tmp/x.txt x.txt</code>), que funciona entre partições, ou copie o arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>"alvo 'atalho': Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ ln -s Meus Documentos atalho3
+ln: alvo 'atalho3': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o nome com espaço virou dois argumentos. Com três nomes, o <code>ln</code> entende que o último é uma pasta onde criar dois links, e essa pasta não existe.</p>
+<p><strong>Como resolver:</strong> aspas: <code>ln -s "Meus Documentos" atalho3</code>. O mesmo vale para a <code>"Área de trabalho"</code>.</p>
+</div>
+
+<div class="try" data-setup="mkdir -p Documentos;;echo ideia boa &gt; Documentos/rascunho.txt;;ln -s ~/rascunho.txt ideias.txt" data-goal="link:~/ideias.txt,contains:~/ideias.txt=ideia boa" data-solucao="ls -l ideias.txt;;ln -sf ~/Documentos/rascunho.txt ideias.txt;;cat ideias.txt">
+<p class="try-task"><strong>Missão 4:</strong> o link <code>ideias.txt</code> está quebrado: o rascunho foi movido para <code>Documentos/rascunho.txt</code>. Veja com <code>ls -l</code> para onde ele aponta e conserte-o com <code>ln -sf</code>. Confira com <code>cat ideias.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-s</code></td><td>Cria link simbólico</td><td><code>ln -s alvo nome</code></td></tr>
+<tr><td>(sem <code>-s</code>)</td><td>Cria link físico</td><td><code>ln arquivo outro-nome</code></td></tr>
+<tr><td><code>-f</code></td><td>Substitui se o nome já existir</td><td><code>ln -sf alvo nome</code></td></tr>
+<tr><td><code>-n</code></td><td>Não entra num link de pasta (use com <code>-f</code>)</td><td><code>ln -sfn nova atual</code></td></tr>
+<tr><td><code>-r</code></td><td>Calcula o caminho relativo automaticamente</td><td><code>ln -sr arq pasta/link</code></td></tr>
+<tr><td><code>-v</code></td><td>Mostra o que foi criado (<code>'versao' -&gt; '/home/ana/Documentos/v1'</code>)</td><td><code>ln -sv alvo nome</code></td></tr>
+<tr><td><code>-i</code></td><td>Pergunta antes de substituir</td><td><code>ln -si alvo nome</code></td></tr>
+</table>
+</div>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando relacionado</th><th>Para quê</th></tr>
+<tr><td><code>ls -l nome</code> / <code>ls -ld pasta</code></td><td>Ver o link e a seta, sem entrar nele</td></tr>
+<tr><td><code>ls -li</code></td><td>Mostra o inode, para identificar links físicos</td></tr>
+<tr><td><code>readlink nome</code> / <code>readlink -f nome</code></td><td>Destino gravado / destino final</td></tr>
+<tr><td><code>pwd -P</code></td><td>A pasta real, sem atalhos</td></tr>
+<tr><td><code>unlink nome</code></td><td>Apaga um link (igual a <code>rm nome</code>)</td></tr>
+<tr><td><code>find . -type l</code></td><td>Lista todos os links</td></tr>
+<tr><td><code>find . -xtype l</code></td><td>Lista só os links quebrados</td></tr>
+<tr><td><code>stat -c '%h %i' nome</code></td><td>Contador de links e inode</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Atalho para uma pasta</h3>
+<p>Complete para criar na pasta pessoal um atalho chamado <code>fotos</code> que aponta para <code>/mnt/hd/Fotos</code>:</p>
+<div class="ex-code">ln <input data-answer="-s" aria-label="opção"> /mnt/hd/Fotos ~/fotos</div>
+</div>
+
+<div class="exercise">
+<h3>2. Para onde aponta?</h3>
+<p>Complete para ver o destino <strong>final</strong> de <code>/bin/sh</code>:</p>
+<div class="ex-code">readlink <input data-answer="-f" aria-label="opção"> /bin/sh</div>
+</div>
+
+<div class="exercise">
+<h3>3. Trocar o destino de um link de pasta</h3>
+<p>O link <code>atual</code> aponta para <code>v1</code>. Complete para ele passar a apontar para <code>v2</code>:</p>
+<div class="ex-code">ln <input data-answer="-sfn|-snf|-nsf|-fsn|-nfs|-fns" aria-label="opções"> ~/v2 atual</div>
+</div>
+
+<div class="exercise">
+<h3>4. Apagar só o atalho</h3>
+<p>Complete para apagar o atalho <code>projeto</code> sem tocar na pasta original:</p>
+<div class="ex-code"><input data-answer="rm|unlink" aria-label="comando"> projeto</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você apagou o arquivo original. O que acontece com um <strong>link simbólico</strong> que apontava para ele?</p>
+<label><input type="radio" name="q5"> Continua mostrando o conteúdo normalmente.</label>
+<label><input type="radio" name="q5"> É apagado junto, automaticamente.</label>
+<label><input type="radio" name="q5"> Continua existindo, mas quebrado: abrir dá "Arquivo ou diretório inexistente".</label>
+<label><input type="radio" name="q5"> Vira um link físico.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. No Arch, <code>ls -ld /sbin</code> mostra:</p>
+<label><input type="radio" name="q6"> Uma pasta comum (<code>d</code>), com os programas do root.</label>
+<label><input type="radio" name="q6"> <code>/sbin -&gt; usr/bin</code>: um link para a mesma pasta dos outros programas.</label>
+<label><input type="radio" name="q6"> <code>/sbin -&gt; usr/sbin</code>.</label>
+<label><input type="radio" name="q6"> Um erro: <code>/sbin</code> não existe no Arch.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. <code>ls -li a.txt b.txt</code> mostra o mesmo número na primeira coluna e o contador <code>2</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q7"> São links físicos: dois nomes para os mesmos dados.</label>
+<label><input type="radio" name="q7"> São cópias independentes com o mesmo conteúdo.</label>
+<label><input type="radio" name="q7"> <code>b.txt</code> é um link simbólico para <code>a.txt</code>.</label>
+<label><input type="radio" name="q7"> Os dois arquivos estão corrompidos.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ln -s alvo nome</code> cria um atalho (link simbólico); a ordem é a mesma do <code>cp</code>.</li>
+  <li>No <code>ls -l</code>, links aparecem com <code>l</code> e <code>-&gt;</code>; <code>readlink -f</code> mostra o destino final.</li>
+  <li>Alvos relativos são lidos a partir da pasta do link; na dúvida, use caminho absoluto ou <code>ln -sr</code>.</li>
+  <li>Link físico (<code>ln</code> sem <code>-s</code>) é outro nome para o mesmo inode (<code>ls -i</code>); não serve para pastas nem entre partições.</li>
+  <li>Para trocar o destino: <code>ln -sf</code> (arquivo) ou <code>ln -sfn</code> (pasta). Para apagar: <code>rm nome</code>, sem <code>-r</code> e sem barra.</li>
+  <li>No Arch, <code>/bin</code> e <code>/sbin</code> apontam para <code>usr/bin</code>, <code>/etc/localtime</code> aponta para o fuso, <code>sh</code> é o <code>bash</code>, e o <code>systemctl enable</code> cria links.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a organização das pastas do Arch, com os links <code>/bin</code>, <code>/sbin</code> e <code>/lib</code>, está em <a href="https://wiki.archlinux.org/title/Arch_filesystem_hierarchy">Arch filesystem hierarchy</a> (e a notícia da mudança, em <a href="https://archlinux.org/news/binaries-move-to-usrbin-requiring-update-intervention/">Binaries move to /usr/bin</a>); o link do fuso horário, em <a href="https://wiki.archlinux.org/title/System_time#Time_zone">System time: Time zone</a>; os links do <code>systemctl enable</code>, em <a href="https://wiki.archlinux.org/title/Systemd#Using_units">systemd: Using units</a>; e o <code>ln</code> com o resto do <code>coreutils</code>, em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
