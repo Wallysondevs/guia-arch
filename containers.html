@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Containers — Podman e Docker no Arch Linux | Guia Arch</title>
+<meta name="description" content="Containers no Arch Linux: Podman sem daemon e sem root (podman run, ps, images, rmi, exec), o que muda no Docker (pacote, serviço, grupo docker), tabela Podman × Docker e compose.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Docker e Podman</span></h1>
+
+<p class="intro">Um <strong>container</strong> é um programa rodando numa "caixa" isolada, com o próprio sistema de arquivos, a própria lista de processos e a própria rede, mas usando o <strong>mesmo kernel</strong> da máquina. Com containers você roda um Alpine, um Debian ou um banco de dados dentro do seu Arch sem instalar nada no sistema. No Arch, as duas ferramentas mais usadas são o <strong>Podman</strong> e o <strong>Docker</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre imagem, container e registro (e entre container e máquina virtual).</li>
+  <li>Rodar containers com o Podman como usuário comum, sem daemon e sem root.</li>
+  <li>Listar, entrar, parar e apagar containers e imagens.</li>
+  <li>Como o Docker é instalado no Arch (serviço, grupo <code>docker</code>) e quando escolher cada um.</li>
+  <li>O que é "compose" e os erros reais mais comuns.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Imagem, container e registro</h2>
+<p>Pense numa receita de bolo e no bolo pronto:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>Analogia</th><th>Na prática</th></tr>
+<tr><td><strong>Imagem</strong></td><td>A receita (e os ingredientes já medidos)</td><td>Um pacote só de leitura com os arquivos de um sistema mínimo e um programa. Ex.: <code>docker.io/library/alpine</code>.</td></tr>
+<tr><td><strong>Container</strong></td><td>O bolo feito com a receita</td><td>Uma execução da imagem, com uma camada gravável por cima. Dá para fazer vários a partir da mesma imagem.</td></tr>
+<tr><td><strong>Registro</strong> (<em>registry</em>)</td><td>A livraria de receitas</td><td>O servidor de onde as imagens são baixadas: <code>docker.io</code> (Docker Hub), <code>quay.io</code>, <code>ghcr.io</code>…</td></tr>
+</table>
+</div>
+
+<p>O nome completo de uma imagem tem quatro partes:</p>
+<dl class="anatomy">
+  <dt>docker.io</dt><dd>O registro (o Docker Hub).</dd>
+  <dt>/library</dt><dd>A conta dona da imagem (<code>library</code> = imagens oficiais).</dd>
+  <dt>/alpine</dt><dd>O nome da imagem.</dd>
+  <dt>:latest</dt><dd>A <em>tag</em> (versão). Sem tag, vale <code>latest</code>.</dd>
+</dl>
+
+<h3>Container × máquina virtual</h3>
+<p>Uma <a href="kvm.html">máquina virtual</a> simula um computador inteiro e roda <strong>outro kernel</strong>; um container só isola processos no <strong>mesmo kernel</strong>. Por isso o container liga em segundos e ocupa megabytes, mas não roda Windows nem outro kernel. Dentro de um container Alpine no seu Arch, <code>uname -r</code> mostra o kernel do Arch.</p>
+
+<hr>
+
+<h2>Podman: sem daemon, sem root</h2>
+<p>O Docker clássico funciona com um <strong>daemon</strong> (o serviço <code>dockerd</code>) rodando como root o tempo todo; o comando <code>docker</code> só manda pedidos para ele. O <strong>Podman</strong> (de <em>Pod Manager</em>) não tem daemon: cada <code>podman run</code> cria o container direto, como um processo seu. E ele foi feito para rodar <strong>rootless</strong>, como usuário comum. Na VM do guia, o pacote já está instalado:</p>
+
+<pre class="term">$ podman --version
+podman version 6.1.4
+$ pacman -Qi podman | grep -E '^(Versão|Depende de)'
+Versão               : 6.1.4-1
+Depende de           : catatonit  conmon  containers-common  oci-runtime  glibc  nftables  gpgme  libgpgme.so=45-64  libgcc  libseccomp  libseccomp.so=2-64  passt  shadow  sqlite</pre>
+
+<p>Algumas dependências contam a história de como ele funciona: <code>conmon</code> vigia cada container, <code>oci-runtime</code> é "quem cria a caixa" (no Arch, o <code>crun</code>), <code>passt</code> dá rede aos containers sem root e <code>shadow</code> traz as ferramentas de faixas de IDs.</p>
+
+<h3>Como "root no container" não é root de verdade</h3>
+<p>Para rodar sem root, o Podman usa <strong>namespaces de usuário</strong>: dentro do container, o processo acha que é o usuário 0 (root), mas, para o kernel, ele é a ana. Os outros usuários do container (1, 2, 3…) são emprestados de uma faixa de números reservada para a ana em <code>/etc/subuid</code> e <code>/etc/subgid</code>:</p>
+
+<pre class="term">$ grep ana /etc/subuid /etc/subgid
+/etc/subuid:ana:100000:65536          « a ana pode usar os UIDs 100000 a 165535
+/etc/subgid:ana:100000:65536</pre>
+
+<p>Essas linhas foram criadas pelo <code>useradd</code> quando a ana foi criada. Se um usuário não as tiver, o Podman rootless reclama (veja "Quando não funciona").</p>
+
+<h3>podman info: o que está configurado</h3>
+<p>O <code>podman info</code> despeja dezenas de linhas. As partes que interessam (saída real, só os trechos):</p>
+
+<pre class="term">$ podman info
+host:
+  cgroupManager: systemd
+  cgroupVersion: v2
+  distribution:
+    distribution: arch
+  kernel: 7.2.10-arch1-1
+  networkBackend: netavark                        « quem monta a rede dos containers
+  ociRuntime:
+    name: crun                                    « quem cria o container
+  rootlessNetworkCmd: pasta                       « rede sem root (pacote passt)
+  security:
+    rootless: true                                « rodando sem root
+…
+store:
+  graphDriverName: overlay
+  graphRoot: /home/ana/.local/share/containers/storage   « imagens da ana ficam na home dela
+  runRoot: /run/user/1000/containers
+  volumePath: /home/ana/.local/share/containers/storage/volumes
+…
+version:
+  APIVersion: 6.1.4</pre>
+
+<p>Para pegar um valor só, use <code>--format</code>:</p>
+<pre class="term">$ podman info --format '{{.Host.Security.Rootless}} {{.Store.GraphDriverName}} {{.Host.OCIRuntime.Name}} {{.Host.NetworkBackend}}'
+true overlay crun netavark</pre>
+
+<div class="note">
+<strong>Cada usuário tem os seus containers</strong>
+<p>As imagens e containers da ana ficam em <code>~/.local/share/containers</code>. O root (com <code>sudo podman</code>) tem outro depósito, em <code>/var/lib/containers</code>. Um <code>sudo podman images</code> <strong>não</strong> mostra as imagens da ana, e vice-versa.</p>
+</div>
+
+<hr>
+
+<h2>O primeiro container</h2>
+<p>No começo não há nada:</p>
+
+<pre class="term">$ podman images
+REPOSITORY  TAG         IMAGE ID    CREATED     SIZE
+$ podman ps -a
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES</pre>
+
+<dl class="anatomy">
+  <dt>podman run</dt><dd>Cria e liga um container.</dd>
+  <dt>--rm</dt><dd>Apaga o container quando ele terminar (a imagem fica).</dd>
+  <dt>alpine</dt><dd>A imagem (nome curto; veja abaixo).</dd>
+  <dt>echo oi</dt><dd>O comando que roda <strong>dentro</strong> do container.</dd>
+</dl>
+
+<pre class="term">$ podman run --rm alpine echo oi
+Resolved "alpine" as an alias (/usr/share/containers/registries.conf.d/00-shortnames.conf)
+Trying to pull docker.io/library/alpine:latest...                « não tinha: baixa
+Getting image source signatures
+Copying blob sha256:e2de96513ba9eb53b431787ec8a65cdde380ac4772a3e4c4b714dcfde2a102b5
+Copying config sha256:320994c3b997e2ec6433f717f153e108023c5bec8fefa8d76b83451d16d05ea8
+Writing manifest to image destination
+oi                                                               « a saída do echo, dentro do Alpine
+$ echo $?
+0</pre>
+
+<p>Na primeira vez, o Podman baixa a imagem (cerca de 3 MB comprimidos). A linha <code>Resolved "alpine" as an alias</code> explica como ele soube que <code>alpine</code> quer dizer <code>docker.io/library/alpine</code>: o pacote <code>containers-common</code> traz uma lista de apelidos conhecidos.</p>
+
+<pre class="term">$ grep -E '"(alpine|ubuntu|debian|nginx|archlinux)"' /usr/share/containers/registries.conf.d/00-shortnames.conf
+  "archlinux" = "docker.io/library/archlinux"
+  "alpine" = "docker.io/library/alpine"
+  "debian" = "docker.io/library/debian"
+  "ubuntu" = "docker.io/library/ubuntu"</pre>
+
+<p>Da segunda vez, a imagem já está no disco e nada é baixado. Com o nome completo, nenhuma resolução é necessária:</p>
+
+<pre class="term">$ time podman run --rm docker.io/library/alpine echo oi
+oi
+
+real	0m13,219s
+user	0m0,205s
+sys	0m0,131s
+$ podman images
+REPOSITORY                TAG         IMAGE ID      CREATED      SIZE
+docker.io/library/alpine  latest      320994c3b997  4 weeks ago  8.72 MB</pre>
+
+<p>O tempo varia muito: na VM do guia (lenta, com disco virtual), ligar a rede rootless pela primeira vez demorou 13 segundos; num computador comum, um container Alpine liga em menos de um segundo. Na tabela do <code>images</code>, <code>CREATED</code> é quando a imagem foi <strong>gerada</strong> pelo Alpine, não quando você a baixou, e o <code>SIZE</code> (8,72 MB) é o tamanho descomprimido.</p>
+
+<div class="tip">
+<strong>Use sempre o nome completo</strong>
+<p>Em scripts e tutoriais, escreva <code>docker.io/library/alpine</code> em vez de <code>alpine</code>. Fica claro de onde vem a imagem e evita que um nome curto aponte para um registro inesperado.</p>
+</div>
+
+<h3>Lá dentro é outro sistema</h3>
+<pre class="term">$ podman run --rm docker.io/library/alpine cat /etc/os-release
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.24.2
+PRETTY_NAME="Alpine Linux v3.24"
+HOME_URL="https://alpinelinux.org/"
+BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
+$ podman run --rm docker.io/library/alpine id
+uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)</pre>
+
+<p>O <code>/etc/os-release</code> é o do Alpine, e o processo se vê como <code>root</code>. Mas veja como o Arch o enxerga.</p>
+
+<hr>
+
+<h2>Containers em segundo plano: ps, exec, top, stop, rm</h2>
+
+<dl class="anatomy">
+  <dt>-d</dt><dd><em>detach</em>: roda em segundo plano e devolve o terminal.</dd>
+  <dt>--name dorminhoco</dt><dd>Dá um nome (sem ele, o Podman inventa um, como <code>gifted_hopper</code>).</dd>
+  <dt>sleep 600</dt><dd>O comando: dormir 10 minutos (para o container ficar ligado).</dd>
+</dl>
+
+<pre class="term">$ podman run -d --name dorminhoco docker.io/library/alpine sleep 600
+b9ca1f960c50f9919a511d9beda7931f16c98f8793ab7458a74c64d00bff9954      « o ID do container
+$ podman ps
+CONTAINER ID  IMAGE                            COMMAND     CREATED        STATUS       PORTS       NAMES
+b9ca1f960c50  docker.io/library/alpine:latest  sleep 600   7 seconds ago  Up 1 second              dorminhoco</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que é</th></tr>
+<tr><td><code>CONTAINER ID</code></td><td>Começo do ID (os 12 primeiros caracteres bastam em qualquer comando)</td></tr>
+<tr><td><code>IMAGE</code></td><td>De qual imagem ele foi criado</td></tr>
+<tr><td><code>COMMAND</code></td><td>O que roda lá dentro</td></tr>
+<tr><td><code>STATUS</code></td><td><code>Up …</code> = ligado; <code>Exited (N) …</code> = terminou com código N</td></tr>
+<tr><td><code>PORTS</code></td><td>Portas publicadas (<code>-p</code>)</td></tr>
+<tr><td><code>NAMES</code></td><td>O nome</td></tr>
+</table>
+</div>
+
+<p>Rodar um comando <strong>dentro</strong> de um container que já está ligado é com <code>exec</code>:</p>
+
+<pre class="term">$ podman exec dorminhoco ps
+PID   USER     TIME  COMMAND
+    1 root      0:00 sleep 600                       « lá dentro, o sleep é o processo 1
+    2 root      0:00 ps
+$ ps -o user,pid,cmd -C sleep
+USER         PID CMD
+ana        29389 sleep 600                           « no Arch, é um processo comum da ana
+$ podman top dorminhoco user huser pid args
+USER        HUSER       PID         COMMAND
+root        1000        1           sleep 600        « USER no container, HUSER no host (uid 1000 = ana)</pre>
+
+<p>Esta é a prova do rootless: o "root" do container é a ana (uid 1000) para o kernel. Se alguém escapar do container, cai com os poderes da ana, não do root. Para um terminal interativo lá dentro, use <code>podman exec -it dorminhoco sh</code> (<code>-i</code> mantém a entrada aberta, <code>-t</code> cria um terminal; saia com <code>exit</code>).</p>
+
+<h3>Parar e apagar</h3>
+<pre class="term">$ podman stop -t 1 dorminhoco
+time="2026-10-16T13:27:52-03:00" level=warning msg="StopSignal SIGTERM failed to stop container dorminhoco in 1 seconds, resorting to SIGKILL"
+dorminhoco
+$ podman ps -a
+CONTAINER ID  IMAGE                            COMMAND     CREATED         STATUS                      PORTS       NAMES
+b9ca1f960c50  docker.io/library/alpine:latest  sleep 600   25 seconds ago  Exited (137) 8 seconds ago              dorminhoco
+$ podman rm dorminhoco
+dorminhoco
+$ podman ps -a
+CONTAINER ID  IMAGE       COMMAND     CREATED     STATUS      PORTS       NAMES</pre>
+
+<p>O <code>stop</code> manda primeiro um <code>SIGTERM</code> (pedido educado) e, depois do prazo (<code>-t 1</code> = 1 segundo; o padrão é 10), um <code>SIGKILL</code>. O aviso apareceu porque o <code>sleep</code>, sendo o processo 1 do container, ignora o SIGTERM. O código <code>137</code> é 128 + 9 (morto pelo sinal 9, SIGKILL); veja <a href="processos.html">Processos e kill</a>. Sem <code>-a</code>, o <code>podman ps</code> só lista os ligados; com <code>-a</code> (<em>all</em>), também os parados. Um container parado ainda ocupa espaço até o <code>rm</code>.</p>
+
+<h3>Apagar a imagem</h3>
+<pre class="term">$ podman system df
+TYPE           TOTAL       ACTIVE      SIZE        RECLAIMABLE
+Images         1           0           8.716MB     8.716MB (100%)
+Containers     0           0           0B          0B (0%)
+Local Volumes  0           0           0B          0B (0%)
+$ podman rmi docker.io/library/alpine
+Untagged: docker.io/library/alpine:latest
+Deleted: 320994c3b997e2ec6433f717f153e108023c5bec8fefa8d76b83451d16d05ea8
+$ podman images
+REPOSITORY  TAG         IMAGE ID    CREATED     SIZE</pre>
+
+<p><code>rmi</code> = <em>remove image</em>. Ele recusa apagar uma imagem usada por algum container (mesmo parado): apague o container antes, ou use <code>podman rmi -f</code>. Para limpar tudo o que não está em uso de uma vez: <code>podman system prune -a</code> (pergunta antes).</p>
+
+<hr>
+
+<h2>Publicar uma porta</h2>
+<p>Um container tem rede própria. Para o mundo acessar um serviço dele, publique uma porta com <code>-p PORTA_DO_HOST:PORTA_DO_CONTAINER</code>. Sem root, há uma regra: portas abaixo de 1024 são reservadas.</p>
+
+<pre class="term">$ podman run --rm -p 80:80 docker.io/library/alpine true
+Error: pasta failed with exit code 1:
+Listen failed for HOST TCP port */80: Permission denied
+Couldn't listen on requested ports
+
+$ echo $?
+126
+$ podman run --rm -p 8081:80 docker.io/library/alpine true
+$ echo $?
+0</pre>
+
+<p>Use uma porta alta (8080, 8081…) e, se precisar mesmo da 80, ponha um <a href="servidor-web.html">nginx</a> do sistema na frente como proxy, ou rode aquele container com <code>sudo podman</code>.</p>
+
+<hr>
+
+<h2>Docker no Arch (ilustrativo)</h2>
+<p>A VM do guia não tem Docker (o comando nem existe: <code>bash: docker: comando não encontrado</code>). O tamanho real da instalação, visto com o <code>previa</code> (nada foi instalado):</p>
+
+<pre class="term">#> previa -S docker
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (4) containerd-2.4.2-1  libpathrs-0.2.6-1  runc-1.5.2-1
+            docker-1:29.9.1-1
+
+Tamanho total download:    54,27 MiB
+Tamanho total instalado:  221,65 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>O <code>1:</code> antes da versão é a <strong>época</strong> do pacote (veja <a href="pacman-avancado.html">pacman Avançado</a>). O <code>containerd</code> e o <code>runc</code> são as peças que o daemon usa para criar containers. Depois de instalar, no Arch você precisa de dois passos que no Ubuntu vêm prontos:</p>
+
+<ol class="passo">
+<li><strong>Ligar o daemon</strong> (instalar não liga, como sempre no Arch):
+<pre class="file" data-file="ilustrativo">sudo systemctl enable --now docker.service
+# ou só o socket: o daemon sobe na primeira vez que alguém usar o docker
+sudo systemctl enable --now docker.socket</pre></li>
+<li><strong>Usar sem sudo</strong> (opcional): entrar no grupo <code>docker</code> e fazer logout/login.
+<pre class="file" data-file="ilustrativo">sudo usermod -aG docker ana
+# saia da sessão e entre de novo; confira com:
+groups</pre></li>
+</ol>
+
+<div class="warning">
+<strong>O grupo docker vale o mesmo que root</strong>
+<p>Quem está no grupo <code>docker</code> pode mandar o daemon (que roda como root) montar a raiz do sistema dentro de um container: <code>docker run -v /:/host …</code> e editar qualquer arquivo. Na prática, entrar no grupo <code>docker</code> é ganhar root sem senha. Em máquinas compartilhadas, prefira o Podman rootless (ou o Docker em modo <em>rootless</em>, que a Arch Wiki explica). Veja <a href="usuarios.html">Usuários e Grupos</a>.</p>
+</div>
+
+<h3>"Quero digitar docker, mas usar o Podman"</h3>
+<p>Os comandos do Podman são quase idênticos aos do Docker (<code>run</code>, <code>ps</code>, <code>images</code>, <code>exec</code>, <code>rm</code>, <code>rmi</code>, <code>build</code>…). O pacote <code>podman-docker</code> cria um comando <code>docker</code> que chama o Podman (<code>previa -S podman-docker</code>: 0,02 MiB). Não instale <code>docker</code> e <code>podman-docker</code> juntos.</p>
+
+<h2>Podman × Docker: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Podman</th><th>Docker</th></tr>
+<tr><td>Pacote no Arch</td><td><code>podman</code></td><td><code>docker</code> (+ <code>docker-compose</code>, <code>docker-buildx</code>)</td></tr>
+<tr><td>Daemon</td><td>Não tem</td><td><code>dockerd</code>, como root (<code>docker.service</code>)</td></tr>
+<tr><td>Sem root</td><td>Padrão</td><td>Possível (modo rootless), mas não é o padrão</td></tr>
+<tr><td>Usar sem sudo</td><td>Já funciona</td><td>Grupo <code>docker</code> (equivale a root)</td></tr>
+<tr><td>Onde ficam as imagens</td><td><code>~/.local/share/containers</code> (por usuário)</td><td><code>/var/lib/docker</code> (uma só para todos)</td></tr>
+<tr><td>Integração com systemd</td><td>Containers viram units (<em>Quadlet</em>: arquivos <code>.container</code>)</td><td>Política <code>--restart</code> do próprio daemon</td></tr>
+<tr><td>Compose</td><td><code>podman-compose</code> ou <code>podman compose</code></td><td><code>docker compose</code> (pacote <code>docker-compose</code>)</td></tr>
+<tr><td>Docker Desktop</td><td>Podman Desktop (Flatpak)</td><td>Não há pacote oficial para Arch; use o docker do repositório</td></tr>
+<tr><td><strong>Escolha quando…</strong></td><td>É o seu computador, você quer segurança e nada rodando à toa</td><td>A equipe, o tutorial ou a ferramenta exigem Docker (muitos CI e "docker-compose.yml" prontos)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Compose: vários containers de uma vez (ilustrativo)</h2>
+<p>Um site costuma ter várias peças (servidor web, banco de dados). O <strong>compose</strong> descreve todas num arquivo YAML e liga tudo com um comando.</p>
+
+<pre class="file" data-file="ilustrativo: compose.yaml">services:
+  web:
+    image: docker.io/library/nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+  banco:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_PASSWORD: troque-esta-senha
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>Docker</th><th>Podman</th></tr>
+<tr><td>Instalar</td><td><code>sudo pacman -S docker-compose</code> (8,19 MiB)</td><td><code>sudo pacman -S podman-compose</code> (0,20 MiB)</td></tr>
+<tr><td>Ligar tudo</td><td><code>docker compose up -d</code></td><td><code>podman-compose up -d</code></td></tr>
+<tr><td>Ver</td><td><code>docker compose ps</code></td><td><code>podman-compose ps</code></td></tr>
+<tr><td>Desligar e apagar</td><td><code>docker compose down</code></td><td><code>podman-compose down</code></td></tr>
+</table>
+</div>
+
+<p>Os tamanhos vêm do <code>previa</code> na VM (outubro de 2026). Este exemplo não foi rodado: a imagem do Postgres tem centenas de MB.</p>
+
+<hr>
+
+<h2>O socket do Podman</h2>
+<p>Alguns programas (o Podman Desktop, ferramentas feitas para Docker) conversam com um <strong>socket</strong> da API em vez de chamar o comando. O Podman traz o <code>podman.socket</code>, desligado de fábrica: o serviço só sobe quando alguém conecta.</p>
+
+<pre class="term">$ systemctl status podman.socket
+○ podman.socket - Podman API Socket
+     Loaded: loaded (/usr/lib/systemd/system/podman.socket; disabled; preset: disabled)
+     Active: inactive (dead)
+$ systemctl --user is-active podman.socket
+inactive</pre>
+
+<p>Há duas versões: a do sistema (<code>sudo systemctl enable --now podman.socket</code>, para o Podman do root) e a do usuário (<code>systemctl --user enable --now podman.socket</code>, para os containers da ana). Só ligue se algum programa pedir.</p>
+
+<div class="try" data-goal="svc:podman.socket=active" data-solucao="sudo systemctl start podman.socket">
+<p class="try-task"><strong>Missão:</strong> um programa pediu a API do Podman do sistema. Ligue o <code>podman.socket</code> agora (sem habilitar no boot; senha <code>ana</code>) e confira com <code>systemctl is-active podman.socket</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"short-name … did not resolve to an alias"</strong>
+<pre class="term">$ podman pull meuapp
+Error: short-name "meuapp" did not resolve to an alias and no containers-registries.conf(5) was found
+$ echo $?
+125</pre>
+<p><strong>O que aconteceu:</strong> o nome curto não está na lista de apelidos, e o Arch não traz um <code>/etc/containers/registries.conf</code> dizendo em quais registros procurar (de propósito: procurar um nome curto em vários registros é um risco de segurança).</p>
+<p><strong>Como resolver:</strong> use o nome completo (<code>docker.io/usuario/meuapp</code>, <code>quay.io/…</code>). Se quiser mesmo nomes curtos, crie <code>/etc/containers/registries.conf</code> com <code>unqualified-search-registries = ["docker.io"]</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Listen failed for HOST TCP port */80: Permission denied"</strong>
+<p><strong>O que aconteceu:</strong> sem root, portas abaixo de 1024 são proibidas.</p>
+<p><strong>Como resolver:</strong> use <code>-p 8080:80</code>. Alternativas: <code>sudo podman</code>, ou baixar o limite com <code>sysctl net.ipv4.ip_unprivileged_port_start=80</code> (vale para todos os programas da máquina; pense antes).</p>
+</div>
+
+<div class="cenario">
+<strong>"cannot find UID/GID for user" / "not enough IDs available"</strong>
+<p><strong>O que aconteceu:</strong> o usuário não tem faixa em <code>/etc/subuid</code> e <code>/etc/subgid</code> (acontece com usuários criados por ferramentas antigas).</p>
+<p><strong>Como resolver:</strong> <code>sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 USUARIO</code> (sem sobrepor a faixa de outro usuário) e depois <code>podman system migrate</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Cannot connect to the Docker daemon at unix:///var/run/docker.sock"</strong>
+<p><strong>O que aconteceu:</strong> o Docker foi instalado, mas o serviço não foi ligado (padrão do Arch), ou você não está no grupo <code>docker</code>/não fez logout depois de entrar nele.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl enable --now docker.service</code>; confira <code>groups</code>; use <code>sudo docker</code> enquanto isso.</p>
+</div>
+
+<div class="cenario">
+<strong>"image is in use by a container"</strong>
+<p><strong>O que aconteceu:</strong> <code>podman rmi</code> numa imagem que ainda tem container (mesmo parado).</p>
+<p><strong>Como resolver:</strong> <code>podman ps -a</code>, <code>podman rm NOME</code> e repita o <code>rmi</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (podman ou docker)</th><th>Para quê</th></tr>
+<tr><td><code>run --rm IMAGEM CMD</code></td><td>Roda e apaga ao terminar</td></tr>
+<tr><td><code>run -d --name N IMAGEM CMD</code></td><td>Roda em segundo plano, com nome</td></tr>
+<tr><td><code>run -p 8080:80 …</code></td><td>Publica a porta 80 do container na 8080 do host</td></tr>
+<tr><td><code>run -v ./pasta:/dentro …</code></td><td>Monta uma pasta do host no container</td></tr>
+<tr><td><code>ps</code> / <code>ps -a</code></td><td>Containers ligados / todos</td></tr>
+<tr><td><code>exec -it N sh</code></td><td>Terminal dentro de um container ligado</td></tr>
+<tr><td><code>logs N</code></td><td>Saída do container</td></tr>
+<tr><td><code>stop N</code> / <code>rm N</code></td><td>Para / apaga o container</td></tr>
+<tr><td><code>images</code> / <code>pull I</code> / <code>rmi I</code></td><td>Lista / baixa / apaga imagens</td></tr>
+<tr><td><code>system df</code> / <code>system prune -a</code></td><td>Espaço usado / limpeza geral</td></tr>
+<tr><td><code>podman info</code></td><td>Configuração (rootless, armazenamento, rede)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Rodar e apagar</h3>
+<p>Complete para rodar <code>uname -r</code> num Alpine e apagar o container no fim:</p>
+<div class="ex-code">podman run <input data-answer="--rm" aria-label="opção"> docker.io/library/alpine uname -r</div>
+</div>
+
+<div class="exercise">
+<h3>2. Todos os containers</h3>
+<p>Qual comando lista também os containers parados?</p>
+<div class="ex-code">podman <input data-answer="ps -a|ps --all|container ls -a" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Dentro de um container rootless, <code>id</code> mostra <code>uid=0(root)</code>. Para o kernel do Arch, quem é esse processo?</p>
+<label><input type="radio" name="q3"> O root do Arch.</label>
+<label><input type="radio" name="q3"> O usuário que rodou o <code>podman</code> (a ana, uid 1000).</label>
+<label><input type="radio" name="q3"> O usuário <code>nobody</code>.</label>
+<label><input type="radio" name="q3"> Um usuário da faixa 100000.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que entrar no grupo <code>docker</code> é delicado?</p>
+<label><input type="radio" name="q4"> Porque desliga o firewall.</label>
+<label><input type="radio" name="q4"> Porque o Docker para de receber atualizações.</label>
+<label><input type="radio" name="q4"> Porque o grupo só funciona no Ubuntu.</label>
+<label><input type="radio" name="q4"> Porque quem manda no daemon (que roda como root) pode ganhar root na máquina.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Você instalou o <code>docker</code> no Arch e recebeu "Cannot connect to the Docker daemon". O primeiro passo?</p>
+<label><input type="radio" name="q5"> <code>sudo systemctl enable --now docker.service</code></label>
+<label><input type="radio" name="q5"> Reinstalar o pacote.</label>
+<label><input type="radio" name="q5"> <code>sudo pacman -Syu</code></label>
+<label><input type="radio" name="q5"> Trocar para o kernel LTS.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Imagem = receita; container = execução dela; registro = de onde vem a imagem.</li>
+  <li>O Podman não tem daemon e roda sem root: cada usuário tem suas imagens em <code>~/.local/share/containers</code>.</li>
+  <li><code>run --rm</code>, <code>ps -a</code>, <code>exec</code>, <code>stop</code>, <code>rm</code>, <code>images</code>, <code>rmi</code>: os mesmos nomes no Docker.</li>
+  <li>Sem root, publique portas altas (<code>-p 8080:80</code>).</li>
+  <li>Docker no Arch: <code>pacman -S docker</code> + <code>systemctl enable --now docker</code>; o grupo <code>docker</code> equivale a root.</li>
+  <li>Use nomes completos de imagem: <code>docker.io/library/alpine</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Podman">Podman</a> (rootless, subuid/subgid, Quadlet, registros), <a href="https://wiki.archlinux.org/title/Docker">Docker</a> (daemon, grupo, modo rootless, armazenamento) e a visão geral em <a href="https://wiki.archlinux.org/title/Linux_Containers">Linux Containers</a>; para os namespaces de usuário, <a href="https://wiki.archlinux.org/title/Security#Sandboxing_applications">Security: sandboxing applications</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
