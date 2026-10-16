@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Projetos — como usar os laboratórios | Guia Arch</title>
+<meta name="description" content="Como usar os projetos do Guia Arch: o que cada laboratório constrói, quais aulas ele junta, e como montar uma VM do VirtualBox com UEFI e snapshots para treinar sem medo.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Como Usar os Projetos</span></h1>
+
+<p class="intro">As aulas ensinam uma peça por vez. Os projetos juntam as peças para construir algo inteiro: um Arch instalado do zero, um desktop KDE, um sistema com snapshots automáticos, um pacote seu, um servidor caseiro. É aqui que o conhecimento "gruda", porque você precisa decidir a ordem, conferir cada passo e consertar o que der errado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que cada projeto constrói e quais aulas ele usa.</li>
+  <li>Por que fazer os projetos numa máquina virtual (e como montá-la com UEFI).</li>
+  <li>Usar snapshots para voltar no tempo quando algo quebrar.</li>
+  <li>Uma ordem sugerida e como registrar o que você fez.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Os projetos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Projeto</th><th>O que você constrói</th><th>Aulas que ele junta</th><th>Nível</th></tr>
+<tr><td><a href="projeto-instalacao.html">Instalação Completa do Zero</a></td><td>Um Arch UEFI instalado à mão, com usuário, sudo, rede e GRUB</td><td><a href="preparar.html">ISO</a>, <a href="ambiente-live.html">live</a>, <a href="particionar.html">particionar</a>, <a href="formatar-montar.html">formatar</a>, <a href="pacstrap.html">pacstrap</a>, <a href="configurar.html">chroot</a>, <a href="bootloader.html">bootloader</a>, <a href="primeiro-boot.html">primeiro boot</a>, <a href="sudo-usuarios.html">sudo</a></td><td>1</td></tr>
+<tr><td><a href="projeto-desktop.html">Montar um Desktop KDE</a></td><td>KDE Plasma sobre a instalação mínima: vídeo, som, fontes, apps, Flatpak</td><td><a href="desktop.html">desktop</a>, <a href="pacman.html">pacman</a>, <a href="pacman-avancado.html">provedores e grupos</a>, <a href="systemd.html">systemctl</a>, <a href="flatpak.html">Flatpak</a></td><td>1–2</td></tr>
+<tr><td><a href="projeto-snapshots.html">Btrfs com Snapshots Automáticos</a></td><td>Raiz em Btrfs com subvolumes e snapper fotografando antes de cada atualização</td><td><a href="btrfs.html">Btrfs</a>, <a href="snapshots.html">snapper</a>, <a href="fstab.html">fstab</a>, <a href="hooks.html">hooks</a>, <a href="timers.html">timers</a></td><td>3</td></tr>
+<tr><td><a href="projeto-pacote.html">Empacotar um Programa Seu</a></td><td>Um PKGBUILD seu, compilado com makepkg e servido num repositório local</td><td><a href="makepkg.html">makepkg</a>, <a href="pkgbuild.html">PKGBUILD</a>, <a href="repositorio-local.html">repositório local</a>, <a href="aur-seguranca.html">AUR com segurança</a></td><td>3</td></tr>
+<tr><td><a href="projeto-servidor.html">Servidor Caseiro</a></td><td>SSH com chave, nginx com uma página, backup com timer, um container e um firewall planejado</td><td><a href="ssh.html">SSH</a>, <a href="servidor-web.html">nginx</a>, <a href="timers.html">timers</a>, <a href="containers.html">Podman</a>, <a href="firewall.html">firewall</a>, <a href="seguranca.html">segurança</a></td><td>3</td></tr>
+</table>
+</div>
+
+<p>Cada projeto começa com <strong>o que você precisa ter</strong> (o estado inicial), segue em passos numerados com uma <strong>conferência</strong> no fim de cada um ("se aparecer isto, deu certo") e termina com um checklist e com o caminho para <strong>desfazer</strong>.</p>
+
+<hr>
+
+<h2>A regra de ouro: numa máquina virtual</h2>
+<p>Uma <a href="kvm.html">máquina virtual</a> é um computador simulado dentro do seu. Se você apagar a partição errada ou estragar o GRUB lá dentro, o seu computador de verdade nem percebe. E com <strong>snapshots</strong> você volta ao minuto anterior ao erro.</p>
+
+<div class="warning">
+<strong>Não faça os projetos na sua máquina principal</strong>
+<p>O projeto de instalação <strong>apaga o disco</strong> inteiro; o de snapshots refaz a raiz; o de servidor mexe em firewall e SSH. Numa VM, isso é aprendizado. No seu notebook, pode ser a perda dos seus arquivos.</p>
+</div>
+
+<p>Todo este guia foi conferido numa VM assim: VirtualBox 7.2, chamada <code>arch-guia</code>, com o Arch real dentro. As configurações dela, vistas do computador de fora:</p>
+
+<pre class="file" data-file="VBoxManage showvminfo arch-guia (trecho)">ostype="Arch Linux (64-bit)"
+memory=4096
+firmware="EFI"
+cpus=2
+nested-hw-virt="off"
+</pre>
+
+<h3>Montar a sua VM</h3>
+<ol class="passo">
+<li><strong>Instale um programa de VMs.</strong> No Linux, o <a href="kvm.html">virt-manager</a> (QEMU/KVM) é o mais rápido; o VirtualBox funciona em Linux, Windows e macOS. Os passos abaixo usam o VirtualBox.</li>
+<li><strong>Baixe a ISO do Arch</strong> e confira a assinatura, como em <a href="preparar.html">Baixar e Verificar a ISO</a>.</li>
+<li><strong>Crie a VM</strong>: Novo → nome <code>arch-lab</code>, tipo Linux, versão "Arch Linux (64-bit)", a ISO, e marque <strong>Pular instalação desassistida</strong>. Memória: 4 GB (2 GB bastam sem desktop). Processadores: 2. Disco: 30 GB (o arquivo só cresce conforme o uso).</li>
+<li><strong>Ligue a UEFI</strong>: Configurações → Sistema → Placa-mãe → <strong>Habilitar EFI</strong>. Sem isso, a VM dá boot em modo BIOS e as aulas de <a href="particionar.html">particionamento</a> e <a href="bootloader.html">bootloader</a> (UEFI) não batem.</li>
+<li><strong>Rede</strong>: deixe "NAT". Para entrar por SSH a partir do computador de fora, crie um redirecionamento de porta (Rede → Avançado → Redirecionamento de portas: TCP, porta do hospedeiro 2222 → porta do convidado 22).</li>
+</ol>
+
+<h3>Snapshots: o botão "desfazer"</h3>
+<p>Um snapshot congela o estado da VM inteira (disco e configurações). A VM do guia tem dois, um dentro do outro:</p>
+
+<pre class="file" data-file="VBoxManage snapshot arch-guia list">   Name: instalacao-base (UUID: 526cee97-99c6-4dc3-bde3-36ed514395ed)
+   Description: Arch recém-instalado (pacstrap base + GRUB), usuária ana, antes dos pacotes das aulas
+      Name: pronto-para-aulas (UUID: e0a7beac-eb36-4871-bd99-c26e9d4f1b48) *
+      Description: Base + pacotes das aulas + pasta da ana igual à máquina fictícia (frutas.txt, Documentos, Downloads…). Estado para os autores.
+</pre>
+
+<p>O <code>*</code> marca o snapshot atual. Pelo terminal do computador de fora (com a VM desligada para restaurar):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Comando (no hospedeiro)</th></tr>
+<tr><td>Tirar um snapshot</td><td><code>VBoxManage snapshot arch-lab take antes-do-projeto --description "texto"</code></td></tr>
+<tr><td>Listar</td><td><code>VBoxManage snapshot arch-lab list</code></td></tr>
+<tr><td>Voltar a um snapshot</td><td><code>VBoxManage snapshot arch-lab restore antes-do-projeto</code></td></tr>
+<tr><td>Apagar um snapshot (o estado atual fica)</td><td><code>VBoxManage snapshot arch-lab delete antes-do-projeto</code></td></tr>
+</table>
+</div>
+
+<p>No VirtualBox gráfico: selecione a VM → ícone de lista → <strong>Snapshots</strong> → Tirar / Restaurar. No virt-manager: botão "Gerenciar snapshots" (o disco precisa ser qcow2).</p>
+
+<div class="tip">
+<strong>Um snapshot por projeto</strong>
+<p>Tire um snapshot <strong>antes</strong> de cada projeto, com um nome claro (<code>antes-desktop</code>, <code>antes-servidor</code>). Se travar num passo, você volta e tenta de novo, sem medo. Snapshot da VM não substitui o que você aprende em <a href="snapshots.html">Snapshots (snapper)</a>: lá o próprio Arch volta no tempo, sem programa de fora, o que serve também na máquina real.</p>
+</div>
+
+<hr>
+
+<h2>Ordem sugerida</h2>
+<ol>
+  <li><strong>Instalação Completa do Zero</strong>: a base de todos os outros. Tire um snapshot no fim ("arch-limpo").</li>
+  <li><strong>Montar um Desktop KDE</strong> (se você quer usar o Arch no dia a dia) ou pule direto para o servidor.</li>
+  <li><strong>Servidor Caseiro</strong>: a partir do "arch-limpo", sem interface gráfica.</li>
+  <li><strong>Btrfs com Snapshots Automáticos</strong>: pede uma instalação nova com Btrfs (outra VM ou outro disco virtual).</li>
+  <li><strong>Empacotar um Programa Seu</strong>: em qualquer uma das VMs.</li>
+</ol>
+
+<hr>
+
+<h2>Como trabalhar num projeto</h2>
+<ul>
+  <li><strong>Leia o passo inteiro antes de digitar.</strong> Principalmente os <code>div.warning</code>.</li>
+  <li><strong>Confira a saída.</strong> Cada passo diz o que deve aparecer. Se aparecer outra coisa, pare: o erro do passo 3 vira o mistério do passo 9.</li>
+  <li><strong>Anote.</strong> Um arquivo <code>~/diario.txt</code> com o que você mudou (arquivo, linha, por quê) torna fácil desfazer e repetir.</li>
+  <li><strong>Desfaça no fim</strong> (ou restaure o snapshot), para o próximo projeto começar do estado conhecido.</li>
+  <li><strong>Quando travar:</strong> leia a mensagem inteira, procure-a em <a href="problemas.html">Solução de Problemas</a> e na <a href="arch-wiki.html">Arch Wiki</a>.</li>
+</ul>
+
+<div class="note">
+<strong>Ilustrativo × real</strong>
+<p>Em todo o guia, as saídas de terminal vêm da VM real. Quando um passo não pôde ser executado lá (instalar um desktop inteiro, mexer em chaves do firmware, um domínio de verdade), o texto avisa que é <strong>ilustrativo</strong> e mostra o tamanho real da instalação com uma prévia do pacman respondida com "não".</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que ligar "Habilitar EFI" na VM?</p>
+<label><input type="radio" name="q1"> Para a VM ficar mais rápida.</label>
+<label><input type="radio" name="q1"> Para a instalação ser UEFI, como nas aulas de particionamento e bootloader.</label>
+<label><input type="radio" name="q1"> Para ter acesso à internet.</label>
+<label><input type="radio" name="q1"> Para usar snapshots.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Quando tirar um snapshot da VM?</p>
+<label><input type="radio" name="q2"> Só depois de terminar o projeto.</label>
+<label><input type="radio" name="q2"> Nunca: snapshots deixam a VM lenta.</label>
+<label><input type="radio" name="q2"> Antes de começar cada projeto.</label>
+<label><input type="radio" name="q2"> Só quando algo já quebrou.</label>
+</div>
+
+<div class="exercise">
+<h3>3. Voltar no tempo</h3>
+<p>Complete o comando do hospedeiro para voltar ao snapshot <code>antes-servidor</code>:</p>
+<div class="ex-code">VBoxManage snapshot arch-lab <input data-answer="restore" aria-label="subcomando"> antes-servidor</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Cinco projetos: instalação, desktop KDE, Btrfs com snapshots, pacote próprio, servidor caseiro.</li>
+  <li>Sempre numa VM com <strong>EFI ligado</strong>, 2–4 GB de RAM e 30 GB de disco.</li>
+  <li>Snapshot antes de cada projeto; restaure quando travar.</li>
+  <li>Leia o passo, confira a saída, anote, desfaça no fim.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/VirtualBox/Install_Arch_Linux_as_a_guest">VirtualBox/Install Arch Linux as a guest</a> (o Arch dentro do VirtualBox), <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> (o roteiro do primeiro projeto; em pt-BR: <a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">Guia de instalação</a>) e <a href="https://wiki.archlinux.org/title/List_of_applications">List of applications</a>, para ideias de projetos próprios.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
