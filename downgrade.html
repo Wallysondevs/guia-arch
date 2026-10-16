@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch downgrade — voltar um pacote pelo cache, pelo Arch Linux Archive ou com o downgrade | Guia Arch</title>
+<meta name="description" content="Como voltar um pacote para a versão anterior no Arch Linux: pelo cache do pacman com pacman -U, pelo Arch Linux Archive (archive.archlinux.org), com a ferramenta downgrade do AUR, segurando com IgnorePkg, por que é sempre temporário (dependências) e como voltar o sistema inteiro para uma data.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Voltar um pacote <span class="hl">(downgrade)</span></h1>
+
+<p class="intro">Você atualizou o sistema e um programa começou a falhar. Enquanto a correção não chega, dá para <strong>voltar aquele pacote</strong> para a versão anterior: é o <em>downgrade</em> (o contrário de <em>upgrade</em>). O Arch não guarda "a versão de ontem" nos repositórios, mas você tem três lugares onde procurar: o cache do seu pacman, o Arquivo do Arch Linux e a ferramenta <code>downgrade</code>, que junta os dois.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Voltar um pacote pelo cache, com <code>pacman -U</code>.</li>
+  <li>Achar qualquer versão antiga no Arch Linux Archive (<code>archive.archlinux.org</code>).</li>
+  <li>Usar a ferramenta <code>downgrade</code> (do AUR).</li>
+  <li>Segurar o pacote na versão antiga com <code>IgnorePkg</code>, sem esquecer de soltar depois.</li>
+  <li>Por que o downgrade é sempre temporário, e como voltar o sistema inteiro para uma data.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Downgrade é um remendo</strong>
+<p>O Arch só é testado com <strong>todos</strong> os pacotes na versão mais nova. Um pacote antigo no meio de um sistema novo é uma "atualização parcial" ao contrário, e pode quebrar outros programas. Use o downgrade para ganhar tempo, avise o problema (a correção costuma sair em dias) e volte a atualizar normalmente assim que puder.</p>
+</div>
+
+<hr>
+
+<h2>Antes de tudo: qual pacote mudou?</h2>
+<p>Toda instalação, atualização e remoção fica registrada em <code>/var/log/pacman.log</code>. Para ver as atualizações recentes:</p>
+<pre class="term">$ grep '\[ALPM\] upgraded' /var/log/pacman.log | tail -5
+</pre>
+<p>Na máquina da ana não sai nada: ela foi instalada há pouco e ainda não recebeu nenhuma atualização. Num sistema em uso, cada linha tem este formato (exemplo ilustrativo):</p>
+<pre class="term" data-title="exemplo ilustrativo">[2026-10-20T09:14:02-0300] [ALPM] upgraded tree (2.3.1-1 -&gt; 2.3.2-1)
+</pre>
+<p>Data e hora, o pacote e as versões <strong>de → para</strong>. Os pacotes atualizados logo antes de o problema aparecer são os suspeitos. Se puder, confira também as notícias em <a href="https://archlinux.org/news/">archlinux.org/news</a>: às vezes o "defeito" é uma mudança que pede uma ação sua (veja <a href="atualizar.html">Atualizar o Sistema</a>).</p>
+
+<p>Nos exemplos desta aula, o pacote é o <code>tree</code> (o programa que desenha pastas em árvore): pequeno e sem dependências. A ana tem a versão 2.3.2; vamos voltar para a 2.3.1. Todas as transações foram feitas na máquina de laboratório e <strong>respondidas com "n"</strong>: nada foi instalado de verdade.</p>
+
+<pre class="term">$ pacman -Q tree
+tree 2.3.2-1
+</pre>
+
+<div class="try" data-goal="ran:\bpacman\b.*-Q.*tree,out:2.3.2-1" data-solucao="pacman -Q tree">
+<p class="try-task"><strong>Missão:</strong> antes de voltar um pacote, anote a versão atual. Mostre a versão instalada do <code>tree</code>.</p>
+</div>
+
+<hr>
+
+<h2>1. Pelo cache do pacman</h2>
+<p>Todo pacote que o pacman baixa fica guardado em <code>/var/cache/pacman/pkg/</code>, e ele não apaga as versões antigas sozinho. Então, depois de uma atualização, a versão anterior quase sempre ainda está ali:</p>
+
+<pre class="term">$ ls /var/cache/pacman/pkg | grep '^tree-'
+tree-2.3.1-1-x86_64.pkg.tar.zst
+tree-2.3.1-1-x86_64.pkg.tar.zst.sig
+tree-2.3.2-1-x86_64.pkg.tar.zst
+tree-2.3.2-1-x86_64.pkg.tar.zst.sig
+</pre>
+
+<p>(Na ana, a 2.3.1 está no cache porque foi baixada pelo Arquivo, na seção 2. Num sistema em uso, ela estaria lá desde a atualização.) O nome do arquivo conta tudo:</p>
+
+<dl class="anatomy">
+  <dt>tree</dt><dd>O nome do pacote.</dd>
+  <dt>2.3.1-1</dt><dd>Versão do programa (<code>2.3.1</code>) e lançamento do pacote (<code>-1</code>).</dd>
+  <dt>x86_64</dt><dd>A arquitetura (<code>any</code> para pacotes sem programa compilado).</dd>
+  <dt>.pkg.tar.zst</dt><dd>Um arquivo <code>tar</code> comprimido com zstd.</dd>
+  <dt>.sig</dt><dd>A assinatura do pacote, que o pacman confere (veja <a href="chaves.html">Chaves e Assinaturas</a>).</dd>
+</dl>
+
+<p>Para instalar um arquivo de pacote, o pacman usa o <code>-U</code> (<em>upgrade</em>: instalar a partir de um arquivo ou URL):</p>
+
+<pre class="term">$ sudo pacman -U /var/cache/pacman/pkg/tree-2.3.1-1-x86_64.pkg.tar.zst
+carregando pacotes...
+atenção: fazendo downgrade do pacote tree (2.3.2-1 =&gt; 2.3.1-1)     « o pacman avisa que é uma volta
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) tree-2.3.1-1
+
+Tamanho total instalado:  0,09 MiB
+Alteração no tamanho:     0,00 MiB
+
+:: Continuar a instalação? [S/n] n
+$ echo $?
+1
+</pre>
+
+<p>Sem "Tamanho total download": o arquivo já está no disco. O código <strong>1</strong> é porque respondemos <code>n</code>; com <code>S</code>, o pacote volta e o código é 0. Se você apontar a mesma versão que já tem, o pacman só reinstala:</p>
+<pre class="term">$ sudo pacman -U /var/cache/pacman/pkg/tree-2.3.2-1-x86_64.pkg.tar.zst
+carregando pacotes...
+atenção: tree-2.3.2-1 está atualizado -- reinstalando
+…
+</pre>
+
+<div class="tip">
+<strong>Guarde algumas versões no cache</strong>
+<p>Se você apaga o cache inteiro (<code>pacman -Scc</code>), perde essa saída de emergência. O <code>paccache -r</code> (do pacote <code>pacman-contrib</code>) apaga só o excesso e mantém as <strong>3 últimas</strong> versões de cada pacote: o equilíbrio certo. Veja <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+</div>
+
+<hr>
+
+<h2>2. Pelo Arch Linux Archive</h2>
+<p>Se o cache foi limpo, existe o <strong>Arch Linux Archive</strong> (ALA), o arquivo oficial em <code>archive.archlinux.org</code>, que guarda <strong>todas</strong> as versões publicadas, organizadas de dois jeitos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>O que tem</th><th>Exemplo</th></tr>
+<tr><td><code>/packages/</code></td><td>Cada pacote, todas as versões, por inicial</td><td><code>/packages/t/tree/</code></td></tr>
+<tr><td><code>/repos/AAAA/MM/DD/</code></td><td>Uma "fotografia" dos repositórios como estavam naquele dia</td><td><code>/repos/2026/09/15/</code></td></tr>
+</table>
+</div>
+
+<p>As últimas versões do <code>tree</code>, lidas da página do Arquivo:</p>
+<pre class="term">$ curl -s https://archive.archlinux.org/packages/t/tree/ | grep -o "tree-[0-9][^\"&lt;]*pkg.tar.zst" | sort -uV | tail -6
+tree-2.1.1-1-x86_64.pkg.tar.zst
+tree-2.1.1-2-x86_64.pkg.tar.zst
+tree-2.1.3-1-x86_64.pkg.tar.zst
+tree-2.2.1-1-x86_64.pkg.tar.zst
+tree-2.3.1-1-x86_64.pkg.tar.zst
+tree-2.3.2-1-x86_64.pkg.tar.zst
+</pre>
+
+<p>A URL de um pacote é sempre montada do mesmo jeito:</p>
+<dl class="anatomy">
+  <dt>https://archive.archlinux.org/packages/</dt><dd>A pasta de pacotes do Arquivo.</dd>
+  <dt>t/</dt><dd>A primeira letra do nome.</dd>
+  <dt>tree/</dt><dd>O nome do pacote.</dd>
+  <dt>tree-2.3.1-1-x86_64.pkg.tar.zst</dt><dd>O arquivo, com o mesmo formato de nome do cache.</dd>
+</dl>
+
+<p>O <code>pacman -U</code> aceita a URL direto: ele baixa o pacote (e a assinatura) para o cache e segue como antes:</p>
+<pre class="term">$ sudo pacman -U https://archive.archlinux.org/packages/t/tree/tree-2.3.1-1-x86_64.pkg.tar.zst
+:: Obtendo pacotes...
+ tree-2.3.1-1-x86_64    43,4 KiB  68,1 KiB/s 00:01 [######################] 100%
+carregando pacotes...
+atenção: fazendo downgrade do pacote tree (2.3.2-1 =&gt; 2.3.1-1)
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) tree-2.3.1-1
+
+Tamanho total instalado:  0,09 MiB
+Alteração no tamanho:     0,00 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+
+<hr>
+
+<h2>3. A ferramenta downgrade (AUR)</h2>
+<p>O <code>downgrade</code> procura a versão no cache <strong>e</strong> no Arquivo, mostra um menu para você escolher e chama o <code>pacman -U</code>. Ele está no <a href="aur.html">AUR</a>; a ana o compilou em <code>~/aur/downgrade</code> (veja <a href="makepkg.html">makepkg</a>; com <a href="yay-paru.html">yay</a>, seria <code>yay -S downgrade</code>). Ele depende do <code>fzf</code>, que desenha o menu.</p>
+
+<pre class="term">$ pacman -Q downgrade fzf
+downgrade 12.0.4-1
+fzf 0.74.5-1
+$ downgrade --help
+Uso: downgrade [opções...] &lt;pkg&gt; [pkg...] [-- opções_do_pacman...]
+
+Opções:
+  --pacman        &lt;comando&gt;
+                  comando pacman a usar, o padrão é "pacman"
+  --pacman-conf   &lt;caminho de arquivo&gt;
+                  arquivo de configuração pacman, o padrão é "/etc/pacman.conf"
+  --pacman-cache  &lt;caminho de arquivo&gt;
+                  diretório de cache pacman,
+                  valor padrão obtido do arquivo de configuração pacman,
+                  ou o padrão é "/var/cache/pacman/pkg"
+  --pacman-log    &lt;caminho de arquivo&gt;
+                  arquivo de log do Pacman,
+                  valor padrão obtido do arquivo de configuração pacman,
+                  ou o padrão é "/var/log/pacman.log"
+  --maxdepth      &lt;inteiro&gt;
+                  profundidade máxima para procurar pacotes em cache, o padrão é 2
+  --ala-url       &lt;url&gt;
+                  localização do servidor ALA, o padrão é "https://archive.archlinux.org"
+  --ala-only      use apenas o servidor ALA
+  --cached-only   use apenas pacotes em cache
+  --ignore        &lt;prompt|always|never&gt;
+                  whether to add packages to IgnorePkg
+  --unignore      remove packages from IgnorePkg
+  --latest        escolha a versão mais recente de correspondência
+  --oldest        escolha a versão mais antiga de correspondência
+  --prefer-cache  não consulte Ala se um pacote correspondente foi encontrado em cache
+  --version       mostrar a versão downgrade
+  -h, --help      mostrar script de ajuda
+
+Nota:
+  As opções após os caracteres -- serão tratadas como opções do pacman.
+  yay and paru cache directories are searched automatically if present.
+  Veja downgrade(8) para mais detalhes.
+</pre>
+
+<p>Como ele chama o pacman, precisa de root:</p>
+<pre class="term">$ downgrade tree
+downgrade deve ser executado como root
+</pre>
+
+<h3>O menu de versões</h3>
+<p>Com <code>sudo downgrade tree</code>, o <code>downgrade</code> consulta o cache e o Arquivo e abre um menu do <code>fzf</code>: você digita para filtrar, escolhe com as setas e confirma com <kbd>Enter</kbd>. O conteúdo do menu, capturado na máquina da ana (impresso aqui sem a moldura do fzf):</p>
+<pre class="term" data-title="sudo downgrade tree (conteúdo do menu)">Pacotes disponíveis (extra):
+    1)  tree    1.8.0  2  remoto
+    2)  tree    2.0.1  1  remoto
+    3)  tree    2.0.1  2  remoto
+    4)  tree    2.0.2  1  remoto
+    5)  tree    2.0.2  2  remoto
+    6)  tree    2.0.4  1  remoto
+    7)  tree    2.1.0  1  remoto
+    8)  tree    2.1.1  1  remoto
+    9)  tree    2.1.1  2  remoto
+   10)  tree    2.1.3  1  remoto
+   11)  tree    2.2.1  1  remoto
+   12)  tree    2.3.1  1  remoto
+-  13)  tree    2.3.2  1  remoto
+-  14)  tree    2.3.2  1  /var/cache/pacman/pkg  2026-03-29
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td>Marca <code>-</code> / <code>+</code></td><td>Versões que aparecem no histórico do pacman. Pelo manual, <code>-</code> = já esteve instalada e <code>+</code> = instalada agora; na ana, a 2.3.2 (a instalada) apareceu com <code>-</code></td></tr>
+<tr><td>Número</td><td>A opção no menu</td></tr>
+<tr><td>Nome, versão, lançamento</td><td><code>tree 2.3.1 1</code> = <code>tree-2.3.1-1</code></td></tr>
+<tr><td>Local</td><td><code>remoto</code> = no Arquivo (vai baixar); um caminho = já está no cache</td></tr>
+</table>
+</div>
+
+<h3>Escolher a versão direto</h3>
+<p>O <code>downgrade</code> aceita filtros de versão (<code>=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>). Com <code>tree=2.3.1</code> só há uma opção, e ele vai direto para o pacman, sem menu. No laboratório, a opção <code>--pacman</code> trocou o pacman pelo <code>previa</code> (o script que responde "n"); no seu computador, o comando é só <code>sudo downgrade 'tree=2.3.1'</code>:</p>
+
+<pre class="term">#> downgrade --pacman previa --ignore never 'tree=2.3.1'
+:: Obtendo pacotes...
+ tree-2.3.1-1-x86_64 sendo baixado...
+carregando pacotes...
+resolvendo dependências...
+atenção: fazendo downgrade do pacote tree (2.3.2-1 =&gt; 2.3.1-1)
+procurando pacotes conflitantes...
+
+Pacotes (1) tree-2.3.1-1
+
+Tamanho total instalado:  0,09 MiB
+Alteração no tamanho:     0,00 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+
+<p>Por baixo, é o mesmo <code>pacman -U</code> com a URL do Arquivo. Quando a instalação acontece de verdade, o <code>downgrade</code> pergunta no fim <code>adicionar tree em IgnorePkg? [s/N]</code>: responder <code>s</code> segura o pacote nessa versão (próxima seção). O <code>--ignore never</code> do exemplo pula essa pergunta.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma de voltar</th><th>Quando usar</th></tr>
+<tr><td><code>sudo pacman -U /var/cache/pacman/pkg/arquivo</code></td><td>A versão antiga está no cache (o caso mais comum, se você não limpa tudo)</td></tr>
+<tr><td><code>sudo pacman -U https://archive.archlinux.org/packages/…</code></td><td>Cache limpo; você sabe qual versão quer; sem instalar nada do AUR</td></tr>
+<tr><td><code>sudo downgrade pacote</code></td><td>O mais cômodo: lista cache e Arquivo juntos e oferece o <code>IgnorePkg</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Segurar a versão: IgnorePkg</h2>
+<p>Depois do downgrade, o próximo <code>pacman -Syu</code> traria a versão nova de volta, com o defeito. Para impedir, o pacote vai para a lista <code>IgnorePkg</code> do <code>/etc/pacman.conf</code>, que vem comentada:</p>
+
+<pre class="term">$ grep -n "IgnorePkg\|IgnoreGroup\|^\[options\]" /etc/pacman.conf
+9:[options]
+24:# Pacman won't upgrade packages listed in IgnorePkg and members of IgnoreGroup
+25:#IgnorePkg   =
+26:#IgnoreGroup =
+</pre>
+
+<p>Para não mexer no arquivo real da ana, o teste foi numa cópia, apontada com <code>--config</code>. Tirar o <code>#</code> e escrever o nome:</p>
+<pre class="term">#> cp /etc/pacman.conf /tmp/a7/pacman.conf
+#> sed -i 's/^#IgnorePkg   =$/IgnorePkg   = tree/' /tmp/a7/pacman.conf
+#> grep -n "IgnorePkg" /tmp/a7/pacman.conf
+24:# Pacman won't upgrade packages listed in IgnorePkg and members of IgnoreGroup
+25:IgnorePkg   = tree
+#> pacman --config /tmp/a7/pacman.conf -S tree
+:: tree está no IgnorePkg/IgnoreGroup. Instalar mesmo assim? [S/n] n
+atenção: ignorando alvo: tree
+nada para fazer
+</pre>
+
+<p>No seu computador, edite o <code>/etc/pacman.conf</code> com <code>sudo nano</code>. Vários pacotes vão separados por espaço (<code>IgnorePkg = tree htop</code>). Durante um <code>pacman -Syu</code> com uma versão nova disponível, o aviso é este (ilustrativo):</p>
+<pre class="term" data-title="exemplo ilustrativo">atenção: tree: ignorando atualização do pacote (2.3.1-1 =&gt; 2.3.2-1)
+</pre>
+
+<p>O pacote <code>downgrade</code> traz o <code>pacignore</code>, que faz essa edição por você:</p>
+<pre class="term">#> pacignore check -c /tmp/a7/pacman.conf tree; echo $?
+0
+#> pacignore check -c /etc/pacman.conf tree; echo $?
+1
+</pre>
+<p><code>check</code> devolve 0 se o pacote está ignorado e 1 se não está. Os outros subcomandos são <code>ls</code> (lista), <code>add</code> e <code>rm</code> (acrescenta e tira); <code>-c</code> escolhe o arquivo (o padrão é o <code>/etc/pacman.conf</code>).</p>
+
+<div class="try" data-goal="ran:\bgrep\b.*IgnorePkg.*pacman\.conf,out:#IgnorePkg" data-solucao="grep -n IgnorePkg /etc/pacman.conf">
+<p class="try-task"><strong>Missão:</strong> veja se a ana está segurando algum pacote: mostre as linhas do <code>/etc/pacman.conf</code> que falam de <code>IgnorePkg</code>, com o número da linha.</p>
+</div>
+
+<div class="warning">
+<strong>Não esqueça o IgnorePkg ligado</strong>
+<p>Um pacote ignorado para sempre vai ficando cada vez mais velho, até que uma atualização de outra biblioteca o quebre de vez. Anote o motivo, acompanhe a correção e <strong>tire o nome do IgnorePkg</strong> assim que a versão nova funcionar (<code>sudo pacignore rm tree</code> ou editando o arquivo).</p>
+</div>
+
+<hr>
+
+<h2>Por que o downgrade é temporário: dependências</h2>
+<p>Com o <code>tree</code>, que não depende de nada, foi fácil. Com bibliotecas, as versões estão amarradas. O <code>systemd</code>, por exemplo, exige o <code>systemd-libs</code> exatamente da mesma versão:</p>
+<pre class="term">$ pacman -Qi systemd | grep "^Depende"
+Depende de           : systemd-libs=262  acl  bash  cryptsetup  dbus  dbus-units  glibc  kbd  kmod  hwdata  libgcrypt  libxcrypt  libidn2  lz4  pam  libelf  libgcc  libseccomp  util-linux  xz  pcre2  audit  openssl
+</pre>
+
+<p>Tentativa real de voltar só o <code>systemd-libs</code>:</p>
+<pre class="term">$ sudo pacman -U https://archive.archlinux.org/packages/s/systemd-libs/systemd-libs-261.3-1-x86_64.pkg.tar.zst
+:: Obtendo pacotes...
+ systemd-libs-261.3-1-x86_64
+carregando pacotes...
+atenção: fazendo downgrade do pacote systemd-libs (262-1 =&gt; 261.3-1)
+resolvendo dependências...
+procurando pacotes conflitantes...
+erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+:: a instalação de systemd-libs (261.3-1) quebra a dependência "systemd-libs=262" necessária por systemd
+</pre>
+
+<p>O pacman se recusou, e ainda bem. A solução seria voltar <strong>juntos</strong> todos os pacotes amarrados (aqui, <code>systemd</code>, <code>systemd-libs</code> e companhia), passando vários arquivos no mesmo <code>pacman -U</code> ou vários nomes no mesmo <code>downgrade</code>. Quanto mais fundo no sistema (glibc, systemd, mesa), mais pacotes vêm junto e maior o risco. Por isso:</p>
+<ul>
+  <li>Downgrade de um programa "folha" (um editor, um jogo, o <code>tree</code>): tranquilo.</li>
+  <li>Downgrade de biblioteca central: só voltando o grupo inteiro, e por pouco tempo.</li>
+  <li><strong>Nunca</strong> force com <code>pacman -Udd</code> (ignorar dependências): é o caminho mais curto para um sistema que não inicia.</li>
+</ul>
+
+<hr>
+
+<h2>Voltar o sistema inteiro para uma data</h2>
+<p>Quando a atualização quebrou "tudo" e você não sabe qual pacote culpar, o Arquivo permite apontar o pacman para os repositórios <strong>como eram num dia</strong>. Todos os pacotes voltam juntos, coerentes entre si. O teste abaixo foi feito com uma cópia da configuração e uma cópia do banco de dados de pacotes (<code>--dbpath</code>), para não tocar no pacman de verdade da ana.</p>
+
+<h3>1. Trocar o espelho pelo Arquivo (numa cópia)</h3>
+<p>No <code>pacman.conf</code>, as linhas <code>Include = /etc/pacman.d/mirrorlist</code> dos repositórios viram um <code>Server</code> com a data:</p>
+<pre class="term">#> cp /etc/pacman.conf /tmp/a7/pacman-data.conf
+#> sed -i "s|^Include = /etc/pacman.d/mirrorlist|Server = https://archive.archlinux.org/repos/2026/09/15/\$repo/os/\$arch|" /tmp/a7/pacman-data.conf
+#> grep -n "^Server\|^\[" /tmp/a7/pacman-data.conf
+9:[options]
+78:[core]
+79:Server = https://archive.archlinux.org/repos/2026/09/15/$repo/os/$arch
+84:[extra]
+85:Server = https://archive.archlinux.org/repos/2026/09/15/$repo/os/$arch
+</pre>
+<p><code>$repo</code> e <code>$arch</code> o pacman troca sozinho (por <code>core</code>/<code>extra</code> e <code>x86_64</code>). No seu computador, a troca seria no próprio <code>/etc/pacman.conf</code> (ou no <code>mirrorlist</code>, deixando só essa linha).</p>
+
+<h3>2. Sincronizar e "atualizar para trás"</h3>
+<dl class="anatomy">
+  <dt>-Syy</dt><dd><em>sync</em> com dois <code>y</code>: baixa as listas de pacotes <strong>mesmo</strong> que pareçam atualizadas (são de outro servidor).</dd>
+  <dt>uu</dt><dd>Dois <code>u</code>: atualiza permitindo <strong>downgrade</strong> (com um só, o pacman ignoraria versões mais velhas).</dd>
+</dl>
+
+<pre class="term">#> pacman --config /tmp/a7/pacman-data.conf --dbpath /tmp/a7/db -Syyuu
+:: Sincronizando a base de dados de pacotes...
+ core
+ extra
+:: Iniciando atualização completa do sistema...
+atenção: appstream: voltando da versão 1.2.1-1 para a versão 1.2.0-1
+atenção: automake: voltando da versão 1.19-1 para a versão 1.18.1-1
+atenção: bash: voltando da versão 5.3.20-1 para a versão 5.3.15-1
+…                                                                     « 114 avisos ao todo, entre eles:
+atenção: glibc: voltando da versão 2.44+r50+g1848099f063e-1 para a versão 2.44+r24+g16be1518495f-1
+atenção: linux: voltando da versão 7.2.10.arch1-1 para a versão 7.2.6.arch2-1
+atenção: mkinitcpio: voltando da versão 42.2-1 para a versão 42-1
+atenção: systemd: voltando da versão 262-1 para a versão 261.3-1
+…
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (114) appstream-1.2.0-1  automake-1.18.1-1  bash-5.3.15-1
+              …
+Tamanho total download:   1037,19 MiB
+Tamanho total instalado:  2142,99 MiB
+Alteração no tamanho:      -31,10 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+
+<p>Um mês para trás, 114 pacotes: o kernel, a glibc, o systemd, o próprio pacman. Mais de 1 GiB de download. Funciona, mas é uma operação grande.</p>
+
+<div class="warning">
+<strong>Antes de voltar o sistema inteiro</strong>
+<ul>
+  <li>É uma medida de emergência, não um modo de vida: o sistema fica sem as correções de segurança desse período.</li>
+  <li>Configurações gravadas pela versão nova (de um navegador, de um banco de dados) podem não abrir na antiga.</li>
+  <li>Depois de resolver, <strong>volte</strong> o <code>pacman.conf</code> para o <code>Include = /etc/pacman.d/mirrorlist</code> e rode <code>sudo pacman -Syu</code>. Esquecer a data no arquivo congela o sistema naquele dia.</li>
+  <li>Com <a href="snapshots.html">snapshots do Btrfs</a>, voltar o sistema é um clique; sem eles, este é o caminho.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"quebra a dependência … necessária por …"</strong>
+<pre class="term">erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+:: a instalação de systemd-libs (261.3-1) quebra a dependência "systemd-libs=262" necessária por systemd</pre>
+<p><strong>O que aconteceu:</strong> outro pacote exige a versão atual.</p>
+<p><strong>Como resolver:</strong> volte os dois juntos (<code>sudo downgrade systemd systemd-libs</code>, escolhendo a mesma versão nos dois), ou volte o sistema inteiro para uma data. Não use <code>-dd</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"downgrade deve ser executado como root"</strong>
+<p><strong>Como resolver:</strong> <code>sudo downgrade pacote</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"tree está no IgnorePkg/IgnoreGroup. Instalar mesmo assim?"</strong>
+<p><strong>O que aconteceu:</strong> você (ou o <code>downgrade</code>) pôs o pacote no <code>IgnorePkg</code>. Responder <code>S</code> instala a versão nova só desta vez.</p>
+<p><strong>Como resolver:</strong> se o problema já foi corrigido, tire o nome do <code>IgnorePkg</code> (<code>sudo pacignore rm tree</code>) e atualize.</p>
+</div>
+
+<div class="cenario">
+<strong>Erro de assinatura ou "chave desconhecida" num pacote muito antigo</strong>
+<p><strong>O que aconteceu:</strong> o pacote foi assinado por uma chave de empacotador que não está mais no chaveiro atual (o pacman confere a assinatura de todo pacote, inclusive os do Arquivo).</p>
+<p><strong>Como resolver:</strong> prefira versões recentes. Veja <a href="chaves.html">Chaves e Assinaturas</a> antes de pensar em desligar a verificação, o que não é recomendado.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>grep '\[ALPM\] upgraded' /var/log/pacman.log | tail</code></td><td>O que foi atualizado por último</td></tr>
+<tr><td><code>ls /var/cache/pacman/pkg | grep '^nome-'</code></td><td>Versões no cache</td></tr>
+<tr><td><code>sudo pacman -U /var/cache/pacman/pkg/arquivo.pkg.tar.zst</code></td><td>Instala do cache</td></tr>
+<tr><td><code>sudo pacman -U https://archive.archlinux.org/packages/l/nome/arquivo</code></td><td>Instala do Arquivo</td></tr>
+<tr><td><code>sudo downgrade nome</code> / <code>sudo downgrade 'nome=versão'</code></td><td>Menu de versões / versão exata</td></tr>
+<tr><td><code>IgnorePkg = nome</code> (em <code>/etc/pacman.conf</code>)</td><td>Segura o pacote</td></tr>
+<tr><td><code>pacignore ls|check|add|rm</code></td><td>Edita o <code>IgnorePkg</code></td></tr>
+<tr><td><code>Server = https://archive.archlinux.org/repos/AAAA/MM/DD/$repo/os/$arch</code></td><td>Repositórios de uma data</td></tr>
+<tr><td><code>sudo pacman -Syyuu</code></td><td>Sincroniza e permite voltar versões</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Instalar um arquivo</h3>
+<p>Qual opção do pacman instala um pacote a partir de um arquivo ou URL?</p>
+<div class="ex-code">sudo pacman <input data-answer="-U" aria-label="opção"> /var/cache/pacman/pkg/tree-2.3.1-1-x86_64.pkg.tar.zst</div>
+</div>
+
+<div class="exercise">
+<h3>2. A URL do Arquivo</h3>
+<p>Complete a URL do pacote <code>htop-3.5.2-1-x86_64.pkg.tar.zst</code> no Arquivo:</p>
+<div class="ex-code">https://archive.archlinux.org/packages/<input data-answer="h" aria-label="inicial" style="width:2.5em">/<input data-answer="htop" aria-label="nome">/htop-3.5.2-1-x86_64.pkg.tar.zst</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Você voltou o <code>tree</code> e não quer que o próximo <code>pacman -Syu</code> traga a versão com defeito. O que fazer?</p>
+<label><input type="radio" name="q3"> Apagar o cache.</label>
+<label><input type="radio" name="q3"> Nunca mais rodar <code>pacman -Syu</code>.</label>
+<label><input type="radio" name="q3"> Pôr o <code>tree</code> no <code>IgnorePkg</code>, e tirar quando a correção sair.</label>
+<label><input type="radio" name="q3"> Usar <code>pacman -Udd</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que o pacman recusou voltar só o <code>systemd-libs</code>?</p>
+<label><input type="radio" name="q4"> Porque o Arquivo estava fora do ar.</label>
+<label><input type="radio" name="q4"> Porque o <code>systemd</code> instalado exige o <code>systemd-libs</code> da mesma versão dele.</label>
+<label><input type="radio" name="q4"> Porque downgrade é proibido no Arch.</label>
+<label><input type="radio" name="q4"> Porque faltou <code>sudo</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Em <code>pacman -Syyuu</code>, para que serve o segundo <code>u</code>?</p>
+<label><input type="radio" name="q5"> Para baixar as listas de novo.</label>
+<label><input type="radio" name="q5"> Para responder "sim" sozinho.</label>
+<label><input type="radio" name="q5"> Para ignorar dependências.</label>
+<label><input type="radio" name="q5"> Para permitir que pacotes voltem para versões mais antigas.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Descubra o culpado no <code>/var/log/pacman.log</code>; volte só ele.</li>
+  <li>Cache: <code>sudo pacman -U /var/cache/pacman/pkg/…</code>. Arquivo: <code>sudo pacman -U https://archive.archlinux.org/packages/…</code>. Cômodo: <code>sudo downgrade pacote</code>.</li>
+  <li>Segure com <code>IgnorePkg</code>, e solte assim que a correção sair.</li>
+  <li>Bibliotecas amarradas voltam juntas ou não voltam; nunca <code>-dd</code>.</li>
+  <li>Sistema inteiro: <code>Server = …/repos/AAAA/MM/DD/…</code> + <code>pacman -Syyuu</code>, e depois volte ao espelho normal.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> todos os métodos estão em <a href="https://wiki.archlinux.org/title/Downgrading_packages">Downgrading packages</a> (<a href="https://wiki.archlinux.org/title/Downgrading_packages_(Portugu%C3%AAs)">em português</a>); o Arquivo e o "voltar para uma data", em <a href="https://wiki.archlinux.org/title/Arch_Linux_Archive">Arch Linux Archive</a> (<a href="https://wiki.archlinux.org/title/Arch_Linux_Archive_(Portugu%C3%AAs)">em português</a>); e o <code>IgnorePkg</code> e o <code>pacman -U</code>, em <a href="https://wiki.archlinux.org/title/Pacman">pacman</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch microcode — intel-ucode, amd-ucode e como conferir se carregou | Guia Arch</title>
+<meta name="description" content="O que é o microcode do processador, intel-ucode × amd-ucode, como ele entra no boot pelo GRUB (initrd) e pelo hook microcode do mkinitcpio, e como conferir com journalctl -k --grep=microcode, com as saídas reais de uma máquina virtual e o que elas significam.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Microcode</span></h1>
+
+<p class="intro">O processador também tem um "programa" por dentro: o <strong>microcode</strong>. Intel e AMD lançam correções para ele, contra defeitos e falhas de segurança (como Spectre e Meltdown). Essas correções podem vir numa atualização da BIOS ou ser entregues pelo Linux <strong>a cada boot</strong>. No Arch, são os pacotes <code>intel-ucode</code> e <code>amd-ucode</code>, e instalar o certo faz parte da instalação.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é microcode e por que a atualização precisa ser carregada em todo boot.</li>
+  <li>Escolher entre <code>intel-ucode</code> e <code>amd-ucode</code>.</li>
+  <li>Os dois caminhos pelos quais ele entra no boot: a linha <code>initrd</code> do GRUB e o hook <code>microcode</code> do mkinitcpio.</li>
+  <li>Conferir se carregou com <code>journalctl -k --grep=microcode</code>, e entender o que a máquina da ana mostra.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que é microcode</h2>
+<p>As instruções que os programas mandam para o processador (somar, copiar, comparar) são executadas, lá dentro, por uma camada de pequenos passos internos. Essa camada é o microcode. Ele vem gravado no chip, mas pode ser <strong>substituído temporariamente</strong> por uma versão corrigida, carregada logo no início do boot.</p>
+<ul>
+  <li><strong>Temporário</strong>: a correção fica na memória do processador e some ao desligar. Por isso precisa ser carregada <strong>em todo boot</strong>.</li>
+  <li><strong>Cedo</strong>: quanto antes, melhor; o ideal é antes de o kernel começar a usar os recursos que a correção muda. Por isso ele vai junto com o initramfs, na parte chamada <em>early</em> (cedo).</li>
+  <li><strong>Sem risco de "estragar" o processador</strong>: nada é gravado no chip. Se algo der errado, basta não carregar.</li>
+</ul>
+
+<hr>
+
+<h2>intel-ucode ou amd-ucode?</h2>
+<p>Depende só do fabricante do processador. Descubra com:</p>
+<pre class="term">$ grep -m1 "model name" /proc/cpuinfo
+model name	: Intel(R) Xeon(R) CPU E5-2630 v4 @ 2.20GHz
+</pre>
+<p><code>/proc/cpuinfo</code> é um arquivo virtual com os dados de cada núcleo; <code>-m1</code> para na primeira linha encontrada. O processador da máquina da ana (na verdade, o do computador onde a máquina virtual roda) é Intel.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Processador</th><th>Pacote</th><th>Arquivo em <code>/boot</code></th></tr>
+<tr><td>Intel (Core, Xeon, Pentium, Celeron…)</td><td><code>intel-ucode</code></td><td><code>intel-ucode.img</code></td></tr>
+<tr><td>AMD (Ryzen, EPYC, Athlon…)</td><td><code>amd-ucode</code></td><td><code>amd-ucode.img</code></td></tr>
+<tr><td>Pendrive para usar em qualquer máquina</td><td>Os dois</td><td>Os dois (cada processador só aceita o seu)</td></tr>
+</table>
+</div>
+
+<p>A ana instalou o <code>intel-ucode</code> no <code>pacstrap</code>:</p>
+<pre class="term">$ pacman -Qi intel-ucode
+Nome                 : intel-ucode
+Versão               : 20260925-1                     « a versão é a data da Intel: 25/09/2026
+Descrição            : Microcode update files for Intel CPUs
+Arquitetura          : any
+URL                  : https://github.com/intel/Intel-Linux-Processor-Microcode-Data-Files
+Licenças             : custom
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : Nenhum
+Depend. opcionais    : Nenhum
+Necessário para      : Nenhum
+Opcional para        : Nenhum
+Conflita com         : Nenhum
+Substitui            : microcode_ctl
+Tamanho instalado    : 31,45 MiB
+Empacotador          : T.J. Townsend &lt;blakkheim@archlinux.org&gt;
+Data da compilação   : sex 25 set 2026 19:53:29
+Data de instalação   : sex 16 out 2026 12:08:57
+Motivo da instalação : Instalado explicitamente
+Script de instalação : Não
+Validado por         : Assinatura
+</pre>
+<p><code>Arquitetura: any</code>: são só arquivos de dados, iguais para qualquer sistema. <code>Licenças: custom</code>: a Intel permite distribuir, mas o código não é aberto. Num computador AMD, o comando seria <code>sudo pacman -S amd-ucode</code>; o resumo real (respondido com "n"):</p>
+<pre class="term">$ sudo pacman -S amd-ucode
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) amd-ucode-20260916-1
+
+Tamanho total download:   0,24 MiB
+Tamanho total instalado:  0,59 MiB
+
+:: Continuar a instalação? [S/n] n
+</pre>
+
+<div class="try" data-goal="ran:\bpacman\b.*-Q.*intel-ucode,out:20260925-1" data-solucao="pacman -Q intel-ucode">
+<p class="try-task"><strong>Missão:</strong> confira se o pacote de microcode da Intel está instalado na máquina da ana, e em qual versão.</p>
+</div>
+
+<h3>O que tem dentro do pacote</h3>
+<pre class="term">$ pacman -Ql intel-ucode | head -8
+intel-ucode /boot/
+intel-ucode /boot/intel-ucode.img                       « tudo junto, para o bootloader
+intel-ucode /usr/
+intel-ucode /usr/lib/
+intel-ucode /usr/lib/firmware/
+intel-ucode /usr/lib/firmware/intel-ucode/
+intel-ucode /usr/lib/firmware/intel-ucode/06-03-02      « um arquivo por modelo de processador
+intel-ucode /usr/lib/firmware/intel-ucode/06-05-00
+$ bsdtar -tf /boot/intel-ucode.img
+kernel
+kernel/x86
+kernel/x86/microcode
+kernel/x86/microcode/.enuineIntel.align.0123456789abc
+kernel/x86/microcode/GenuineIntel.bin
+</pre>
+<p>O pacote traz o microcode de duas formas: arquivos separados por modelo (<code>família-modelo-revisão</code> em hexadecimal, como <code>06-05-00</code>) e um <code>/boot/intel-ucode.img</code>, que é um pequeno arquivo <code>cpio</code> com tudo dentro de <code>GenuineIntel.bin</code>, no caminho exato onde o kernel procura o microcode "cedo".</p>
+
+<hr>
+
+<h2>Como ele entra no boot</h2>
+<p>Na máquina da ana, por <strong>dois</strong> caminhos ao mesmo tempo. Os dois funcionam; ter os dois não atrapalha.</p>
+
+<h3>Caminho 1: o GRUB carrega o intel-ucode.img</h3>
+<p>Quando a ana rodou o <code>grub-mkconfig</code> na instalação, ele achou o arquivo e o colocou na linha do initramfs, <strong>antes</strong> dele:</p>
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+Generating grub configuration file ...
+Found linux image: /boot/vmlinuz-linux
+Found initrd image: /boot/intel-ucode.img /boot/initramfs-linux.img      « microcode primeiro
+…
+</pre>
+<p>No menu gerado, cada entrada tem uma linha <code>initrd</code> com os dois arquivos, nesta ordem:</p>
+<pre class="term">$ grep -E '^\s+(linux|initrd)\s' /boot/grub/grub.cfg
+	linux	/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw  loglevel=3 quiet
+	initrd	/intel-ucode.img /initramfs-linux.img
+		linux	/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw  loglevel=3 quiet
+		initrd	/intel-ucode.img /initramfs-linux.img
+		linux	/vmlinuz-linux-lts root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw  loglevel=3 quiet
+		initrd	/intel-ucode.img /initramfs-linux-lts.img
+</pre>
+<p>O GRUB junta os arquivos da linha <code>initrd</code> um atrás do outro na memória; o kernel encontra o microcode logo no começo. Os caminhos começam em <code>/</code> porque, para o GRUB, a raiz é a própria partição <code>/boot</code>.</p>
+
+<div class="warning">
+<strong>Instalou o microcode depois? Rode o grub-mkconfig</strong>
+<p>O <code>grub-mkconfig</code> só acrescenta o <code>intel-ucode.img</code> se ele existir quando você rodar o comando. Se você instalar o pacote depois, rode de novo <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code>. No <strong>systemd-boot</strong>, a linha <code>initrd /intel-ucode.img</code> vai à mão no arquivo de entrada, antes da linha do initramfs (veja <a href="bootloader.html">Bootloader</a>).</p>
+</div>
+
+<h3>Caminho 2: o hook microcode do mkinitcpio</h3>
+<p>O <code>HOOKS</code> padrão do <code>/etc/mkinitcpio.conf</code> tem o hook <code>microcode</code> (veja <a href="mkinitcpio.html">mkinitcpio</a>). Ele põe o microcode dentro do próprio initramfs, numa parte separada, sem compressão, chamada <strong>early CPIO</strong>:</p>
+<pre class="term">$ mkinitcpio -H microcode
+==&gt; Help for hook 'microcode':
+This hook adds early microcode update files for Intel and AMD processors. If
+individual microcode files exist in /lib/firmware/, they are included in a
+uncompressed initramfs image which is prepended to the main initramfs image.
+If individual microcode files are not available, but /boot/amd-ucode.img or
+/boot/intel-ucode.img exist, they are extracted and used instead.
+
+If the autodetect hook runs before this hook, it will only add early microcode
+update files for the processor of the system the image is built on.
+</pre>
+<p>Em português: o hook copia os arquivos por modelo de <code>/usr/lib/firmware/</code> para uma imagem não comprimida, colocada <strong>na frente</strong> do initramfs. E, como o <code>autodetect</code> vem antes dele na ana, entra só o arquivo do processador desta máquina. É a linha que você vê no <code>mkinitcpio -P</code>: <code>-&gt; Early uncompressed CPIO image generation successful</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>Como</th><th>Qual usar?</th></tr>
+<tr><td>Bootloader carrega <code>intel-ucode.img</code></td><td>Automático no GRUB (<code>grub-mkconfig</code>); à mão no systemd-boot</td><td>Funciona sempre, inclusive com initramfs feito por outra ferramenta</td></tr>
+<tr><td>Hook <code>microcode</code> do mkinitcpio</td><td>Já está no <code>HOOKS</code> padrão; atualiza a cada <code>mkinitcpio -P</code></td><td>O caminho padrão do Arch hoje; obrigatório numa <a href="mkinitcpio.html">UKI</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Conferir se carregou</h2>
+<p>As mensagens do kernel ficam no journal. Para filtrar só as do microcode:</p>
+
+<dl class="anatomy">
+  <dt>journalctl</dt><dd>Lê o journal (veja <a href="journal.html">Logs</a>).</dd>
+  <dt>-k</dt><dd><em>kernel</em>: só mensagens do kernel, do boot atual.</dd>
+  <dt>--grep=microcode</dt><dd>Só as linhas com essa palavra (sem diferenciar maiúsculas).</dd>
+</dl>
+
+<pre class="term">$ sudo journalctl -k --grep=microcode
+out 16 13:06:28 archlinux kernel: x86/CPU: Model not found in latest microcode list
+$ sudo dmesg | grep -i microcode
+[    0.000000] x86/CPU: Model not found in latest microcode list
+</pre>
+
+<p>O <code>dmesg</code> (<em>display messages</em>) mostra o mesmo registro do kernel, contando o tempo em segundos desde o boot. O nome <code>archlinux</code> no journal, em vez de <code>notebook</code>, não é erro: no instante zero do boot o nome da máquina ainda não foi definido.</p>
+
+<h3>O que essa mensagem quer dizer</h3>
+<p>O kernel guarda uma tabela com a versão de microcode mais recente de cada modelo de processador, para avisar quem está com microcode velho. <code>Model not found in latest microcode list</code> quer dizer: "este modelo não está na tabela, não sei dizer se o seu microcode é o mais novo". Não é um erro e não impede nada. E, na máquina da ana, nenhuma atualização foi carregada, por dois motivos que dá para conferir:</p>
+
+<ol class="passo">
+<li><strong>É uma máquina virtual.</strong> Quem manda no processador é o computador hospedeiro; o Linux não aplica microcode dentro de uma VM. O sinal disso é a marca <code>hypervisor</code> nos dados do processador, e a ausência da pasta de microcode no <code>/sys</code>:
+<pre class="term">$ grep -m1 "^flags" /proc/cpuinfo | tr " " "\n" | grep -c hypervisor
+1
+$ grep -m1 "^microcode" /proc/cpuinfo
+microcode	: 0xb000040
+$ cat /sys/devices/system/cpu/cpu0/microcode/version
+cat: /sys/devices/system/cpu/cpu0/microcode/version: Arquivo ou diretório inexistente
+</pre>
+<p>O <code>0xb000040</code> é a versão que o processador informa (a do hospedeiro).</p></li>
+<li><strong>Não há arquivo para este modelo no pacote.</strong> Família 6, modelo 79, revisão 1 dá o nome <code>06-4f-01</code> (79 em hexadecimal é 4f), e o pacote não traz esse arquivo. Por isso a parte <em>early</em> do initramfs da ana não tem microcode nenhum:
+<pre class="term">$ grep -m4 -E "^(cpu family|model|stepping)" /proc/cpuinfo
+cpu family	: 6
+model		: 79
+model name	: Intel(R) Xeon(R) CPU E5-2630 v4 @ 2.20GHz
+stepping	: 1
+$ ls /usr/lib/firmware/intel-ucode | grep 06-4f
+$ lsinitcpio --early /boot/initramfs-linux.img | grep -i microcode
+$ echo $?
+1
+</pre></li>
+</ol>
+
+<h3>Num computador de verdade (ilustrativo)</h3>
+<p>Num notebook ou PC, fora de máquina virtual, com um processador que recebeu correção, o mesmo comando mostra algo parecido com isto (os números mudam de máquina para máquina):</p>
+<pre class="term" data-title="exemplo ilustrativo">$ sudo journalctl -k --grep=microcode
+out 16 09:12:03 notebook kernel: microcode: Current revision: 0x000000fa
+out 16 09:12:03 notebook kernel: microcode: Updated early from: 0x000000f4
+</pre>
+<p><code>Updated early from</code> = a versão gravada no chip era a <code>f4</code>, e o Linux carregou a <code>fa</code> no início do boot. Se aparecer só <code>Current revision</code>, o chip (ou a BIOS) já tinha a versão mais nova que o pacote oferece: também está certo.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Nenhuma linha sobre microcode</strong>
+<p><strong>O que aconteceu:</strong> o pacote não está instalado, ou o initramfs/menu foram gerados antes dele.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Q intel-ucode amd-ucode</code>, <code>ls /boot</code> e <code>grep initrd /boot/grub/grub.cfg</code>.</p>
+<p><strong>Como resolver:</strong> instale o pacote do seu fabricante, rode <code>sudo mkinitcpio -P</code> e <code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code>, e reinicie.</p>
+</div>
+
+<div class="cenario">
+<strong>"Model not found in latest microcode list"</strong>
+<p><strong>O que aconteceu:</strong> o kernel não conhece a versão mais recente para o seu modelo. Comum em máquinas virtuais e em processadores muito antigos ou muito novos.</p>
+<p><strong>Como resolver:</strong> nada a fazer. Mantenha o pacote atualizado com o sistema (<a href="atualizar.html">Atualizar o Sistema</a>) e, num computador de verdade, a BIOS também.</p>
+</div>
+
+<div class="cenario">
+<strong>Instalei o pacote errado (amd-ucode num Intel)</strong>
+<p><strong>O que aconteceu:</strong> nada de ruim: o processador ignora microcode de outro fabricante. Só não houve atualização.</p>
+<p><strong>Como resolver:</strong> instale o certo; o outro pode ser removido com <code>sudo pacman -Rns amd-ucode</code> (e um <code>grub-mkconfig</code> para tirá-lo do menu).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>grep -m1 "model name" /proc/cpuinfo</code></td><td>Fabricante e modelo do processador</td></tr>
+<tr><td><code>sudo pacman -S intel-ucode</code> / <code>amd-ucode</code></td><td>Instala o microcode</td></tr>
+<tr><td><code>pacman -Qi intel-ucode</code></td><td>Versão instalada (é uma data)</td></tr>
+<tr><td><code>sudo grub-mkconfig -o /boot/grub/grub.cfg</code></td><td>Põe o <code>.img</code> na linha <code>initrd</code></td></tr>
+<tr><td><code>sudo mkinitcpio -P</code></td><td>Atualiza a parte <em>early</em> (hook <code>microcode</code>)</td></tr>
+<tr><td><code>sudo journalctl -k --grep=microcode</code></td><td>Conferir no boot atual</td></tr>
+<tr><td><code>sudo dmesg | grep -i microcode</code></td><td>O mesmo, pelo dmesg</td></tr>
+<tr><td><code>grep -m1 "^microcode" /proc/cpuinfo</code></td><td>Versão em uso</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O pacote certo</h3>
+<p>O <code>/proc/cpuinfo</code> diz <code>AMD Ryzen 5 5600</code>. Qual pacote instalar?</p>
+<div class="ex-code">sudo pacman -S <input data-answer="amd-ucode" aria-label="pacote"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Filtrar o journal</h3>
+<p>Complete para ver só as mensagens do kernel que falam de microcode:</p>
+<div class="ex-code">sudo journalctl <input data-answer="-k" aria-label="opção do kernel"> --grep=microcode</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Por que o microcode precisa ser carregado em todo boot?</p>
+<label><input type="radio" name="q3"> Porque o pacman o apaga a cada atualização.</label>
+<label><input type="radio" name="q3"> Porque a correção fica só na memória do processador e some ao desligar.</label>
+<label><input type="radio" name="q3"> Porque o GRUB exige.</label>
+<label><input type="radio" name="q3"> Não precisa: ele é gravado no chip uma vez.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Na linha <code>initrd /intel-ucode.img /initramfs-linux.img</code>, por que o microcode vem primeiro?</p>
+<label><input type="radio" name="q4"> Por ordem alfabética.</label>
+<label><input type="radio" name="q4"> Porque é o arquivo menor.</label>
+<label><input type="radio" name="q4"> Tanto faz a ordem.</label>
+<label><input type="radio" name="q4"> Porque o kernel procura o microcode logo no começo do que foi carregado, para aplicá-lo o mais cedo possível.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Microcode é a camada interna do processador; as correções da Intel/AMD são carregadas na memória a cada boot.</li>
+  <li>Intel → <code>intel-ucode</code>; AMD → <code>amd-ucode</code>. A ana tem o <code>intel-ucode 20260925-1</code>.</li>
+  <li>Ele entra pela linha <code>initrd</code> do GRUB (gerada pelo <code>grub-mkconfig</code>) e pelo hook <code>microcode</code> do mkinitcpio.</li>
+  <li>Confira com <code>sudo journalctl -k --grep=microcode</code>. Numa máquina virtual, nada é atualizado: é normal.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Microcode">Microcode</a> explica a instalação para cada bootloader, o carregamento cedo e tardio e como conferir; o hook está em <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a> (<a href="https://wiki.archlinux.org/title/Mkinitcpio_(Portugu%C3%AAs)">em português</a>); a linha <code>initrd</code> do GRUB, em <a href="https://wiki.archlinux.org/title/GRUB">GRUB</a> (<a href="https://wiki.archlinux.org/title/GRUB_(Portugu%C3%AAs)">em português</a>); e onde o microcode entra na sequência do boot, em <a href="https://wiki.archlinux.org/title/Arch_boot_process">Arch boot process</a> (<a href="https://wiki.archlinux.org/title/Arch_boot_process_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
