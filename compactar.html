@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch tar, zip, gzip — compactar e extrair | Guia Arch</title>
+<meta name="description" content="Aprenda a compactar e extrair arquivos no Arch Linux: tar (-c -x -t -v -f -z -J --zstd), gzip, xz, zstd, zip/unzip e 7z, com o que é cada letra, os pacotes .pkg.tar.zst do próprio Arch abertos com tar, tabela de formatos e saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">tar, zip, gzip</span></h1>
+
+<p class="intro">Para mandar uma pasta por e-mail, guardar um backup ou baixar um programa, você vai lidar com arquivos compactados: <code>.tar.gz</code>, <code>.zip</code>, <code>.tar.zst</code>. No Linux, o mais comum é o <code>tar</code>, que parece assustador (<code>tar -czvf</code>?) até você descobrir que cada letra é uma palavra. E no Arch há um bônus: todo pacote que o <code>pacman</code> instala é um arquivo <code>.tar.zst</code> que você pode abrir com o <code>tar</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre empacotar (juntar) e compactar (encolher).</li>
+  <li>O que significa cada letra de <code>tar -czvf</code>, <code>tar -tf</code> e <code>tar -xf</code>.</li>
+  <li>Por que o Arch usa <strong>zstd</strong> nos pacotes, e como olhar dentro de um <code>.pkg.tar.zst</code>.</li>
+  <li>Compactar um arquivo só com <code>gzip</code>, <code>xz</code> e <code>zstd</code>.</li>
+  <li>Instalar e usar <code>zip</code>/<code>unzip</code> e o <code>7z</code>, e escolher o formato certo.</li>
+</ul>
+</div>
+
+<p>O simulador desta página não roda <code>tar</code>, <code>gzip</code> nem <code>zip</code>: as sessões abaixo foram conferidas num Arch real. As missões usam o que o simulador conhece (o <code>pacman</code> e o cache de pacotes). Pratique o resto no seu terminal, numa pasta de teste.</p>
+
+<hr>
+
+<h2>O que já vem instalado</h2>
+<p>O <code>base</code> do Arch traz o <code>tar</code> e quatro compactadores. Todos são dependências do próprio sistema (o <code>pacman</code> precisa do zstd para abrir os pacotes):</p>
+
+<pre class="term">$ pacman -Q tar gzip bzip2 xz zstd
+tar 1.35-5
+gzip 1.15-1
+bzip2 1.0.8-6
+xz 5.8.4-1
+zstd 1.5.7-3</pre>
+
+<p>O <code>zip</code>, o <code>unzip</code> e o <code>7z</code> <strong>não</strong> vêm:</p>
+
+<pre class="term">$ zip -r site.zip site
+bash: zip: comando não encontrado
+$ unzip fotos.zip
+bash: unzip: comando não encontrado
+$ 7z
+bash: 7z: comando não encontrado</pre>
+
+<p>Mais abaixo você vê como instalar. Para trabalhar só entre máquinas Linux, o <code>tar</code> basta.</p>
+
+<hr>
+
+<h2>Empacotar não é compactar</h2>
+<p>Pense numa mudança de casa. <strong>Empacotar</strong> é pôr tudo numa caixa só, para não perder nada. <strong>Compactar</strong> é tirar o ar da caixa, como num saco a vácuo, para ela ocupar menos espaço. No Linux, cada tarefa costuma ter o seu programa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>O que faz</th><th>Programa</th><th>Resultado</th></tr>
+<tr><td>Empacotar</td><td>Junta muitos arquivos e pastas num arquivo só, sem encolher</td><td><code>tar</code></td><td><code>site.tar</code></td></tr>
+<tr><td>Compactar</td><td>Encolhe <strong>um</strong> arquivo</td><td><code>gzip</code>, <code>bzip2</code>, <code>xz</code>, <code>zstd</code></td><td><code>log.gz</code></td></tr>
+<tr><td>As duas coisas</td><td>Empacota e compacta em seguida</td><td><code>tar</code> com <code>z</code>, <code>j</code>, <code>J</code> ou <code>--zstd</code></td><td><code>site.tar.gz</code></td></tr>
+<tr><td>As duas coisas</td><td>Empacota e compacta, formato do Windows</td><td><code>zip</code>, <code>7z</code></td><td><code>site.zip</code></td></tr>
+</table>
+</div>
+
+<p>Por isso a extensão <code>.tar.gz</code> tem duas partes: "um pacote tar, compactado com gzip". A forma curta <code>.tgz</code> significa a mesma coisa.</p>
+
+<hr>
+
+<h2>Criar um .tar.gz</h2>
+<p>A pasta <code>site</code> tem uma página, um CSS e um rascunho. Vamos empacotar e compactar tudo:</p>
+
+<dl class="anatomy">
+  <dt>tar</dt><dd>O programa (de <em>tape archive</em>, "arquivo em fita", da época dos backups em fita magnética).</dd>
+  <dt>-c</dt><dd><strong>c</strong>riar um pacote novo (<em>create</em>).</dd>
+  <dt>z</dt><dd>compactar com g<strong>z</strong>ip.</dd>
+  <dt>v</dt><dd><strong>v</strong>erboso: mostrar cada arquivo enquanto trabalha.</dd>
+  <dt>f site.tar.gz</dt><dd><strong>f</strong>ile: o nome do arquivo a criar. O nome vem logo depois do <code>f</code>, por isso o <code>f</code> fica por último.</dd>
+  <dt>site</dt><dd>O que colocar dentro: pastas e arquivos, quantos quiser.</dd>
+</dl>
+
+<pre class="term">$ tar -czvf site.tar.gz site
+site/
+site/css/
+site/css/style.css
+site/rascunho.tmp
+site/index.html
+$ ls -lh site.tar.gz
+-rw-r--r-- 1 ana ana 247 16 out 15:05 site.tar.gz</pre>
+
+<p>As linhas que aparecem são o efeito do <code>v</code>: o <code>tar</code> conta o que está guardando. Sem o <code>v</code>, ele trabalha em silêncio e só a volta do prompt avisa que acabou (código 0). A ordem dos arquivos é a do disco, não alfabética.</p>
+
+<div class="tip">
+<strong>Como decorar</strong>
+<p><strong>c</strong>riar · <strong>z</strong>ipado · <strong>v</strong>endo · <strong>f</strong>ile. E para extrair, troque o <code>c</code> pelo <code>x</code>: e<strong>x</strong>trair · <strong>z</strong>ipado · <strong>v</strong>endo · <strong>f</strong>ile. O hífen é opcional: <code>tar czvf</code> funciona igual.</p>
+</div>
+
+<h3>Deixar arquivos de fora: <code>--exclude</code></h3>
+<pre class="term">$ tar -czf site.tar.gz --exclude="*.tmp" site
+$ tar -tzf site.tar.gz
+site/
+site/css/
+site/css/style.css
+site/index.html                      « o rascunho.tmp ficou de fora</pre>
+
+<hr>
+
+<h2>Conferir antes de extrair: <code>-t</code></h2>
+<p>Antes de abrir um pacote que você baixou, veja o que tem dentro. O <code>t</code> (de <em>table of contents</em>, "sumário"; a forma longa é <code>--list</code>) mostra o conteúdo sem extrair nada:</p>
+
+<dl class="anatomy">
+  <dt>tar</dt><dd>O programa.</dd>
+  <dt>-t</dt><dd>Listar o conteúdo.</dd>
+  <dt>f site.tar.gz</dt><dd>De qual arquivo.</dd>
+</dl>
+
+<pre class="term">$ tar -tf site.tar.gz
+site/
+site/css/
+site/css/style.css
+site/index.html</pre>
+
+<p>Por que isso importa? Alguns pacotes têm tudo dentro de uma pasta (<code>site/…</code>), e outros têm os arquivos soltos. Extrair um pacote "solto" na pasta <code>Downloads</code> espalha dezenas de arquivos misturados com os seus. Olhando antes, você sabe se precisa criar uma pasta para ele.</p>
+
+<p>Com <code>v</code>, a lista vem com detalhes, como um <code>ls -l</code>:</p>
+
+<pre class="term">$ tar -tvf site.tar.gz
+drwxr-xr-x ana/ana           0 2026-10-16 15:05 site/
+drwxr-xr-x ana/ana           0 2026-10-16 15:05 site/css/
+-rw-r--r-- ana/ana           5 2026-10-16 15:05 site/css/style.css
+-rw-r--r-- ana/ana          14 2026-10-16 15:05 site/index.html</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>drwxr-xr-x</code></td><td>Tipo e permissões, guardadas dentro do pacote (o <code>tar</code> preserva as permissões; o <code>zip</code>, nem sempre)</td></tr>
+<tr><td><code>ana/ana</code></td><td>Dono e grupo</td></tr>
+<tr><td><code>14</code></td><td>Tamanho em bytes (pastas mostram 0)</td></tr>
+<tr><td><code>2026-10-16 15:05</code></td><td>Data de modificação, no formato ano-mês-dia</td></tr>
+<tr><td><code>site/index.html</code></td><td>O caminho dentro do pacote</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Extrair: <code>-x</code></h2>
+
+<dl class="anatomy">
+  <dt>tar</dt><dd>O programa.</dd>
+  <dt>-x</dt><dd>e<strong>x</strong>trair (<em>extract</em>).</dd>
+  <dt>v</dt><dd>Mostrar cada arquivo.</dd>
+  <dt>f site.tar.gz</dt><dd>O pacote.</dd>
+  <dt>-C restaurado</dt><dd>Extrair dentro da pasta <code>restaurado</code> (de <em>change directory</em>). A pasta precisa existir. Sem o <code>-C</code>, extrai na pasta atual.</dd>
+</dl>
+
+<pre class="term">$ mkdir restaurado
+$ tar -xvf site.tar.gz -C restaurado
+site/
+site/css/
+site/css/style.css
+site/index.html
+$ ls restaurado
+site</pre>
+
+<div class="note">
+<strong>Não precisa dizer o tipo de compactação para extrair</strong>
+<p>Para <strong>criar</strong>, você diz <code>z</code>, <code>j</code>, <code>J</code> ou <code>--zstd</code>. Para <strong>extrair e listar</strong>, o GNU tar descobre o tipo sozinho, pelo conteúdo: <code>tar -xf arquivo.tar.zst</code> funciona. Escrever a letra também funciona, desde que seja a certa (veja os erros no fim da página).</p>
+</div>
+
+<div class="warning">
+<strong>Extrair sobrescreve sem perguntar</strong>
+<p>Se já existir um arquivo com o mesmo nome no destino, o <code>tar</code> substitui pelo do pacote, em silêncio. Por isso, extraia numa pasta nova com <code>-C</code> quando não tiver certeza.</p>
+</div>
+
+<h3>Extrair só um arquivo</h3>
+<p>Coloque o caminho, exatamente como aparece no <code>tar -tf</code>, no fim do comando:</p>
+<pre class="term" data-cwd="~/so-um">$ tar -xf ../site.tar.gz site/index.html
+$ ls site
+index.html</pre>
+
+<hr>
+
+<h2>Os pacotes do Arch são .tar.zst</h2>
+<p>Aqui o Arch fica interessante. Quando o <code>pacman</code> baixa um programa, ele guarda o arquivo no cache, <code>/var/cache/pacman/pkg/</code>. Olhe a extensão:</p>
+
+<pre class="term">$ ls -l /var/cache/pacman/pkg/which-*
+-rw-r--r-- 1 root root 16798 31 mai 05:37 /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 root root   310 31 mai 05:37 /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst.sig</pre>
+
+<p><code>.pkg.tar.zst</code> = "um <strong>pacote</strong> do Arch, que é um <strong>tar</strong> compactado com <strong>zstd</strong>". (O <code>.sig</code> ao lado é a assinatura digital; veja <a href="chaves.html">Chaves e Assinaturas</a>.) Como é um tar comum, você pode listar o conteúdo com <code>tar -tf</code>, sem instalar nada e sem <code>sudo</code>:</p>
+
+<pre class="term">$ tar -tf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
+.BUILDINFO                         « como o pacote foi compilado
+.MTREE                             « lista de arquivos com somas de verificação
+.PKGINFO                           « a "ficha" do pacote
+usr/
+usr/bin/
+usr/bin/which                      « o programa em si
+usr/share/
+usr/share/info/
+usr/share/info/which.info.gz
+usr/share/man/
+usr/share/man/man1/
+usr/share/man/man1/which.1.gz      « o manual (compactado com gzip!)</pre>
+
+<p>Os caminhos não começam com <code>/</code>: o <code>pacman</code> extrai tudo a partir da raiz do sistema, então <code>usr/bin/which</code> vira <code>/usr/bin/which</code>. Os três arquivos com ponto são do próprio <code>pacman</code>. O <code>-O</code> (letra o maiúscula, de <em>output</em>) extrai um arquivo para a <strong>tela</strong> em vez do disco; assim você lê a ficha sem criar nada:</p>
+
+<pre class="term">$ tar -xOf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst .PKGINFO
+# Generated by makepkg 7.1.0
+# using fakeroot version 1.38.1
+pkgname = which
+pkgbase = which
+xdata = pkgtype=pkg
+pkgver = 2.25-1
+pkgdesc = A utility to show the full path of commands
+url = https://savannah.gnu.org/projects/which/
+builddate = 1780216630
+packager = Tobias Powalowski &lt;tpowa@archlinux.org&gt;
+size = 31290
+arch = x86_64
+license = GPL-3.0-or-later
+depend = bash
+depend = glibc</pre>
+
+<p>É dessa ficha que o <code>pacman -Qi</code> tira a versão, a descrição e as dependências. E repare: o pacote de 16 KiB guarda 31 KiB de arquivos (<code>size = 31290</code>), quase a metade.</p>
+
+<p>Os pacotes que você compila do AUR saem no mesmo formato. Quem decide é o <code>/etc/makepkg.conf</code> (veja <a href="makepkg.html">makepkg</a>):</p>
+
+<pre class="term">$ grep -E "^(PKGEXT|SRCEXT|COMPRESSZST)" /etc/makepkg.conf
+COMPRESSZST=(zstd -c -T0 -)        « -T0 = usar todos os núcleos do processador
+PKGEXT='.pkg.tar.zst'              « pacotes: tar + zstd
+SRCEXT='.src.tar.gz'               « pacotes de código-fonte: tar + gzip
+$ file /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
+/var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst: Zstandard compressed data (v0.8+), Dictionary ID: None</pre>
+
+<div class="note">
+<strong>Por que zstd?</strong>
+<p>Até o fim de 2019 o Arch usava <code>.pkg.tar.xz</code>. A troca para o zstd foi feita porque ele <strong>descompacta muito mais rápido</strong>, com um tamanho só um pouco maior. Para quem atualiza o sistema toda semana, centenas de pacotes, isso faz diferença. Você vai ver os números no teste mais abaixo.</p>
+</div>
+
+<div class="warning">
+<strong>Olhar, sim; instalar à mão, não</strong>
+<p>Extrair um pacote com <code>sudo tar -xf … -C /</code> coloca os arquivos no sistema sem o <code>pacman</code> saber: ele não registra, não confere conflitos e não sabe remover depois. Para instalar um arquivo de pacote, use <code>sudo pacman -U arquivo.pkg.tar.zst</code> (veja <a href="pacman-avancado.html">pacman Avançado</a>).</p>
+</div>
+
+<div class="try" data-goal="ran:ls.*pacman/pkg,out:which-2.25-1-x86_64.pkg.tar.zst" data-solucao="ls /var/cache/pacman/pkg | grep which">
+<p class="try-task"><strong>Missão 1:</strong> encontre no cache do pacman (<code>/var/cache/pacman/pkg</code>) o arquivo do pacote <code>which</code>. Dica: <code>ls</code> da pasta, com um <code>| grep which</code> (veja <a href="grep.html">grep</a>). Qual é a extensão dele?</p>
+</div>
+
+<div class="try" data-goal="ran:grep.*makepkg.conf,out:.pkg.tar.zst" data-solucao="grep PKGEXT /etc/makepkg.conf">
+<p class="try-task"><strong>Missão 2:</strong> confirme no <code>/etc/makepkg.conf</code> qual extensão o <code>makepkg</code> usa para os pacotes que ele cria. Procure a linha <code>PKGEXT</code> com o <code>grep</code>.</p>
+</div>
+
+<hr>
+
+<h2>gzip, bzip2, xz ou zstd?</h2>
+<p>A opção do <code>tar</code> escolhe o compactador. Cada um equilibra de um jeito o tamanho final e a velocidade:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção do tar</th><th>Compactador</th><th>Extensão</th><th>Tamanho</th><th>Velocidade</th><th>Uso típico</th></tr>
+<tr><td><code>z</code></td><td>gzip</td><td><code>.tar.gz</code></td><td>Bom</td><td>Rápido</td><td>O mais compatível: abre em qualquer sistema</td></tr>
+<tr><td><code>j</code></td><td>bzip2</td><td><code>.tar.bz2</code></td><td>Melhor</td><td>Lento</td><td>Arquivos antigos; hoje quase ninguém escolhe</td></tr>
+<tr><td><code>J</code></td><td>xz</td><td><code>.tar.xz</code></td><td>O menor</td><td>O mais lento para criar</td><td>Distribuir código-fonte, arquivar por muito tempo</td></tr>
+<tr><td><code>--zstd</code></td><td>zstd</td><td><code>.tar.zst</code></td><td>Bom</td><td>O mais rápido, principalmente para extrair</td><td>Os pacotes do Arch; backups frequentes</td></tr>
+</table>
+</div>
+
+<p>Um teste real, com uma pasta de 8,6 MB de texto (a lista de todos os arquivos dos pacotes instalados, <code>pacman -Ql</code>, mais o log do boot). O <code>time</code> na frente mede quanto cada comando demorou (a linha <code>real</code>; as linhas <code>user</code> e <code>sys</code> foram cortadas com <code>…</code>):</p>
+
+<pre class="term">$ ls -lh logs
+total 8,6M
+-rw-r--r-- 1 ana ana 8,1M 16 out 15:06 arquivos-pacotes.txt
+-rw-r--r-- 1 ana ana 479K 16 out 15:06 boot.log
+$ time tar -czf logs.tar.gz logs
+
+real	0m0,143s
+user	0m0,132s
+sys	0m0,020s
+$ time tar -cjf logs.tar.bz2 logs
+
+real	0m1,016s
+…
+$ time tar -cJf logs.tar.xz logs
+
+real	0m2,314s                « o mais lento
+…
+$ time tar --zstd -cf logs.tar.zst logs
+
+real	0m0,067s                « o mais rápido
+…
+$ ls -lh logs.tar.*
+-rw-r--r-- 1 ana ana 635K 16 out 15:06 logs.tar.bz2
+-rw-r--r-- 1 ana ana 755K 16 out 15:06 logs.tar.gz
+-rw-r--r-- 1 ana ana 611K 16 out 15:06 logs.tar.xz
+-rw-r--r-- 1 ana ana 771K 16 out 15:06 logs.tar.zst</pre>
+
+<p>Os mesmos 8,6 MB viraram de 611 KB (xz) a 771 KB (zstd). O xz ganhou no tamanho, mas levou 35 vezes mais tempo que o zstd. E para <strong>extrair</strong>, o que o pacman faz em toda atualização, o zstd também ganha (os números mudam de máquina para máquina; a proporção, não):</p>
+
+<pre class="term">$ time tar -xf logs.tar.xz -C /tmp
+
+real	0m0,052s
+…
+$ time tar -xf logs.tar.zst -C /tmp
+
+real	0m0,034s
+…</pre>
+
+<div class="tip">
+<strong>Fotos, vídeos e .zip já vêm compactados</strong>
+<p>JPG, MP4, MP3 e PDF já são formatos comprimidos. Compactar de novo economiza quase nada. Para eles, um <code>.tar</code> sem compactação (<code>tar -cf</code>) é mais rápido e dá praticamente o mesmo tamanho. Texto (logs, CSV, código) é o que mais encolhe: aqui, 91%.</p>
+</div>
+
+<h3>Deixar o tar escolher: <code>-a</code></h3>
+<p>Com <code>-a</code> (<em>auto-compress</em>), o <code>tar</code> escolhe o compactador pela extensão do nome que você deu. O <code>file</code> confirma o tipo real de cada um, pelo conteúdo:</p>
+
+<pre class="term">$ tar -caf auto.tar.zst site
+$ file site.tar.gz site.tar.xz site.tar.bz2 site.tar.zst auto.tar.zst
+site.tar.gz:  gzip compressed data, from Unix, original size modulo 2^32 10240
+site.tar.xz:  XZ compressed data, checksum CRC64
+site.tar.bz2: bzip2 compressed data, block size = 900k
+site.tar.zst: Zstandard compressed data (v0.8+), Dictionary ID: None
+auto.tar.zst: Zstandard compressed data (v0.8+), Dictionary ID: None</pre>
+
+<hr>
+
+<h2>gzip, xz e zstd sozinhos: um arquivo só</h2>
+<p>Para encolher um único arquivo, como um log, não precisa de <code>tar</code>:</p>
+
+<pre class="term">$ ls -l acesso.log
+-rw-r--r-- 1 ana ana 389 16 out 15:05 acesso.log
+$ gzip acesso.log
+$ ls -l acesso.log*
+-rw-r--r-- 1 ana ana 173 16 out 15:05 acesso.log.gz    « o original sumiu
+$ gunzip acesso.log.gz
+$ ls acesso.log*
+acesso.log
+$ gzip -k acesso.log
+$ ls -l acesso.log*
+-rw-r--r-- 1 ana ana 389 16 out 15:05 acesso.log
+-rw-r--r-- 1 ana ana 173 16 out 15:05 acesso.log.gz    « com -k os dois ficam
+$ gzip -l acesso.log.gz
+         compressed        uncompressed  ratio uncompressed_name
+                173                 389  63,0% acesso.log</pre>
+
+<p>Por padrão, o <code>gzip</code> <strong>substitui</strong> o original pela versão <code>.gz</code>. Para manter os dois, use <code>-k</code> (de <em>keep</em>, "manter"). O <code>-l</code> (<em>list</em>) mostra quanto encolheu: 63% (com vírgula, por causa do pt_BR). Para ler um <code>.gz</code> sem descompactar, use <code>zcat</code>, <code>zless</code> ou <code>zgrep</code>, as versões "z" de <code>cat</code>, <code>less</code> e <code>grep</code>:</p>
+
+<pre class="term">$ zcat acesso.log.gz | head -2
+192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+$ zgrep -c 404 acesso.log.gz
+1</pre>
+
+<p>O <code>xz</code> funciona igual ao <code>gzip</code> (<code>xz</code>, <code>unxz</code>, <code>xz -k</code>, <code>xzcat</code>). O <code>zstd</code> tem duas diferenças: ele <strong>mostra</strong> o resultado, e ele <strong>mantém</strong> o original (o contrário do gzip). Para apagar o original, use <code>--rm</code>:</p>
+
+<pre class="term">$ xz acesso.log
+$ ls -l acesso.log*
+-rw-r--r-- 1 ana ana 212 16 out 15:05 acesso.log.xz
+$ unxz acesso.log.xz
+$ zstd acesso.log
+acesso.log           : 40.62%   (   389 B =&gt;    158 B, acesso.log.zst)
+$ ls -l acesso.log*
+-rw-r--r-- 1 ana ana 389 16 out 15:06 acesso.log      « o original continua
+-rw-r--r-- 1 ana ana 158 16 out 15:06 acesso.log.zst
+$ zstd --rm -f acesso.log
+acesso.log           : 40.62%   (   389 B =&gt;    158 B, acesso.log.zst)
+$ ls acesso.log*
+acesso.log.zst
+$ zstd -d acesso.log.zst
+acesso.log.zst      : 389 bytes</pre>
+
+<p>O <code>40.62%</code> do zstd é o tamanho final em relação ao original (o arquivo ficou com 40% do tamanho). O <code>63,0%</code> do <code>gzip -l</code> é o contrário: quanto foi <strong>economizado</strong>. E o zstd escreve o número com ponto, sem seguir o pt_BR. Para descompactar: <code>zstd -d</code>, <code>unzstd</code>; para ler: <code>zstdcat</code>.</p>
+
+<hr>
+
+<h2>zip e unzip: para trocar com quem usa Windows</h2>
+<p>O <code>.zip</code> abre em qualquer sistema com dois cliques. Use-o quando o arquivo for para outra pessoa. No Arch, instale os dois pacotes (pequenos, menos de 1 MiB juntos):</p>
+
+<pre class="term">$ sudo pacman -S zip unzip
+[sudo] senha para ana:
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) unzip-6.0-23  zip-3.0-14
+
+Tamanho total download:   0,31 MiB
+Tamanho total instalado:  0,85 MiB
+
+:: Continuar a instalação? [S/n]        « responda S</pre>
+
+<div class="try" data-goal="pkg:zip,pkg:unzip" data-solucao="sudo pacman -S zip unzip" data-stdin="ana\nS">
+<p class="try-task"><strong>Missão 3:</strong> tente <code>zip</code> e veja o erro. Depois instale os pacotes <code>zip</code> e <code>unzip</code> com um único comando (a senha da ana é <code>ana</code>). Confira com <code>pacman -Q zip unzip</code>.</p>
+</div>
+
+<dl class="anatomy">
+  <dt>zip</dt><dd>O programa.</dd>
+  <dt>-r</dt><dd><strong>r</strong>ecursivo: inclui o conteúdo das pastas. Sem ele, o <code>zip</code> guarda só a pasta vazia.</dd>
+  <dt>site.zip</dt><dd>O arquivo a criar. Atenção: no <code>zip</code>, o nome do arquivo vem <strong>primeiro</strong>, sem <code>-f</code>.</dd>
+  <dt>site</dt><dd>O que colocar dentro.</dd>
+</dl>
+
+<pre class="term">$ zip -r site.zip site
+  adding: site/ (stored 0%)
+  adding: site/css/ (stored 0%)
+  adding: site/css/style.css (stored 0%)
+  adding: site/rascunho.tmp (stored 0%)
+  adding: site/index.html (stored 0%)
+$ zip -r logs.zip logs
+  adding: logs/ (stored 0%)
+  adding: logs/arquivos-pacotes.txt (deflated 91%)
+  adding: logs/boot.log (deflated 90%)</pre>
+
+<p>As saídas do <code>zip</code> e do <code>unzip</code> (zip 3.0 e unzip 6.00, do projeto Info-ZIP) não têm tradução: saem em inglês mesmo com o sistema em português. "stored 0%" quer dizer que o arquivo foi guardado sem compactar, porque era pequeno demais para valer a pena. "deflated 91%" quer dizer que encolheu 91%.</p>
+
+<h3>Conferir e extrair</h3>
+<pre class="term">$ unzip -l site.zip
+Archive:  site.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  2026-10-16 15:06   site/
+        0  2026-10-16 15:06   site/css/
+        5  2026-10-16 15:06   site/css/style.css
+        9  2026-10-16 15:06   site/rascunho.tmp
+       14  2026-10-16 15:06   site/index.html
+---------                     -------
+       28                     5 files
+$ unzip site.zip -d copia
+Archive:  site.zip
+   creating: copia/site/
+   creating: copia/site/css/
+ extracting: copia/site/css/style.css
+ extracting: copia/site/rascunho.tmp
+ extracting: copia/site/index.html</pre>
+
+<p><code>-l</code> lista (como o <code>tar -t</code>) e <code>-d</code> escolhe a pasta de destino (como o <code>tar -C</code>, mas aqui a pasta é criada se não existir). Diferente do <code>tar</code>, se você extrair de novo no mesmo lugar, o <code>unzip</code> pergunta antes de sobrescrever:</p>
+
+<pre class="term">$ unzip site.zip
+Archive:  site.zip
+replace site/css/style.css? [y]es, [n]o, [A]ll, [N]one, [r]ename: N</pre>
+
+<p>Responda <code>y</code> (sim), <code>n</code> (não), <code>A</code> (sim para todos), <code>N</code> (não para todos) ou <code>r</code> (extrair com outro nome). Para sobrescrever sem perguntar, use <code>unzip -o</code>. Para proteger com senha, use <code>zip -e -r segredo.zip pasta</code>: ele pergunta a senha duas vezes (<code>Enter password:</code> e <code>Verify password:</code>).</p>
+
+<p>Para acrescentar um arquivo a um zip que já existe, é o mesmo comando; para tirar um, <code>-d</code>:</p>
+<pre class="term">$ zip site.zip Documentos/notas.txt
+  adding: Documentos/notas.txt (stored 0%)
+$ zip -d site.zip site/rascunho.tmp            « -d = delete: tira de dentro do zip
+deleting: site/rascunho.tmp</pre>
+
+<hr>
+
+<h2>7z: o formato do 7-Zip</h2>
+<p>O <code>.7z</code> é comum em downloads do Windows. No Arch, o pacote se chama <code>7zip</code> (é o 7-Zip oficial, que substituiu o antigo <code>p7zip</code>):</p>
+
+<pre class="term">$ sudo pacman -S 7zip
+…
+Pacotes (1) 7zip-26.04-1
+
+Tamanho total download:   1,98 MiB
+Tamanho total instalado:  6,47 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>O <code>7z</code> usa uma letra como "subcomando", sem hífen: <code>a</code> (<em>add</em>, criar/acrescentar), <code>l</code> (<em>list</em>), <code>x</code> (<em>extract</em>, com as pastas). Ele fala bastante; o essencial é o <code>Everything is Ok</code> no fim. (Na VM do guia nada foi instalado: estas saídas são do 7-Zip 26.04 real, rodado a partir do pacote baixado.)</p>
+
+<pre class="term">$ 7z a site.7z site
+
+7-Zip 26.04 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-05
+ 64-bit locale=pt_BR.UTF-8 Threads:2 OPEN_MAX:4096, ASM
+
+Scanning the drive:
+2 folders, 3 files, 28 bytes (1 KiB)
+
+Creating archive: site.7z
+
+Add new data to archive: 2 folders, 3 files, 28 bytes (1 KiB)
+
+
+Files read from disk: 3
+Archive size: 260 bytes (1 KiB)
+Everything is Ok                       « deu certo
+$ 7z x site.7z -osete                  « -o colado ao nome da pasta, sem espaço
+…
+Everything is Ok
+
+Folders: 2
+Files: 3
+Size:       28
+Compressed: 260
+$ ls sete
+site</pre>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Terminal</th><th>Interface gráfica</th></tr>
+<tr><td>Compactar uma pasta</td><td><code>tar -czf pasta.tar.gz pasta</code> ou <code>zip -r pasta.zip pasta</code></td><td>No gerenciador de arquivos (Nautilus, Dolphin): botão direito → Comprimir</td></tr>
+<tr><td>Extrair</td><td><code>tar -xf arquivo.tar.gz</code> ou <code>unzip arquivo.zip</code></td><td>Botão direito → Extrair</td></tr>
+<tr><td>Ver o conteúdo</td><td><code>tar -tf</code>, <code>unzip -l</code>, <code>7z l</code></td><td>Dois cliques abre o gerenciador de pacotes compactados (File Roller, Ark)</td></tr>
+<tr><td>Um arquivo só</td><td><code>gzip -k arq</code>, <code>zstd arq</code>, <code>xz -k arq</code></td><td>—</td></tr>
+</table>
+</div>
+
+<h3>Qual formato usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Precisa instalar no Arch?</th><th>Guarda permissões?</th><th>Melhor quando…</th></tr>
+<tr><td><code>.tar.gz</code></td><td>Não</td><td>Sim</td><td>Backup e troca entre Linux; o mais compatível.</td></tr>
+<tr><td><code>.tar.zst</code></td><td>Não</td><td>Sim</td><td>Backups frequentes e grandes: o mais rápido. O formato dos pacotes do Arch.</td></tr>
+<tr><td><code>.tar.xz</code></td><td>Não</td><td>Sim</td><td>Quer o menor tamanho e tem tempo; arquivamento.</td></tr>
+<tr><td><code>.zip</code></td><td>Sim (<code>zip</code>, <code>unzip</code>)</td><td>Parcialmente</td><td>O arquivo vai para alguém com Windows ou macOS.</td></tr>
+<tr><td><code>.7z</code></td><td>Sim (<code>7zip</code>)</td><td>Parcialmente</td><td>Alguém mandou um <code>.7z</code>; ou você quer compactar muito para Windows.</td></tr>
+<tr><td><code>.gz</code> / <code>.zst</code> sozinhos</td><td>Não</td><td>—</td><td>É um arquivo só, como um log.</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="out:pertence a tar" data-solucao="pacman -Qo /usr/bin/tar">
+<p class="try-task"><strong>Missão 4:</strong> descubra a qual pacote pertence o programa <code>/usr/bin/tar</code>, com o <code>pacman -Qo</code>. Depois tente o mesmo com <code>/usr/bin/zstd</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Recusando a criar um arquivo-tar vazio"</strong>
+<pre class="term">$ tar -czf backup.tar.gz
+tar: Recusando a criar um arquivo-tar vazio
+Tente "tar --help" ou "tar --usage" para mais informações.
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> faltou dizer o que colocar no pacote.</p>
+<p><strong>Como resolver:</strong> acrescente as pastas ou arquivos no fim: <code>tar -czf backup.tar.gz Documentos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"a opção exige um argumento -- "f""</strong>
+<pre class="term">$ tar -czvf
+tar: a opção exige um argumento -- "f"
+Tente "tar --help" ou "tar --usage" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> o <code>f</code> espera o nome do arquivo logo em seguida. Também acontece com <code>tar -cfzv nome</code>: aí o <code>tar</code> acha que o arquivo se chama "zv".</p>
+<p><strong>Como resolver:</strong> deixe o <code>f</code> por último, colado ao nome: <code>-czvf nome.tar.gz</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Este não parece ser um arquivo-tar"</strong>
+<pre class="term">$ tar -xf site.zip
+tar: Este não parece ser um arquivo-tar
+tar: Pulando para o próximo cabeçalho
+tar: Saindo com status de falha em razão de erros anteriores</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não é um pacote tar. Aqui é um <code>.zip</code>; às vezes é um download que não terminou, ou um arquivo com a extensão errada.</p>
+<p><strong>Como confirmar:</strong> <code>file arquivo</code> diz o tipo real, pelo conteúdo. <strong>Como resolver:</strong> use o programa certo (<code>unzip</code>, <code>7z</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"gzip: stdin: not in gzip format"</strong>
+<pre class="term">$ tar -xzf site.tar.zst
+
+gzip: stdin: not in gzip format
+tar: Child returned status 1
+tar: Error is not recoverable: exiting now</pre>
+<p><strong>O que aconteceu:</strong> o <code>z</code> mandou o <code>tar</code> usar o gzip, mas o arquivo é zstd. É comum ao copiar um comando antigo (<code>-xzf</code>) para um arquivo moderno.</p>
+<p><strong>Como resolver:</strong> tire a letra e deixe o <code>tar</code> descobrir: <code>tar -xf site.tar.zst</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Erro com "(child)" ao extrair</strong>
+<pre class="term">$ tar -xzf projeto.tar.gz
+tar (child): projeto.tar.gz: Função open falhou: Arquivo ou diretório inexistente
+tar (child): Error is not recoverable: exiting now
+tar: Child returned status 2
+tar: Error is not recoverable: exiting now</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não existe na pasta atual. "child" (filho) é o gzip que o <code>tar</code> chamou para descompactar; o erro aparece duas vezes, uma de cada programa, metade em inglês.</p>
+<p><strong>Como resolver:</strong> confira com <code>ls</code> e use <kbd>Tab</kbd> para completar o nome.</p>
+</div>
+
+<div class="cenario">
+<strong>"Removendo "/" inicial dos nomes dos membros"</strong>
+<pre class="term">$ tar -czf hostname.tar.gz /etc/hostname
+tar: Removendo "/" inicial dos nomes dos membros
+$ tar -tf hostname.tar.gz
+etc/hostname</pre>
+<p><strong>O que aconteceu:</strong> não é erro, é um aviso de segurança. O <code>tar</code> guarda <code>etc/hostname</code> em vez de <code>/etc/hostname</code>, para que, ao extrair, o arquivo vá para a pasta atual e não sobrescreva o do sistema. (Os pacotes do Arch são feitos do mesmo jeito, sem a barra.)</p>
+</div>
+
+<div class="cenario">
+<strong>"zip: comando não encontrado" / "cannot find or open"</strong>
+<pre class="term">$ zip -r site.zip site
+bash: zip: comando não encontrado
+$ unzip fotos.zip
+unzip:  cannot find or open fotos.zip, fotos.zip.zip or fotos.zip.ZIP.</pre>
+<p><strong>O que aconteceu:</strong> no primeiro, os pacotes <code>zip</code> e <code>unzip</code> não vêm no Arch. No segundo, o <code>unzip</code> existe, mas o arquivo não está na pasta atual (talvez em <code>Downloads</code>).</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S zip unzip</code>; e <code>unzip ~/Downloads/fotos.zip -d ~/fotos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"already exists; not overwritten"</strong>
+<pre class="term">$ gzip acesso.log
+gzip: acesso.log.gz already exists;	not overwritten
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> já existe um <code>acesso.log.gz</code> (de um <code>gzip -k</code> anterior). O gzip não apaga nada sem você pedir.</p>
+<p><strong>Como resolver:</strong> apague ou renomeie o <code>.gz</code> antigo, ou force com <code>gzip -f</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<h3>tar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Significado</th><th>Exemplo</th></tr>
+<tr><td><code>c</code></td><td>Criar pacote</td><td><code>tar -cf a.tar pasta</code></td></tr>
+<tr><td><code>x</code></td><td>Extrair</td><td><code>tar -xf a.tar</code></td></tr>
+<tr><td><code>t</code></td><td>Listar o conteúdo</td><td><code>tar -tf a.tar</code></td></tr>
+<tr><td><code>f</code></td><td>Nome do arquivo (sempre por último, antes do nome)</td><td><code>-cf nome.tar</code></td></tr>
+<tr><td><code>v</code></td><td>Mostrar cada arquivo</td><td><code>tar -xvf a.tar</code></td></tr>
+<tr><td><code>z</code> / <code>j</code> / <code>J</code></td><td>gzip / bzip2 / xz</td><td><code>tar -cJf a.tar.xz pasta</code></td></tr>
+<tr><td><code>--zstd</code></td><td>zstd (o formato dos pacotes do Arch)</td><td><code>tar --zstd -cf a.tar.zst pasta</code></td></tr>
+<tr><td><code>a</code></td><td>Escolhe o compactador pela extensão</td><td><code>tar -caf a.tar.zst pasta</code></td></tr>
+<tr><td><code>-C pasta</code></td><td>Extrair (ou criar) a partir de outra pasta</td><td><code>tar -xf a.tar -C /tmp</code></td></tr>
+<tr><td><code>O</code></td><td>Extrair para a tela</td><td><code>tar -xOf pkg.tar.zst .PKGINFO</code></td></tr>
+<tr><td><code>--exclude</code></td><td>Deixar arquivos de fora</td><td><code>--exclude="*.log"</code></td></tr>
+<tr><td><code>r</code></td><td>Acrescentar a um <code>.tar</code> sem compactação</td><td><code>tar -rf a.tar novo.txt</code></td></tr>
+</table>
+</div>
+<h3>gzip, xz e zstd</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>gzip</th><th>xz</th><th>zstd</th><th>O que faz</th></tr>
+<tr><td><code>gzip arq</code></td><td><code>xz arq</code></td><td><code>zstd --rm arq</code></td><td>Compacta e apaga o original</td></tr>
+<tr><td><code>gzip -k arq</code></td><td><code>xz -k arq</code></td><td><code>zstd arq</code></td><td>Compacta mantendo o original</td></tr>
+<tr><td><code>gunzip arq.gz</code></td><td><code>unxz arq.xz</code></td><td><code>unzstd arq.zst</code></td><td>Descompacta</td></tr>
+<tr><td><code>zcat</code></td><td><code>xzcat</code></td><td><code>zstdcat</code></td><td>Lê sem descompactar</td></tr>
+<tr><td><code>gzip -9</code></td><td><code>xz -9</code></td><td><code>zstd -19</code></td><td>Compactação máxima (mais lenta)</td></tr>
+<tr><td><code>gzip -l</code></td><td><code>xz -l</code></td><td><code>zstd -l</code></td><td>Mostra tamanhos e taxa</td></tr>
+</table>
+</div>
+<h3>zip, unzip e 7z (instalar antes)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>zip -r arq.zip pasta</code></td><td>Compacta a pasta inteira</td></tr>
+<tr><td><code>zip -e -r arq.zip pasta</code></td><td>Com senha</td></tr>
+<tr><td><code>zip arq.zip novo.txt</code> / <code>zip -d arq.zip velho.txt</code></td><td>Acrescenta / tira um arquivo</td></tr>
+<tr><td><code>unzip -l arq.zip</code></td><td>Lista o conteúdo</td></tr>
+<tr><td><code>unzip arq.zip -d pasta</code></td><td>Extrai na pasta escolhida</td></tr>
+<tr><td><code>unzip -o arq.zip</code></td><td>Sobrescreve sem perguntar</td></tr>
+<tr><td><code>7z a arq.7z pasta</code> / <code>7z l</code> / <code>7z x arq.7z -opasta</code></td><td>Cria / lista / extrai um .7z (também abre .zip e outros formatos)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Backup compactado</h3>
+<p>Complete para criar <code>docs.tar.gz</code> com a pasta <code>Documentos</code>:</p>
+<div class="ex-code">tar -<input data-answer="czf|czvf|zcf|cvzf" aria-label="opções"> docs.tar.gz Documentos</div>
+</div>
+
+<div class="exercise">
+<h3>2. Olhar dentro de um pacote do Arch</h3>
+<p>Complete para listar o conteúdo de <code>tree-2.3.2-1-x86_64.pkg.tar.zst</code> sem extrair:</p>
+<div class="ex-code">tar -<input data-answer="tf|tvf" aria-label="opções"> tree-2.3.2-1-x86_64.pkg.tar.zst</div>
+</div>
+
+<div class="exercise">
+<h3>3. Extrair em outra pasta</h3>
+<p>Complete para extrair <code>site.tar.gz</code> dentro de <code>/tmp/teste</code>:</p>
+<div class="ex-code">tar -xf site.tar.gz <input data-answer="-C" aria-label="opção"> /tmp/teste</div>
+</div>
+
+<div class="exercise">
+<h3>4. Backup rápido com zstd</h3>
+<p>Complete para criar <code>fotos.tar.zst</code> com a pasta <code>Imagens</code>:</p>
+<div class="ex-code">tar <input data-answer="--zstd" aria-label="opção"> -cf fotos.tar.zst Imagens</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. No comando <code>tar -czvf backup.tar.gz fotos</code>, o que faz o <code>z</code>?</p>
+<label><input type="radio" name="q5"> Cria um arquivo .zip.</label>
+<label><input type="radio" name="q5"> Compacta o pacote com gzip.</label>
+<label><input type="radio" name="q5"> Mostra os arquivos na tela.</label>
+<label><input type="radio" name="q5"> Indica o nome do arquivo.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Por que os pacotes do Arch usam <code>.pkg.tar.zst</code> e não mais <code>.pkg.tar.xz</code>?</p>
+<label><input type="radio" name="q6"> Porque o zstd gera arquivos muito menores que o xz.</label>
+<label><input type="radio" name="q6"> Porque o xz não funciona no Arch.</label>
+<label><input type="radio" name="q6"> Porque o zstd descompacta muito mais rápido, com tamanho parecido.</label>
+<label><input type="radio" name="q6"> Porque o zstd é o formato do Windows.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Você rodou <code>zstd relatorio.csv</code>. O que aconteceu com o <code>relatorio.csv</code> original?</p>
+<label><input type="radio" name="q7"> Continua lá; o zstd mantém o original (para apagar, <code>--rm</code>).</label>
+<label><input type="radio" name="q7"> Foi apagado, como faz o gzip.</label>
+<label><input type="radio" name="q7"> Foi renomeado para <code>relatorio.csv.old</code>.</label>
+<label><input type="radio" name="q7"> Foi movido para a lixeira.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>tar</code> empacota; <code>gzip</code>/<code>xz</code>/<code>zstd</code> compactam; <code>.tar.gz</code> é "pacote compactado".</li>
+  <li>Criar: <code>tar -czvf nome.tar.gz pasta</code> (criar · gzip · ver · file). Conferir: <code>tar -tf</code>. Extrair: <code>tar -xf nome -C destino</code>.</li>
+  <li>O <code>f</code> vem por último, colado ao nome do arquivo; para extrair, o <code>tar</code> descobre o compactador sozinho.</li>
+  <li>Todo pacote do Arch é um <code>.pkg.tar.zst</code>: dá para olhar dentro com <code>tar -tf</code> e ler a ficha com <code>tar -xOf … .PKGINFO</code>.</li>
+  <li>zstd: o mais rápido; xz: o menor; gzip: o mais compatível. O <code>gzip</code> apaga o original; o <code>zstd</code>, não.</li>
+  <li><code>zip</code>, <code>unzip</code> e <code>7z</code> não vêm no Arch: <code>sudo pacman -S zip unzip 7zip</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> todos os formatos e programas desta aula, com tabelas comparativas, estão em <a href="https://wiki.archlinux.org/title/Archiving_and_compression">Archiving and compression</a>; o formato dos pacotes do Arch e o cache em <code>/var/cache/pacman/pkg</code>, em <a href="https://wiki.archlinux.org/title/Pacman#Cleaning_the_package_cache">pacman</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>); e as opções de compactação do <code>makepkg</code> (<code>PKGEXT</code>, <code>COMPRESSZST</code>), em <a href="https://wiki.archlinux.org/title/Makepkg#Tips_and_tricks">makepkg: Tips and tricks</a>. A troca do xz pelo zstd foi anunciada em <a href="https://archlinux.org/news/now-using-zstandard-instead-of-xz-for-package-compression/">Now using Zstandard instead of xz for package compression</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
