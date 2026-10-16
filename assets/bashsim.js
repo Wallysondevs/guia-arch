@@ -11074,10 +11074,10 @@
     var r = sh.resolver("/var/log/pacman.log", true), t = tm(sh.k.clock);
     if (r.no) r.no.d = dadosDe(r.no) + "[" + t.Y + "-" + dois(t.M + 1) + "-" + dois(t.D) + "T" + dois(t.h) + ":" + dois(t.m) + ":" + dois(t.s) + "-0300] " + txt + "\n";
   }
-  function hooksDe(pkgs, op, quando) {
+  function hooksDe(pkgs, op0, quando, ops) {
     var H = DADOS ? DADOS.pac.hooks : [], idx = {};
     pkgs.forEach(function (p) {
-      var g = gatilhos(p.n); if (!g) return;
+      var g = gatilhos(p.n), op = ops && ops[p.n] || op0; if (!g) return;
       var lst = g.length === 2 ? (op === "I" ? g[1] : []) : (op === "I" ? g[1] : op === "U" ? g[2] : g[3]);
       (lst || []).forEach(function (i) { if (H[i] && H[i][2] === quando) idx[i] = 1; });
     });
@@ -11350,7 +11350,8 @@
     if (cols) {
       ["verificando chaves no chaveiro", "verificando integridade do pacote", "carregando arquivos do pacote", "verificando conflitos de arquivos", "verificando espaço em disco disponível"].forEach(function (t) { io.out(barraPac(t, N, N, cols)); });
     } else io.out("verificando chaveiro...\nverificando integridade de pacotes...\ncarregando arquivos do pacote...\nverificando conflitos de arquivos...\nverificando espaço em disco disponível...\n");
-    var pre = hooksDe(mostrar, "I", "PreTransaction");
+    var opsH = {}; mostrar.forEach(function (p) { opsH[p.n] = A.inst[p.n] ? "U" : "I"; });
+    var pre = hooksDe(mostrar, "I", "PreTransaction", opsH);
     mostrarHooks(io, pre, "PreTransaction");
     io.out(":: Processando alterações do pacote...\n");
     linhaLog(sh, "[PACMAN] Running '" + ["pacman"].concat(o.alvosOriginais || []).join(" ") + "'");
@@ -11375,7 +11376,7 @@
       var loc = sh.no("/var/lib/pacman/local"); if (loc) { if (velho) delete loc.c[p.n + "-" + velho.v]; loc.c[p.n + "-" + p.v] = mkD(0, 493, sh.k.clock); }
     });
     linhaLog(sh, "[ALPM] transaction completed");
-    mostrarHooks(io, hooksDe(mostrar, "I", "PostTransaction"), "PostTransaction");
+    mostrarHooks(io, hooksDe(mostrar, "I", "PostTransaction", opsH), "PostTransaction");
     sh.k.clock += 1000;
     return 0;
   }
@@ -11813,14 +11814,19 @@
       if (x === "-S" || /^--since/.test(x)) { desde = val(); continue; }
       if (x === "-U" || /^--until/.test(x)) { ate = val(); continue; }
       if (x === "-o" || /^--output/.test(x)) { saida = val(); continue; }
-      if (x === "--list-boots") { io.out(DADOS ? DADOS.sd.boots : ""); return 0; }
+      if (x === "--list-boots") { io.out(DADOS ? DADOS.sd.boots.replace(/(\n  0 \S+ .{27}).*\n?$/, function (m0, a0) { return a0 + " " + dataSd(k.clock) + "\n"; }) : ""); return 0; }
       if (x === "--disk-usage") { io.out("Archived and active journals take up 24M in the file system.\n"); return 0; }
       if (/^--vacuum/.test(x)) { if (sh.uid !== 0) { io.err("(simulador) --vacuum precisa de root.\n"); return 1; } io.out("Vacuuming done, freed 0B of archived journals from /var/log/journal/42634ff99dd3440394e6cd711c974f65.\n"); return 0; }
       if (x === "-h" || x === "--help") { io.out("journalctl [OPÇÕES...] [CORRESPONDÊNCIAS...]\n\n(simulador) opções suportadas: -u, -b, -p, -n, -e, -f, -r, -k, -t, -g, --since, --until, --no-pager.\n"); return 0; }
       if (x[0] === "-") { io.err("journalctl: unrecognized option '" + x + "'\n"); return 1; }
       io.err("(simulador) filtros como \"" + x + "\" não são simulados aqui; use -u, -p, -t ou -g.\n"); return 1;
     }
-    if (boot !== null && boot !== 0) { io.err("(simulador) só o boot atual (-b 0) está disponível aqui; na VM, journalctl --list-boots mostra os anteriores.\n"); return 1; }
+    var ant = null;
+    if (boot !== null && boot !== 0) {
+      var ab = DADOS && DADOS.jr.ant && DADOS.jr.ant[boot > 0 ? boot - 8 : boot];
+      if (!ab) { io.err("Data from the specified boot (" + boot + ") is not available: No such boot ID in journal\n"); return 1; }
+      ant = ab.map(function (e) { return { t: e[0], p: e[1], u: e[2], U: e[3], id: e[4], pid: e[5], h: e[6], m: e[7] }; });
+    }
     function tempo(s) {
       var t = tm(k.clock);
       if (s === "today") return epochDe(t.Y, t.M, t.D, 0, 0, 0);
@@ -11831,7 +11837,7 @@
       m = /^-?(\d+) ?(min|minutes?|h|hours?|s|sec|seconds?|d|days?) ?(ago)?$/.exec(s); if (m) { var mult = /^m/.test(m[2]) ? 60000 : /^h/.test(m[2]) ? 3600000 : /^d/.test(m[2]) ? 86400000 : 1000; return k.clock - m[1] * mult; }
       return null;
     }
-    var l = linhasJournal(k).filter(function (e) {
+    var l = (ant || linhasJournal(k)).filter(function (e) {
       if (unidades.length && !unidades.some(function (u) { return daUnidade(e, u); })) return false;
       if (prio !== null && e.p > prio) return false;
       if (kernel && e.id !== "kernel") return false;
@@ -11853,6 +11859,7 @@
     }).join("\n") + "\n";
     // na tela, as linhas de erro aparecem em vermelho e os avisos em amarelo (como no terminal)
     io.out(txt);
+    if (ant && ant.length >= 60 && (n === null || n > 60)) io.err("(simulador) deste boot, só as últimas 60 linhas estão disponíveis aqui.\n");
     if (seguir) io.err("(simulador) journalctl -f fica esperando linhas novas; aqui ele mostra as últimas e para (no terminal de verdade, saia com Ctrl+C).\n");
     return 0;
   };

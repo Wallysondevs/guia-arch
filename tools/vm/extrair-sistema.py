@@ -136,6 +136,8 @@ CMDS = {
     "sysrq": ["sysctl", "kernel.sysrq"],
     "zswap": ["cat", "/sys/module/zswap/parameters/enabled"],
 }
+for b in range(1, 8):
+    CMDS["journal-b-%d-json" % b] = ["journalctl", "-b", "-%d" % b, "-n", "60", "--no-pager", "-o", "json", "--output-fields=_SYSTEMD_UNIT,PRIORITY,SYSLOG_IDENTIFIER,_PID,MESSAGE,_TRANSPORT,_COMM,UNIT,_HOSTNAME"]
 for k, c in CMDS.items():
     saidas[k] = run(c, {"SYSTEMD_PAGER": "cat", "SYSTEMD_COLORS": "0", "COLUMNS": "200", "LANG": "pt_BR.UTF-8"})
 

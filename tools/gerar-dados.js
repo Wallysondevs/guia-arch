@@ -189,6 +189,16 @@ js.forEach(function (e, i) {
   jr.push([t - t0, +e.PRIORITY, e._SYSTEMD_UNIT || "", e.UNIT || "", e.SYSLOG_IDENTIFIER || e._COMM || "", e._PID ? +e._PID : 0, host === "notebook" ? 0 : host, msg]);
 });
 var boots = (S.saidas["journal-list-boots"] || "");
+// boots anteriores: as últimas 60 linhas de cada (para journalctl -b -1 … -b -7)
+var anteriores = {};
+for (var bb = 1; bb <= 7; bb++) {
+  var txtb = S.saidas["journal-b-" + bb + "-json"];
+  if (!txtb) continue;
+  anteriores[-bb] = txtb.split("\n").filter(function (l) { return /^\{/.test(l); }).map(function (l) {
+    var e = JSON.parse(l), msg = Array.isArray(e.MESSAGE) ? String.fromCharCode.apply(null, e.MESSAGE) : e.MESSAGE;
+    return [Math.floor(+e.__REALTIME_TIMESTAMP / 1000), +e.PRIORITY, e._SYSTEMD_UNIT || "", e.UNIT || "", e.SYSLOG_IDENTIFIER || e._COMM || "", e._PID ? +e._PID : 0, e._HOSTNAME || "notebook", msg];
+  });
+}
 
 /* ---------------- pacman.log (até o fim da instalação das aulas) ---------------- */
 var plog = (S.saidas["pacman-log"] || "").split("\n");
@@ -200,7 +210,7 @@ var H = {};
 try { H = JSON.parse(fs.readFileSync(path.join(VMDIR, "home.json"), "utf8")); } catch (e) { /* */ }
 var dados = {
   v: 1, home: H, gerado: new Date().toISOString().slice(0, 10), t: tabela, pac: pac, fs: fsl, proc: proc,
-  sd: { u: units, luf: luf, lu: lu, lua: lua, boots: boots }, jr: { t0: t0, l: jr }, plog: plog
+  sd: { u: units, luf: luf, lu: lu, lua: lua, boots: boots }, jr: { t0: t0, l: jr, ant: anteriores }, plog: plog
 };
 var json = JSON.stringify(dados);
 var gz = zlib.gzipSync(Buffer.from(json, "utf8"), { level: 9 });
