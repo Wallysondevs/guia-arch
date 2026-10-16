@@ -162,8 +162,8 @@
   function isSig(e) { return e instanceof ExitSig || e instanceof ReturnSig || e instanceof BreakSig || e instanceof ContSig || e instanceof KillSig || e instanceof AbortSig || e instanceof FatalSig || e instanceof CmdErr || e instanceof SigPipe; }
 
   var SIGNAIS = ["EXIT", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS"];
-  var SIG_DESC = { 1: "Interrupção", 2: "Interrupção", 3: "Sair", 6: "Abortado", 9: "Morto", 10: "Sinal definido pelo usuário 1", 12: "Sinal definido pelo usuário 2", 13: "Pipe quebrado", 14: "Alarme do relógio", 15: "Terminado" };
-  SIG_DESC[1] = "Desconexão";
+  // descrições da glibc em pt_BR (strsignal), como o Bash do Arch mostra em "jobs" e nos avisos
+  var SIG_DESC = { 1: "Desconexão", 2: "Interrupção", 3: "Sair", 6: "Abortado", 9: "Morto", 10: "Sinal 1 definido pelo usuário", 12: "Sinal 2 definido pelo usuário", 13: "Pipe quebrado", 14: "Alarme de tempo", 15: "Terminado", 19: "Parado (sinal)", 20: "Parado", 18: "Continuado" };
   function sinalNum(s) {
     s = String(s).toUpperCase();
     if (isDigits(s)) { var n = +s; return n >= 0 && n < 65 ? n : -1; }
@@ -186,7 +186,7 @@
   function dataT(Y, M, D, h, m) { return epochDe(Y, M - 1, D, h, m, 0); }
   function tamanho(no) {
     if (no.t === "d") return no.tmpfs ? 40 + 20 * Object.keys(no.c).length : (no.tam || 4096); // tmpfs: 40 + 20 por entrada
-    if (no.t === "l") return utf8len(no.alvo);
+    if (no.t === "l") return no.tamLink != null ? no.tamLink : utf8len(no.alvo);
     if (no.t === "c") return 0;
     if (no.d == null) return no.z || 0;
     return no.cacheTam != null && no.cacheD === no.d ? no.cacheTam : (no.cacheD = no.d, no.cacheTam = utf8len(no.d));
@@ -504,7 +504,7 @@
   KP.acharProc = function (pid) { for (var i = 0; i < this.procs.length; i++) if (this.procs[i].pid === pid) return this.procs[i]; return null; };
   KP.finalizar = function (p, st) {
     if (p.done) return;
-    p.done = true; p.state = "done"; p.status = st;
+    p.done = true; p.state = "done"; p.status = st; p.fimEm = this.clock;
     var i = this.procs.indexOf(p); if (i >= 0) this.procs.splice(i, 1);
     if (p.onFim) p.onFim(p);
   };
@@ -520,12 +520,15 @@
     var p = this.acharProc(pid);
     if (!p) return false;
     if (sig === 0) return true;
+    while (p.execPara && !p.execPara.done) p = p.execPara; // processo que "fez exec" de um script
     var tr = p.sh && p.sh.traps ? p.sh.traps[sig] : undefined;
     if (sig !== 9 && sig !== 19 && tr !== undefined) {
       if (tr !== "") { p.sh.pendSig.push(sig); if (p.state === "sleep") p.wake = this.clock; }
       return true;
     }
-    if ([17, 18, 23, 28, 19, 20, 21, 22].indexOf(sig) >= 0) return true; // ignorados/parar (sem efeito aqui)
+    if (sig === 19 || ((sig === 20 || sig === 21 || sig === 22) && tr === undefined)) { if (!(p === this.main && p.sh && p.sh.interativo)) p.parado = true; return true; } // STOP: congela
+    if (sig === 18) { p.parado = false; return true; } // CONT
+    if ([17, 23, 28].indexOf(sig) >= 0) return true; // ignorados
     if (p === this.main && p.sh && p.sh.interativo && !p.sh.subshell) return true; // o shell interativo ignora TERM/INT
     this.terminar(p, sig);
     return true;
@@ -601,7 +604,7 @@
   KP.prontos = function (soBg) {
     var k = this, l = [];
     this.procs.forEach(function (p) {
-      if (p.done) return;
+      if (p.done || p.parado) return;
       if (soBg && !p.bg) return;
       if (p.state === "block" && p.cond && p.cond()) { p.state = "run"; p.cond = null; }
       if (p.state === "sleep" && p.wake <= k.clock) p.state = "run";
@@ -625,7 +628,7 @@
       if (!lista.length) {
         var esperando = this.procs.filter(function (p) { return p.state === "in" && !p.done; });
         if (esperando.length) return { t: "in", req: esperando[0].inReq, proc: esperando[0] };
-        var dorm = this.procs.filter(function (p) { return p.state === "sleep" && !p.done; });
+        var dorm = this.procs.filter(function (p) { return p.state === "sleep" && !p.done && !p.parado; });
         if (dorm.length) {
           var w = Math.min.apply(null, dorm.map(function (p) { return p.wake; }));
           return { t: "sleep", ms: w - this.clock, ate: w };
@@ -2594,6 +2597,24 @@
   }
   SP.abs = function (p) { if (p === "") return this.cwd; return normalizar(p[0] === "/" ? p : this.cwd + "/" + p); };
   SP.curto = function (p) { var h = this.valor("HOME") || HOME; return p === h ? "~" : (h !== "/" && p.indexOf(h + "/") === 0) ? "~" + p.slice(h.length) : p; };
+  // /proc/self: montado na hora, com os descritores abertos do comando (ls -l /proc/self/fd)
+  SP.procSelf = function () {
+    var k = this.k, agora = k.clock, uid = this.uid, gid = contaDe(this).gid, pid = this.proc && this.proc.pid !== 3001 ? this.proc.pid : k.nextPid;
+    var d = mkD(uid, 365, agora), fd = mkD(uid, 320, agora); d.u = fd.u = uid; d.g = fd.g = gid;
+    fd.tam = 0; d.c.fd = fd;
+    this.fds.forEach(function (o, n) {
+      if (!o) return;
+      var alvo = o.kind === "tty-in" || o.kind === "tty-out" ? "/dev/pts/0" : o.kind === "null" ? "/dev/null" : o.kind === "zero" ? "/dev/zero" : o.kind === "random" ? "/dev/urandom" : /^pipe/.test(o.kind) ? "pipe:[" + (o.p.ino || (o.p.ino = proxIno++)) + "]" : o.path || "/";
+      var l = mkL(alvo, agora); l.u = uid; l.g = gid;
+      var rd = o.kind === "tty-in" || o.kind === "tty-out" || o.kind === "null" || o.kind === "zero" || o.kind === "random" || o.kind === "pipe-r" || (o.kind === "file" && o.rd);
+      var wr = o.kind === "tty-in" || o.kind === "tty-out" || o.kind === "null" || o.kind === "zero" || o.kind === "random" || o.kind === "pipe-w" || (o.kind === "file" && o.wr);
+      l.m = (rd ? 256 : 0) | (wr ? 128 : 0) | 64; l.tamLink = 64;
+      fd.c[String(n)] = l;
+    });
+    // o próprio ls abre a pasta para ler (fd 3)
+    if (!fd.c["3"]) { var l3 = mkL("/proc/" + pid + "/fd", agora); l3.u = uid; l3.g = gid; l3.m = 256 | 64; l3.tamLink = 64; fd.c["3"] = l3; }
+    return d;
+  };
   SP.pode = function (no, bit) { // 4 r, 2 w, 1 x
     var m = no.m;
     if (this.uid === 0) return bit !== 1 || no.t === "d" || !!(m & 73); // root: lê e escreve tudo; executa se algum x
@@ -2614,6 +2635,7 @@
       if (!this.pode(atual, 1)) return { err: "EACCES", pai: atual, nome: nome };
       if (nome === "..") { if (pilha.length > 1) { pilha.pop(); caminho.pop(); } atual = pilha[pilha.length - 1]; if (ultimoC) return { no: atual, pai: pilha[pilha.length - 2] || atual, nome: caminho[caminho.length - 1] || "/", caminho: "/" + caminho.join("/") }; continue; }
       var filho = atual.c[nome];
+      if (!filho && nome === "self" && atual === this.fs.c.proc) filho = this.procSelf();
       if (!filho) return { err: "ENOENT", pai: atual, nome: nome, caminho: "/" + caminho.concat([nome]).join("/"), ultimo: ultimoC };
       if (filho.t === "l" && (!ultimoC || seguirFinal)) {
         if (prof > 40) return { err: "ELOOP" };
@@ -3584,6 +3606,8 @@
   SP.rodarBg = function* (ao) {
     var filho = this.fork(), self = this;
     filho.emBg = true;
+    // "cmd &" com um comando simples: o Bash real faz exec, então $! (e kill %N) atingem o próprio script
+    filho.execSimples = ao.p.length === 1 && ao.p[0].cmds.length === 1 && ao.p[0].cmds[0].k === "simple" && !ao.p[0].neg;
     if (!this.interativo || !this.o.monitor) { unref(filho.fds[0]); filho.fds[0] = ref(new OFD("null")); }
     var txt = imprimirAndOr(ao);
     var proc = this.k.spawn(filho, function* () {
@@ -3597,9 +3621,10 @@
       return st;
     }, { bg: true, nome: nomeCmd(ao.p[0].cmds[0] || {}) });
     this.ultimoBg = proc.pid;
+    if (filho.execSimples && EXT[nomeCmd(ao.p[0].cmds[0])] && !this.funcs[nomeCmd(ao.p[0].cmds[0])]) proc.cmdline = txt; // o ps mostra "sleep 605" desde o início
     var selfB = this;
     proc.onFim = function (pr) { (selfB.bgStatus = selfB.bgStatus || {})[pr.pid] = pr.status; };
-    var job = { n: this.proxJob++, procs: [proc], txt: txt, pgid: proc.pid, avisado: false };
+    var job = { n: this.proxJob++, procs: [proc], txt: txt, pgid: proc.pid, avisado: false, adiar: this.interativo && !this.subshell };
     this.jobs.push(job);
     this.jobAtual(job);
     if (this.interativo && !this.subshell) this.escrever(2, "[" + job.n + "] " + proc.pid + "\n");
@@ -3611,7 +3636,16 @@
     var self = this, linhas = [];
     this.jobs = this.jobs.filter(function (j) {
       var fim = j.procs.every(function (p) { return p.done; });
-      if (!fim) return true;
+      if (j.adiar) {
+        // terminou agora há pouco (sem tempo para o Bash recolher o filho antes do prompt): fica para o prompt seguinte
+        j.adiar = false;
+        var fimEm = Math.max.apply(null, j.procs.map(function (p) { return p.fimEm || 0; }));
+        if (!fim || self.k.clock - fimEm < 50) return true;
+      }
+      if (!fim) {
+        if (avisar && j.parado && j.avisarParado) { j.avisarParado = false; linhas.push("\n" + self.linhaJob(j, true)); }
+        return true;
+      }
       if (avisar && !j.avisado) linhas.push(self.linhaJob(j, true));
       if (self.jobCur === j) { self.jobCur = self.jobAnt; self.jobAnt = null; }
       return false;
@@ -3625,16 +3659,16 @@
     var fim = j.procs.every(function (p) { return p.done; });
     if (!fim) return j.parado ? "Parado" : "Executando";
     var p = j.procs[j.procs.length - 1];
-    if (p.porSinal) return ({ 15: "Terminado", 9: "Morto (Killed)", 2: "Interromper", 1: "Hangup", 13: "`Pipe' partido (escrita sem leitura)" })[p.porSinal] || ("Sinal " + p.porSinal);
+    if (p.porSinal) return SIG_DESC[p.porSinal] || ("Sinal " + p.porSinal);
     if (p.status === 0) return "Concluído";
     return "Fim da execução com status " + p.status;
   };
   SP.linhaJob = function (j, comL) {
     var marca = j === this.jobCur ? "+" : (j === this.jobAnt ? "-" : " ");
     var est = this.estadoJob(j), fim = est !== "Executando" && est !== "Parado";
-    var txt = j.txt + (fim ? "" : " &");
+    var txt = j.txt + (est === "Executando" ? " &" : "");
     if (/^Fim da execução/.test(est)) est = "Fim da execução com status " + j.procs[j.procs.length - 1].status;
-    return "[" + j.n + "]" + marca + "  " + est + repete(" ", Math.max(1, 27 - utf8len(est))) + txt;
+    return "[" + j.n + "]" + marca + "  " + est + repete(" ", utf8len(est) >= 27 ? 3 : 27 - utf8len(est)) + txt;
   };
 
   /* ---------- redirecionamentos ---------- */
@@ -4352,7 +4386,9 @@
       n.pidShell = proc.pid;
       return yield* n.rodarFonte(txt, { script: true, nomeArq: caminho, modoC: opt.modoC, soChecar: opt.soChecar });
     }, { bg: this.proc ? this.proc.bg : false, nome: "bash" });
+    if (this.execSimples && this.proc && this.proc.bg) { proc.execDe = this.proc; this.proc.execPara = proc; }
     yield { t: "block", cond: function () { return proc.done; } };
+    if (proc.execDe && proc.porSinal) proc.execDe.porSinal = proc.porSinal; // o job aparece como "Terminado" etc.
     return proc.status;
   };
 
@@ -5743,6 +5779,7 @@
       }
       yield { t: "block", cond: function () { return todos.every(function (p) { return p.done; }) || self.pendSig.length > 0; } };
       if (this.pendSig.length && !todos.every(function (p) { return p.done; })) return 128 + this.pendSig[0];
+      if (this.interativo && this.o.monitor && !this.subshell) { this.jobs.forEach(function (j) { j.adiar = false; }); return 0; } // o aviso "[1]+ Concluído" sai antes do próximo prompt
       this.jobs.forEach(function (j) { j.avisado = true; });
       this.limparJobsAvisados();
       return 0;
@@ -5762,11 +5799,24 @@
       }
       yield { t: "block", cond: function () { return procs.every(function (x) { return x.done; }); } };
       st = procs[procs.length - 1].status;
+      this.avisarMortoPorSinal(procs);
       this.jobs.forEach(function (jj) { if (jj.procs.every(function (x) { return x.done; }) && jj.procs.some(function (x) { return procs.indexOf(x) >= 0; })) jj.avisado = true; });
     }
     this.limparJobsAvisados();
     return st;
   });
+  // script (não interativo): "t.sh, linha 4: 3100 Morto      sleep 100" quando o wait recolhe um job morto por sinal
+  SP.avisarMortoPorSinal = function (procs) {
+    if (this.interativo) return;
+    var self = this;
+    this.jobs.forEach(function (j) {
+      var ult = j.procs[j.procs.length - 1];
+      if (!ult.done || !ult.porSinal || ult.porSinal === 2 || ult.porSinal === 13 || j.avisado) return;
+      if (!j.procs.some(function (x) { return procs.indexOf(x) >= 0; })) return;
+      var est = SIG_DESC[ult.porSinal] || ("Sinal " + ult.porSinal);
+      self.escrever(2, self.nome0 + ", linha " + self.lineno + ": " + pad(ult.pid, 5) + " " + est + repete(" ", utf8len(est) >= 27 ? 3 : 27 - utf8len(est)) + j.txt + "\n");
+    });
+  };
   SP.marcarAvisados = function () { this.jobs.forEach(function (j) { if (j.procs.every(function (p) { return p.done; })) j.avisado = true; }); this.limparJobsAvisados(); };
   B("disown", function* (args) {
     if (args[1] === "-a" || args.length < 2) { if (args[1] === "-a") this.jobs = []; else { var j0 = this.jobCur; this.jobs = this.jobs.filter(function (x) { return x !== j0; }); } this.limparJobsAvisados(); return 0; }
@@ -5793,7 +5843,7 @@
       var pids = [];
       if (x[0] === "%") { var j = self.acharJob(x, "kill"); if (!j) { st = 1; return; } pids = j.procs.filter(function (p) { return !p.done; }).map(function (p) { return p.pid; }); if (!pids.length) { self.erro("kill: " + x + ": trabalho não existe"); st = 1; return; } if (sig !== 0) j.mortoPor = sig; }
       else if (/^-?[0-9]+$/.test(x)) pids = [+x];
-      else { self.erro("kill: " + x + ": argumentos devem ser IDs de processo ou de trabalho"); st = 1; return; }
+      else { self.erro("kill: `" + x + "': não é um identificador de processo (pid) nem é uma especificação de trabalho válida"); st = 1; return; }
       pids.forEach(function (pid) {
         var sis = self.k.sistema.filter(function (p) { return p.pid === pid; })[0];
         if (sis) {
@@ -5802,7 +5852,14 @@
           return;
         }
         if (pid === 3001 && !self.k.acharProc(3001)) { return; }
-        if (!self.k.sinal(pid, sig)) { self.erro("kill: (" + pid + ") - Processo inexistente"); st = 1; }
+        if (!self.k.sinal(pid, sig)) { self.erro("kill: (" + pid + ") - Processo inexistente"); st = 1; return; }
+        if (self.o.monitor && self.interativo) self.jobs.forEach(function (jj) {
+          if (!jj.procs.some(function (x) { return x.pid === pid; })) return;
+          if (sig === 19 || sig === 20 || sig === 21 || sig === 22) { if (!jj.parado) { jj.parado = true; jj.avisarParado = true; jj.adiar = true; } }
+          else if (sig === 18) { jj.parado = false; jj.avisarParado = false; }
+          else jj.adiar = true; // morreu pelo kill: o aviso sai só no prompt seguinte, como no terminal real
+        });
+        else if (self.interativo) self.jobs.forEach(function (jj) { if (jj.procs.some(function (x) { return x.pid === pid; })) jj.adiar = true; });
       });
     });
     return st;
@@ -6392,7 +6449,7 @@
         larg[c] = Math.max(larg[c] || 0, w);
       }
       var tot = larg.reduce(function (a, b) { return a + b; }, 0);
-      if (tot < larguraTela) { melhor = cols; melhorLarg = larg; break; }
+      if (tot <= larguraTela) { melhor = cols; melhorLarg = larg; break; } // (o coreutils 9.12 aceita a linha cheia)
     }
     if (!melhorLarg) { melhor = 1; melhorLarg = [0]; }
     var linhas = [], rws = Math.ceil(n / melhor);
@@ -6410,6 +6467,17 @@
     return linhas;
   }
   EXT.ls = function* (args, io) {
+    // no locale C (LC_ALL=C), letras acentuadas não são "imprimíveis": o ls as escapa em octal ('M'$'\303\272''sica')
+    var locLs = io.sh.valor("LC_ALL") || io.sh.valor("LC_CTYPE") || io.sh.valor("LANG") || "C", cLoc = /^(C|POSIX)$/.test(locLs);
+    function precisaLs(n) { return precisaAspasLs(n) || (cLoc && /[^\x00-\x7f]/.test(n)); }
+    function aspasLsL(n) {
+      if (!cLoc || !/[^\x00-\x7f]/.test(n)) return aspasLs(n);
+      var out = "", i2 = 0, esc = function (c) { return utf8bytes(c).map(function (b) { return "\\" + ("00" + b.toString(8)).slice(-3); }).join(""); };
+      var partes = n.match(/[\x20-\x7e]+|[^\x20-\x7e]+/g) || [];
+      if (!/^[\x20-\x7e]/.test(n)) out += "''";
+      partes.forEach(function (pt) { out += /^[\x20-\x7e]/.test(pt) ? "'" + pt.replace(/'/g, "'\\''") + "'" : "$'" + Array.from(pt).map(esc).join("") + "'"; });
+      return out;
+    }
     var sh = io.sh;
     var g = getopt(args, "wIT", { all: "a", "almost-all": "A", long: "l", "human-readable": "h", "color": "color?=", "classify": "F", "directory": "d", "recursive": "R", "reverse": "r", "size": "s", inode: "i", "full-time": "full-time", "time-style": "time-style=", "group-directories-first": "gdf", "numeric-uid-gid": "n", "sort": "sort=", "indicator-style": "indicator-style=", "dereference": "L", "width": "w=", "hide": "hide=", "ignore": "ignore=", "quoting-style": "quoting-style=", "literal": "N", "quote-name": "Q", "si": "si", "escape": "b", "zero": "zero", "time": "time=", "help": "help", "version": "version" }, { validas: "aAlhdFRrSstXvUi1CxmgnoGLpcuNQbBk" });
     if (g.erro) return io.erroOpcao(g.erro);
@@ -6463,8 +6531,8 @@
     function nomeVis(it, alinhar) {
       var n = it.nome, alvoNo = null;
       if (it.no.t === "l") { var rr = sh.resolver((it.base || "") + it.nome, true); alvoNo = rr.no; }
-      var txt = aspas && precisaAspasLs(n) ? aspasLs(n) : (alinhar ? " " + n : n);
-      if (o.Q && !precisaAspasLs(n)) txt = '"' + n + '"';
+      var txt = aspas && precisaLs(n) ? aspasLsL(n) : (alinhar ? " " + n : n);
+      if (o.Q && !precisaLs(n)) txt = '"' + n + '"';
       var w = largura(txt);
       if (usaCor) { var tc = tipoCor(it.no, n, alvoNo); if (tc) txt = cor_(tc, txt); }
       var suf = sufixo(it);
@@ -6486,12 +6554,12 @@
     }
     function blocosTxt(no) { var b = blocos(no); return o.h || o.si ? (b === 0 ? "0" : humano(b * 1024, o.si)) : String(b); }
     function linhasLongas(l) {
-      var alinhar = aspas && l.some(function (it) { return precisaAspasLs(it.nome); });
+      var alinhar = aspas && l.some(function (it) { return precisaLs(it.nome); });
       var cols = l.map(function (it) {
         var no = it.no;
         var c = [modoStr(no), String(contarLinks(no)), o.n ? String(no.u) : (USUARIOS[no.u] || String(no.u)), o.n ? String(no.g) : (GRUPOS[no.g] || String(no.g)), tamTxt(no), data(no)];
         var nv = nomeVis(it, alinhar).txt;
-        if (no.t === "l") { var alvo = sh.resolver((it.base || "") + it.nome, true); var alvoTxt = aspas && precisaAspasLs(no.alvo) ? aspasLs(no.alvo) : no.alvo; if (usaCor) { var tcA = alvo.no ? tipoCor(alvo.no, no.alvo, alvo.no) : "r"; if (tcA) alvoTxt = cor(tcA, alvoTxt); } nv += " -> " + alvoTxt; }
+        if (no.t === "l") { var alvo = sh.resolver((it.base || "") + it.nome, true); var alvoTxt = aspas && precisaLs(no.alvo) ? aspasLsL(no.alvo) : no.alvo; if (usaCor) { var tcA = alvo.no ? tipoCor(alvo.no, no.alvo, alvo.no) : "r"; if (tcA) alvoTxt = cor(tcA, alvoTxt); } nv += " -> " + alvoTxt; }
         var pre = o.i ? String(no.ino) + " " : "";
         var bl = o.s ? blocosTxt(no) : null;
         return { c: c, nv: nv, pre: pre, bl: bl };
@@ -6510,7 +6578,7 @@
       });
     }
     function linhasCurtas(l) {
-      var alinhar = aspas && l.some(function (it) { return precisaAspasLs(it.nome); });
+      var alinhar = aspas && l.some(function (it) { return precisaLs(it.nome); });
       var fmt = l.map(function (it) {
         var v = nomeVis(it, alinhar && !umPor);
         if (o.i || o.s) { var pre = (o.i ? String(it.no.ino) + " " : "") + (o.s ? blocosTxt(it.no) + " " : ""); return { txt: pre + v.txt, w: pre.length + v.w, pre: pre }; }
@@ -6553,7 +6621,7 @@
       if (todos) { itens.push({ nome: ".", no: p.no, base: "" }); var pai = sh.resolver(p.rot + "/..", true); itens.push({ nome: "..", no: pai.no || p.no, base: "" }); }
       ordenar(itens);
       if (o.r) itens.reverse();
-      if (multi) { if (saida.length || !primeiro) saida.push(""); saida.push((aspas && precisaAspasLs(p.rot) ? aspasLs(p.rot) : p.rot) + ":"); }
+      if (multi) { if (saida.length || !primeiro) saida.push(""); saida.push((aspas && precisaLs(p.rot) ? aspasLsL(p.rot) : p.rot) + ":"); }
       if (longo || o.s) saida.push("total " + total(itens.filter(function (it) { return true; })));
       (longo ? linhasLongas(itens) : linhasCurtas(itens)).forEach(function (x) { saida.push(x); });
       if (o.R) itens.forEach(function (it) { if (it.no.t === "d" && it.nome !== "." && it.nome !== "..") listar({ rot: p.rot.replace(/\/$/, "") + "/" + it.nome, no: it.no }, false); });
@@ -6945,38 +7013,66 @@
       var r = sh.resolver(arq, true);
       if (!r.no) { io.msg("não foi possível acessar " + qn(arq) + ": " + errMsg(r.err || "ENOENT")); st = 1; return; }
       (function vai(no, rot) {
-        if (no.u !== sh.uid && sh.uid !== 0) { io.msg("alterando as permissões de " + qn(rot) + ": Operação não permitida"); st = 1; return; }
+        if (no.u !== sh.uid && sh.uid !== 0) { { if (!o.f) io.msg("alterando permissões de " + qn(rot) + ": Operação não permitida"); }; st = 1; return; }
         var novo = aplicarModo(modo, no.m, no.t === "d", sh.umask);
         if (o.v || (o.c && novo !== no.m)) io.out(novo === no.m ? "modo de " + qn(rot) + " mantido como " + oct4(no.m) + " (" + rwx9(no.m) + ")\n" : "modo de " + qn(rot) + " alterado de " + oct4(no.m) + " (" + rwx9(no.m) + ") para " + oct4(novo) + " (" + rwx9(novo) + ")\n");
         no.m = novo; no.ct = sh.k.clock;
-        if (o.R && no.t === "d") Object.keys(no.c).sort(cmpBytes).forEach(function (n) { if (no.c[n].t !== "l") vai(no.c[n], rot.replace(/\/$/, "") + "/" + n); });
+        if (o.R && no.t === "d") listarDir(no).forEach(function (n) { if (no.c[n].t !== "l") vai(no.c[n], rot.replace(/\/$/, "") + "/" + n); }); // ordem do disco
       })(r.no, arq);
     });
     return st;
   };
-  EXT.chown = function* (args, io) {
-    var sh = io.sh, a = args.slice(1).filter(function (x) { return !/^-/.test(x); });
-    if (a.length < 2) return io.tente("falta operando");
-    var dono = a[0].split(":")[0], st = 0;
-    a.slice(1).forEach(function (arq) {
-      var r = sh.resolver(arq, true);
-      if (!r.no) { io.msg("não foi possível acessar " + qn(arq) + ": Arquivo ou diretório inexistente"); st = 1; return; }
-      if (dono && dono !== "ana" && dono !== "1000") { io.msg("alterando o dono de " + qn(arq) + ": Operação não permitida"); st = 1; }
+  // chown/chgrp do coreutils 9.12: usuários e grupos da VM (/etc/passwd e /etc/group); sem root, só muda o grupo
+  // para um dos grupos da pessoa (ana: ana e wheel) e só nos próprios arquivos
+  function idUsuario(n) { if (/^\d+$/.test(n)) return +n; for (var u in USUARIOS) if (USUARIOS[u] === n) return +u; return null; }
+  function idGrupo(n) { if (/^\d+$/.test(n)) return +n; for (var g in GRUPOS) if (GRUPOS[g] === n) return +g; return null; }
+  function chownChgrp(args, io, ehChgrp) {
+    var sh = io.sh, g = getopt(args, "", { recursive: "R", verbose: "v", changes: "c", silent: "f", quiet: "f", "no-dereference": "h", dereference: "deref" }, { validas: "RvcfhHLP" });
+    if (g.erro) return io.erroOpcao(g.erro);
+    var o = g.o, ops = g.ops;
+    if (!ops.length) return io.tente("falta operando");
+    if (ops.length < 2) return io.tente("falta operando depois de " + qa(ops[0]));
+    var spec = ops[0], nu = null, ng = null, temU = false, temG = false;
+    if (ehChgrp) { ng = idGrupo(spec); temG = true; if (ng === null) { io.msg("grupo inválido: " + qa(spec)); return 1; } }
+    else {
+      var sep = spec.indexOf(":");
+      if (sep < 0 && spec.indexOf(".") > 0 && idUsuario(spec) === null) { io.msg("warning: '.' should be ':': " + qa(spec)); sep = spec.indexOf("."); }
+      var su = sep < 0 ? spec : spec.slice(0, sep), sg = sep < 0 ? "" : spec.slice(sep + 1);
+      if (su) { nu = idUsuario(su); temU = true; if (nu === null) { io.msg("usuário inválido: " + qa(spec)); return 1; } }
+      if (sg) { ng = idGrupo(sg); temG = true; if (ng === null) { io.msg("grupo inválido: " + qa(spec)); return 1; } }
+      else if (sep >= 0 && su) { ng = (CONTAS[nu] && CONTAS[nu].gid != null) ? CONTAS[nu].gid : nu; temG = true; } // "ana:" = grupo de login
+    }
+    var nomeU = function (u) { return USUARIOS[u] || String(u); }, nomeG = function (x) { return GRUPOS[x] || String(x); };
+    var meusGrupos = contaDe(sh).grupos.concat([contaDe(sh).gid]);
+    var st = 0;
+    function um(no, rot) {
+      var antU = no.u, antG = no.g, novoU = temU ? nu : antU, novoG = temG ? ng : antG;
+      if (sh.uid !== 0) {
+        if (no.u !== sh.uid) { if (!o.f) io.msg("alterando o " + (temU ? "dono" : "grupo") + " de " + qn(rot) + ": Operação não permitida"); st = 1; return; }
+        if (temU && novoU !== antU) { if (!o.f) io.msg("alterando o dono de " + qn(rot) + ": Operação não permitida"); st = 1; return; }
+        if (temG && novoG !== antG && (no.u !== sh.uid || meusGrupos.indexOf(novoG) < 0)) { if (!o.f) io.msg("alterando o grupo de " + qn(rot) + ": Operação não permitida"); st = 1; return; }
+      }
+      var mudou = novoU !== antU || novoG !== antG;
+      no.u = novoU; no.g = novoG; if (mudou) no.ct = sh.k.clock;
+      if (!(o.v || (o.c && mudou))) return;
+      if (ehChgrp) io.out(mudou ? "alterado o grupo de " + qn(rot) + " de " + nomeG(antG) + " para " + nomeG(novoG) + "\n" : "grupo de " + qn(rot) + " mantido como " + nomeG(novoG) + "\n");
+      else if (temU) io.out(mudou ? "alterado o dono de " + qn(rot) + " de " + nomeU(antU) + (temG ? ":" + nomeG(antG) : "") + " para " + nomeU(novoU) + (temG ? ":" + nomeG(novoG) : "") + "\n" : "dono de " + qn(rot) + " mantido como " + nomeU(novoU) + (temG ? ":" + nomeG(novoG) : "") + "\n");
+      else io.out(mudou ? "alterado o dono de " + qn(rot) + " de " + nomeU(antU) + ":" + nomeG(antG) + " para :" + nomeG(novoG) + "\n" : "dono de " + qn(rot) + " mantido como " + nomeU(antU) + ":" + nomeG(novoG) + "\n");
+    }
+    function anda(no, rot) {
+      // -R: o real informa os filhos antes da pasta
+      if (o.R && no.t === "d") listarDir(no).forEach(function (n) { var f = no.c[n]; anda(f, rot.replace(/\/+$/, "") + "/" + n); });
+      um(no, rot);
+    }
+    ops.slice(1).forEach(function (arq) {
+      var r = sh.resolver(arq, !o.h);
+      if (!r.no) { if (!o.f) io.msg("não foi possível acessar " + qn(arq) + ": " + errMsg(r.err || "ENOENT")); st = 1; return; }
+      anda(r.no, arq);
     });
     return st;
-  };
-  EXT.chgrp = function* (args, io) {
-    var sh = io.sh, a = args.slice(1).filter(function (x) { return !/^-/.test(x); });
-    if (a.length < 2) return io.tente("falta operando");
-    var grupos = { ana: 1000, adm: 4, cdrom: 24, sudo: 27, dip: 30, plugdev: 46, users: 100 }, st = 0;
-    a.slice(1).forEach(function (arq) {
-      var r = sh.resolver(arq, true);
-      if (!r.no) { io.msg("não foi possível acessar " + qn(arq) + ": Arquivo ou diretório inexistente"); st = 1; return; }
-      if (!(a[0] in grupos)) { io.msg("grupo inválido: " + qa(a[0])); st = 1; return; }
-      r.no.g = grupos[a[0]];
-    });
-    return st;
-  };
+  }
+  EXT.chown = function* (args, io) { return chownChgrp(args, io, false); };
+  EXT.chgrp = function* (args, io) { return chownChgrp(args, io, true); };
 
   /* ---------- texto: bytes ↔ string ---------- */
   function decodUtf8(b) { // decodifica bytes; bytes inválidos viram U+FFFD (como o Node/terminal)
@@ -8248,7 +8344,7 @@
     var k = this.k, l = k.sistema.map(function (p) { return { pid: p.pid, ppid: p.ppid, u: p.u, tty: p.tty, cmd: p.cmd, comm: p.comm, stat: p.stat, start: p.start }; });
     var hm = dois(tm(k.clock).h) + ":" + dois(tm(k.clock).m);
     if (!k.acharProc(3001)) l.push({ pid: 3001, ppid: 2950, u: UID, tty: "pts/0", cmd: "-bash", comm: "bash", stat: "Ss", start: "14:10" });
-    k.procs.forEach(function (p) { if (p.done) return; l.push({ pid: p.pid, ppid: p.pid === 3001 ? 2950 : (p.ppid === 1 ? 3001 : p.ppid), u: p.sh && p.sh.uid != null ? p.sh.uid : UID, tty: "pts/0", cmd: p.pid === 3001 ? "-bash" : (p.cmdline || p.nome), comm: p.nome, stat: p.pid === 3001 ? "Ss" : (p.state === "sleep" ? "S" : "S+"), start: p.pid === 3001 ? "14:10" : hm }); });
+    k.procs.forEach(function (p) { if (p.done) return; l.push({ pid: p.pid, ppid: p.pid === 3001 ? 2950 : (p.ppid === 1 ? 3001 : p.ppid), u: p.sh && p.sh.uid != null ? p.sh.uid : UID, tty: "pts/0", cmd: p.pid === 3001 ? "-bash" : (p.cmdline || p.nome), comm: p.nome, stat: p.pid === 3001 ? "Ss" : p.parado ? "T" : (p.state === "sleep" || p.bg ? "S" : "S+"), start: p.pid === 3001 ? "14:10" : hm }); });
     (k.servicosProcs || []).forEach(function (p) { l.push(p); });
     if (extra) l.push(extra);
     var vistos = {};
@@ -8257,6 +8353,7 @@
     return l;
   };
   EXT.ps = function* (args, io) {
+    yield { t: "sleep", ms: 0 }; // deixa os vizinhos do pipeline começarem (como no real, "ps aux | grep x" mostra o próprio grep)
     var sh = io.sh, a = args.slice(1), meu = { pid: sh.k.nextPid++, ppid: sh.proc ? sh.proc.pid : 3001, u: sh.uid, tty: "pts/0", cmd: args.join(" "), comm: "ps", stat: "R+", start: dois(tm(sh.k.clock).h) + ":" + dois(tm(sh.k.clock).m) };
     var todos = sh.listaProcessos(meu);
     var bsd = a.length && /^[a-z]+$/.test(a[0]) && a[0] !== "--";
@@ -8267,6 +8364,7 @@
       if (/^-p\d/.test(x)) { pids = x.slice(2).split(",").map(Number); continue; }
       if (x === "-o" || x === "o" || x === "--format") { colunas = (colunas ? colunas + "," : "") + a[++i]; continue; }
       if (/^-o./.test(x)) { colunas = x.slice(2); continue; }
+      if (/^-[a-zA-Z]+o$/.test(x)) { x.slice(1, -1).split("").forEach(function (c) { o["-" + c] = true; }); colunas = (colunas ? colunas + "," : "") + a[++i]; continue; } // -eo pid,cmd
       if (x === "-u" || x === "-U" || x === "--user") { user = a[++i]; continue; }
       if (x === "-C") { cmdName = a[++i]; continue; }
       if (/^--sort=/.test(x)) { sortKey = x.slice(7); continue; }
@@ -8297,13 +8395,24 @@
     function val(p, k) {
       switch (k) {
         case "pid": return String(p.pid); case "ppid": return String(p.ppid); case "tty": return p.tty; case "time": return o.u ? "0:00" : tempo();
-        case "cmd": return o["-f"] ? p.cmd : p.comm; case "comm": return p.comm; case "command": case "args": return p.cmd;
+        case "cmd": return o["-f"] || colunas ? p.cmd : p.comm; case "comm": return p.comm; case "command": case "args": return p.cmd;
         case "user": return USUARIOS[p.u] || String(p.u); case "uid": return o["-f"] ? (USUARIOS[p.u] || String(p.u)) : String(p.u);
         case "%cpu": return p.pid === 2210 ? "5.4" : p.pid === 1534 ? "3.1" : "0.0"; case "%mem": return p.pid === 2210 ? "6.8" : p.pid === 1534 ? "4.2" : "0.1";
         case "vsz": return String(p.pid === 2210 ? 3254120 : p.pid === 1534 ? 4381236 : 12000 + p.pid % 7000); case "rss": return String(p.pid === 2210 ? 412300 : p.pid === 1534 ? 289400 : 5000 + p.pid % 3000);
         case "stat": return p.stat; case "start": case "stime": return p.start; case "c": return "0"; case "etime": return "00:05"; case "ni": return "0"; case "pri": return "19";
       }
       return "-";
+    }
+    if (sortKey) {
+      // --sort=-%mem,+pid: "-" = decrescente; colunas numéricas comparadas como números
+      var chaves = sortKey.split(",").map(function (c) { var desc = c[0] === "-"; return { k: c.replace(/^[+-]/, "").toLowerCase(), desc: desc }; });
+      lista = lista.slice().sort(function (x, y) {
+        for (var ci = 0; ci < chaves.length; ci++) {
+          var ch = chaves[ci], vx = val(x, ch.k), vy = val(y, ch.k), r = DIR[ch.k] ? parseFloat(vx) - parseFloat(vy) : cmpBytes(vx, vy);
+          if (r) return ch.desc ? -r : r;
+        }
+        return 0;
+      });
     }
     var tab = lista.map(function (p) { return nomeCols.map(function (c) { return val(p, c.k); }); });
     var w = nomeCols.map(function (c, i) { var m = largura(c.cab); tab.forEach(function (r) { m = Math.max(m, largura(r[i])); }); return Math.max(m, LARG[c.k] || 0); });
@@ -8327,29 +8436,78 @@
     return l.length ? 0 : 1;
   };
   EXT.pidof = function* (args, io) { var l = io.sh.listaProcessos().filter(function (p) { return args.slice(1).indexOf(p.comm) >= 0; }); if (!l.length) return 1; io.out(l.map(function (p) { return p.pid; }).reverse().join(" ") + "\n"); return 0; };
-  function matarPorNome(io, nomes, sig, completo) {
-    var sh = io.sh, n = 0;
+  // devolve a lista dos processos que receberam o sinal ({pid, nome})
+  function matarPorNome(io, nomes, sig, completo, filtro) {
+    var sh = io.sh, mortos = [];
     sh.listaProcessos().forEach(function (p) {
       if (!nomes(completo ? p.cmd : p.comm)) return;
       if (p.pid === (sh.proc ? sh.proc.pid : -1)) return;
+      if (filtro && !filtro(p)) return;
       var sis = sh.k.sistema.filter(function (q) { return q.pid === p.pid; })[0];
-      if (sis) { if (sis.u !== sh.uid && sh.uid !== 0) return; sh.k.sistema = sh.k.sistema.filter(function (q) { return q !== sis; }); n++; return; }
+      if (sis) { if (sis.u !== sh.uid && sh.uid !== 0) return; if (sig !== 0 && sig !== 18 && sig !== 19) sh.k.sistema = sh.k.sistema.filter(function (q) { return q !== sis; }); mortos.push({ pid: p.pid, nome: p.comm }); return; }
       if (p.pid === 3001) return;
-      if (sh.k.sinal(p.pid, sig)) n++;
+      if (sh.k.sinal(p.pid, sig)) mortos.push({ pid: p.pid, nome: p.comm });
     });
-    return n;
+    return mortos;
   }
+  // pkill do procps-ng (Arch): -e mostra "nome terminado (pid N)"
   EXT.pkill = function* (args, io) {
-    var sig = 15, a = args.slice(1), f = false;
-    a = a.filter(function (x) { if (/^-[0-9]+$/.test(x) || /^-[A-Z]+$/.test(x)) { sig = sinalNum(x.slice(1)); return false; } if (x === "-f") { f = true; return false; } return true; });
-    if (!a.length) { io.msg("nenhum critério de correspondência especificado"); return 2; }
-    var re = criarRegex(a[0]);
-    return matarPorNome(io, function (n) { return re.test(n); }, sig, f) ? 0 : 1;
+    var sig = 15, a = args.slice(1), o = {}, pad_ = [];
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i];
+      if (x === "--signal") { sig = sinalNum(a[++i]); continue; }
+      if (/^--signal=/.test(x)) { sig = sinalNum(x.slice(9)); continue; }
+      if (/^-([0-9]+|[A-Z][A-Z0-9]*)$/.test(x)) { sig = sinalNum(x.slice(1)); continue; }
+      if (x === "-u" || x === "-U") { o.u = a[++i]; continue; }
+      if (x === "--echo") { o.e = true; continue; } if (x === "--count") { o.c = true; continue; } if (x === "--full") { o.f = true; continue; } if (x === "--exact") { o.x = true; continue; }
+      if (/^-[efxcin]+$/.test(x)) { x.slice(1).split("").forEach(function (c) { o[c] = true; }); continue; }
+      if (/^-./.test(x)) { io.msg("opção inválida -- '" + x[1] + "'"); return 2; }
+      pad_.push(x);
+    }
+    if (sig < 0) { io.msg("Unknown signal"); return 2; }
+    if (!pad_.length) { io.msg("nenhum critério de correspondência especificado\nTente \"pkill --help\" para mais informações."); return 2; }
+    var re = criarRegex(o.x ? "^(?:" + pad_[0] + ")$" : pad_[0], o.i ? "i" : "");
+    var mortos = matarPorNome(io, function (n) { return re.test(n); }, sig, o.f, o.u ? function (p) { return (USUARIOS[p.u] || String(p.u)) === o.u || String(p.u) === o.u; } : null);
+    if (o.e) mortos.forEach(function (m) { io.out(m.nome + " terminado (pid " + m.pid + ")\n"); });
+    if (o.c) io.out(mortos.length + "\n");
+    return mortos.length ? 0 : 1;
   };
+  var KILLALL_USO = "Uso:   killall [OPÇÃO]... [--] NOME...\n       killall -l, --list\n       killall -V, --version\n\n  -e,--exact          exige ocorrência exata para nomes muito longos\n  -I,--ignore-case    ignora maiusculização nos nomes de processo\n  -g,--process-group  mata o grupo de processo em vez do processo\n  -y,--younger-than   mata processos mais novos que TEMPO\n  -o,--older-than     mata processos mais velhos que TEMPO\n  -i,--interactive    exibe confirmação antes de matar\n  -l,--list           lista todos os nomes de sinal conhecidos\n  -q,--quiet          não exibe avisos\n  -r,--regexp         interpreta NOME como uma expressão regular estendida\n  -s,--signal SINAL   envia este sinal em vez de SIGTERM\n  -u,--user USUÁRIO   mata apenas processos sendo executados pelo USUÁRIO\n  -v,--verbose        relata se o sinal foi enviado com sucesso\n  -V,--version        exibe informações de versão\n  -w,--wait           espera que os processos morram\n  -n,--ns PID         corresponde processos que pertencem aos mesmos\n                      espaços de nomes que o PID\n  -Z,--context EXPREG mata apenas processo(s) tendo contexto\n                      (precisa preceder outros argumentos)\n\n";
+  // killall do psmisc: -v "sleep(N) morto com o sinal 15", -i pergunta "Matar sleep(N)? (y/N) "
   EXT.killall = function* (args, io) {
-    var sig = 15, a = args.slice(1).filter(function (x) { if (/^-[0-9A-Z]+$/.test(x)) { sig = sinalNum(x.slice(1)); return false; } return true; });
+    var sh = io.sh, sig = 15, a = args.slice(1), o = {}, nomes = [];
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i];
+      if (x === "--") { nomes = nomes.concat(a.slice(i + 1)); break; }
+      if (x === "-s" || x === "--signal") { sig = sinalNum(a[++i] || ""); continue; }
+      if (x === "-u" || x === "--user") { o.u = a[++i]; continue; }
+      if (x === "-l" || x === "--list") { io.out("HUP INT QUIT ILL TRAP ABRT BUS FPE KILL USR1 SEGV USR2 PIPE ALRM TERM STKFLT\nCHLD CONT STOP TSTP TTIN TTOU URG XCPU XFSZ VTALRM PROF WINCH POLL PWR SYS\n"); return 0; }
+      var longa = { "--verbose": "v", "--interactive": "i", "--quiet": "q", "--exact": "e", "--ignore-case": "I", "--regexp": "r", "--wait": "w" }[x];
+      if (longa) { o[longa] = true; continue; }
+      if (/^-([0-9]+|[A-Z][A-Z0-9]*)$/.test(x) && sinalNum(x.slice(1)) >= 0) { sig = sinalNum(x.slice(1)); continue; }
+      if (/^-[viqeIrwg]+$/.test(x)) { x.slice(1).split("").forEach(function (c) { o[c] = true; }); continue; }
+      if (/^-./.test(x)) { io.err(KILLALL_USO); return 1; }
+      nomes.push(x);
+    }
+    if (!nomes.length) { io.err(KILLALL_USO); return 1; }
+    if (sig < 0) { io.err(a.join(" ") + ": sinal desconhecido; killall -l lista os sinais.\n"); return 1; }
     var st = 0;
-    a.forEach(function (nome) { if (!matarPorNome(io, function (n) { return n === nome; }, sig)) { io.err(nome + ": nenhum processo localizado\n"); st = 1; } });
+    for (var n = 0; n < nomes.length; n++) {
+      var nome = nomes[n], re = o.r ? criarRegex(nome, o.I ? "i" : "") : null;
+      var casa = function (c) { return re ? re.test(c) : (o.I ? c.toLowerCase() === nome.toLowerCase() : c === nome); };
+      var alvos = sh.listaProcessos().filter(function (p) { return casa(p.comm) && p.pid !== 3001 && p.pid !== (sh.proc ? sh.proc.pid : -1) && (!o.u || (USUARIOS[p.u] || String(p.u)) === o.u); });
+      var mortos = 0;
+      for (var k = 0; k < alvos.length; k++) {
+        var p = alvos[k];
+        if (o.i) { var ok = yield* io.pergunta("Matar " + p.comm + "(" + p.pid + ")? (y/N) "); if (!ok) continue; }
+        var sis = sh.k.sistema.filter(function (q) { return q.pid === p.pid; })[0];
+        if (sis && sis.u !== sh.uid && sh.uid !== 0) { if (!o.q) io.err(p.comm + "(" + p.pid + "): Operação não permitida\n"); st = 1; continue; }
+        if (sis) sh.k.sistema = sh.k.sistema.filter(function (q) { return q !== sis; }); else sh.k.sinal(p.pid, sig);
+        mortos++;
+        if (o.v) io.err(p.comm + "(" + p.pid + ") morto com o sinal " + sig + "\n");
+      }
+      if (!mortos) { if (!o.q) io.err(nome + ": nenhum processo localizado\n"); st = 1; }
+    }
     return st;
   };
   EXT.kill = function* (args, io) { return yield* BUILTINS.kill.call(io.sh, args); };
@@ -8721,9 +8879,13 @@
   EXT.nohup = function* (args, io) {
     if (args.length < 2) return io.tente("falta operando");
     var sh = io.sh;
+    // o nohup faz exec: o processo passa a se chamar como o comando (ps, pgrep)
+    if (sh.proc && sh.proc.pid !== 3001) { sh.proc.nome = args[1].slice(args[1].lastIndexOf("/") + 1); sh.proc.cmdline = args.slice(1).join(" "); }
     if (io.tty()) {
       io.msg("ignorando entrada e anexando saída a 'nohup.out'");
+      var existia = !!sh.resolver("nohup.out", true).no;
       var o = sh.abrir("nohup.out", "a"); if (o.err) return 127;
+      if (!existia) { var nn = sh.resolver("nohup.out", true).no; if (nn) nn.m = 384; } // criado com modo 600
       var salvo = sh.fds[1]; sh.fds[1] = ref(o);
       try { return yield* sh.executar(args.slice(1), { semFuncao: true, externo: true }); } finally { unref(sh.fds[1]); sh.fds[1] = salvo; }
     }
@@ -9241,7 +9403,17 @@
         if (ls.length) temFinalNL = r.txt[r.txt.length - 1] === sep;
         ls.forEach(function (l) { linhas.push(l); });
       }
-      if (o.i && grupos[gi][0] !== "-") { var noA = sh.no(grupos[gi][0]); if (!noA) continue; }
+      if (o.i && grupos[gi][0] !== "-") {
+        var noA = sh.no(grupos[gi][0]); if (!noA) continue;
+        // o sed -i grava um temporário na mesma pasta e depois renomeia: precisa de escrita na pasta
+        var paiA = sh.paiDe(grupos[gi][0]);
+        if (paiA.pai && !sh.pode(paiA.pai, 2)) {
+          var sx = "", cs = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", semente = sh.k.clock + gi * 7919;
+          for (var q = 0; q < 6; q++) { semente = (semente * 1103515245 + 12345) % 2147483648; sx += cs[semente % cs.length]; }
+          io.msg("não foi possível abrir o arquivo temporário " + (paiA.dir === "." ? "./" : paiA.dir.replace(/\/$/, "") + "/") + "sed" + sx + ": Permissão negada");
+          return 4;
+        }
+      }
       saidaAtual = [];
       var res = rodarSed(prog, linhas, o, ultimo, escreverArq, sh, io, saidaAtual);
       if (res.sair !== null) sair = res.sair;
@@ -10071,6 +10243,7 @@
     }
   };
   EXT.awk = function* (args, io) {
+    var usaLocale = false;
     var sh = io.sh, a = args.slice(1), fs = null, defs = [], fontes = [], i = 0, origem = "lin. de com.";
     var nome = args[0] === "gawk" ? "gawk" : "awk";
     for (; i < a.length; i++) {
@@ -10082,7 +10255,8 @@
       if (/^-v./.test(x)) { defs.push(x.slice(2)); continue; }
       if (x === "-f") { var rf = sh.lerArquivo(a[++i]); if (rf.err) { io.err(nome + ": fatal: não foi possível abrir arquivo-fonte \"" + a[i] + "\" para leitura: " + errMsg(rf.err) + "\n"); return 2; } fontes.push(rf.txt.replace(/\n$/, "")); origem = a[i]; continue; }
       if (x === "--version" || x === "-V") { io.out("GNU Awk 5.4.1, API 4.1, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)\nCopyright (C) 1989, 1991-2026 Free Software Foundation.\n\nEste programa é software livre; você pode redistribuí-lo e/ou\nmodificá-lo sob os termos da Licença Pública Geral GNU, conforme\npublicada pela Free Software Foundation; tanto a versão 3 da\nLicença como (a seu critério) qualquer versão mais nova.\n\nEste programa é distribuído na expectativa de ser útil, mas SEM\nQUALQUER GARANTIA; sem mesmo a garantia implícita de\nCOMERCIALIZAÇÃO ou de ADEQUAÇÃO A QUALQUER PROPÓSITO EM\nPARTICULAR. Consulte a Licença Pública Geral GNU para obter mais\ndetalhes.\n\nVocê deve ter recebido uma cópia da Licença Pública Geral GNU\njunto com este programa; se não http://www.gnu.org/licenses/.\n"); return 0; }
-      if (/^--(posix|traditional|re-interval|characters-as-bytes|use-lc-numeric|sandbox|lint)$/.test(x) || x === "-e" && false) continue;
+      if (x === "--use-lc-numeric" || x === "--posix" || x === "-N") { usaLocale = true; continue; }
+      if (/^--(traditional|re-interval|characters-as-bytes|sandbox|lint)$/.test(x) || x === "-e" && false) continue;
       if (x === "-e" || x === "--source") { fontes.push(a[++i]); continue; }
       if (/^-./.test(x) && x !== "-") { io.err(nome + ": opção inválida -- “" + x.slice(1, 2) + "”\n"); io.err(AWK_USO); return 2; }
       break;
@@ -10092,7 +10266,7 @@
       fontes.push(a[i++]);
     }
     var operandos = a.slice(i);
-    var dec = "."; // o gawk usa sempre o ponto (só com --posix ou --use-lc-numeric seguiria o locale)
+    var dec = usaLocale ? localeNum(io.sh) : "."; // o gawk usa o ponto; com --posix ou --use-lc-numeric, o do locale
     var prog, funcs;
     try {
       var p = new AwkParser(awkLexer(paraB(fontes.join("\n") + "\n")));

@@ -15,7 +15,8 @@ touch -d 'amanhã' x; echo $?
 ### pend-dev-sda
 ls -l /dev/sda /dev/sda1 /dev/sda3 | cut -c1-10
 ### pend-sed-i-perm
-sed -i 's/notebook/estudio/' /etc/hostname; echo $?
+sed -i 's/notebook/estudio/' /etc/hostname 2>&1 | sed -E 's/sed[A-Za-z0-9]{6}:/sedXXXXXX:/'
+sed -i 's/notebook/estudio/' /etc/hostname 2>/dev/null; echo $?
 ### pend-awk-lc-numeric
 awk --use-lc-numeric 'BEGIN{print 17/2}'
 awk 'BEGIN{print 17/2}'
@@ -230,3 +231,108 @@ tr -s a b c < /dev/null; echo $?
 tr -ds a b c < /dev/null; echo $?
 tr a b c d < /dev/null; echo $?
 echo aab | tr -s a b; echo $?
+### pend-chown-ana
+touch a b; mkdir -p d/e; touch d/e/f
+chown root a; echo $?
+chown ana:ana a; echo $?
+chown -v ana a
+chown -c ana a; echo $?
+chown jaoo a; echo $?
+chown :wheel a; echo $?; ls -l a | cut -d' ' -f3-4
+chown :video a; echo $?
+chown ana:nada a; echo $?
+chown a; echo $?
+chown; echo $?
+chown ana nada; echo $?
+chown -v :wheel b
+chown -Rv ana:wheel d
+chown -R root d; echo $?
+chown 1000:998 b; ls -l b | cut -d' ' -f3-4
+### pend-chgrp-ana
+touch a; mkdir -p d/e; touch d/e/f
+chgrp wheel a; echo $?; ls -l a | cut -d' ' -f3-4
+chgrp video a; echo $?
+chgrp nada a; echo $?
+chgrp -v ana a
+chgrp -v wheel a
+chgrp -c wheel a; echo $?
+chgrp -Rc wheel d
+chgrp a; echo $?
+chgrp root /etc/hostname; echo $?
+### pend-chmod
+chmod 755 /etc/hostname; echo $?
+mkdir -p site/css; touch site/index.html site/css/estilo.css
+chmod -Rc 700 site
+chmod -v 600 frutas.txt
+chmod -f 600 /etc/hostname; echo $?
+### pend-sinais-jobs
+sleep 100 &
+kill -9 %1; sleep 0.2; jobs
+sleep 100 &
+kill -HUP %1; sleep 0.2; jobs
+kill firefox; echo $?
+kill 99999; echo $?
+### pend-sinais-jobs2
+sleep 100 &
+kill -USR1 %1; sleep 0.2; jobs
+sleep 100 &
+kill -PIPE %1; sleep 0.2; jobs
+sleep 100 &
+kill -ALRM %1; sleep 0.2; jobs
+sleep 100 &
+kill -USR2 %1; sleep 0.2; jobs
+sleep 100 &
+kill -TERM %1; sleep 0.2; jobs
+(exit 2) &
+sleep 0.2; jobs
+### pend-sinais-script [script]
+sleep 100 &
+kill -INT $!; wait $!; echo "int $?"
+sleep 100 &
+kill -9 $!; wait $! 2> /tmp/e; echo "kill $?"; sed 's/: *[0-9]* Morto/: N Morto/' /tmp/e
+### pend-kill-l
+kill -l
+kill -l 9 15 HUP
+### pend-jobs-aviso
+sleep 100 &
+kill %1
+echo oi
+echo dois
+sleep 1 &
+wait
+echo fim
+sleep 1 &
+sleep 2
+echo depois
+### pend-trap-term-bg
+printf '#!/bin/bash\ntrap "echo pegou TERM" TERM\nfor i in 1 2 3; do sleep 1; done\necho fim do script\n' > s.sh; chmod +x s.sh
+./s.sh &
+sleep 0.5; kill %1; sleep 4
+jobs
+bash s.sh &
+sleep 0.5; kill $!; sleep 4
+### pend-kill-stop
+sleep 605 &
+kill -STOP %1; sleep 0.2; jobs
+ps -o pid=,stat=,cmd= -p $! | sed 's/^ *[0-9]* //'
+kill -CONT %1; sleep 0.2; jobs
+ps -o stat=,cmd= -p $!
+kill %1; sleep 0.2; jobs
+### pend-pkill-killall
+sleep 300 &
+sleep 0.2; pkill -e sleep | sed 's/[0-9][0-9]*/N/'
+sleep 301 &
+sleep 0.2; killall -v sleep 2>&1 | sed 's/[0-9][0-9]*)/N)/'
+killall -v nada; echo $?
+pkill -e nada; echo $?
+sleep 302 &
+sleep 0.2; killall -s KILL -v sleep 2>&1 | sed 's/[0-9][0-9]*)/N)/'
+pkill -9 -e nada; echo $?
+killall -q nada; echo $?
+### pend-ls-colunas
+ls -A -C -w 80
+ls -C -w 80
+ls -A -C -w 60
+ls -a -C -w 80
+LC_ALL=C ls -C -w 80 --quoting-style=shell-escape
+LC_ALL=C ls --quoting-style=shell-escape Música 'Área de trabalho' -d
