@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch × Debian × Fedora × Ubuntu — o que muda | Guia Arch</title>
+<meta name="description" content="Compare o Arch Linux com Debian, Fedora e Ubuntu: ciclo de lançamento, pacotes, instalador, padrões de segurança e serviços, documentação e comunidade; a pedra de Roseta pacman × apt × dnf; e o que muda no Manjaro, EndeavourOS e CachyOS.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">× Debian × Fedora</span></h1>
+
+<p class="intro">Toda distribuição Linux usa o mesmo kernel e quase os mesmos programas. O que muda é a <strong>receita</strong>: quando as versões novas chegam, como os pacotes são feitos, o que vem ligado de fábrica e quem decide. Esta aula compara o Arch com as três distribuições que você mais vai encontrar, para você saber traduzir um tutorial de uma para outra e escolher com consciência.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As diferenças de ciclo, pacotes, instalador e padrões entre Arch, Debian, Fedora e Ubuntu.</li>
+  <li>Traduzir comandos de pacotes entre <code>pacman</code>, <code>apt</code> e <code>dnf</code>.</li>
+  <li>O que acontece "depois do install" em cada uma (serviços, firewall, MAC).</li>
+  <li>O que Manjaro, EndeavourOS e CachyOS mudam em relação ao Arch.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como o Arch se descreve</h2>
+<p>O próprio sistema conta quem ele é no arquivo <code>/etc/os-release</code>, que existe em todas as distribuições com systemd:</p>
+
+<pre class="term">$ cat /etc/os-release
+NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch                                     « o "código" da distribuição (debian, fedora, ubuntu…)
+BUILD_ID=rolling                            « não há número de versão: é rolling release
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo</pre>
+
+<p>Repare na falta de <code>VERSION_ID</code>: no Debian você veria <code>VERSION_ID="13"</code>; no Ubuntu, algo como <code>VERSION_ID="26.04"</code>. O Arch não tem versões, só o estado de hoje. Scripts usam o <code>ID=</code> para saber em que distribuição estão.</p>
+
+<div class="try" data-goal="ran:os-release" data-solucao="cat /etc/os-release">
+<p class="try-task"><strong>Missão:</strong> descubra qual é o <code>ID</code> desta distribuição lendo o arquivo que a descreve.</p>
+</div>
+
+<hr>
+
+<h2>A grande tabela</h2>
+<p>Situação em outubro de 2026. Números de versão mudam; a filosofia de cada projeto, quase nunca.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Arch</th><th>Debian</th><th>Fedora</th><th>Ubuntu</th></tr>
+<tr><td><strong>Ciclo</strong></td><td><a href="rolling-release.html">Rolling release</a>: atualiza continuamente; ISO nova todo mês</td><td>Versão estável a cada ~2 anos (Debian 13 "trixie", 2025), suporte de ~5 anos com o LTS</td><td>Versão nova a cada ~6 meses, cada uma suportada ~13 meses</td><td>Versão a cada 6 meses; LTS a cada 2 anos (abril dos anos pares) com 5 anos de suporte padrão</td></tr>
+<tr><td><strong>Versões dos programas</strong></td><td>As mais novas, dias depois do lançamento</td><td>Congeladas na versão estável (só correções)</td><td>Novas, mas congeladas durante a vida de cada versão</td><td>Congeladas por versão; LTS fica bem para trás</td></tr>
+<tr><td><strong>Formato / ferramenta</strong></td><td><code>.pkg.tar.zst</code> / <code>pacman</code></td><td><code>.deb</code> / <code>apt</code> (+ <code>dpkg</code>)</td><td><code>.rpm</code> / <code>dnf</code> (+ <code>rpm</code>)</td><td><code>.deb</code> / <code>apt</code> + <strong>Snap</strong> (alguns apps, como o Firefox, vêm em Snap)</td></tr>
+<tr><td><strong>Receita do pacote</strong></td><td><a href="pkgbuild.html">PKGBUILD</a> (script Bash curto)</td><td>Pasta <code>debian/</code> (vários arquivos)</td><td>Arquivo <code>.spec</code></td><td>Como o Debian</td></tr>
+<tr><td><strong>Repositório da comunidade</strong></td><td><a href="aur.html">AUR</a> (receitas, você compila)</td><td>—</td><td>COPR</td><td>PPA</td></tr>
+<tr><td><strong>Instalador</strong></td><td>Manual (<a href="pacstrap.html">pacstrap</a> e companhia) ou <a href="archinstall.html">archinstall</a> (texto)</td><td>debian-installer (texto ou gráfico); Calamares nas ISOs live</td><td>Anaconda (gráfico)</td><td>Instalador gráfico próprio</td></tr>
+<tr><td><strong>Init</strong></td><td>systemd</td><td>systemd</td><td>systemd</td><td>systemd</td></tr>
+<tr><td><strong>Desktop de fábrica</strong></td><td>Nenhum (você escolhe e instala)</td><td>Você escolhe no instalador (GNOME por padrão)</td><td>GNOME (Workstation) ou KDE (edição KDE)</td><td>GNOME (versão da Canonical)</td></tr>
+<tr><td><strong>Serviço instalado…</strong></td><td>Fica <strong>desligado</strong> até você dar <code>systemctl enable</code></td><td>Liga sozinho</td><td>Geralmente fica desligado</td><td>Liga sozinho</td></tr>
+<tr><td><strong>Firewall</strong></td><td>Nenhum ativo</td><td>Nenhum ativo</td><td><code>firewalld</code> ativo</td><td><code>ufw</code> instalado, inativo</td></tr>
+<tr><td><strong>MAC</strong></td><td>Nenhum ativo (AppArmor opcional)</td><td>AppArmor ativo</td><td>SELinux ativo (<em>enforcing</em>)</td><td>AppArmor ativo</td></tr>
+<tr><td><strong>Admin</strong></td><td><code>sudo</code> instalado à parte; grupo <code>wheel</code></td><td><code>root</code> com senha (ou <code>sudo</code>, se deixar a senha de root vazia)</td><td><code>sudo</code>, grupo <code>wheel</code></td><td><code>sudo</code>, grupo <code>sudo</code>; root sem senha</td></tr>
+<tr><td><strong>Sistema de arquivos padrão</strong></td><td>Você escolhe (ext4, Btrfs, XFS…)</td><td>ext4</td><td>Btrfs</td><td>ext4</td></tr>
+<tr><td><strong>Documentação</strong></td><td><a href="arch-wiki.html">Arch Wiki</a> (útil para qualquer distro)</td><td>Debian Wiki, manual de administração, <code>/usr/share/doc</code></td><td>docs.fedoraproject.org</td><td>Documentação da Canonical, Ask Ubuntu</td></tr>
+<tr><td><strong>Quem faz</strong></td><td>Comunidade de voluntários</td><td>Comunidade de voluntários (contrato social)</td><td>Comunidade patrocinada pela Red Hat</td><td>Canonical (empresa)</td></tr>
+<tr><td><strong>Comunidade</strong></td><td>Fóruns (bbs), IRC/Matrix; espera que você leia a Wiki antes</td><td>Listas de e-mail, fóruns</td><td>Fóruns (Discourse), Matrix</td><td>Ask Ubuntu, fóruns; a maior base de tutoriais</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>A diferença que mais morde quem vem do Debian/Ubuntu</strong>
+<p>No Arch, <code>pacman -S nginx</code> instala e <strong>não liga</strong>. Você viu isso na prática em <a href="servidor-web.html">Servidor Web</a>: o nginx fica <code>inactive (dead)</code>, <code>disabled; preset: disabled</code> até o <code>systemctl enable --now</code>. Tutoriais de Ubuntu pulam esse passo porque lá o serviço já sobe na instalação. Na VM do guia, só 8 unidades estão habilitadas, quase todas por decisão explícita na instalação:</p>
+</div>
+
+<pre class="term">$ systemctl list-unit-files --state=enabled --no-legend
+getty@.service                     enabled enabled
+NetworkManager-dispatcher.service  enabled disabled
+NetworkManager-wait-online.service enabled disabled
+NetworkManager.service             enabled disabled
+sshd.service                       enabled disabled
+systemd-userdbd.socket             enabled enabled
+remote-fs.target                   enabled enabled
+snapper-timeline.timer             enabled disabled</pre>
+
+<p>A terceira coluna é o <em>preset</em>, a política da distribuição: no Arch quase tudo é <code>disabled</code>, e quem ligou foi o administrador (a segunda coluna).</p>
+
+<h3>Pacotes: poucos, e só os que você pediu</h3>
+<pre class="term">$ pacman -Q | wc -l
+408                                         « pacotes instalados ao todo
+$ pacman -Qe | wc -l
+45                                          « instalados explicitamente (o resto são dependências)
+$ pacman-conf --repo-list
+core
+extra
+$ pacman -Sl core | wc -l
+299
+$ pacman -Sl extra | wc -l
+15031</pre>
+
+<p>São 408 pacotes nesta VM sem interface gráfica, com tudo o que as aulas usam. Os repositórios oficiais ativos são só dois: <code>core</code> (o básico) e <code>extra</code> (todo o resto, cerca de 15 mil pacotes). O <code>multilib</code> (programas de 32 bits, como o Steam) existe mas vem desligado no <code>/etc/pacman.conf</code>. Uma instalação mínima do Debian já passa de 300 pacotes; uma do Ubuntu Desktop passa de 1.500.</p>
+
+<hr>
+
+<h2>Pedra de Roseta: pacman × apt × dnf</h2>
+<p>A pedra de Roseta tinha o mesmo texto em três escritas, e foi assim que os hieróglifos foram decifrados. Esta tabela faz o mesmo com os gerenciadores de pacotes. A versão completa, com <code>zypper</code> (openSUSE) e todas as flags do pacman, está em <a href="ref-pacman.html">pacman × apt × dnf</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Arch (pacman)</th><th>Debian/Ubuntu (apt)</th><th>Fedora (dnf)</th></tr>
+<tr><td>Atualizar tudo</td><td><code>pacman -Syu</code></td><td><code>apt update &amp;&amp; apt upgrade</code></td><td><code>dnf upgrade</code></td></tr>
+<tr><td>Instalar</td><td><code>pacman -S pacote</code></td><td><code>apt install pacote</code></td><td><code>dnf install pacote</code></td></tr>
+<tr><td>Remover com dependências e configs</td><td><code>pacman -Rns pacote</code></td><td><code>apt purge pacote &amp;&amp; apt autoremove</code></td><td><code>dnf remove pacote</code></td></tr>
+<tr><td>Procurar nos repositórios</td><td><code>pacman -Ss texto</code></td><td><code>apt search texto</code></td><td><code>dnf search texto</code></td></tr>
+<tr><td>Informações de um pacote</td><td><code>pacman -Si</code> / <code>-Qi pacote</code></td><td><code>apt show pacote</code></td><td><code>dnf info pacote</code></td></tr>
+<tr><td>Arquivos de um pacote instalado</td><td><code>pacman -Ql pacote</code></td><td><code>dpkg -L pacote</code></td><td><code>rpm -ql pacote</code></td></tr>
+<tr><td>A qual pacote pertence um arquivo</td><td><code>pacman -Qo /caminho</code></td><td><code>dpkg -S /caminho</code></td><td><code>rpm -qf /caminho</code></td></tr>
+<tr><td>Que pacote fornece um arquivo (não instalado)</td><td><code>pacman -F arquivo</code></td><td><code>apt-file search arquivo</code></td><td><code>dnf provides arquivo</code></td></tr>
+<tr><td>Listar órfãos</td><td><code>pacman -Qdt</code></td><td><code>apt autoremove --dry-run</code></td><td><code>dnf autoremove</code> (pergunta antes)</td></tr>
+<tr><td>Limpar o cache</td><td><code>paccache -r</code> / <code>pacman -Sc</code></td><td><code>apt clean</code></td><td><code>dnf clean all</code></td></tr>
+<tr><td>Instalar um arquivo local</td><td><code>pacman -U arq.pkg.tar.zst</code></td><td><code>apt install ./arq.deb</code></td><td><code>dnf install ./arq.rpm</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>A armadilha da tradução literal</strong>
+<p><code>apt update</code> é seguro sozinho, mas o equivalente no Arch, <code>pacman -Sy</code>, <strong>não é</strong>: atualizar a lista e depois instalar um pacote sem atualizar o resto (<code>pacman -Sy pacote</code>) cria uma atualização parcial, que o Arch não suporta. No Arch, o <code>-y</code> anda sempre com o <code>-u</code>: <code>pacman -Syu</code>. Veja <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<h3>Outros nomes que mudam</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coisa</th><th>Arch</th><th>Debian/Ubuntu</th><th>Fedora</th></tr>
+<tr><td>Grupo de administradores</td><td><code>wheel</code></td><td><code>sudo</code></td><td><code>wheel</code></td></tr>
+<tr><td>Usuário do servidor web</td><td><code>http</code></td><td><code>www-data</code></td><td><code>nginx</code> / <code>apache</code></td></tr>
+<tr><td>Serviço do SSH</td><td><code>sshd</code></td><td><code>ssh</code></td><td><code>sshd</code></td></tr>
+<tr><td>Apache</td><td>pacote <code>apache</code>, serviço <code>httpd</code></td><td><code>apache2</code></td><td><code>httpd</code></td></tr>
+<tr><td>Headers do kernel</td><td><code>linux-headers</code></td><td><code>linux-headers-$(uname -r)</code></td><td><code>kernel-devel</code></td></tr>
+<tr><td>Ferramentas de compilação</td><td><code>base-devel</code></td><td><code>build-essential</code></td><td><code>@development-tools</code></td></tr>
+<tr><td>Gerar initramfs</td><td><a href="mkinitcpio.html"><code>mkinitcpio -P</code></a></td><td><code>update-initramfs -u</code></td><td><code>dracut -f</code></td></tr>
+<tr><td>Atualizar o GRUB</td><td><code>grub-mkconfig -o /boot/grub/grub.cfg</code></td><td><code>update-grub</code></td><td><code>grub2-mkconfig -o …</code></td></tr>
+<tr><td>Arquivo de config novo do pacote</td><td><a href="pacnew.html"><code>.pacnew</code></a></td><td><code>.dpkg-dist</code> (pergunta na hora)</td><td><code>.rpmnew</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Derivadas do Arch: o que muda</h2>
+<p>Várias distribuições usam o Arch como base e mudam algumas peças. Elas usam <code>pacman</code> e quase todo este guia vale para elas, mas os fóruns do Arch <strong>não</strong> dão suporte a derivadas: lá, pergunte só sobre o Arch.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Manjaro</th><th>EndeavourOS</th><th>CachyOS</th></tr>
+<tr><td>Repositórios</td><td><strong>Próprios</strong>: os pacotes do Arch passam por ramos <code>unstable</code> → <code>testing</code> → <code>stable</code>, chegando com algumas semanas de atraso</td><td>Os <strong>do Arch</strong>, direto, mais um repositório pequeno próprio</td><td>Os do Arch <strong>mais</strong> repositórios próprios com pacotes recompilados para processadores mais novos (x86-64-v3/v4)</td></tr>
+<tr><td>Instalador</td><td>Calamares (gráfico)</td><td>Calamares (gráfico), com opção de instalar on-line</td><td>Instalador gráfico próprio (baseado no Calamares)</td></tr>
+<tr><td>Kernel</td><td>Vários, com ferramenta própria (<code>mhwd-kernel</code>)</td><td>O <code>linux</code> do Arch</td><td><code>linux-cachyos</code> (com ajustes de agendador e desempenho)</td></tr>
+<tr><td>Ferramentas extras</td><td><code>pamac</code> (loja gráfica com AUR), <code>mhwd</code> (drivers)</td><td><code>yay</code> pré-instalado, utilitários de boas-vindas</td><td>Utilitários próprios, ajustes de desempenho de fábrica</td></tr>
+<tr><td>Usa o AUR?</td><td>Pode, mas o atraso dos repositórios às vezes quebra pacotes do AUR (feitos para o Arch atual)</td><td>Sim, sem diferença do Arch</td><td>Sim</td></tr>
+<tr><td>Para quem</td><td>Quer o ecossistema do Arch com atualizações mais "testadas"</td><td>Quer o Arch puro, mas com instalador gráfico</td><td>Quer o Arch com o máximo de desempenho pronto</td></tr>
+</table>
+</div>
+
+<p>Conclusão prática: o EndeavourOS é "Arch com instalador"; o CachyOS é "Arch com otimizações"; o Manjaro é uma distribuição à parte que usa o pacman. Saber o Arch puro (o que este guia ensina) torna fácil usar qualquer uma delas.</p>
+
+<hr>
+
+<h2>Qual escolher?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Se você…</th><th>Considere</th></tr>
+<tr><td>Quer aprender como o Linux funciona por dentro e ter só o que escolheu</td><td>Arch (veja <a href="arch-e-para-voce.html">O Arch É para Você?</a>)</td></tr>
+<tr><td>Quer um servidor que não muda por anos</td><td>Debian estável (ou Ubuntu LTS)</td></tr>
+<tr><td>Quer novidades com segurança (SELinux, firewall) de fábrica e pouca configuração</td><td>Fedora</td></tr>
+<tr><td>Quer o máximo de tutoriais e suporte de fabricantes</td><td>Ubuntu</td></tr>
+<tr><td>Quer o Arch sem a instalação manual</td><td><a href="archinstall.html">archinstall</a> ou EndeavourOS</td></tr>
+<tr><td>Quer o Arch otimizado para jogos e desempenho</td><td>CachyOS</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Segui um tutorial de Ubuntu e o serviço não responde"</strong>
+<p><strong>O que aconteceu:</strong> o tutorial supõe que a instalação liga o serviço.</p>
+<p><strong>Como confirmar:</strong> <code>systemctl status SERVIÇO</code> mostra <code>inactive (dead)</code> e <code>disabled</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl enable --now SERVIÇO</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro: o pacote "build-essential" não foi encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o nome do pacote é de outra distribuição.</p>
+<p><strong>Como resolver:</strong> procure o equivalente (<code>pacman -Ss</code>, <code>pacman -F arquivo</code>) ou use a tabela "Outros nomes que mudam". Aqui: <code>base-devel</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"sudo: ana não está no arquivo sudoers" depois de "adicionar ao grupo sudo"</strong>
+<p><strong>O que aconteceu:</strong> no Arch o grupo é <code>wheel</code>, e o <code>sudo</code> nem vem instalado na <code>base</code>.</p>
+<p><strong>Como resolver:</strong> veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tradução</h3>
+<p>O tutorial diz <code>apt install htop</code>. No Arch:</p>
+<div class="ex-code">sudo pacman <input data-answer="-S" aria-label="opção"> htop</div>
+</div>
+
+<div class="exercise">
+<h3>2. De quem é este arquivo?</h3>
+<p>No Debian seria <code>dpkg -S /usr/bin/nginx</code>. No Arch:</p>
+<div class="ex-code">pacman <input data-answer="-Qo" aria-label="opção"> /usr/bin/nginx</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destas distribuições vem com SELinux ativo de fábrica?</p>
+<label><input type="radio" name="q3"> Arch</label>
+<label><input type="radio" name="q3"> Ubuntu</label>
+<label><input type="radio" name="q3"> Fedora</label>
+<label><input type="radio" name="q3"> Debian</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que o EndeavourOS muda em relação ao Arch?</p>
+<label><input type="radio" name="q4"> Usa repositórios próprios com semanas de atraso.</label>
+<label><input type="radio" name="q4"> Principalmente o instalador gráfico; os repositórios são os do Arch.</label>
+<label><input type="radio" name="q4"> Troca o pacman pelo apt.</label>
+<label><input type="radio" name="q4"> Não tem acesso ao AUR.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Por que <code>pacman -Sy pacote</code> não é a tradução de <code>apt update &amp;&amp; apt install pacote</code>?</p>
+<label><input type="radio" name="q5"> Porque o <code>-y</code> apaga o cache.</label>
+<label><input type="radio" name="q5"> Porque o pacman não tem lista de pacotes.</label>
+<label><input type="radio" name="q5"> Porque o <code>-S</code> remove pacotes.</label>
+<label><input type="radio" name="q5"> Porque cria uma atualização parcial, que o Arch não suporta.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Arch: rolling, mínimo, serviços desligados até você ligar, sem firewall nem MAC ativos.</li>
+  <li>Debian: estável e conservador; Fedora: novo e seguro de fábrica; Ubuntu: popular, com Snap.</li>
+  <li><code>pacman -Syu / -S / -Rns / -Ss / -Qo</code> ≈ <code>apt upgrade / install / purge / search</code> ≈ <code>dnf upgrade / install / remove / search</code>.</li>
+  <li>Nomes mudam: <code>wheel</code>, <code>http</code>, <code>base-devel</code>, <code>.pacnew</code>, <code>mkinitcpio</code>.</li>
+  <li>Manjaro tem repositórios próprios; EndeavourOS e CachyOS usam os do Arch (o CachyOS soma os seus otimizados).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Arch_compared_to_other_distributions">Arch compared to other distributions</a> faz esta comparação com muitas outras distribuições; a <a href="https://wiki.archlinux.org/title/Pacman/Rosetta">Pacman/Rosetta</a> é a pedra de Roseta completa de comandos (em pt-BR: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)/Rosetta_(Portugu%C3%AAs)">Pacman/Rosetta (Português)</a>); e <a href="https://wiki.archlinux.org/title/Arch_Linux">Arch Linux</a> explica os princípios (simplicidade, modernidade, pragmatismo, foco no usuário) que explicam as escolhas da tabela. Sobre derivadas: <a href="https://wiki.archlinux.org/title/Arch-based_distributions">Arch-based distributions</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
