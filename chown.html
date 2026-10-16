@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch chown, chgrp e umask — mudar dono e grupo, permissões de nascimento | Guia Arch</title>
+<meta name="description" content="chown, chgrp e umask no Arch Linux: ver e mudar o dono e o grupo de arquivos (dono:grupo, dono:, :grupo, -R, -v, -c), por que só o root muda o dono, o arquivo que 'virou do root', pasta compartilhada com setgid, e o umask 022 do Arch (pam_umask + login.defs), com saídas reais e missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">chown, chgrp e umask</span></h1>
+
+<p class="intro">Todo arquivo tem um <strong>dono</strong> e um <strong>grupo</strong>. As permissões que você mudou com o <a href="chmod.html">chmod</a> dizem o que cada um pode fazer; o <code>chown</code> (<em>change owner</em>, "mudar o dono") e o <code>chgrp</code> (<em>change group</em>, "mudar o grupo") decidem <strong>quem</strong> eles são. E o <code>umask</code> decide com que permissões os arquivos novos já <strong>nascem</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A ver o dono e o grupo de um arquivo (<code>ls -l</code>, <code>stat</code>).</li>
+  <li>As formas do <code>chown</code> (<code>dono</code>, <code>dono:grupo</code>, <code>dono:</code>, <code>:grupo</code>), com <code>-R</code>, <code>-v</code> e <code>-c</code>, e por que só o root muda o dono.</li>
+  <li>A consertar o caso mais comum: um arquivo da sua pasta que "virou do root".</li>
+  <li>A usar o <code>chgrp</code> sem <code>sudo</code> e a montar uma pasta compartilhada com setgid.</li>
+  <li>O <code>umask</code>: a conta, como mudar e de onde vem o <code>022</code> do Arch (não é do <code>/etc/profile</code>).</li>
+</ul>
+</div>
+
+<p>Os exemplos foram feitos na VM do guia, um Arch real, numa pasta de teste (<code>/tmp/b4/dono</code>) e com um usuário de teste, o <code>teste-b4</code>, apagados no fim. O conceito de dono, grupo e outros está em <a href="permissoes.html">Entendendo Permissões</a>; criar usuários e grupos, em <a href="usuarios.html">Usuários e Grupos</a>.</p>
+
+<hr>
+
+<h2>Ver o dono e o grupo</h2>
+<p>No <code>ls -l</code>, o dono é a <strong>3ª coluna</strong> e o grupo é a <strong>4ª</strong>:</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ ls -l relatorio.txt /etc/hostname /etc/shadow /usr/bin/sudo
+-rw-r--r-- 1 root root      9 16 out 12:10 /etc/hostname     « dono root, grupo root
+-rw------- 1 root root    771 16 out 14:59 /etc/shadow
+-rw-r--r-- 1 ana  ana       0 16 out 15:02 relatorio.txt     « dono ana, grupo ana
+-rwsr-xr-x 1 root root 261304 16 jun 06:31 /usr/bin/sudo</pre>
+
+<dl class="anatomy">
+  <dt>-rw-r--r--</dt><dd>Permissões: o que o dono, o grupo e os outros podem fazer.</dd>
+  <dt>ana</dt><dd>3ª coluna: o <strong>dono</strong>. Quem cria o arquivo vira o dono.</dd>
+  <dt>ana</dt><dd>4ª coluna: o <strong>grupo</strong>. O arquivo nasce com o grupo principal de quem o criou; no Arch, cada usuário tem um grupo com o próprio nome (o "grupo particular").</dd>
+</dl>
+
+<p>O <code>stat</code> mostra só o que você pedir: <code>%U</code> = dono (<em>user</em>), <code>%G</code> = grupo, <code>%n</code> = nome.</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ stat -c "%U %G %n" relatorio.txt
+ana ana relatorio.txt</pre>
+
+<div class="try" data-goal="ran:ls +-l,outre:root +root .*/etc/hostname" data-solucao="ls -l /etc/hostname frutas.txt">
+<p class="try-task"><strong>Missão 1:</strong> use <code>ls -l</code> para descobrir o dono e o grupo de <code>/etc/hostname</code> e do seu <code>frutas.txt</code>, num comando só.</p>
+</div>
+
+<hr>
+
+<h2>chown: mudar o dono</h2>
+<p>Primeiro, a regra mais importante: <strong>só o root muda o dono</strong> de um arquivo. Nem para dar um arquivo seu a outra pessoa a ana pode:</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ chown teste-b4 relatorio.txt
+chown: alterando o dono de 'relatorio.txt': Operação não permitida
+$ echo $?
+1</pre>
+
+<p>Parece exagero, mas é proteção. Se qualquer um pudesse "dar" arquivos aos outros, daria para esconder coisas na conta de outra pessoa, ou encher o espaço em disco dela. Com <code>sudo</code> (você está no grupo <code>wheel</code>), funciona, e em silêncio:</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda o comando como root (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</dd>
+  <dt>chown</dt><dd>O programa.</dd>
+  <dt>teste-b4</dt><dd>O <strong>novo dono</strong>: um nome de usuário (ou o número, o UID).</dd>
+  <dt>relatorio.txt</dt><dd>Um ou mais arquivos ou pastas.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ sudo chown teste-b4 relatorio.txt
+[sudo] senha para ana:
+$ ls -l relatorio.txt
+-rw-r--r-- 1 teste-b4 ana 0 16 out 15:02 relatorio.txt    « dono mudou; o grupo continua ana</pre>
+
+<div class="try" data-goal="errre:Operação não permitida" data-solucao="chown root frutas.txt">
+<p class="try-task"><strong>Missão 2:</strong> sem <code>sudo</code>, tente dar o seu <code>frutas.txt</code> ao <code>root</code> com <code>chown</code> e leia a mensagem. (Depois, pense: por que o sistema não deixa?)</p>
+</div>
+
+<h3>As formas do chown</h3>
+<p>Com dois-pontos, o <code>chown</code> muda o dono e o grupo de uma vez. A opção <code>-v</code> (<em>verbose</em>) faz ele contar o que fez, em português:</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ sudo chown -v ana relatorio.txt
+alterado o dono de 'relatorio.txt' de teste-b4 para ana
+$ sudo chown -v teste-b4:teste-b4 relatorio.txt
+alterado o dono de 'relatorio.txt' de ana:ana para teste-b4:teste-b4
+$ sudo chown -v ana: relatorio.txt
+alterado o dono de 'relatorio.txt' de teste-b4:teste-b4 para ana:ana       « "ana:" = grupo principal da ana
+$ sudo chown -v :wheel relatorio.txt
+alterado o dono de 'relatorio.txt' de ana:ana para :wheel                  « só o grupo
+$ sudo chown -v ana relatorio.txt
+dono de 'relatorio.txt' mantido como ana                                   « já era: nada mudou</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Muda</th><th>Exemplo</th></tr>
+<tr><td><code>chown dono arq</code></td><td>Só o dono</td><td><code>sudo chown teste-b4 a.txt</code></td></tr>
+<tr><td><code>chown dono:grupo arq</code></td><td>Dono e grupo</td><td><code>sudo chown ana:wheel a.txt</code></td></tr>
+<tr><td><code>chown dono: arq</code></td><td>Dono, e o grupo vira o grupo principal dele</td><td><code>sudo chown ana: a.txt</code></td></tr>
+<tr><td><code>chown :grupo arq</code></td><td>Só o grupo (igual ao <code>chgrp</code>)</td><td><code>chown :wheel a.txt</code></td></tr>
+<tr><td><code>chown --reference=outro arq</code></td><td>Copia dono e grupo de outro arquivo</td><td><code>sudo chown --reference=/etc/hostname a.txt</code></td></tr>
+</table>
+</div>
+
+<p>A <code>-c</code> (<em>changes</em>) é como a <code>-v</code>, mas só fala quando algo muda de verdade:</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ sudo chown -c ana:ana relatorio.txt
+alterado o dono de 'relatorio.txt' de ana:wheel para ana:ana
+$ sudo chown -c ana:ana relatorio.txt                                « de novo: silêncio
+$ sudo chown --reference=/etc/hostname relatorio.txt
+$ ls -l relatorio.txt
+-rw-r--r-- 1 root root 0 16 out 15:02 relatorio.txt               « ficou igual ao /etc/hostname
+$ sudo chown ana:ana relatorio.txt                                  « de volta</pre>
+
+<hr>
+
+<h2>O caso clássico: "meu arquivo virou do root"</h2>
+<p>É o problema de permissão mais comum de quem começa no Arch. Acontece assim: você usa <code>sudo</code> para copiar ou criar algo, e o resultado nasce com dono <strong>root</strong>, mesmo dentro da sua pasta.</p>
+
+<ol class="passo">
+<li>
+<p>A ana copia o <code>/etc/hosts</code> com <code>sudo</code> para a pasta dela:</p>
+<pre class="term" data-cwd="~/b4">$ sudo cp /etc/hosts ~/b4/hosts-copia
+$ ls -l ~/b4/hosts-copia
+-rw-r--r-- 1 root root 119 16 out 15:02 /home/ana/b4/hosts-copia      « dono root!</pre>
+</li>
+<li>
+<p>Ela não consegue editar a cópia: o arquivo está na pasta dela, mas pertence ao root, e só o dono tem o <code>w</code>.</p>
+<pre class="term" data-cwd="~/b4">$ echo "192.168.0.50 servidor" &gt;&gt; ~/b4/hosts-copia
+bash: /home/ana/b4/hosts-copia: Permissão negada</pre>
+</li>
+<li>
+<p>Ela devolve o arquivo para si mesma (dono e grupo):</p>
+<pre class="term" data-cwd="~/b4">$ sudo chown ana:ana ~/b4/hosts-copia
+$ ls -l ~/b4/hosts-copia
+-rw-r--r-- 1 ana ana 119 16 out 15:02 /home/ana/b4/hosts-copia        « agora é dela
+$ echo "192.168.0.50 servidor" &gt;&gt; ~/b4/hosts-copia
+$ tail -1 ~/b4/hosts-copia
+192.168.0.50 servidor</pre>
+</li>
+</ol>
+
+<div class="tip">
+<strong>Evite o problema: use sudo só no que precisa</strong>
+<p>Para <strong>ler</strong> um arquivo do sistema e guardar uma cópia sua, o <code>sudo</code> nem é necessário: o <code>/etc/hosts</code> é <code>rw-r--r--</code>, todos leem, e a cópia nasce sua.</p>
+<pre class="term" data-cwd="~/b4">$ cp /etc/hosts ~/b4/hosts-2
+$ ls -l ~/b4/hosts-2
+-rw-r--r-- 1 ana ana 119 16 out 15:02 /home/ana/b4/hosts-2</pre>
+<p>O mesmo vale para editores: <code>sudo nano ~/arquivo</code> pode deixar arquivos do root na sua pasta. Para editar arquivos do sistema, prefira <code>sudoedit /etc/arquivo</code> (veja <a href="editores.html">nano e vim</a>).</p>
+</div>
+
+<hr>
+
+<h2>Pastas inteiras: -R</h2>
+<p>Com <code>-R</code> (<em>recursive</em>), o <code>chown</code> muda a pasta e <strong>tudo</strong> o que está dentro. O exemplo típico do dia a dia: uma pasta criada com <code>sudo</code> na sua home, onde você não consegue mais criar nada:</p>
+
+<pre class="term" data-cwd="~/b4">$ sudo mkdir ~/b4/fotos
+$ sudo touch ~/b4/fotos/a.jpg ~/b4/fotos/b.jpg
+$ ls -l ~/b4/fotos
+total 0
+-rw-r--r-- 1 root root 0 16 out 15:02 a.jpg
+-rw-r--r-- 1 root root 0 16 out 15:02 b.jpg
+$ touch ~/b4/fotos/c.jpg
+touch: não foi possível tocar '/home/ana/b4/fotos/c.jpg': Permissão negada
+$ sudo chown -R ana:ana ~/b4/fotos
+$ ls -l ~/b4/fotos
+total 0
+-rw-r--r-- 1 ana ana 0 16 out 15:02 a.jpg
+-rw-r--r-- 1 ana ana 0 16 out 15:02 b.jpg</pre>
+
+<p>Com <code>-v</code>, ele lista cada arquivo; repare que a pasta em si é a última:</p>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ sudo chown -R -v teste-b4:teste-b4 site
+alterado o dono de 'site/index.html' de ana:ana para teste-b4:teste-b4
+alterado o dono de 'site/img/logo.png' de ana:ana para teste-b4:teste-b4
+alterado o dono de 'site/img' de ana:ana para teste-b4:teste-b4
+alterado o dono de 'site' de ana:ana para teste-b4:teste-b4
+$ ls -l site
+total 0
+drwxr-xr-x 2 teste-b4 teste-b4 60 16 out 15:02 img
+-rw-r--r-- 1 teste-b4 teste-b4  0 16 out 15:02 index.html</pre>
+
+<div class="warning">
+<strong>Cuidado com sudo chown -R</strong>
+<p>Um caminho errado muda o dono de arquivos do sistema, e o Arch para de funcionar: programas como o <code>sudo</code> e o <code>passwd</code> <strong>precisam</strong> pertencer ao root (o <code>s</code> deles só vale assim). Um espaço a mais, como em <code>sudo chown -R ana / home/ana</code>, vira "<code>/</code> e <code>home/ana</code>": o sistema inteiro. Confira o caminho antes do <kbd>Enter</kbd> e prefira caminhos completos (<code>~/fotos</code>, não <code>fotos</code>).</p>
+</div>
+
+<hr>
+
+<h2>chgrp: mudar só o grupo (sem sudo)</h2>
+<p>O <code>chgrp</code> muda só o grupo. Diferente do <code>chown</code>, um usuário comum pode usá-lo <strong>sem ser root</strong>, com duas condições: ser o <strong>dono</strong> do arquivo e <strong>participar</strong> do grupo de destino. A ana está nos grupos <code>ana</code> e <code>wheel</code>, mas não no <code>video</code>:</p>
+
+<dl class="anatomy">
+  <dt>chgrp</dt><dd>O programa (<em>change group</em>).</dd>
+  <dt>wheel</dt><dd>O novo grupo, por nome ou número (GID).</dd>
+  <dt>relatorio.txt</dt><dd>Um ou mais arquivos.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b4/dono">$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)
+$ chgrp wheel relatorio.txt
+$ ls -l relatorio.txt
+-rw-r--r-- 1 ana wheel 0 16 out 15:02 relatorio.txt                « funcionou
+$ chgrp video relatorio.txt
+chgrp: alterando o grupo de 'relatorio.txt': Operação não permitida   « a ana não está no video
+$ chgrp -v wheel relatorio.txt
+grupo de 'relatorio.txt' mantido como wheel
+$ chgrp -v ana relatorio.txt
+alterado o grupo de 'relatorio.txt' de wheel para ana</pre>
+
+<h3>Formas de mudar só o grupo: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>chgrp equipe arq</code></td><td>O comando específico: o mais claro. Funciona sem <code>sudo</code> se você é o dono e está no grupo.</td></tr>
+<tr><td><code>chown :equipe arq</code></td><td>Mesmo efeito, com o dois-pontos na frente (também sem <code>sudo</code>, nas mesmas condições).</td></tr>
+<tr><td><code>sudo chown dono:equipe arq</code></td><td>Quando também vai mudar o dono.</td></tr>
+<tr><td><code>sudo chgrp -R equipe pasta</code></td><td>Uma pasta inteira, ou arquivos de outros donos, ou grupos de que você não participa.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Projeto: pasta compartilhada com setgid</h2>
+<p>Quando várias pessoas precisam trabalhar na mesma pasta, a receita junta <code>chown</code>, <code>chmod</code> e um grupo. No dia a dia você criaria um grupo novo, como <code>equipe</code>, e colocaria as pessoas nele (veja <a href="usuarios.html">Usuários e Grupos</a>). Aqui usamos o <code>wheel</code>, de que a ana já participa:</p>
+
+<ol class="passo">
+<li><p>Crie a pasta e entregue-a ao grupo:</p>
+<pre class="term" data-cwd="/tmp/b4">$ sudo mkdir equipe
+$ sudo chown root:wheel equipe</pre></li>
+<li><p>Dê permissão total ao grupo e ligue o <strong>setgid</strong> (o <code>2</code> na frente; veja <a href="chmod.html#especiais">chmod</a>). Com ele, tudo o que for criado ali dentro <strong>herda o grupo da pasta</strong>, em vez do grupo particular de quem criou:</p>
+<pre class="term" data-cwd="/tmp/b4">$ sudo chmod 2775 equipe
+$ ls -ld equipe
+drwxrwsr-x 2 root wheel 40 16 out 15:03 equipe         « o "s" no grupo é o setgid</pre></li>
+<li><p>A ana cria um arquivo e uma pasta lá dentro:</p>
+<pre class="term" data-cwd="/tmp/b4">$ touch equipe/plano.txt
+$ ls -l equipe/plano.txt
+-rw-r--r-- 1 ana wheel 0 16 out 15:03 equipe/plano.txt     « grupo wheel, herdado da pasta
+$ mkdir equipe/docs
+$ ls -ld equipe/docs
+drwxr-sr-x 2 ana wheel 40 16 out 15:03 equipe/docs         « subpastas herdam até o setgid</pre></li>
+</ol>
+
+<div class="note">
+<strong>O detalhe do Arch: o grupo só lê</strong>
+<p>Repare no <code>plano.txt</code>: <code>rw-r--r--</code>. O grupo <strong>lê</strong>, mas não <strong>edita</strong>. É o <code>umask 022</code> do Arch (próxima seção) tirando o <code>w</code> do grupo. No Debian e no Ubuntu o umask dos usuários é <code>002</code> e o arquivo já nasceria editável pelo grupo. No Arch, numa pasta de equipe, use <code>umask 002</code> na sessão de trabalho ou dê <code>chmod g+w</code> nos arquivos.</p>
+</div>
+
+<hr>
+
+<h2>umask: as permissões de quem acabou de nascer</h2>
+<p>Por que todo arquivo novo nasce <code>rw-r--r--</code> (644) e toda pasta nova <code>rwxr-xr-x</code> (755)? Quem decide é o <strong>umask</strong> (<em>user file-creation mask</em>, "máscara de criação de arquivos"). Ele não <strong>dá</strong> permissões: ele diz quais <strong>tirar</strong> do máximo.</p>
+
+<pre class="term" data-cwd="/tmp/b4">$ umask
+0022                          « o padrão do Arch, para todos os usuários
+$ umask -S
+u=rwx,g=rx,o=rx               « o mesmo em letras: o que SOBRA permitido
+$ touch nasce.txt; mkdir nasce-pasta
+$ ls -ld nasce.txt nasce-pasta
+drwxr-xr-x 2 ana ana 40 16 out 15:03 nasce-pasta
+-rw-r--r-- 1 ana ana  0 16 out 15:03 nasce.txt</pre>
+
+<h3>A conta</h3>
+<ul>
+  <li>O máximo para <strong>arquivos</strong> é <code>666</code> (<code>rw-rw-rw-</code>): arquivos nunca nascem executáveis (por isso o <code>chmod +x</code> nos scripts).</li>
+  <li>O máximo para <strong>pastas</strong> é <code>777</code> (<code>rwxrwxrwx</code>).</li>
+  <li>O umask tira os bits dele desse máximo. <code>022</code> = tirar o <code>w</code> (2) do grupo e dos outros.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>umask</th><th>Arquivo novo</th><th>Pasta nova</th><th>Quando usar</th></tr>
+<tr><td><code>022</code></td><td><code>644</code> <code>rw-r--r--</code></td><td><code>755</code> <code>rwxr-xr-x</code></td><td>Padrão do Arch (usuários e root)</td></tr>
+<tr><td><code>002</code></td><td><code>664</code> <code>rw-rw-r--</code></td><td><code>775</code> <code>rwxrwxr-x</code></td><td>Trabalho em grupo; o padrão de usuários no Debian/Ubuntu</td></tr>
+<tr><td><code>027</code></td><td><code>640</code> <code>rw-r-----</code></td><td><code>750</code> <code>rwxr-x---</code></td><td>Mais privado: o grupo lê, os outros nada</td></tr>
+<tr><td><code>077</code></td><td><code>600</code> <code>rw-------</code></td><td><code>700</code> <code>rwx------</code></td><td>Máxima privacidade</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="/tmp/b4">$ umask 077                     « só nesta sessão do terminal
+$ touch secreto.txt; mkdir pasta-secreta
+$ ls -ld secreto.txt pasta-secreta
+drwx------ 2 ana ana 40 16 out 15:03 pasta-secreta
+-rw------- 1 ana ana  0 16 out 15:03 secreto.txt
+$ umask 027
+$ touch grupo.txt; mkdir pasta-grupo
+$ ls -ld grupo.txt pasta-grupo
+-rw-r----- 1 ana ana  0 16 out 15:03 grupo.txt
+drwxr-x--- 2 ana ana 40 16 out 15:03 pasta-grupo
+$ umask u=rwx,g=rx,o=           « também aceita letras (o que fica permitido)
+$ umask
+0027
+$ umask 022                     « de volta ao padrão</pre>
+
+<div class="note">
+<strong>O umask só vale para arquivos novos</strong>
+<p>Mudar o umask não mexe em nada que já existe; para isso é o <a href="chmod.html">chmod</a>. E ele só vale para o terminal em que você o digitou: feche e abra outro, e ele volta a <code>022</code>.</p>
+</div>
+
+<div class="try" data-goal="file:~/secreto.txt,outre:^-rw------- .*secreto\.txt" data-solucao="umask 077;;touch secreto.txt;;ls -l secreto.txt">
+<p class="try-task"><strong>Missão 3:</strong> mude o umask para que os arquivos novos nasçam só para você (<code>rw-------</code>), crie o arquivo <code>secreto.txt</code> com <code>touch</code> e confira com <code>ls -l secreto.txt</code>.</p>
+</div>
+
+<div class="try" data-goal="dir:~/projeto,outre:^drwxr-x--- .*projeto" data-solucao="umask 027;;mkdir projeto;;ls -ld projeto">
+<p class="try-task"><strong>Missão 4:</strong> escolha um umask para que uma pasta nova nasça <code>rwxr-x---</code> (o grupo entra, os outros não), crie a pasta <code>projeto</code> e confira com <code>ls -ld projeto</code>.</p>
+</div>
+
+<h3>De onde vem o 022 no Arch</h3>
+<p>Em muitos guias (e em distros antigas) o umask é definido no <code>/etc/profile</code>. No Arch atual, não: não há nenhuma linha <code>umask</code> nos arquivos de inicialização do shell. Quem aplica o valor é o <strong>PAM</strong> (o sistema que cuida do login), com o módulo <code>pam_umask</code>, que lê o <code>UMASK</code> do <code>/etc/login.defs</code>:</p>
+
+<pre class="term">$ grep -n umask /etc/profile /etc/bash.bashrc ~/.bashrc ~/.bash_profile
+$ echo $?
+1                                         « nenhum "umask" nos arquivos do shell
+$ grep -rn umask /etc/pam.d/
+/etc/pam.d/system-login:19:session    optional   pam_umask.so
+$ grep -n '^UMASK' /etc/login.defs
+82:UMASK		022
+$ pacman -Qo /etc/login.defs /etc/pam.d/system-login
+/etc/login.defs pertence a shadow 4.20.0.arch1-1
+/etc/pam.d/system-login pertence a pambase 20260616-1</pre>
+
+<p>Todo login passa pelo <code>system-login</code> (o do console, o do SSH e o da tela gráfica), então todo mundo, inclusive o root, começa com <code>022</code>. Conferimos na VM que é mesmo o <code>pam_umask</code> quem decide: o <code>pam_umask</code> também aceita um <code>umask=</code> no campo de comentário do usuário (o GECOS); com <code>sudo usermod -c "teste,,,,umask=077" teste-b4</code>, o <code>teste-b4</code> passou a entrar com <code>umask</code> <code>0077</code>; tirando o comentário, voltou a <code>0022</code>.</p>
+
+<div class="note">
+<strong>E o USERGROUPS_ENAB do login.defs?</strong>
+<p>O <code>/etc/login.defs</code> do Arch tem <code>USERGROUPS_ENAB yes</code>, e o comentário dele diz que isso transforma <code>022</code> em <code>002</code> para quem tem grupo particular. Na prática, no Arch de 2026 (pam 1.7.3), isso <strong>não</strong> acontece: o <code>pam_umask</code> só faz essa troca com a opção <code>usergroups</code>, que o <code>system-login</code> não usa. A ana, que tem o grupo particular <code>ana</code>, recebe <code>0022</code>.</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero mudar o umask…</th><th>Onde</th></tr>
+<tr><td>Só neste terminal</td><td><code>umask 077</code></td></tr>
+<tr><td>Para mim, sempre</td><td>Uma linha <code>umask 077</code> no fim do <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>)</td></tr>
+<tr><td>Para todos os usuários</td><td><code>UMASK</code> em <code>/etc/login.defs</code> (027 ou 077 deixam os arquivos novos fechados para os outros). Vale a partir do próximo login.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Operação não permitida" no chown</strong>
+<pre class="term" data-cwd="~/b4">$ chown teste-b4 ~/b4
+chown: alterando o dono de '/home/ana/b4': Operação não permitida
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> usuário comum não muda o dono de nada, nem dos próprios arquivos.</p>
+<p><strong>Como resolver:</strong> <code>sudo chown …</code>. Se você não está no <code>wheel</code>, peça a quem administra a máquina (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida" no chgrp</strong>
+<pre class="term" data-cwd="/tmp/b4/dono">$ chgrp video relatorio.txt
+chgrp: alterando o grupo de 'relatorio.txt': Operação não permitida</pre>
+<p><strong>O que aconteceu:</strong> você não participa do grupo de destino (ou não é o dono do arquivo).</p>
+<p><strong>Como confirmar:</strong> <code>id</code> lista os seus grupos; <code>ls -l</code>, o dono.</p>
+<p><strong>Como resolver:</strong> <code>sudo chgrp video relatorio.txt</code>, ou entre no grupo (<a href="usuarios.html">Usuários e Grupos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"usuário inválido" ou "grupo inválido"</strong>
+<pre class="term" data-cwd="/tmp/b4/dono">$ sudo chown jaoo relatorio.txt
+chown: usuário inválido: “jaoo”
+$ sudo chown ana:equpe relatorio.txt
+chown: grupo inválido: “ana:equpe”</pre>
+<p><strong>O que aconteceu:</strong> o usuário ou o grupo não existe; quase sempre, erro de digitação.</p>
+<p><strong>Como confirmar:</strong> <code>getent passwd nome</code> e <code>getent group nome</code> (não mostram nada e devolvem código 2 quando não existe).</p>
+<pre class="term">$ getent group wheel
+wheel:x:998:ana
+$ getent group equipe; echo $?
+2</pre>
+</div>
+
+<div class="cenario">
+<strong>Entrei no grupo, mas o acesso continua negado</strong>
+<pre class="term" data-cwd="/tmp/b4">$ ls -ld fechada
+drwxrws--- 2 root teste-b4 40 16 out 15:03 fechada
+$ touch fechada/plano.txt
+touch: não foi possível tocar 'fechada/plano.txt': Permissão negada
+$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)        « o grupo novo não aparece</pre>
+<p><strong>O que aconteceu:</strong> a pasta é do grupo <code>teste-b4</code> e a ana não está nele. Se alguém acabou de colocá-la no grupo (<code>sudo usermod -aG grupo ana</code>), o grupo novo só vale nas sessões abertas <strong>depois</strong>: o terminal antigo continua com a lista velha, como mostra o <code>id</code>.</p>
+<p><strong>Como resolver:</strong> saia da sessão e entre de novo (ou reconecte o SSH). Para testar na hora, <code>newgrp grupo</code> abre um shell já com o grupo novo.</p>
+</div>
+
+<div class="cenario">
+<strong>"umask: número octal fora dos limites"</strong>
+<pre class="term">$ umask 999
+bash: umask: 999: número octal fora dos limites</pre>
+<p><strong>O que aconteceu:</strong> como no <code>chmod</code>, cada dígito vai de 0 a 7.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>ls -l arq</code> · <code>stat -c "%U %G %n" arq</code></td><td>Ver dono e grupo</td></tr>
+<tr><td><code>sudo chown dono arq</code></td><td>Muda o dono (só root)</td></tr>
+<tr><td><code>sudo chown dono:grupo arq</code> · <code>dono:</code></td><td>Muda dono e grupo · grupo principal do dono</td></tr>
+<tr><td><code>sudo chown -R ana:ana pasta</code></td><td>A pasta inteira</td></tr>
+<tr><td><code>chown -v</code> · <code>-c</code></td><td>Conta cada mudança · só as mudanças reais</td></tr>
+<tr><td><code>chown --reference=a b</code></td><td>Copia dono e grupo de outro arquivo</td></tr>
+<tr><td><code>chgrp grupo arq</code> · <code>chown :grupo arq</code></td><td>Muda só o grupo (dono do arquivo e membro do grupo: sem sudo)</td></tr>
+<tr><td><code>umask</code> · <code>umask -S</code></td><td>Mostra a máscara em número · em letras</td></tr>
+<tr><td><code>umask 077</code></td><td>Arquivos novos só para você (nesta sessão)</td></tr>
+<tr><td><code>/etc/login.defs</code> (<code>UMASK</code>) + <code>pam_umask</code></td><td>O umask de todos os logins no Arch</td></tr>
+<tr><td><code>getent passwd nome</code> · <code>getent group nome</code></td><td>Confere se o usuário/grupo existe</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Dono e grupo de uma vez</h3>
+<p>Devolva <code>notas.txt</code> à ana, dono e grupo:</p>
+<div class="ex-code">sudo chown <input data-answer="ana:ana|ana:" aria-label="dono:grupo"> notas.txt</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pasta inteira</h3>
+<p>Complete para mudar o dono de <code>~/fotos</code> e de tudo dentro dela:</p>
+<div class="ex-code">sudo chown <input data-answer="-R" aria-label="opção"> ana:ana ~/fotos</div>
+</div>
+
+<div class="exercise">
+<h3>3. A conta do umask</h3>
+<p>Com <code>umask 027</code>, com que permissão (octal) nasce um arquivo novo?</p>
+<div class="ex-code"><input data-answer="640|0640" aria-label="octal"></div>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A ana (fora do grupo <code>video</code>) roda <code>chgrp video nota.txt</code> num arquivo dela. O que acontece?</p>
+<label><input type="radio" name="q4"> <code>chgrp: alterando o grupo de 'nota.txt': Operação não permitida</code></label>
+<label><input type="radio" name="q4"> Funciona, porque ela é a dona do arquivo.</label>
+<label><input type="radio" name="q4"> <code>bash: chgrp: comando não encontrado</code></label>
+<label><input type="radio" name="q4"> O arquivo passa a pertencer ao root.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No Arch, de onde vem o <code>umask 022</code> do login?</p>
+<label><input type="radio" name="q5"> De uma linha <code>umask 022</code> no <code>/etc/profile</code>.</label>
+<label><input type="radio" name="q5"> Do <code>~/.bashrc</code>.</label>
+<label><input type="radio" name="q5"> Do módulo <code>pam_umask</code>, que lê o <code>UMASK</code> do <code>/etc/login.defs</code>.</label>
+<label><input type="radio" name="q5"> Do kernel; não dá para mudar.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Você usou <code>sudo cp</code> para pôr um arquivo na sua pasta e agora não consegue editá-lo. O que fazer?</p>
+<label><input type="radio" name="q6"> <code>chmod 777 arquivo</code>.</label>
+<label><input type="radio" name="q6"> <code>sudo chown ana:ana arquivo</code>.</label>
+<label><input type="radio" name="q6"> Editar sempre com <code>sudo</code> dali em diante.</label>
+<label><input type="radio" name="q6"> <code>chown ana arquivo</code>, sem sudo.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Dono é a 3ª coluna do <code>ls -l</code>; grupo, a 4ª.</li>
+  <li><code>chown</code> muda o dono e só funciona como root: <code>sudo chown dono:grupo arq</code>, <code>-R</code> para pastas.</li>
+  <li>Arquivo da sua pasta que "virou do root"? <code>sudo chown ana:ana arquivo</code>. E use <code>sudo</code> só no que precisa.</li>
+  <li><code>chgrp</code> muda só o grupo; o dono pode usá-lo, sem sudo, para grupos de que participa.</li>
+  <li>Pasta de equipe: dono <code>root:grupo</code> + <code>chmod 2775</code> (setgid).</li>
+  <li>O umask tira permissões dos arquivos novos: <code>022</code> no Arch (644 / 755), aplicado pelo <code>pam_umask</code> a partir do <code>/etc/login.defs</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <code>chown</code> e <code>chgrp</code> estão em <a href="https://wiki.archlinux.org/title/File_permissions_and_attributes#Changing_ownership">File permissions and attributes → Changing ownership</a> (<a href="https://wiki.archlinux.org/title/File_permissions_and_attributes_(Portugu%C3%AAs)">em português</a>); o umask tem página própria, <a href="https://wiki.archlinux.org/title/Umask">Umask</a>, que explica o <code>pam_umask</code> e o <code>login.defs</code>; e grupos, em <a href="https://wiki.archlinux.org/title/Users_and_groups">Users and groups</a> (<a href="https://wiki.archlinux.org/title/Users_and_groups_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
