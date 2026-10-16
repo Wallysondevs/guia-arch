@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch journalctl — ler, filtrar e limpar os logs do systemd | Guia Arch</title>
+<meta name="description" content="Os logs do Arch Linux com journalctl: -b, -b -1, -u, -p err, -f, -n, --since, -k, -o short-iso, quem pode ler (grupos wheel, adm e systemd-journal), --disk-usage, --vacuum-size, journald.conf e persistência, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Logs com <span class="hl">journalctl</span></h1>
+
+<p class="intro">Tudo o que acontece no sistema vira uma linha de <strong>log</strong> (registro): um login, um serviço que falhou, um pendrive conectado, um erro do driver de vídeo. No Arch, quem guarda essas linhas é o <code>systemd-journald</code>, num banco de dados chamado <strong>journal</strong> ("diário"). Você lê com o <code>journalctl</code>. Saber filtrar o journal é o que separa "deu um erro" de "já sei o que foi".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler o journal e o formato de cada linha.</li>
+  <li>Filtrar por boot (<code>-b</code>), serviço (<code>-u</code>), prioridade (<code>-p</code>), tempo (<code>--since</code>), kernel (<code>-k</code>) e texto (<code>-g</code>).</li>
+  <li>Acompanhar ao vivo com <code>-f</code> e escolher o formato com <code>-o</code>.</li>
+  <li>Quem pode ler os logs no Arch (e a mensagem "Hint" de quem não pode).</li>
+  <li>Ver o tamanho, limpar (<code>--vacuum-size</code>) e configurar o <code>journald.conf</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O journal no Arch</h2>
+<p>Em sistemas antigos, cada programa escrevia o seu arquivo de texto em <code>/var/log/</code> (<code>syslog</code>, <code>auth.log</code>, <code>messages</code>…). O Arch não instala um <em>syslog</em> por padrão: tudo vai para o journal, que é <strong>binário</strong> (não dá para ler com <code>cat</code>) e indexado (filtrar é rápido). Os arquivos ficam aqui:</p>
+
+<pre class="term">$ ls -la /var/log/journal/*/ | head -8
+total 57380
+drwxr-sr-x+ 2 root systemd-journal     4096 16 out 13:32 .
+drwxr-sr-x+ 3 root systemd-journal     4096 16 out 12:11 ..
+-rw-r-----+ 1 root systemd-journal  8388608 16 out 12:41 system@00065df727493845-e1d117b6ede35394.journal~
+-rw-r-----+ 1 root systemd-journal 16777216 16 out 13:35 system.journal          « mensagens do sistema
+-rw-r-----+ 1 root systemd-journal  8388608 16 out 13:35 user-1000.journal       « mensagens dos programas da ana (UID 1000)
+-rw-r-----+ 1 root systemd-journal  8388608 16 out 13:35 user-1001.journal
+-rw-r-----+ 1 root systemd-journal  8388608 16 out 13:35 user-1002.journal</pre>
+
+<p>O <code>~</code> no fim do primeiro arquivo marca um journal que foi fechado "sujo" (a VM foi desligada à força naquele boot; veja <a href="travamentos.html">Quando o Sistema Trava</a>). O <code>+</code> nas permissões indica uma <strong>ACL</strong>, permissões extras que você verá na seção "Quem pode ler".</p>
+
+<h3>Persistente: os logs sobrevivem ao reboot</h3>
+<p>O journal pode guardar os logs só na memória (<code>/run/log/journal</code>, somem ao desligar) ou no disco (<code>/var/log/journal</code>). No Arch, o padrão é <strong>no disco</strong>: o pacote <code>systemd</code> cria a pasta e a configuração padrão diz <code>persistent</code>:</p>
+
+<pre class="term">$ pacman -Qo /var/log/journal
+/var/log/journal/ pertence a systemd 262-1
+$ grep -n 'Storage' /etc/systemd/journald.conf
+20:#Storage=persistent         « comentado = é o valor padrão</pre>
+
+<hr>
+
+<h2>journalctl sem nada</h2>
+<p>Sem argumentos, o <code>journalctl</code> mostra <strong>tudo</strong>, do mais antigo ao mais novo, dentro do <code>less</code> (setas e <kbd>PgDn</kbd> rolam, <kbd>/</kbd> procura, <kbd>G</kbd> vai para o fim, <kbd>q</kbd> sai). As primeiras linhas são do primeiro boot da VM, com o kernel se apresentando:</p>
+
+<pre class="term">$ journalctl --no-pager | head -4
+out 16 12:11:49 archlinux kernel: Linux version 7.2.10-arch1-1 (linux@archlinux) (gcc (GCC) 16.2.1 20260810, GNU ld (GNU Binutils) 2.47) #1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026 06:58:10 +0000
+out 16 12:11:49 archlinux kernel: Command line: BOOT_IMAGE=/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet
+out 16 12:11:49 archlinux kernel: x86/CPU: Model not found in latest microcode list
+out 16 12:11:49 archlinux kernel: BIOS-provided physical RAM map:</pre>
+
+<h3>Anatomia de uma linha</h3>
+<p>Peguemos uma linha real do <code>sshd</code>:</p>
+<pre class="term">out 16 13:35:29 notebook sshd-session[87513]: Accepted publickey for ana from 10.0.2.2 port 58622 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls</pre>
+
+<dl class="anatomy">
+  <dt>out 16 13:35:29</dt><dd>Data e hora local (mês abreviado em português, dia, hora).</dd>
+  <dt>notebook</dt><dd>O nome da máquina. No começo do boot aparece <code>archlinux</code>: o nome ainda não tinha sido aplicado.</dd>
+  <dt>sshd-session[87513]</dt><dd>Quem escreveu: o programa e, entre colchetes, o PID dele.</dd>
+  <dt>Accepted publickey for ana …</dt><dd>A mensagem. Aqui: a ana entrou por SSH com uma chave.</dd>
+</dl>
+
+<p>Repare: as mensagens vêm no idioma de cada programa. O <code>systemd</code> e o <code>sshd</code> escrevem em inglês; o <code>pacman</code> e o <code>sudo</code> às vezes em português.</p>
+
+<hr>
+
+<h2>Os filtros do dia a dia</h2>
+
+<h3>-n: as últimas linhas</h3>
+<pre class="term">$ journalctl -n 5 --no-pager
+out 16 13:35:21 notebook systemd-logind[290]: Removed session 406.
+out 16 13:35:29 notebook sshd-session[87513]: Accepted publickey for ana from 10.0.2.2 port 58622 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+out 16 13:35:29 notebook sshd-session[87513]: pam_unix(sshd:session): session opened for user ana(uid=1000) by ana(uid=0)
+out 16 13:35:30 notebook systemd-logind[290]: New session '407' of user 'ana' with class 'user' and type 'tty'.
+out 16 13:35:30 notebook systemd[1]: Started Session 407 of User ana.</pre>
+
+<p><code>-n</code> (<em>number</em>) sem número = 10. <code>-e</code> (<em>end</em>) abre o <code>less</code> já no fim; <code>-r</code> (<em>reverse</em>) põe as mais novas primeiro.</p>
+
+<h3>-b: por boot</h3>
+<dl class="anatomy">
+  <dt>-b</dt><dd>Só o boot atual.</dd>
+  <dt>-b -1</dt><dd>O boot anterior (<code>-2</code> o de antes, e assim por diante). A lista sai com <code>journalctl --list-boots</code>.</dd>
+</dl>
+<pre class="term">$ journalctl -b --no-pager | head -2
+out 16 13:06:28 archlinux kernel: Linux version 7.2.10-arch1-1 (linux@archlinux) (gcc (GCC) 16.2.1 20260810, GNU ld (GNU Binutils) 2.47) #1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026 06:58:10 +0000
+out 16 13:06:28 archlinux kernel: Command line: BOOT_IMAGE=/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet
+$ journalctl -b -1 -u sshd -n 2 --no-pager
+out 16 13:06:09 notebook systemd[1]: sshd.service: Deactivated successfully.
+out 16 13:06:09 notebook systemd[1]: Stopped OpenSSH Daemon.        « o fim do sshd no boot anterior</pre>
+
+<h3>-u: por serviço</h3>
+<p><code>-u</code> (<em>unit</em>) mostra só as mensagens de uma unidade do systemd. É o filtro mais útil quando um serviço falha (veja <a href="systemd.html">systemctl e Serviços</a>):</p>
+<pre class="term">$ journalctl -u sshd -n 4 --no-pager
+out 16 13:35:20 notebook sshd-session[87407]: Accepted publickey for root from 10.0.2.2 port 53228 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+out 16 13:35:20 notebook sshd-session[87407]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+out 16 13:35:29 notebook sshd-session[87513]: Accepted publickey for ana from 10.0.2.2 port 58622 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+out 16 13:35:29 notebook sshd-session[87513]: pam_unix(sshd:session): session opened for user ana(uid=1000) by ana(uid=0)</pre>
+
+<p>Dá para repetir: <code>-u sshd -u nginx</code> mostra os dois, misturados na ordem do tempo. Para os serviços do seu usuário, <code>journalctl --user -u nome</code>.</p>
+
+<div class="try" data-goal="ran:journalctl.*-u *sshd" data-solucao="journalctl -u sshd -n 5">
+<p class="try-task"><strong>Missão:</strong> mostre só as mensagens do serviço <code>sshd</code> (se quiser, só as 5 últimas).</p>
+</div>
+
+<h3>-p: por prioridade</h3>
+<p>Cada mensagem tem uma <strong>prioridade</strong>, de 0 (o sistema vai cair) a 7 (detalhes para programadores). <code>-p</code> mostra a escolhida <strong>e todas as mais graves</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Nome</th><th>Quando aparece</th></tr>
+<tr><td>0</td><td><code>emerg</code></td><td>O sistema está inutilizável</td></tr>
+<tr><td>1</td><td><code>alert</code></td><td>Ação imediata necessária</td></tr>
+<tr><td>2</td><td><code>crit</code></td><td>Crítico (hardware falhando)</td></tr>
+<tr><td>3</td><td><code>err</code></td><td><strong>Erro</strong>: algo não funcionou</td></tr>
+<tr><td>4</td><td><code>warning</code></td><td>Aviso: funcionou, mas preste atenção</td></tr>
+<tr><td>5</td><td><code>notice</code></td><td>Normal, mas digno de nota</td></tr>
+<tr><td>6</td><td><code>info</code></td><td>Informação (a maioria)</td></tr>
+<tr><td>7</td><td><code>debug</code></td><td>Depuração</td></tr>
+</table>
+</div>
+
+<p>Os erros do boot atual da VM (trecho; a VM é usada por vários autores e tinha dezenas de linhas):</p>
+
+<pre class="term">$ journalctl -p err -b --no-pager
+out 16 13:06:28 archlinux kernel: virt/tdx: TDX not supported by the host platform
+out 16 13:06:28 archlinux kernel: ata1.00: Read log 0x00 page 0x00 failed, Emask 0x1
+out 16 13:06:28 archlinux kernel: vmwgfx 0000:00:02.0: [drm] *ERROR* vmwgfx seems to be running on an unsupported hypervisor.
+…
+out 16 13:21:48 notebook nginx[2126]: 2026/10/16 13:21:48 [emerg] 2126#2126: invalid parameter "server_name" in /etc/nginx/sites-enabled/meusite.conf:3
+out 16 13:21:48 notebook systemd[1]: Reload failed for nginx web server.
+…
+out 16 13:26:19 notebook sudo[15509]:      ana : 1 incorrect password attempt ; TTY=pts/0 ; PWD=/home/ana ; USER=root ; COMMAND=/usr/bin/pacman -Q bash
+…
+out 16 13:31:38 notebook systemd[2032]: Failed to start Teste que falha (a6).
+$ journalctl -p warning -b --no-pager | wc -l
+108</pre>
+
+<p>Como ler isso: as primeiras linhas são do kernel reclamando do hardware virtual (normais numa VM e inofensivas); depois aparecem coisas de verdade, como um erro de configuração do nginx (<code>invalid parameter "server_name" … meusite.conf:3</code>: arquivo e linha!), uma senha errada no <code>sudo</code> e a unidade de teste que falhou. <strong>Nem todo "erro" no log é problema</strong>: procure os que se repetem ou que coincidem com a hora do defeito. No terminal, <code>err</code> aparece em vermelho e <code>warning</code> em amarelo.</p>
+
+<div class="tip">
+<strong>Uma faixa de prioridades</strong>
+<p><code>-p warning..err</code> mostra só de 4 a 3, sem os críticos. Também vale o número: <code>-p 3</code> = <code>-p err</code>.</p>
+</div>
+
+<h3>-k: só o kernel</h3>
+<p><code>-k</code> (<em>kernel</em>) mostra as mensagens do kernel, como o antigo comando <code>dmesg</code>, mas com horário de verdade e de qualquer boot (<code>-k -b -1</code>). Use para problemas de hardware, discos, pendrives e drivers:</p>
+<pre class="term">$ journalctl -k -n 4 --no-pager
+out 16 13:32:03 notebook kernel: EXT4-fs (dm-0): unmounting filesystem 7be8e846-aa8b-4287-9b1b-91221d984fa2.
+out 16 13:34:07 notebook zram_generator::config[86670]: No configuration found.
+out 16 13:34:08 notebook zram_generator::config[86723]: No configuration found.
+out 16 13:34:39 notebook kernel: loop0: detected capacity change from 0 to 62914560</pre>
+
+<p>As linhas do <code>zram_generator</code> aparecem porque esse programa, que roda no começo do boot, escreve direto no canal de mensagens do kernel.</p>
+
+<h3>--since e --until: por tempo</h3>
+<dl class="anatomy">
+  <dt>--since</dt><dd>A partir de quando. Aceita <code>"2026-10-16 13:00"</code>, <code>"13:30"</code> (hoje), <code>today</code>, <code>yesterday</code>, <code>"10 min ago"</code>, <code>"-1h"</code>.</dd>
+  <dt>--until</dt><dd>Até quando. Mesmos formatos.</dd>
+</dl>
+<pre class="term">$ journalctl --since today -u NetworkManager --no-pager | head -3
+out 16 12:12:00 notebook systemd[1]: Starting Network Manager...
+out 16 12:12:01 notebook NetworkManager[285]: &lt;info&gt;  [1792163521.2466] NetworkManager (version 1.58.1-2) is starting... (boot:d89c67be-cb28-4e04-b530-80f044b99d6c)
+out 16 12:12:01 notebook NetworkManager[285]: &lt;info&gt;  [1792163521.2618] Read config: /etc/NetworkManager/NetworkManager.conf, /usr/lib/NetworkManager/conf.d/20-connectivity.conf
+$ journalctl --since '2026-10-16 13:00' --until '2026-10-16 13:05' --no-pager | tail -2
+out 16 13:04:54 notebook systemd-logind[292]: New session '4' of user 'ana' with class 'user' and type 'tty'.
+out 16 13:04:54 notebook systemd[1]: Started Session 4 of User ana.
+$ journalctl --since '10 min ago' --no-pager | wc -l
+2826                       « 10 minutos de uma VM com vários autores trabalhando</pre>
+
+<p>As palavras são em <strong>inglês</strong>, mesmo com o sistema em português:</p>
+<pre class="term">$ journalctl --since ontem
+Failed to parse timestamp: ontem</pre>
+
+<h3>-t e -g: por programa e por texto</h3>
+<p><code>-t</code> (<em>tag</em>, o identificador) filtra pelo nome que aparece antes do <code>[PID]</code>, mesmo quando não é um serviço (como o <code>sudo</code>). <code>-g</code> (<em>grep</em>) procura um texto (expressão regular) na mensagem:</p>
+<pre class="term">$ journalctl -t sudo -n 2 --no-pager
+out 16 13:33:40 notebook sudo[81448]: pam_unix(sudo:auth): conversation failed
+out 16 13:33:40 notebook sudo[81448]: pam_unix(sudo:auth): auth could not identify password for [teste-a1c]
+$ journalctl -g 'Failed to start' -n 2 --no-pager
+out 16 13:31:38 notebook systemd[2032]: Failed to start Teste que falha (a6).
+out 16 13:31:38 notebook systemd[2032]: Failed to start Teste que falha (a6).</pre>
+
+<h3>Combinar filtros</h3>
+<p>Os filtros se somam ("e"). Uma pergunta comum, "quais erros o NetworkManager deu desde o boot?", fica:</p>
+<pre class="term">$ journalctl -b -u NetworkManager -p err</pre>
+
+<div class="try" data-goal="ran:journalctl.*-p *(err|3)" data-solucao="journalctl -b -p err">
+<p class="try-task"><strong>Missão:</strong> mostre só as mensagens de <strong>erro</strong> (ou mais graves) do boot atual.</p>
+</div>
+
+<hr>
+
+<h2>Ao vivo: -f</h2>
+<p><code>-f</code> (<em>follow</em>, "seguir") mostra as últimas linhas e fica esperando as novas, como o <code>tail -f</code>. Saia com <kbd>Ctrl</kbd>+<kbd>C</kbd>. Ótimo para deixar aberto num terminal enquanto você reproduz o problema em outro.</p>
+
+<p>Na VM, o <code>-f</code> ficou escutando o identificador <code>guia</code> enquanto o comando <code>logger</code> (que escreve no journal) mandava duas mensagens, uma delas com prioridade de erro:</p>
+
+<pre class="term">$ journalctl -f -n 0 -t guia            « -n 0: não mostra o passado, só o que chegar
+out 16 13:36:05 notebook guia[87970]: Olá do Guia Arch
+out 16 13:36:05 notebook guia[87971]: Algo deu errado (teste)
+^C</pre>
+
+<p>As mensagens foram escritas, em outro terminal, com:</p>
+<pre class="term">$ logger -t guia "Olá do Guia Arch"
+$ logger -t guia -p user.err "Algo deu errado (teste)"
+$ journalctl -t guia -p err --no-pager
+out 16 13:36:05 notebook guia[87971]: Algo deu errado (teste)      « só a de erro passa pelo -p err</pre>
+
+<p>O <code>logger</code> é útil nos seus scripts: em vez de um arquivo de log seu, escreva no journal e leia com <code>journalctl -t meuscript</code>.</p>
+
+<hr>
+
+<h2>Formatos de saída: -o</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Como fica</th><th>Para quê</th></tr>
+<tr><td><code>short</code> (padrão)</td><td><code>out 16 13:31:18 notebook systemd[1]: …</code></td><td>Ler</td></tr>
+<tr><td><code>short-iso</code></td><td><code>2026-10-16T13:31:18-03:00 notebook systemd[1]: …</code></td><td>Data completa, com ano e fuso; boa para relatórios</td></tr>
+<tr><td><code>cat</code></td><td>Só a mensagem</td><td>Copiar textos, scripts</td></tr>
+<tr><td><code>verbose</code></td><td>Todos os campos guardados</td><td>Descobrir por qual campo filtrar</td></tr>
+<tr><td><code>json</code> / <code>json-pretty</code></td><td>JSON</td><td>Programas</td></tr>
+</table>
+</div>
+
+<pre class="term">$ journalctl -u nginx -n 3 --no-pager -o short-iso
+2026-10-16T13:31:18-03:00 notebook systemd[1]: Stopping nginx web server...
+2026-10-16T13:31:18-03:00 notebook systemd[1]: nginx.service: Deactivated successfully.
+2026-10-16T13:31:18-03:00 notebook systemd[1]: Stopped nginx web server.
+$ journalctl -n 2 -o cat --no-pager
+New session '407' of user 'ana' with class 'user' and type 'tty'.
+Started Session 407 of User ana.</pre>
+
+<p>O <code>verbose</code> revela que cada linha é, na verdade, um registro com dezenas de campos (trecho):</p>
+<pre class="term">$ journalctl -n 1 -o verbose --no-pager
+Fri 2026-10-16 13:35:30.248159 -03 [s=9c9cb37f0f2f42bcb985caee98813899;i=3b2a;b=86ee4580648946d2959176115208e7c0;m=67f70aad;t=65df7c09f8430;x=167f957e72dee2b3]
+    PRIORITY=6                          « info
+    SYSLOG_IDENTIFIER=systemd           « o que o -t filtra
+    _UID=0
+    _PID=1
+    _COMM=systemd
+    _EXE=/usr/lib/systemd/systemd
+    _SYSTEMD_UNIT=init.scope            « o que o -u filtra
+…
+    _HOSTNAME=notebook
+    _BOOT_ID=86ee4580648946d2959176115208e7c0     « o que o -b filtra
+    MESSAGE=Started Session 407 of User ana.
+…</pre>
+
+<p>Qualquer campo vira filtro: <code>journalctl _PID=1</code>, <code>journalctl _UID=1000</code>, <code>journalctl _COMM=sudo</code>.</p>
+
+<hr>
+
+<h2>Quem pode ler os logs</h2>
+<p>O log do sistema tem informação sensível (quem entrou, de onde, que comandos o <code>sudo</code> rodou). No Arch, os arquivos são do grupo <code>systemd-journal</code> e têm uma ACL que libera a leitura também para os grupos <code>wheel</code> e <code>adm</code>:</p>
+
+<pre class="term">$ getfacl /var/log/journal/42634ff99dd3440394e6cd711c974f65
+getfacl: Removing leading '/' from absolute path names
+# file: var/log/journal/42634ff99dd3440394e6cd711c974f65
+# owner: root
+# group: systemd-journal
+# flags: -s-
+user::rwx
+group::r-x
+group:wheel:r-x           « quem está no wheel lê tudo
+group:adm:r-x
+mask::r-x</pre>
+
+<p>A ana está no <code>wheel</code> (é a administradora; veja <a href="usuarios.html">Usuários e Grupos</a>), então lê tudo <strong>sem sudo</strong>. Um usuário comum, como o <code>teste-a6</code> criado para esta aula, só vê as mensagens dos próprios programas, e o <code>journalctl</code> avisa:</p>
+
+<pre class="term" data-user="teste-a6">$ journalctl -u sshd -n 2 --no-pager
+Hint: You are currently not seeing messages from other users and the system.
+      Users in groups 'adm', 'systemd-journal', 'wheel' can see all messages.
+      Pass -q to turn off this notice.
+-- No entries --</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para ler tudo</th><th>Como</th><th>Observação</th></tr>
+<tr><td>Usar <code>sudo</code></td><td><code>sudo journalctl …</code></td><td>Funciona sempre; pede senha</td></tr>
+<tr><td>Grupo <code>wheel</code></td><td>Já vem para o administrador</td><td>Também dá poder de <code>sudo</code></td></tr>
+<tr><td>Grupo <code>systemd-journal</code></td><td><code>sudo usermod -aG systemd-journal nome</code></td><td>Só leitura de logs, sem nenhum outro poder: o certo para quem só precisa ler</td></tr>
+<tr><td>Grupo <code>adm</code></td><td><code>sudo usermod -aG adm nome</code></td><td>Tradição de outras distros; no Arch, o efeito é o mesmo para o journal</td></tr>
+</table>
+</div>
+
+<p>Depois de entrar num grupo, é preciso sair e entrar de novo na sessão para valer.</p>
+
+<hr>
+
+<h2>Tamanho e limpeza</h2>
+
+<h3>Quanto ocupa</h3>
+<pre class="term">$ journalctl --disk-usage
+Archived and active journals take up 56M in the file system.</pre>
+
+<p>O journal se limita sozinho: por padrão usa no máximo <strong>10% do sistema de arquivos</strong>, com teto de 4 GiB, e apaga os arquivos mais antigos quando chega lá. Num disco de 25 GiB como o da VM, isso dá uns 2,5 GiB. Normalmente você não precisa fazer nada.</p>
+
+<h3>Limpar à mão: --vacuum</h3>
+<dl class="anatomy">
+  <dt>--vacuum-size=500M</dt><dd>Apaga arquivos <strong>arquivados</strong> (os antigos, não o atual) até o total ficar abaixo de 500 MiB.</dd>
+  <dt>--vacuum-time=2weeks</dt><dd>Apaga os arquivados com mais de duas semanas.</dd>
+  <dt>--vacuum-files=5</dt><dd>Mantém no máximo 5 arquivos arquivados.</dd>
+</dl>
+
+<pre class="term">$ sudo journalctl --vacuum-size=500M
+Vacuuming done, freed 0B of archived journals from /var/log/journal.
+Vacuuming done, freed 0B of archived journals from /var/log/journal/42634ff99dd3440394e6cd711c974f65.
+Vacuuming done, freed 0B of archived journals from /run/log/journal.
+$ sudo journalctl --vacuum-time=2weeks
+Vacuuming done, freed 0B of archived journals from /var/log/journal.
+Vacuuming done, freed 0B of archived journals from /run/log/journal.
+Vacuuming done, freed 0B of archived journals from /var/log/journal/42634ff99dd3440394e6cd711c974f65.</pre>
+
+<p><code>freed 0B</code>: nada foi apagado, porque o journal da VM (56 MiB, de um dia) já está abaixo do limite e é mais novo que duas semanas. Num sistema de meses, aparecem as linhas <code>Deleted archived journal …</code> e o total liberado.</p>
+
+<div class="warning">
+<strong>Não apague os arquivos com rm</strong>
+<p>Apagar arquivos de <code>/var/log/journal</code> à mão, com o <code>journald</code> rodando, pode corromper o journal atual. Use sempre o <code>--vacuum</code>. E lembre: limpar o log apaga as pistas de problemas antigos.</p>
+</div>
+
+<h3>journald.conf: mudar os limites</h3>
+<p>A configuração fica em <code>/etc/systemd/journald.conf</code>. No Arch ela vem toda <strong>comentada</strong>: cada linha mostra o padrão de fábrica (trecho do arquivo real):</p>
+
+<pre class="file" data-file="/etc/systemd/journald.conf">[Journal]
+#Storage=persistent
+#Compress=yes
+#Seal=yes
+#SplitMode=uid
+#SyncIntervalSec=5m
+#RateLimitIntervalSec=30s
+#RateLimitBurst=10000
+#SystemMaxUse=
+#SystemKeepFree=
+#SystemMaxFileSize=
+#SystemMaxFiles=100
+…
+#MaxRetentionSec=0
+#MaxFileSec=1month
+#ForwardToSyslog=no
+…</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que controla</th></tr>
+<tr><td><code>Storage=</code></td><td><code>persistent</code> (disco), <code>volatile</code> (só memória), <code>auto</code> (disco se a pasta existir), <code>none</code></td></tr>
+<tr><td><code>SystemMaxUse=</code></td><td>Tamanho máximo no disco (vazio = 10% do sistema de arquivos, até 4G)</td></tr>
+<tr><td><code>SystemKeepFree=</code></td><td>Quanto espaço livre deixar no disco (padrão: 15%)</td></tr>
+<tr><td><code>MaxRetentionSec=</code></td><td>Idade máxima das mensagens (0 = sem limite)</td></tr>
+<tr><td><code>ForwardToSyslog=</code></td><td>Mandar também para um syslog tradicional, se você instalar um</td></tr>
+</table>
+</div>
+
+<p>O próprio arquivo recomenda não editá-lo, e sim criar um <strong>drop-in</strong> em <code>/etc/systemd/journald.conf.d/</code> (pasta que não existe na instalação padrão). <strong>Ilustrativo</strong> (não aplicado na VM):</p>
+
+<pre class="file" data-file="/etc/systemd/journald.conf.d/tamanho.conf">[Journal]
+SystemMaxUse=500M
+</pre>
+
+<pre class="term">$ sudo mkdir -p /etc/systemd/journald.conf.d
+$ sudo nano /etc/systemd/journald.conf.d/tamanho.conf
+$ sudo systemctl restart systemd-journald</pre>
+
+<hr>
+
+<h2>Formas de procurar a mesma coisa: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Saber por que um serviço falhou</td><td><code>systemctl status nome</code> (10 linhas) e depois <code>journalctl -xeu nome</code></td></tr>
+<tr><td>O que deu errado no último boot</td><td><code>journalctl -b -p err</code></td></tr>
+<tr><td>Por que o computador travou/desligou</td><td><code>journalctl -b -1 -n 100</code></td></tr>
+<tr><td>Problema de hardware, pendrive, disco</td><td><code>journalctl -k</code> (ou <code>-k -f</code> enquanto conecta o dispositivo)</td></tr>
+<tr><td>Ver acontecer enquanto testa</td><td><code>journalctl -f</code> (com <code>-u</code> para focar)</td></tr>
+<tr><td>Uma mensagem que você lembra o texto</td><td><code>journalctl -g 'texto'</code></td></tr>
+<tr><td>O que aconteceu numa janela de tempo</td><td><code>journalctl --since "…" --until "…"</code></td></tr>
+<tr><td>Quem usou o sudo</td><td><code>journalctl -t sudo</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Hint: You are currently not seeing messages from other users and the system."</strong>
+<p><strong>O que aconteceu:</strong> o seu usuário não está nos grupos <code>wheel</code>, <code>adm</code> ou <code>systemd-journal</code>, então só vê os próprios logs.</p>
+<p><strong>Como confirmar:</strong> <code>id</code> mostra os seus grupos.</p>
+<p><strong>Como resolver:</strong> use <code>sudo journalctl …</code> ou peça para entrar no grupo <code>systemd-journal</code> (<code>sudo usermod -aG systemd-journal nome</code>, depois saia e entre de novo).</p>
+</div>
+
+<div class="cenario">
+<strong>"-- No entries --"</strong>
+<pre class="term">$ journalctl -u nada
+-- No entries --
+$ echo $?
+0</pre>
+<p><strong>O que aconteceu:</strong> o filtro não casou com nada. Repare que o código de saída é 0: para o <code>journalctl</code>, "nenhuma linha" não é erro. Causas comuns: nome de unidade errado (<code>ssh</code> em vez de <code>sshd</code>), <code>--since</code> num período sem mensagens, ou falta de permissão (veja o cenário acima).</p>
+<p><strong>Como resolver:</strong> confira o nome com <code>systemctl list-units | grep parte</code>; afrouxe o filtro (tire o <code>-p</code>, aumente o <code>--since</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to parse timestamp"</strong>
+<p><strong>O que aconteceu:</strong> o <code>--since</code>/<code>--until</code> recebeu algo que ele não entende (palavras em português, data no formato <code>16/10/2026</code>).</p>
+<p><strong>Como resolver:</strong> use <code>AAAA-MM-DD HH:MM</code> entre aspas, ou <code>today</code>, <code>yesterday</code>, <code>"2 hours ago"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"No journal boot entry found" ou só existe o boot 0</strong>
+<p><strong>O que aconteceu:</strong> o boot pedido é mais antigo que os logs guardados, ou o journal não está persistente (alguém mudou <code>Storage=volatile</code> ou apagou <code>/var/log/journal</code>).</p>
+<p><strong>Como resolver:</strong> <code>journalctl --list-boots</code>; para voltar à persistência, <code>sudo mkdir -p /var/log/journal</code>, confira o <code>Storage=</code> e <code>sudo systemctl restart systemd-journald</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>journalctl</code></td><td>Tudo, no <code>less</code> (<code>--no-pager</code>: direto na tela)</td></tr>
+<tr><td><code>journalctl -n 20</code> · <code>-e</code> · <code>-r</code></td><td>Últimas 20 · abrir no fim · mais novas primeiro</td></tr>
+<tr><td><code>journalctl -b</code> · <code>-b -1</code> · <code>--list-boots</code></td><td>Boot atual · anterior · lista de boots</td></tr>
+<tr><td><code>journalctl -u nome</code></td><td>De uma unidade (<code>--user -u</code> para as suas)</td></tr>
+<tr><td><code>journalctl -p err</code></td><td>Erros e mais graves (<code>warning</code>, <code>crit</code>…)</td></tr>
+<tr><td><code>journalctl -k</code></td><td>Kernel (como <code>dmesg</code>)</td></tr>
+<tr><td><code>journalctl -f</code></td><td>Acompanhar ao vivo</td></tr>
+<tr><td><code>journalctl --since "…" --until "…"</code></td><td>Janela de tempo</td></tr>
+<tr><td><code>journalctl -t nome</code> · <code>-g texto</code></td><td>Por identificador · por texto</td></tr>
+<tr><td><code>journalctl -xeu nome</code></td><td>Fim do log de uma unidade, com explicações</td></tr>
+<tr><td><code>journalctl -o short-iso|cat|verbose|json</code></td><td>Formato da saída</td></tr>
+<tr><td><code>journalctl --disk-usage</code></td><td>Espaço ocupado</td></tr>
+<tr><td><code>sudo journalctl --vacuum-size=500M</code></td><td>Limpa por tamanho (<code>--vacuum-time=2weeks</code>: por idade)</td></tr>
+<tr><td><code>logger -t nome "texto"</code></td><td>Escreve no journal</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só os erros</h3>
+<p>Complete para ver as mensagens de erro (e mais graves) do boot atual:</p>
+<div class="ex-code">journalctl -b -p <input data-answer="err|3" aria-label="prioridade"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Ao vivo, de um serviço</h3>
+<p>Complete para acompanhar ao vivo só as mensagens do <code>NetworkManager</code>:</p>
+<div class="ex-code">journalctl <input data-answer="-f" aria-label="opção ao vivo"> -u <input data-answer="NetworkManager|NetworkManager.service" aria-label="unidade"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Limpar</h3>
+<p>Complete para deixar os logs arquivados com no máximo 200 MiB:</p>
+<div class="ex-code">sudo journalctl <input data-answer="--vacuum-size=200M" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um usuário fora dos grupos <code>wheel</code>, <code>adm</code> e <code>systemd-journal</code> roda <code>journalctl -u sshd</code>. O que acontece?</p>
+<label><input type="radio" name="q4"> Recebe "Permissão negada" e código 1.</label>
+<label><input type="radio" name="q4"> Vê um "Hint" dizendo que não está vendo as mensagens do sistema, e <code>-- No entries --</code>.</label>
+<label><input type="radio" name="q4"> Vê todas as mensagens normalmente.</label>
+<label><input type="radio" name="q4"> O journalctl pede a senha do root.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No Arch, os logs sobrevivem ao reboot?</p>
+<label><input type="radio" name="q5"> Não, ficam só na memória.</label>
+<label><input type="radio" name="q5"> Só se você instalar um syslog.</label>
+<label><input type="radio" name="q5"> Só os do kernel.</label>
+<label><input type="radio" name="q5"> Sim: o padrão é <code>Storage=persistent</code>, em <code>/var/log/journal</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>journalctl -p warning</code> mostra quais mensagens?</p>
+<label><input type="radio" name="q6"> Avisos e tudo o que é mais grave (err, crit, alert, emerg).</label>
+<label><input type="radio" name="q6"> Só os avisos.</label>
+<label><input type="radio" name="q6"> Avisos e tudo o que é menos grave.</label>
+<label><input type="radio" name="q6"> Só as mensagens do kernel.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O journal guarda os logs de tudo; no Arch, no disco (<code>/var/log/journal</code>).</li>
+  <li>Filtros principais: <code>-b</code> (boot), <code>-u</code> (serviço), <code>-p</code> (prioridade), <code>--since</code> (tempo), <code>-k</code> (kernel), <code>-g</code> (texto); eles se somam.</li>
+  <li><code>-f</code> acompanha ao vivo; <code>-n</code> limita; <code>-o short-iso</code> dá a data completa.</li>
+  <li>Quem está em <code>wheel</code>, <code>adm</code> ou <code>systemd-journal</code> lê tudo; os outros veem o "Hint" ou usam <code>sudo</code>.</li>
+  <li>O tamanho se controla sozinho (10%, até 4G); para limpar, <code>--vacuum-size</code>/<code>--vacuum-time</code>, nunca <code>rm</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Systemd/Journal">Systemd/Journal</a> (<a href="https://wiki.archlinux.org/title/Systemd/Journal_(Portugu%C3%AAs)">em português</a>) cobre filtros, tamanho, persistência, envio para syslog e o acesso dos grupos; para ler os logs de outro computador (num resgate pelo pendrive), veja a opção <code>-D</code> lá mesmo e em <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> (<a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
