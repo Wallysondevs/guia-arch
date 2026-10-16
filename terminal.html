@@ -202,6 +202,9 @@ bash: type: ll: não encontrado</pre>
 <tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>O console anterior / o próximo (quando você já está num console de texto)</td></tr>
 </table>
 </div>
+<figure><img src="img/tty2-login.png" alt="Login no tty2" loading="lazy"><figcaption><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> na VM: a tela de login do <code>tty2</code> ("Arch Linux 7.2.10-arch1-1 (tty2)"), o login da ana (a senha não aparece) e o comando <code>tty</code> respondendo <code>/dev/tty2</code>. Captura real.</figcaption></figure>
+<figure><img src="img/tty1-login-ana.png" alt="Bash no tty1 respondendo em inglês" loading="lazy"><figcaption>Um detalhe real do Arch: no console de texto, o Bash responde <code>command not found</code> em <strong>inglês</strong>, mesmo com <code>LANG=pt_BR.UTF-8</code>. O <code>login</code> começa sem idioma, e quem define o <code>LANG</code> é o <code>/etc/profile</code>, quando o Bash já escolheu o idioma das próprias mensagens. Os outros programas (como o <code>nmtui</code> e o <code>nano</code>) já abrem em português. Num terminal gráfico, o idioma vem desde o início e o Bash fala português. Captura real.</figcaption></figure>
+
 
 <p>Para que serve? Para quando a interface gráfica travou ou não sobe: num console de texto você entra, vê o que aconteceu e conserta. A aula <a href="travamentos.html">Quando o Sistema Trava</a> usa isso.</p>
 

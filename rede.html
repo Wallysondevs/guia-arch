@@ -158,7 +158,10 @@ $ nmcli radio wifi off                            « desligar o Wi-Fi (modo avi�
 <p>Na primeira conexão, por ser uma mudança no sistema, o polkit pode pedir a senha de administrador (usuários do <code>wheel</code> numa sessão local costumam ser liberados). Depois, o perfil reconecta sozinho sempre que a rede estiver ao alcance.</p>
 
 <h3>nmtui: menus no terminal</h3>
-<p>Se você prefere menus, o <code>nmtui</code> (<em>text user interface</em>, instalado junto com o NetworkManager) abre uma tela azul com três opções: <strong>Editar uma conexão</strong>, <strong>Ativar uma conexão</strong> (lista as redes Wi-Fi; Enter conecta e pede a senha) e <strong>Definir nome de máquina do sistema</strong>. Use as setas, Tab e Enter; Esc volta. É o jeito mais fácil de conectar ao Wi-Fi logo depois da instalação, num TTY sem interface gráfica. (Descrição ilustrativa; na VM o <code>nmtui</code> está em <code>/usr/bin/nmtui</code>, mas a tela não foi capturada.)</p>
+<p>Se você prefere menus, o <code>nmtui</code> (<em>text user interface</em>, instalado junto com o NetworkManager) abre uma tela azul com três opções: <strong>Editar uma conexão</strong>, <strong>Ativar uma conexão</strong> (lista as redes Wi-Fi; Enter conecta e pede a senha) e <strong>Definir nome de máquina do sistema</strong>. Use as setas, Tab e Enter; Esc volta. É o jeito mais fácil de conectar ao Wi-Fi logo depois da instalação, num TTY sem interface gráfica.</p>
+<figure><img src="img/nmtui-menu.png" alt="Menu principal do nmtui" loading="lazy"><figcaption>O menu principal do <code>nmtui</code> num console da VM. Ele aparece em português (repare nas palavras sem acento, como "conexao": é a tradução do próprio programa). Captura real.</figcaption></figure>
+<figure><img src="img/nmtui-ativar.png" alt="Tela Ativar uma conexão do nmtui" loading="lazy"><figcaption>"Ativar uma conexão": a VM só tem a rede cabeada (<code>Conexao cabeada 1</code>, ativa, com <code>*</code>) e o <code>lo</code>. Num notebook, as redes Wi-Fi aparecem aqui numa seção própria. Captura real.</figcaption></figure>
+
 
 <p>Com um desktop instalado, o ícone de rede do GNOME ou do KDE conversa com o mesmo NetworkManager: perfis criados no <code>nmcli</code> aparecem lá, e vice-versa.</p>
 

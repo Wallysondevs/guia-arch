@@ -244,6 +244,7 @@ Motivo da instalação : Instalado explicitamente   « alguém pediu: não veio 
 </table>
 </div>
 
+<figure><img src="img/nano.png" alt="nano 9.2 aberto no arquivo notas.txt" loading="lazy"><figcaption>O <code>nano</code> 9.2 da VM aberto no <code>Documentos/notas.txt</code>, num console de texto: o nome do arquivo no alto, a mensagem <code>[ 4 linhas lidas ]</code> e, embaixo, os atalhos (<code>^</code> = <kbd>Ctrl</kbd>, <code>M-</code> = <kbd>Alt</kbd>): <kbd>Ctrl</kbd>+<kbd>O</kbd> grava, <kbd>Ctrl</kbd>+<kbd>X</kbd> sai. Repare que a fonte padrão do console não tem o "ã": "João" aparece como "Joao" (num terminal gráfico isso não acontece). Captura real.</figcaption></figure>
 <p>Para arquivos do sistema, use <code>sudoedit /etc/arquivo</code> (ou <code>sudo nano /etc/arquivo</code>). O <code>sudoedit</code> é mais seguro: o editor roda como você, numa cópia, e só a gravação final é feita como root. Ele usa a variável <code>EDITOR</code>; ponha <code>export EDITOR=nano</code> no <code>~/.bash_profile</code> (veja também o caso do <code>visudo</code> em <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
 
 <hr>

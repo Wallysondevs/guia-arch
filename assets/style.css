@@ -843,3 +843,8 @@ dl.glossario dd { margin: 4px 0 0; }
   .ts-rodar { width: 100%; }
 }
 .sim-out > div { min-height: 1.5em; }
+
+/* ---------- Capturas de tela (figure) ---------- */
+figure { margin: 18px 0; }
+figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+figcaption { margin-top: 8px; font-size: .92rem; color: var(--muted); line-height: 1.5; }

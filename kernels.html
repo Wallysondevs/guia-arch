@@ -271,6 +271,8 @@ concluído
 <hr>
 
 <h2>Escolher o kernel no GRUB</h2>
+<figure><img src="img/grub-menu.png" alt="Menu principal do GRUB na VM" loading="lazy"><figcaption>O menu do GRUB na VM: "Arch Linux" (o padrão, que agora é o kernel principal graças ao <code>GRUB_TOP_LEVEL</code>), "Opções avançadas para Arch Linux" e as entradas do firmware UEFI. O texto de ajuda embaixo mistura inglês e português. Captura real.</figcaption></figure>
+<figure><img src="img/grub-opcoes-avancadas.png" alt="Submenu Opções avançadas com os dois kernels" loading="lazy"><figcaption>Dentro de "Opções avançadas para Arch Linux": os dois kernels, <code>linux</code> e <code>linux-lts</code>. É aqui que você escolhe o kernel de reserva quando o principal não liga. Captura real.</figcaption></figure>
 <p>O menu gerado tem a entrada principal e um submenu com todos os kernels. Listando os títulos direto do <code>grub.cfg</code>:</p>
 <pre class="term">$ grep -E "^menuentry|^submenu|^\s+menuentry" /boot/grub/grub.cfg | cut -c1-90
   menuentry_id_option="--id"
