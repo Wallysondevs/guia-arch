@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch nano e vim — editar arquivos no terminal | Guia Arch</title>
+<meta name="description" content="Edite arquivos no terminal do Arch Linux: por que o base não traz editor, o nano 9.2 passo a passo com as telas reais em português (salvar, sair, buscar, recortar e colar), o essencial do vim e como sair dele, as variáveis EDITOR e VISUAL, o visudo e o crontab que procuram o vi, e o sudoedit.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">nano e vim</span></h1>
+
+<p class="intro">Configurar um Arch é, quase sempre, editar um arquivo de texto: o <code>/etc/pacman.conf</code>, o <code>/etc/fstab</code>, o seu <code>~/.bashrc</code>. Pelo terminal, você faz isso com um <strong>editor de texto</strong>. Esta aula ensina os dois mais comuns: o <strong>nano</strong>, simples e com os atalhos escritos na tela, e o <strong>vim</strong>, poderoso e cheio de "modos". Para só <strong>ler</strong> um arquivo, sem risco de mudar nada, a aula é <a href="ver-arquivos.html">cat, less, head, tail</a>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que o Arch não vem com editor, e como saber quais você tem.</li>
+  <li>Abrir, editar, salvar e sair do nano, e o que significa cada mensagem e cada atalho da barra de baixo.</li>
+  <li>O mínimo do vim: os modos, <kbd>i</kbd>, <kbd>Esc</kbd>, <code>:w</code>, <code>:q</code>, <code>:wq</code> e <code>:q!</code> (o famoso "como sair do vim").</li>
+  <li>As variáveis <code>EDITOR</code> e <code>VISUAL</code>, e por que o <code>visudo</code> e o <code>crontab -e</code> falham procurando o <code>vi</code>.</li>
+  <li>Editar arquivos do sistema com <code>sudoedit</code>.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>Editores não rodam no terminal simulado</strong>
+<p>Eles ocupam a tela inteira. As telas desta aula foram capturadas num Arch Linux real (nano 9.2 e vim 9.2), num terminal de 80 colunas por 24 linhas; pratique no seu Arch. As missões desta página treinam o que dá para fazer no simulador: descobrir os editores, configurar o <code>EDITOR</code> e escrever num arquivo sem editor.</p>
+</div>
+
+<hr>
+
+<h2>O Arch não vem com editor</h2>
+<p>Esta é uma das diferenças do Arch que mais pegam quem vem do Debian ou do Ubuntu. O pacote <code>base</code>, o mínimo de qualquer Arch, traz o shell, os comandos de arquivos, o <code>pacman</code> e o systemd, mas <strong>nenhum editor de texto</strong>. Veja a lista completa de dependências dele:</p>
+
+<pre class="term">$ pacman -Qi base
+…
+Depende de           : filesystem  gcc-libs  glibc  bash  coreutils  file
+                       findutils  gawk  grep  procps-ng  sed  tar  gettext
+                       pciutils  psmisc  shadow  util-linux  bzip2  gzip  xz
+                       licenses  pacman  archlinux-keyring  systemd
+                       systemd-sysvcompat  iputils  iproute2
+Depend. opcionais    : linux: bare metal support [instalado]
+…</pre>
+
+<p>Nada de <code>nano</code>, <code>vim</code> ou <code>vi</code>. Quem quer um editor precisa pedir. Na máquina de exemplo, os dois foram pedidos de propósito no <a href="pacstrap.html">pacstrap</a>, durante a instalação:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux linux-firmware intel-ucode networkmanager sudo nano vim man-db man-pages texinfo grub efibootmgr openssh</pre>
+
+<h3>Quais editores eu tenho?</h3>
+<p>O comando <code>type</code> diz se um nome é um programa e onde ele está:</p>
+
+<pre class="term">$ type nano vim vi
+nano é /usr/bin/nano
+vim é /usr/bin/vim
+bash: type: vi: não encontrado          « o vim NÃO cria o comando vi no Arch
+$ pacman -Qi nano | grep -E '^(Nome|Versão|Motivo)'
+Nome                 : nano
+Versão               : 9.2-1
+Motivo da instalação : Instalado explicitamente     « alguém pediu: não veio com o base</pre>
+
+<p>Repare na terceira linha: no Arch, instalar o <code>vim</code> não cria o comando <code>vi</code> (em outras distribuições, <code>vi</code> é um atalho para o vim). Isso vai importar mais adiante, no <code>visudo</code>.</p>
+
+<h3>Se não houver editor nenhum</h3>
+<p>Num Arch sem editor, chamar um dá o erro de sempre de comando ausente, e a solução é instalar pelo <code>pacman</code> (veja <a href="pacman.html">pacman: o Básico</a>). Aqui, o <code>micro</code>, outro editor simples, que a máquina de exemplo não tem (a instalação foi recusada com "n", só para mostrar):</p>
+
+<pre class="term">$ micro notas.txt
+bash: micro: comando não encontrado
+$ sudo pacman -S micro
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) hicolor-icon-theme-0.18-1  micro-2.0.15-3
+
+Tamanho total download:    4,36 MiB
+Tamanho total instalado:  13,15 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Para quem começa, o mais indicado é <code>sudo pacman -S nano</code>.</p>
+
+<div class="try" data-goal="ran:type\s+.*\bvi\b" data-solucao="type nano vim vi">
+<p class="try-task"><strong>Missão:</strong> descubra, com um único <code>type</code>, quais destes editores existem nesta máquina: <code>nano</code>, <code>vim</code> e <code>vi</code>.</p>
+</div>
+
+<hr>
+
+<h2>nano: o editor fácil</h2>
+<p>O nano nasceu como um clone livre do <em>pico</em>, um editor antigo de e-mail; por isso o pacote se descreve como "Pico editor clone with enhancements". A grande vantagem dele: os atalhos principais ficam escritos na própria tela.</p>
+
+<dl class="anatomy">
+  <dt>nano</dt><dd>O editor.</dd>
+  <dt>Documentos/notas.txt</dt><dd>O arquivo a abrir. Se não existir, o nano abre uma tela vazia e cria o arquivo quando você salvar.</dd>
+</dl>
+
+<pre class="term">$ nano Documentos/notas.txt</pre>
+
+<p>A tela do nano 9.2, a versão do Arch em outubro de 2026, em português (as linhas vazias do meio foram omitidas):</p>
+
+<pre class="file" data-file="tela do nano (80×24)">  GNU nano 9.2                 Documentos/notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+
+                               [ 4 linhas lidas ]
+^G Ajuda     ^O Gravar    ^F Onde está?^K Recortar  ^T Executar  ^C Local
+^X Sair      ^R Ler o arq ^\ Substituir^U Colar     ^J Justificar^/ Ir p/ linha</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte da tela</th><th>O que mostra</th></tr>
+<tr><td>Primeira linha (barra de título)</td><td>A versão do nano e o nome do arquivo. Quando você altera algo, aparece <code>Modificado</code> à direita.</td></tr>
+<tr><td>O meio</td><td>O texto. Você digita normalmente, como num bloco de notas, e anda com as setas.</td></tr>
+<tr><td>A linha entre colchetes</td><td>A <strong>mensagem</strong> do que acabou de acontecer: <code>[ 4 linhas lidas ]</code> ao abrir, <code>[ Novo arquivo ]</code> num arquivo que não existia, <code>[ Escritas 5 linhas ]</code> ao salvar.</td></tr>
+<tr><td>As duas últimas linhas</td><td>Os atalhos. O <code>^</code> quer dizer <kbd>Ctrl</kbd>: <code>^X</code> é <kbd>Ctrl</kbd>+<kbd>X</kbd>. Num terminal mais largo aparecem mais atalhos; os que começam com <code>M-</code> usam <kbd>Alt</kbd>.</td></tr>
+</table>
+</div>
+
+<figure><img src="img/nano.png" alt="nano 9.2 aberto no arquivo notas.txt num console de texto" loading="lazy"><figcaption>O mesmo <code>nano</code> 9.2 aberto no <code>notas.txt</code>, agora no console de texto da máquina (uma tela bem mais larga). Com mais espaço, a barra de baixo mostra também <code>M-U Desfazer</code>, <code>M-E Refazer</code>, <code>M-A Marcar</code>, <code>M-6 Copiar</code> e outros (<code>M-</code> = <kbd>Alt</kbd>). Repare que a fonte padrão do console não tem o "ã": "João" aparece como "Joao" (num terminal gráfico isso não acontece). Captura real.</figcaption></figure>
+
+<h3>Passo 1: editar</h3>
+<p>Não há "modo" nenhum: o que você digita entra no texto, onde está o cursor. Desça com <kbd>↓</kbd> até a linha vazia depois da última e escreva <code>Pagar a internet</code>. A barra de título passa a mostrar <code>Modificado</code>:</p>
+
+<pre class="file" data-file="tela do nano">  GNU nano 9.2                 Documentos/notas.txt                 Modificado
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+Pagar a internet</pre>
+
+<h3>Passo 2: salvar com Ctrl+O</h3>
+<p><kbd>Ctrl</kbd>+<kbd>O</kbd> grava o arquivo (o "O" vem de <em>Write Out</em>, "escrever para fora"). O nano pergunta, no rodapé, com que nome gravar, já sugerindo o atual; os atalhos de baixo mudam para as opções da gravação:</p>
+
+<pre class="file" data-file="rodapé do nano depois de Ctrl+O">Escrever para o arquivo: Documentos/notas.txt
+^G Ajuda            M-D Formato DOS     M-A Anexar          ^Q Descartar buffer
+^C Cancelar         M-B Arquivo reserva M-P Pré-anexar      ^T Navegar</pre>
+
+<p>Aperte <kbd>Enter</kbd> para aceitar o nome. O rodapé volta ao normal com a confirmação, e o <code>Modificado</code> some do título:</p>
+
+<pre class="file" data-file="rodapé do nano depois do Enter">                             [ Escritas 5 linhas ]
+^G Ajuda     ^O Gravar    ^F Onde está?^K Recortar  ^T Executar  ^C Local
+^X Sair      ^R Ler o arq ^\ Substituir^U Colar     ^J Justificar^/ Ir p/ linha</pre>
+
+<p>Se você mudar o nome antes do <kbd>Enter</kbd>, grava uma cópia com outro nome (o arquivo original fica como estava). <kbd>Ctrl</kbd>+<kbd>C</kbd> cancela a gravação.</p>
+
+<h3>Passo 3: sair com Ctrl+X</h3>
+<p>Se tudo já está salvo, <kbd>Ctrl</kbd>+<kbd>X</kbd> fecha o nano na hora e você volta ao terminal. Se houver mudanças não salvas, ele pergunta:</p>
+
+<pre class="file" data-file="rodapé do nano depois de Ctrl+X">Salvar o buffer modificado?
+ S Sim
+ N Não          ^C Cancelar</pre>
+
+<ul>
+  <li><kbd>S</kbd>: salvar (ele mostra o "Escrever para o arquivo:"; <kbd>Enter</kbd> confirma) e sair.</li>
+  <li><kbd>N</kbd>: sair <strong>perdendo</strong> as mudanças.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>C</kbd>: desistir de sair e voltar ao texto.</li>
+</ul>
+
+<p>"Buffer" é o texto que está aberto na memória, que só vai para o disco quando você grava.</p>
+
+<h3>O passo a passo completo, num arquivo novo</h3>
+<ol class="passo">
+  <li><code>nano novo.txt</code> abre uma tela vazia com a mensagem <code>[ Novo arquivo ]</code>.</li>
+  <li>Digite o texto: <code>Comprar leite</code>.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>X</kbd>, depois <kbd>S</kbd> (salvar), depois <kbd>Enter</kbd> (aceitar o nome).</li>
+  <li><code>cat novo.txt</code> confere o resultado.</li>
+</ol>
+
+<pre class="term">$ nano novo.txt
+$ cat novo.txt
+Comprar leite</pre>
+
+<h3>Buscar: Ctrl+F</h3>
+<p><kbd>Ctrl</kbd>+<kbd>F</kbd> (<em>Find</em>, "Onde está?") abre a busca no rodapé. Digite o texto e <kbd>Enter</kbd>; o cursor pula para a próxima ocorrência:</p>
+
+<pre class="file" data-file="rodapé do nano depois de Ctrl+F">Pesquisa:
+^G Ajuda            M-C Maiúsc./minúsc. M-B Contrário       ^P Mais antigo
+^C Cancelar         M-R Expressão reg.  ^R Substituir       ^N Mais novo</pre>
+
+<p>Para ir para a ocorrência seguinte, <kbd>Alt</kbd>+<kbd>F</kbd> (a anterior, <kbd>Alt</kbd>+<kbd>B</kbd>). <code>^P</code>/<code>^N</code> navegam pelas buscas que você já fez. Quando a busca dá a volta no arquivo, o nano avisa <code>[ Pesquisa recomeçou ]</code>.</p>
+
+<div class="tip">
+<strong>Ctrl+F ou Ctrl+W?</strong>
+<p>Até o nano 7, a busca era <kbd>Ctrl</kbd>+<kbd>W</kbd> (<em>Where is</em>), e muitos tutoriais ainda mandam usar esse atalho. No nano 9 do Arch ela aparece como <code>^F Onde está?</code>. Na dúvida, siga o que está escrito no rodapé do seu nano.</p>
+</div>
+
+<h3>Recortar, copiar e colar</h3>
+<p>O nano trabalha com <strong>linhas inteiras</strong>:</p>
+<ul>
+  <li><kbd>Ctrl</kbd>+<kbd>K</kbd> recorta a linha onde está o cursor (ela some da tela).</li>
+  <li><kbd>Ctrl</kbd>+<kbd>U</kbd> cola o que foi recortado, onde estiver o cursor.</li>
+  <li>Para <strong>mover</strong> uma linha: <kbd>Ctrl</kbd>+<kbd>K</kbd> nela, leve o cursor ao lugar novo, <kbd>Ctrl</kbd>+<kbd>U</kbd>.</li>
+  <li>Para <strong>copiar</strong> sem apagar: <kbd>Alt</kbd>+<kbd>6</kbd>.</li>
+  <li>Para um trecho que não é linha inteira: <kbd>Alt</kbd>+<kbd>A</kbd> marca o começo, mova o cursor até o fim, e use <kbd>Ctrl</kbd>+<kbd>K</kbd> ou <kbd>Alt</kbd>+<kbd>6</kbd>.</li>
+</ul>
+
+<p>Errou? <kbd>Alt</kbd>+<kbd>U</kbd> desfaz e <kbd>Alt</kbd>+<kbd>E</kbd> refaz.</p>
+
+<h3>A barra de atalhos, explicada</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho</th><th>Na tela</th><th>Faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td><td>Ajuda</td><td>Abre a ajuda com todos os atalhos (<kbd>Ctrl</kbd>+<kbd>X</kbd> volta)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Sair</td><td>Sai (pergunta se há mudanças)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Gravar</td><td>Salva</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Ler o arq</td><td>Insere outro arquivo no ponto do cursor</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Onde está?</td><td>Busca</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>\</kbd></td><td>Substituir</td><td>Busca e troca (pergunta a cada ocorrência; <kbd>A</kbd> troca todas)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Recortar</td><td>Recorta a linha</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Colar</td><td>Cola</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td><td>Executar</td><td>Roda um comando e põe a saída no texto</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Justificar</td><td>Reorganiza um parágrafo longo em linhas</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Local</td><td>Mostra a linha e a coluna do cursor</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>/</kbd></td><td>Ir p/ linha</td><td>Pula para uma linha (ex.: 42)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>U</kbd> / <kbd>Alt</kbd>+<kbd>E</kbd></td><td>Desfazer / Refazer</td><td>(aparecem no terminal largo)</td></tr>
+</table>
+</div>
+
+<h3>Opções úteis ao abrir</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Faz</th></tr>
+<tr><td><code>nano -l arq</code></td><td>Mostra os números das linhas (<code>--linenumbers</code>)</td></tr>
+<tr><td><code>nano +42 arq</code></td><td>Abre já na linha 42</td></tr>
+<tr><td><code>nano -v arq</code></td><td>Modo visualização: não deixa alterar (<code>--view</code>)</td></tr>
+<tr><td><code>nano -B arq</code></td><td>Ao salvar, guarda o original com <code>~</code> no fim (<code>--backup</code>)</td></tr>
+<tr><td><code>nano -m arq</code></td><td>Habilita o mouse</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Cores e números de linha: o nanorc</strong>
+<p>No Arch, o nano vem "cru": sem cores para scripts e configurações, e sem números de linha. Tudo isso está pronto, mas comentado, no <code>/etc/nanorc</code> (por exemplo, a linha <code># include /usr/share/nano/*.nanorc</code>, que liga as cores). Para ligar só para você, crie o arquivo <code>~/.config/nano/nanorc</code> com estas duas linhas:</p>
+<pre class="file" data-file="~/.config/nano/nanorc">include "/usr/share/nano/*.nanorc"
+set linenumbers</pre>
+</div>
+
+<hr>
+
+<h2>vim: o mínimo para sobreviver</h2>
+<p>O <code>vim</code> (<em>Vi IMproved</em>, "vi melhorado") é a versão moderna do <code>vi</code>, um editor que existe em praticamente todo sistema Unix desde os anos 1970. Ele é extremamente rápido para quem sabe usar, e confuso para quem abre pela primeira vez, porque é um editor <strong>de modos</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Como entrar</th><th>O que as teclas fazem</th><th>Como saber</th></tr>
+<tr><td><strong>Normal</strong></td><td>É o modo ao abrir; <kbd>Esc</kbd> volta para ele</td><td>Cada tecla é um <strong>comando</strong> (<kbd>x</kbd> apaga uma letra, <kbd>d</kbd><kbd>d</kbd> apaga a linha)</td><td>Rodapé sem aviso</td></tr>
+<tr><td><strong>Inserção</strong></td><td><kbd>i</kbd> (de <em>insert</em>)</td><td>As teclas viram <strong>texto</strong>, como no nano</td><td>Rodapé: <code>-- INSERÇÃO --</code></td></tr>
+<tr><td><strong>Linha de comando</strong></td><td><kbd>:</kbd> (a partir do modo normal)</td><td>Você digita um comando (<code>w</code>, <code>q</code>…) e <kbd>Enter</kbd></td><td>O <code>:</code> aparece no rodapé</td></tr>
+</table>
+</div>
+
+<p>O vim do Arch fala português. Veja, passo a passo, a criação de um arquivo com ele:</p>
+
+<pre class="term">$ vim lembrete.txt</pre>
+
+<ol class="passo">
+  <li>Ao abrir, o vim está no <strong>modo normal</strong>. As linhas com <code>~</code> são "depois do fim do arquivo". O rodapé diz o nome, <code>[Novo]</code>, a posição do cursor (<code>0,0-1</code>) e <code>Tudo</code> (o arquivo inteiro cabe na tela):
+<pre class="file" data-file="rodapé do vim">"lembrete.txt" [Novo]                                         0,0-1        Tudo</pre></li>
+  <li>Aperte <kbd>i</kbd>. O rodapé avisa que agora você está escrevendo:
+<pre class="file" data-file="rodapé do vim">-- INSERÇÃO --                                                0,1          Tudo</pre></li>
+  <li>Digite <code>Levar o lixo</code>. Aperte <kbd>Esc</kbd>: o aviso some, você voltou ao modo normal.</li>
+  <li>Digite <code>:wq</code> e <kbd>Enter</kbd> (<code>w</code> = <em>write</em>, gravar; <code>q</code> = <em>quit</em>, sair). O vim grava e fecha, mostrando no caminho:
+<pre class="file" data-file="rodapé do vim">"lembrete.txt" [Novo] 1L, 13B gravado(s)</pre>
+  "1L, 13B" quer dizer 1 linha, 13 bytes.</li>
+</ol>
+
+<pre class="term">$ cat lembrete.txt
+Levar o lixo</pre>
+
+<h3>O que acontece se você tentar sair sem salvar</h3>
+<p>Com mudanças não gravadas, o <code>:q</code> sozinho é recusado:</p>
+
+<pre class="file" data-file="rodapé do vim depois de :q">E37: Alterações não foram gravadas (adicione ! para forçar)
+Aperte ENTER ou digite um comando para continuar</pre>
+
+<p>O "adicione !" é a dica: <code>:q!</code> sai <strong>descartando</strong> as mudanças. E se, em pânico, você apertar <kbd>Ctrl</kbd>+<kbd>C</kbd>, o vim não fecha; ele só lembra o caminho:</p>
+
+<pre class="file" data-file="rodapé do vim depois de Ctrl+C">Digite  :qa!  e aperte &lt;Enter&gt; para abandonar as alterações e sair do Vim</pre>
+
+<h3>A receita para não ficar preso</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Digite</th></tr>
+<tr><td>Começar a escrever</td><td><kbd>i</kbd></td></tr>
+<tr><td>Parar de escrever</td><td><kbd>Esc</kbd></td></tr>
+<tr><td>Salvar (e continuar)</td><td><kbd>Esc</kbd>, <code>:w</code>, <kbd>Enter</kbd></td></tr>
+<tr><td>Sair (sem mudanças)</td><td><kbd>Esc</kbd>, <code>:q</code>, <kbd>Enter</kbd></td></tr>
+<tr><td>Salvar e sair</td><td><kbd>Esc</kbd>, <code>:wq</code>, <kbd>Enter</kbd> (ou <code>:x</code>, ou <kbd>Z</kbd><kbd>Z</kbd>)</td></tr>
+<tr><td>Sair <strong>sem</strong> salvar</td><td><kbd>Esc</kbd>, <code>:q!</code>, <kbd>Enter</kbd></td></tr>
+<tr><td>Apagar a linha inteira</td><td><kbd>Esc</kbd>, <kbd>d</kbd><kbd>d</kbd></td></tr>
+<tr><td>Desfazer</td><td><kbd>Esc</kbd>, <kbd>u</kbd></td></tr>
+<tr><td>Procurar</td><td><kbd>Esc</kbd>, <code>/texto</code>, <kbd>Enter</kbd>; <kbd>n</kbd> vai para a próxima</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Preso no vim?</strong>
+<p>Aperte <kbd>Esc</kbd> duas vezes, digite <code>:q!</code> e <kbd>Enter</kbd>. Você sai sem salvar nada, e o arquivo fica como estava antes de abrir.</p>
+</div>
+
+<p>Para aprender o vim de verdade, rode <code>vimtutor</code> (vem com o pacote <code>vim</code>: uma aula interativa de 30 minutos dentro do próprio editor) e siga o <a href="https://wallysondevs.github.io/guia-vim/">Guia Vim</a>, um curso completo deste mesmo projeto.</p>
+
+<hr>
+
+<h2>O editor padrão: <code>EDITOR</code> e <code>VISUAL</code></h2>
+<p>Vários programas abrem um editor para você: o <code>crontab -e</code> (tarefas agendadas), o <code>sudoedit</code>, o <code>git commit</code>, o <code>visudo</code>. Para saber <strong>qual</strong> editor abrir, eles leem duas variáveis de ambiente:</p>
+
+<dl class="anatomy">
+  <dt>VISUAL</dt><dd>O editor "de tela cheia" preferido. Quem procura as duas olha esta primeiro.</dd>
+  <dt>EDITOR</dt><dd>O editor padrão. É a mais lida de todas; na dúvida, defina esta.</dd>
+</dl>
+
+<p>No Arch, as duas vêm <strong>vazias</strong>. E quando estão vazias, muitos programas usam o editor clássico do Unix, o <code>/usr/bin/vi</code>, que, como você viu, <strong>não existe</strong> no Arch:</p>
+
+<pre class="term">$ echo "[$EDITOR]"
+[]                                       « vazia
+$ crontab -e
+no crontab for ana - using an empty one
+/bin/sh: linha 1: /usr/bin/vi: Arquivo ou diretório inexistente
+crontab: "/usr/bin/vi" exited with status 127</pre>
+
+<p>O <code>crontab</code> tentou abrir o <code>vi</code>, não achou (127 é o código de "comando não encontrado") e desistiu, sem mudar nada. O mesmo acontece com o <code>visudo</code>, que edita o arquivo do sudo:</p>
+
+<pre class="term" data-user="root">#> visudo
+visudo: nenhum editor encontrado (caminho do editor = /usr/bin/vi)</pre>
+
+<h3>Como resolver: definir o EDITOR</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Vale para</th><th>Exemplo</th></tr>
+<tr><td>Na frente do comando</td><td>Só aquele comando</td><td><code>EDITOR=nano crontab -e</code></td></tr>
+<tr><td><code>export</code> no terminal</td><td>Até fechar o terminal</td><td><code>export EDITOR=nano</code></td></tr>
+<tr><td>No <code>~/.bashrc</code></td><td>Sempre, para você</td><td>a linha <code>export EDITOR=nano</code> no fim do arquivo (veja <a href="bashrc.html">.bashrc, alias, PATH</a>)</td></tr>
+<tr><td>No <code>/etc/environment</code></td><td>Todos os usuários</td><td>a linha <code>EDITOR=nano</code> (como root)</td></tr>
+</table>
+</div>
+
+<p>Para o <code>visudo</code>, que roda como root, a forma é <code>sudo EDITOR=nano visudo</code>: o <code>/etc/sudoers</code> do Arch deixa a variável <code>EDITOR</code> passar para ele. Os detalhes do <code>visudo</code> estão em <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+
+<div class="try" data-goal="contains:~/.bashrc=EDITOR=nano,var:EDITOR=nano" data-solucao="echo 'export EDITOR=nano' &gt;&gt; ~/.bashrc;;export EDITOR=nano;;echo $EDITOR">
+<p class="try-task"><strong>Missão:</strong> deixe o nano como seu editor padrão: acrescente a linha <code>export EDITOR=nano</code> ao fim do <code>~/.bashrc</code> (sem abrir editor: use <code>echo '…' &gt;&gt; ~/.bashrc</code>) e também rode o <code>export</code> no terminal atual, para valer já. Confira com <code>echo $EDITOR</code>.</p>
+</div>
+
+<hr>
+
+<h2>Editar arquivos do sistema: <code>sudoedit</code></h2>
+<p>Arquivos de <code>/etc</code> pertencem ao root. Se você abrir um deles como usuária comum, o nano abre, mas avisa já de cara que não vai conseguir gravar:</p>
+
+<pre class="file" data-file="tela do nano">  GNU nano 9.2                    /etc/hostname
+notebook
+
+                  [ O arquivo "/etc/hostname" não é gravável ]</pre>
+
+<p>Se você editar mesmo assim e tentar gravar com <kbd>Ctrl</kbd>+<kbd>O</kbd>, vem o erro:</p>
+
+<pre class="file" data-file="rodapé do nano">              [ Erro ao escrever /etc/hostname: Permissão negada ]</pre>
+
+<p>Há duas formas de editar como root:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como funciona</th><th>Quando usar</th></tr>
+<tr><td><code>sudoedit /etc/arquivo</code><br>(= <code>sudo -e</code>)</td><td>O sudo faz uma <strong>cópia</strong> do arquivo, abre a cópia no <strong>seu</strong> editor, rodando como <strong>você</strong>, e só no fim, se houve mudança, grava por cima do original como root</td><td>O jeito recomendado</td></tr>
+<tr><td><code>sudo nano /etc/arquivo</code></td><td>O editor inteiro roda como root</td><td>Funciona, mas um editor como root pode mais do que precisa (abrir e gravar qualquer arquivo pelo próprio editor)</td></tr>
+</table>
+</div>
+
+<p>O <code>sudoedit</code> também usa o <code>EDITOR</code> (ou, antes dele, a variável <code>SUDO_EDITOR</code>). Sem nenhuma definida, ele cai no mesmo <code>vi</code> que não existe:</p>
+
+<pre class="term">$ sudoedit /etc/hostname
+[sudo] senha para ana:
+sudoedit: /usr/bin/vi: comando não encontrado</pre>
+
+<p>Dá para ver o mecanismo do <code>sudoedit</code> usando o <code>cat</code> como "editor": ele mostra a cópia e, como nada mudou, o sudo nem mexe no original:</p>
+
+<pre class="term">$ SUDO_EDITOR=cat sudoedit /etc/hostname
+[sudo] senha para ana:
+notebook                                    « o "editor" (cat) mostrou a cópia
+sudoedit: /etc/hostname sem alteração       « nada mudou: o original não foi tocado</pre>
+
+<p>Com o <code>EDITOR=nano</code> definido, o uso normal é só <code>sudoedit /etc/hostname</code>: abre o nano, você edita, salva e sai, e o sudo grava como root.</p>
+
+<div class="warning">
+<strong>Antes de editar um arquivo do sistema</strong>
+<p>Faça uma cópia: <code>sudo cp -a /etc/pacman.conf /etc/pacman.conf.bak</code> (veja <a href="copiar.html">Copiar (cp)</a>). Se algo der errado, basta copiar de volta. E nunca edite o <code>/etc/sudoers</code> com <code>sudoedit</code> ou <code>sudo nano</code>: use o <code>visudo</code>, que confere a sintaxe antes de gravar.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de editar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Editor</th><th>Pacote (outubro de 2026)</th><th>Onde</th><th>Para quem</th></tr>
+<tr><td><code>nano</code></td><td><code>core/nano</code> 9.2</td><td>Terminal</td><td>Iniciantes e edições rápidas; atalhos na tela</td></tr>
+<tr><td><code>vim</code></td><td><code>extra/vim</code> 9.2</td><td>Terminal</td><td>Quem quer editar muito rápido e aceita aprender os modos (<a href="https://wallysondevs.github.io/guia-vim/">Guia Vim</a>)</td></tr>
+<tr><td><code>vi</code></td><td><code>extra/ex-vi-compat</code> 3 (cria <code>vi</code> e <code>ex</code> usando o vim)</td><td>Terminal</td><td>Só se algum programa exigir o comando <code>vi</code> (<code>pacman -F /usr/bin/vi</code> mostra que é este o pacote)</td></tr>
+<tr><td><code>micro</code></td><td><code>extra/micro</code> 2.0.15</td><td>Terminal</td><td>Quem quer atalhos de editor gráfico (<kbd>Ctrl</kbd>+<kbd>S</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>V</kbd>) e mouse</td></tr>
+<tr><td><code>nvim</code></td><td><code>extra/neovim</code> 0.12.6</td><td>Terminal</td><td>Um "vim moderno", com a mesma lógica de modos</td></tr>
+<tr><td><code>helix</code></td><td><code>extra/helix</code> 25.07.1</td><td>Terminal</td><td>Um editor de modos moderno, parecido com o vim</td></tr>
+<tr><td><code>emacs</code></td><td><code>extra/emacs-nox</code> 31.1 (sem janela)</td><td>Terminal ou janela</td><td>Quem quer um ambiente inteiro, programável</td></tr>
+<tr><td>Editor gráfico</td><td><code>gnome-text-editor</code>, <code>kate</code>, <code>mousepad</code>…</td><td>Desktop</td><td>Quem prefere janela e mouse (<a href="desktop.html">Instalar um Desktop</a>)</td></tr>
+<tr><td><code>echo "texto" &gt;&gt; arq</code></td><td>(nenhum)</td><td>Terminal</td><td>Acrescentar uma linha sem abrir editor (<a href="redirecionamento.html">Redirecionamento</a>)</td></tr>
+</table>
+</div>
+
+<h3>Qual usar?</h3>
+<ul>
+  <li>Começando: <strong>nano</strong>. Defina <code>export EDITOR=nano</code> no <code>~/.bashrc</code>.</li>
+  <li>Vai administrar servidores ou editar o dia inteiro: aprenda o <strong>vim</strong> aos poucos (o <code>vimtutor</code> é o primeiro passo).</li>
+  <li>Sempre saiba pelo menos <strong>sair</strong> do vim: um dia algum programa vai abri-lo para você.</li>
+</ul>
+
+<div class="try" data-goal="contains:~/lembrete.txt=Levar o lixo" data-solucao="echo 'Levar o lixo' &gt;&gt; lembrete.txt;;cat lembrete.txt">
+<p class="try-task"><strong>Missão:</strong> o simulador não abre editores, mas você pode escrever num arquivo sem eles. Acrescente a linha <code>Levar o lixo</code> ao arquivo <code>lembrete.txt</code> com <code>echo</code> e <code>&gt;&gt;</code>, e confira com <code>cat</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"bash: nano: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>base</code> não traz editor, e nenhum foi instalado.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S nano</code>. Sem rede ainda? Configure a rede primeiro (<a href="primeiro-boot.html">Primeiro Boot e Rede</a>); para acrescentar uma linha num arquivo do sistema sem editor, dá para usar <code>echo 'linha' | sudo tee -a /etc/arquivo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"nenhum editor encontrado (caminho do editor = /usr/bin/vi)" ou "/usr/bin/vi: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>visudo</code>, o <code>sudoedit</code> ou o <code>crontab -e</code> procuraram o editor nas variáveis <code>EDITOR</code>/<code>VISUAL</code>, acharam vazias e tentaram o <code>vi</code>, que o Arch não tem.</p>
+<p><strong>Como resolver:</strong> <code>export EDITOR=nano</code> (e ponha no <code>~/.bashrc</code>); para o visudo, <code>sudo EDITOR=nano visudo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Erro ao escrever …: Permissão negada" no nano</strong>
+<p><strong>O que aconteceu:</strong> o arquivo é do root e você abriu como usuária comum (o nano já tinha avisado: "não é gravável").</p>
+<p><strong>Como resolver:</strong> para não perder o que digitou, grave uma cópia na sua pasta (<kbd>Ctrl</kbd>+<kbd>O</kbd> e troque o nome por <code>~/hostname</code>), saia, e copie como root: <code>sudo cp ~/hostname /etc/hostname</code>. Da próxima vez, abra com <code>sudoedit</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Abri o vim sem querer e não consigo sair</strong>
+<p><strong>O que aconteceu:</strong> você digitou <code>vim</code>, ou um programa (como o <code>git commit</code>) abriu o vim porque o <code>EDITOR</code> apontava para ele.</p>
+<p><strong>Como resolver:</strong> <kbd>Esc</kbd>, <code>:q!</code>, <kbd>Enter</kbd>. Para não se repetir, defina <code>EDITOR=nano</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O terminal "congelou" no nano</strong>
+<p><strong>O que aconteceu:</strong> por hábito de outros programas, você apertou <kbd>Ctrl</kbd>+<kbd>S</kbd> para salvar. Em muitos terminais, isso <strong>pausa</strong> a tela.</p>
+<p><strong>Como resolver:</strong> aperte <kbd>Ctrl</kbd>+<kbd>Q</kbd> para destravar. No nano, salvar é <kbd>Ctrl</kbd>+<kbd>O</kbd>.</p>
+</div>
+
+<div class="cenario">
+<strong>O "ã" e o "ç" aparecem errados</strong>
+<p><strong>O que aconteceu:</strong> no console de texto puro (sem desktop), a fonte padrão não tem todas as letras acentuadas, como se vê na captura do nano acima.</p>
+<p><strong>Como resolver:</strong> o arquivo está certo; é só a exibição. Use um terminal gráfico, ou troque a fonte do console (a <a href="https://wiki.archlinux.org/title/Linux_console">Arch Wiki</a> explica como, com <code>setfont</code> e o <code>/etc/vconsole.conf</code>).</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Abrir na linha certa</h3>
+<p>Complete para abrir <code>/etc/pacman.conf</code> no nano já na linha 33:</p>
+<div class="ex-code">nano <input data-answer="+33" aria-label="opção"> /etc/pacman.conf</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sair do vim sem salvar</h3>
+<p>Depois do <kbd>Esc</kbd>, o que você digita?</p>
+<div class="ex-code"><input data-answer=":q!|:qa!" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Editar o sistema com segurança</h3>
+<p>Complete para editar <code>/etc/hosts</code> do jeito recomendado:</p>
+<div class="ex-code"><input data-answer="sudoedit|sudo -e" aria-label="comando"> /etc/hosts</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. No rodapé do nano aparece <code>^O Gravar</code>. Quais teclas você aperta?</p>
+<label><input type="radio" name="q4"> <kbd>Shift</kbd> e <kbd>6</kbd>, depois <kbd>O</kbd></label>
+<label><input type="radio" name="q4"> <kbd>Ctrl</kbd>+<kbd>O</kbd></label>
+<label><input type="radio" name="q4"> <kbd>Alt</kbd>+<kbd>O</kbd></label>
+<label><input type="radio" name="q4"> <kbd>Esc</kbd> e depois <kbd>O</kbd></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Num Arch recém-instalado, <code>sudo visudo</code> responde "nenhum editor encontrado". Por quê?</p>
+<label><input type="radio" name="q5"> Porque o sudo não está instalado.</label>
+<label><input type="radio" name="q5"> Porque a senha estava errada.</label>
+<label><input type="radio" name="q5"> Porque o <code>EDITOR</code> está vazio e o visudo procura o <code>vi</code>, que o Arch não instala.</label>
+<label><input type="radio" name="q5"> Porque o arquivo sudoers não existe.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. No vim, você digitou um monte de texto e o rodapé mostra <code>-- INSERÇÃO --</code>. Qual tecla volta ao modo normal?</p>
+<label><input type="radio" name="q6"> <kbd>Esc</kbd></label>
+<label><input type="radio" name="q6"> <kbd>q</kbd></label>
+<label><input type="radio" name="q6"> <kbd>Ctrl</kbd>+<kbd>X</kbd></label>
+<label><input type="radio" name="q6"> <kbd>i</kbd></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>base</code> do Arch não traz editor; instale o <code>nano</code> (ou o <code>vim</code>). O vim não cria o comando <code>vi</code>.</li>
+  <li>nano: digite normalmente; <kbd>Ctrl</kbd>+<kbd>O</kbd> grava, <kbd>Ctrl</kbd>+<kbd>X</kbd> sai, <kbd>Ctrl</kbd>+<kbd>F</kbd> busca, <kbd>Ctrl</kbd>+<kbd>K</kbd>/<kbd>Ctrl</kbd>+<kbd>U</kbd> recortam e colam.</li>
+  <li>vim: <kbd>i</kbd> escreve, <kbd>Esc</kbd> para, <code>:wq</code> salva e sai, <code>:q!</code> sai sem salvar.</li>
+  <li><code>EDITOR</code> vazio + falta do <code>vi</code> = <code>visudo</code>, <code>sudoedit</code> e <code>crontab -e</code> falham; ponha <code>export EDITOR=nano</code> no <code>~/.bashrc</code>.</li>
+  <li>Arquivos do sistema: <code>sudoedit</code>, com uma cópia de segurança antes.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> cada editor tem sua página: <a href="https://wiki.archlinux.org/title/Nano">nano</a> (com a configuração do <code>nanorc</code>) e <a href="https://wiki.archlinux.org/title/Vim">Vim</a>. As variáveis <code>EDITOR</code> e <code>VISUAL</code> estão em <a href="https://wiki.archlinux.org/title/Environment_variables">Environment variables</a>, o <code>sudoedit</code> e o <code>visudo</code> em <a href="https://wiki.archlinux.org/title/Sudo">sudo</a> (em português: <a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">sudo (Português)</a>), e a lista de todos os editores disponíveis em <a href="https://wiki.archlinux.org/title/List_of_applications/Documents#Text_editors">List of applications/Documents</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
