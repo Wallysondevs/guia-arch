@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Jobs, nohup e tmux — segundo plano | Guia Arch</title>
+<meta name="description" content="Jobs no Arch Linux: &amp;, jobs, fg, bg, Ctrl+Z, wait, nohup, disown, o sinal SIGHUP, tmux e screen (que não vêm no Arch) e systemd-run --user como alternativa moderna, com saídas reais do Bash 5.3.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Jobs, nohup e tmux</span></h1>
+
+<p class="intro">Um comando demorado, como uma compilação do AUR ou uma cópia grande, "prende" o terminal até terminar. Nesta aula você aprende a mandar comandos para o segundo plano, trazê-los de volta e, principalmente, mantê-los rodando depois de fechar o terminal ou perder a conexão SSH.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre primeiro plano e segundo plano.</li>
+  <li>Usar <code>&amp;</code>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <code>jobs</code>, <code>bg</code>, <code>fg</code> e <code>wait</code>.</li>
+  <li>Por que fechar o terminal mata os programas que ele abriu (o sinal SIGHUP), e como evitar isso com <code>nohup</code> e <code>disown</code>.</li>
+  <li>Instalar e usar o <code>tmux</code>, que não vem no Arch.</li>
+  <li>Usar o <code>systemd-run --user</code>, a forma moderna de rodar algo "por fora" do terminal.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Antes do comando: primeiro e segundo plano</h2>
+<p>Quando você digita um comando, ele roda em <strong>primeiro plano</strong> (<em>foreground</em>): o terminal fica ocupado e só devolve o prompt quando o comando termina. Você pode interromper com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+<p>Um comando em <strong>segundo plano</strong> (<em>background</em>) roda "por trás". O prompt volta na hora e você continua digitando.</p>
+<p>Cada comando controlado assim é um <strong>job</strong> ("trabalho"). Os jobs pertencem àquela janela de terminal (àquele shell): outra janela não os enxerga. Tudo isso é recurso do <strong>Bash</strong>, o shell padrão do Arch (veja <a href="terminal.html">O Terminal no Arch</a>).</p>
+<p>Nos exemplos vamos usar o <code>sleep</code>, que só espera: <code>sleep 300</code> fica 300 segundos parado. É ótimo para treinar, porque não mexe em nada.</p>
+
+<h2>Rodar em segundo plano: <code>&amp;</code></h2>
+
+<dl class="anatomy">
+  <dt>sleep 300</dt><dd>O comando que vai rodar.</dd>
+  <dt>&amp;</dt><dd>No fim da linha: "rode em segundo plano e me devolva o prompt".</dd>
+</dl>
+
+<pre class="term">$ sleep 300 &amp;
+[1] 22623                   « [1] = número do job; 22623 = PID do processo
+$ echo "o terminal está livre"
+o terminal está livre</pre>
+
+<p>O shell responde com dois números: o <strong>número do job</strong> entre colchetes, usado nos comandos desta página, e o <strong>PID</strong>, o número do processo no sistema inteiro, usado por <code>kill</code> e <code>ps</code> (veja <a href="processos.html">ps, pgrep, top</a>). O PID do último comando posto em segundo plano fica na variável <code>$!</code>.</p>
+
+<h2>Ver os jobs: <code>jobs</code></h2>
+<pre class="term">$ sleep 600 &amp;
+[2] 22657
+$ jobs
+[1]-  Executando                 sleep 300 &amp;
+[2]+  Executando                 sleep 600 &amp;      « + é o job "atual"
+$ jobs -l
+[1]- 22623 Executando                 sleep 300 &amp;   « -l mostra o PID também
+[2]+ 22657 Executando                 sleep 600 &amp;</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que aparece</th><th>Significado</th></tr>
+<tr><td><code>+</code></td><td>Job atual: o que <code>fg</code> e <code>bg</code> usam se você não disser qual</td></tr>
+<tr><td><code>-</code></td><td>O job anterior</td></tr>
+<tr><td><code>Executando</code></td><td>Rodando em segundo plano</td></tr>
+<tr><td><code>Parado</code></td><td>Pausado com <kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+<tr><td><code>Concluído</code></td><td>Acabou sozinho (com sucesso)</td></tr>
+<tr><td><code>Terminado</code></td><td>Foi encerrado por um <code>kill</code> (sinal TERM)</td></tr>
+<tr><td><code>Desconexão</code></td><td>Foi encerrado pelo sinal HUP (fechamento do terminal; veja abaixo)</td></tr>
+</table>
+</div>
+
+<p>Quando um job de segundo plano termina, o Bash avisa na próxima vez que mostra o prompt:</p>
+
+<pre class="term">$ sleep 1 &amp;
+[3] 22749
+$ true
+[3]+  Concluído                 sleep 1          « aviso que aparece depois do próximo comando</pre>
+
+<div class="try" data-goal="ran:sleep\s+1000\s*&amp;,outre:^\[1\]\+\s+\d+ Executando\s+sleep 1000 &amp;" data-solucao="sleep 1000 &amp;;;jobs -l">
+<p class="try-task"><strong>Missão:</strong> rode <code>sleep 1000</code> em segundo plano e depois liste os jobs <strong>mostrando o PID</strong>.</p>
+</div>
+
+<div class="warning">
+<strong>Atenção à saída</strong>
+<p>Um comando em segundo plano continua escrevendo no seu terminal, misturando com o que você digita. Para comandos que falam muito, mande a saída para um arquivo: <code>comando &gt; saida.log 2&gt;&amp;1 &amp;</code> (veja <a href="redirecionamento.html">Redirecionamento</a>).</p>
+</div>
+
+<hr>
+
+<h2>Pausar e retomar: <kbd>Ctrl</kbd>+<kbd>Z</kbd>, <code>bg</code> e <code>fg</code></h2>
+<p>Esqueceu o <code>&amp;</code>? Não precisa cancelar. Pause com <kbd>Ctrl</kbd>+<kbd>Z</kbd> e escolha o que fazer. Esta sessão foi gravada num terminal de verdade do Arch, com os dois <code>sleep</code> de antes ainda rodando:</p>
+
+<pre class="term">$ sleep 900
+^Z                                         « você apertou Ctrl+Z
+[3]+  Parado                     sleep 900
+$ jobs
+[1]   Executando                 sleep 300 &amp;
+[2]-  Executando                 sleep 600 &amp;
+[3]+  Parado                     sleep 900
+$ bg                                       « continue, mas em segundo plano
+[3]+ sleep 900 &amp;
+$ jobs
+[1]   Executando                 sleep 300 &amp;
+[2]-  Executando                 sleep 600 &amp;
+[3]+  Executando                 sleep 900 &amp;
+$ fg                                       « traga de volta para o primeiro plano
+sleep 900
+^C                                         « agora sim, cancelado com Ctrl+C
+$ jobs
+[1]-  Executando                 sleep 300 &amp;
+[2]+  Executando                 sleep 600 &amp;</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Origem</th><th>O que faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>—</td><td>Pausa o job em primeiro plano (ele fica Parado)</td></tr>
+<tr><td><code>bg</code></td><td><em>background</em></td><td>Continua o job pausado em segundo plano</td></tr>
+<tr><td><code>fg</code></td><td><em>foreground</em></td><td>Traz o job para o primeiro plano</td></tr>
+<tr><td><code>fg %2</code></td><td>—</td><td>Traz o job número 2 (o <code>%</code> indica número de job, não PID)</td></tr>
+<tr><td><code>kill %1</code></td><td>—</td><td>Encerra o job 1 sem precisar saber o PID</td></tr>
+</table>
+</div>
+
+<pre class="term">$ kill %1
+$ jobs
+[1]-  Terminado                  sleep 300        « o kill encerrou o job 1
+[2]+  Executando                 sleep 600 &amp;
+$ jobs
+[2]+  Executando                 sleep 600 &amp;      « na próxima vez, ele já saiu da lista</pre>
+
+<div class="try" data-setup="sleep 300 &amp;;;sleep 600 &amp;" data-goal="ran:^\s*kill\s+%1\b,outre:^\[2\]\+\s+Executando" data-solucao="kill %1;;jobs">
+<p class="try-task"><strong>Missão:</strong> há dois jobs rodando neste terminal. Veja-os com <code>jobs</code> e encerre o <strong>job número 1</strong> sem usar o PID. Depois confira com <code>jobs</code>.</p>
+</div>
+
+<div class="warning">
+<strong><kbd>Ctrl</kbd>+<kbd>Z</kbd> não é <kbd>Ctrl</kbd>+<kbd>C</kbd></strong>
+<p><kbd>Ctrl</kbd>+<kbd>C</kbd> cancela o comando. <kbd>Ctrl</kbd>+<kbd>Z</kbd> só pausa: o programa continua na memória, parado. Se você tentar sair do terminal com jobs parados, o Bash segura a saída na primeira tentativa:</p>
+<pre class="term">$ sleep 500
+^Z
+[1]+  Parado                     sleep 500
+$ exit
+exit
+Há trabalhos parados.            « um segundo exit sai mesmo assim (e encerra os jobs)</pre>
+<p>Cuidado especial com o <code>pacman</code>: pausar uma atualização com <kbd>Ctrl</kbd>+<kbd>Z</kbd> e esquecer deixa o banco de dados travado (o arquivo <code>/var/lib/pacman/db.lck</code>), e o próximo pacman reclama. Traga de volta com <code>fg</code> e deixe terminar (veja <a href="atualizar.html">Atualizar o Sistema</a>).</p>
+</div>
+
+<h3>O que o comando devolve</h3>
+<p>Pedir um job que não existe dá erro e código de saída 1:</p>
+<pre class="term">$ fg %3
+bash: fg: %3: trabalho não existe
+$ echo $?
+1
+$ bg %2
+bash: bg: o trabalho 2 já está em plano de fundo   « o bg num job que já está rodando</pre>
+
+<hr>
+
+<h2>Esperar os jobs: <code>wait</code></h2>
+<p>O <code>wait</code> faz o shell <strong>esperar</strong> os jobs de segundo plano terminarem. Sem argumento, espera todos; com <code>%n</code> ou um PID, espera só aquele. É muito usado em scripts que fazem várias coisas ao mesmo tempo e só continuam quando todas acabam.</p>
+
+<pre class="term">$ sleep 3 &amp;
+[1] 23595
+$ sleep 2 &amp;
+[2] 23597
+$ wait                                     « o prompt só volta quando os dois acabam
+[1]-  Concluído                 sleep 3
+$ echo "os dois terminaram"
+os dois terminaram</pre>
+
+<p>O código de saída do <code>wait</code> é o do job que ele esperou. Um job encerrado por <code>kill</code> devolve 143 (128 + 15, o número do sinal TERM):</p>
+
+<pre class="term">$ sleep 2 &amp;
+[1] 23658
+$ wait $!                                  « $! = PID do último job
+[1]+  Concluído                 sleep 2
+$ echo $?
+0
+$ sleep 30 &amp;
+[1] 23914
+$ kill %1
+$ wait %1
+[1]+  Terminado                  sleep 30
+$ echo $?
+143</pre>
+
+<p>Um script com <code>wait</code> aparece em <a href="script-lacos.html">Laços</a>.</p>
+
+<hr>
+
+<h2>Fechar o terminal mata os jobs: o sinal SIGHUP</h2>
+<p>Ao fechar a janela do terminal ou perder a conexão SSH, o sistema manda o sinal <strong>SIGHUP</strong> (<em>hang up</em>, "desligar o telefone", dos tempos dos terminais por linha telefônica) para os programas daquele terminal. A maioria encerra ao recebê-lo. Por isso, uma compilação em segundo plano morre quando você fecha a janela.</p>
+
+<p>Dá para ver o que acontece mandando o sinal à mão, com <code>kill -HUP</code>. Em português, o Bash chama esse fim de <strong>Desconexão</strong>:</p>
+
+<pre class="term">$ sleep 600 &amp;
+[1] 22918
+$ kill -HUP %1
+[1]+  Desconexão                sleep 600      « é isto que acontece ao fechar o terminal
+$ jobs
+$</pre>
+
+<p>Há várias formas de evitar isso.</p>
+
+<h3>Forma 1: <code>nohup</code> (antes de começar)</h3>
+
+<dl class="anatomy">
+  <dt>nohup</dt><dd>De <em>no hang up</em>: roda o comando ignorando o SIGHUP. Vem no <code>coreutils</code>.</dd>
+  <dt>sleep 600</dt><dd>O comando que deve sobreviver.</dd>
+  <dt>&amp;</dt><dd>Em segundo plano, para liberar o terminal.</dd>
+</dl>
+
+<pre class="term">$ nohup sleep 600 &amp;
+[1] 22919
+nohup: ignorando entrada e anexando saída a 'nohup.out'   « a saída vai para um arquivo
+$ kill -HUP %1                                             « simula o fechamento do terminal
+$ jobs
+[1]+  Executando                 nohup sleep 600 &amp;         « sobreviveu
+$ ls -l nohup.out
+-rw------- 1 ana ana 0 16 out 15:11 nohup.out              « só você pode ler</pre>
+
+<p>No Arch, a mensagem do <code>nohup</code> vem em português. Tudo o que o comando escreveria na tela vai para <code>nohup.out</code>, na pasta atual (acompanhe com <code>tail -f nohup.out</code>). O arquivo é criado com permissão <code>-rw-------</code>. Para escolher o nome, redirecione — e aí a mensagem nem aparece:</p>
+
+<pre class="term">$ nohup sleep 600 &gt; espera.log 2&gt;&amp;1 &amp;
+[2] 25304
+$ jobs
+[2]+  Executando                 nohup sleep 600 &gt; espera.log 2&gt;&amp;1 &amp;</pre>
+
+<div class="try" data-goal="file:~/nohup.out,ran:^\s*nohup\b" data-solucao="nohup sleep 100 &amp;">
+<p class="try-task"><strong>Missão:</strong> rode <code>sleep 100</code> em segundo plano de um jeito que ele sobreviva ao fechamento do terminal, deixando o <code>nohup</code> criar o arquivo de saída padrão. Confira com <code>ls -l nohup.out</code>.</p>
+</div>
+
+<h3>Forma 2: <code>disown</code> (já começou)</h3>
+<p>O job já está rodando e você precisa fechar o terminal? O <code>disown</code> ("renegar") tira o job da lista do shell, e ele deixa de receber o SIGHUP quando o shell sair:</p>
+
+<pre class="term">$ sleep 600 &amp;
+[1] 23485
+$ disown %1
+$ jobs                          « não aparece mais aqui...
+$ pgrep -a sleep                « ...mas continua rodando
+23485 sleep 600</pre>
+
+<p>Se o job estava <strong>pausado</strong>, rode <code>bg</code> antes do <code>disown</code>. O Bash até avisa — e o job continua pausado para sempre:</p>
+
+<pre class="term">$ sleep 700
+^Z
+[1]+  Parado                     sleep 700
+$ disown %1
+bash: aviso: excluindo trabalho parado 1 com grupo de processo 22976</pre>
+
+<div class="try" data-setup="sleep 500 &amp;" data-goal="ran:^\s*disown\b,outre:^\d+ sleep 500$" data-solucao="disown %1;;pgrep -a sleep">
+<p class="try-task"><strong>Missão:</strong> há um <code>sleep 500</code> rodando como job 1. Desligue-o do terminal com <code>disown</code> e confirme com <code>pgrep -a sleep</code> que ele continua vivo (e com <code>jobs</code> que saiu da lista).</p>
+</div>
+
+<h3>Forma 3: <code>tmux</code> (o mais completo)</h3>
+<p>O <code>nohup</code> e o <code>disown</code> salvam o processo, mas você perde a "tela" dele. O <code>tmux</code> (de <em>terminal multiplexer</em>) cria um terminal que continua existindo na máquina mesmo quando você se desconecta. Depois, você volta e encontra tudo exatamente como deixou — inclusive uma pergunta <code>[S/n]</code> do pacman esperando resposta.</p>
+
+<h4>tmux não vem no Arch</h4>
+<p>Fiel à filosofia de instalar só o que você pede, o Arch não traz nem o <code>tmux</code> nem o <code>screen</code>. E, diferente do Ubuntu, também não sugere o pacote quando o comando não existe:</p>
+
+<pre class="term">$ tmux
+bash: tmux: comando não encontrado
+$ screen
+bash: screen: comando não encontrado
+$ pacman -F /usr/bin/tmux
+usr/bin/tmux pertence a extra/tmux 3.8-1      « o -F procura em quais pacotes um arquivo está</pre>
+
+<p>(O <code>pacman -F</code> usa um banco de arquivos que é baixado com <code>sudo pacman -Fy</code>; veja <a href="pacman-avancado.html">pacman Avançado</a>.) A instalação é um comando só. Esta é a transação real, mostrada no laboratório com o <code>previa</code> (que responde "não" e não instala nada):</p>
+
+<pre class="term">$ sudo pacman -S tmux
+[sudo] senha para ana:
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) libutempter-1.2.3-1  tmux-3.8-1
+
+Tamanho total download:   0,62 MiB
+Tamanho total instalado:  1,47 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>Responda <kbd>Enter</kbd> (o <code>S</code> maiúsculo é o padrão). Os detalhes de instalar estão em <a href="pacman.html">pacman: o Básico</a>.</p>
+
+<h4>tmux passo a passo</h4>
+<p class="tip">Como o tmux não está instalado na máquina de laboratório, as mensagens desta parte são <strong>ilustrativas</strong> (o tmux não tem tradução: as mensagens dele são sempre em inglês).</p>
+
+<ol class="passo">
+<li><p><strong>Criar uma sessão com nome.</strong></p>
+<dl class="anatomy">
+  <dt>tmux</dt><dd>O programa.</dd>
+  <dt>new</dt><dd>Criar uma sessão nova.</dd>
+  <dt>-s atualizacao</dt><dd>De <em>session name</em>: o nome da sessão.</dd>
+</dl>
+<pre class="term">$ tmux new -s atualizacao</pre>
+<p>A tela limpa e aparece uma barra verde embaixo. Você está dentro do tmux. Rode o que quiser, por exemplo <code>sudo pacman -Syu</code>.</p></li>
+<li><p><strong>Desanexar (sair sem encerrar).</strong> Aperte <kbd>Ctrl</kbd>+<kbd>B</kbd>, solte, e aperte <kbd>D</kbd>. Você volta ao terminal normal; a sessão continua rodando.</p>
+<pre class="term">$ tmux new -s atualizacao
+[detached (from session atualizacao)]      « depois de Ctrl+B e D</pre>
+<p>Pode fechar o terminal ou desconectar o SSH. A atualização continua.</p></li>
+<li><p><strong>Listar e voltar.</strong></p>
+<pre class="term">$ tmux ls
+atualizacao: 1 windows (created Fri Oct 16 15:20:18 2026)
+$ tmux attach -t atualizacao               « volta para dentro da sessão</pre></li>
+<li><p><strong>Encerrar de vez.</strong> Dentro da sessão, digite <code>exit</code>. De fora: <code>tmux kill-session -t atualizacao</code>.</p></li>
+</ol>
+
+<h4>Atalhos do tmux</h4>
+<p>Todos começam com o prefixo <kbd>Ctrl</kbd>+<kbd>B</kbd>: aperte, solte, e depois a tecla da tabela.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho</th><th>O que faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>D</kbd></td><td>Desanexa (sai e deixa rodando)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>C</kbd></td><td>Cria uma nova janela</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>N</kbd> / <kbd>P</kbd></td><td>Próxima / janela anterior</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>%</kbd></td><td>Divide a tela lado a lado</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>"</kbd></td><td>Divide a tela em cima e embaixo</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> setas</td><td>Muda de painel</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>[</kbd></td><td>Modo de rolagem (sai com <kbd>q</kbd>)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>?</kbd></td><td>Lista todos os atalhos</td></tr>
+</table>
+</div>
+
+<h4>E o screen?</h4>
+<p>O <code>screen</code> é o "avô" do tmux e faz o mesmo papel: <code>screen -S atualizacao</code> cria, <kbd>Ctrl</kbd>+<kbd>A</kbd> <kbd>D</kbd> desanexa, <code>screen -r atualizacao</code> volta. No Arch ele também é um pacote à parte (<code>sudo pacman -S screen</code>: 0,58 MiB, com a mesma dependência <code>libutempter</code>). Se você está começando, prefira o tmux.</p>
+
+<h3>Forma 4: <code>systemd-run --user</code> (a alternativa moderna)</h3>
+<p>O Arch usa o <strong>systemd</strong>, e cada usuário logado tem o seu próprio "gerente de serviços" (o <code>systemd --user</code>). O <code>systemd-run --user</code> entrega um comando a esse gerente, que o roda como um <strong>serviço temporário</strong>, fora do terminal. Fechar a janela não afeta nada, a saída vai para o journal e você controla com <code>systemctl --user</code>.</p>
+
+<dl class="anatomy">
+  <dt>systemd-run</dt><dd>Roda um comando como uma unidade do systemd.</dd>
+  <dt>--user</dt><dd>No gerente do <strong>seu usuário</strong> (sem sudo). Sem isso, seria no do sistema, como root.</dd>
+  <dt>--unit=backup</dt><dd>O nome da unidade (vira <code>backup.service</code>). Sem ele, o systemd sorteia um nome como <code>run-u123.service</code>.</dd>
+  <dt>bash -c '…'</dt><dd>O comando. Aqui, um "backup" de mentira que escreve uma linha e espera 2 minutos.</dd>
+</dl>
+
+<pre class="term">$ systemd-run --user --unit=backup bash -c 'echo "backup começou"; sleep 120; echo "backup terminou"'
+Running as unit: backup.service; invocation ID: 6cd73396195c4823b2043aea38f96d0f
+$ systemctl --user status backup
+● backup.service - [systemd-run] /usr/bin/bash -c "echo \"backup começou\"; sleep 120; echo \"backup terminou\""
+     Loaded: loaded (/run/user/1000/systemd/transient/backup.service; transient)
+  Transient: yes                                      « temporário: some quando terminar
+     Active: active (running) since Fri 2026-10-16 15:11:45 -03; 13ms ago
+ Invocation: 6cd73396195c4823b2043aea38f96d0f
+   Main PID: 25237 ((bash))
+      Tasks: 1 (limit: 4621)
+     Memory: 1.2M (peak: 1.2M)
+        CPU: 9ms
+     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/backup.service
+             └─25237 "(bash)"
+…</pre>
+
+<p>As mensagens do systemd saem em inglês. O que o comando escreve vai para o <strong>journal do usuário</strong>, que você lê com <code>journalctl --user</code> (veja <a href="journal.html">Logs (journalctl)</a>). Para parar, <code>systemctl --user stop</code> — e, como é temporária, a unidade some:</p>
+
+<pre class="term">$ journalctl --user -u backup -n 2
+out 16 15:12:10 notebook systemd[22064]: Started [systemd-run] /usr/bin/bash -c "echo \"backup começou\"; sleep 120; echo \"backup terminou\"".
+out 16 15:12:10 notebook bash[25463]: backup começou      « a saída do comando
+$ systemctl --user is-active backup
+active
+$ systemctl --user stop backup
+$ systemctl --user is-active backup
+inactive
+$ systemctl --user status backup
+Unit backup.service could not be found.                   « a unidade temporária sumiu</pre>
+
+<p>Não dá para ter duas unidades com o mesmo nome rodando ao mesmo tempo:</p>
+<pre class="term">$ systemd-run --user --unit=backup bash -c '…'
+Failed to start transient service unit: Unit backup.service was already loaded or has a fragment file.</pre>
+
+<div class="warning">
+<strong>O gerente do usuário fecha quando você sai de todas as sessões</strong>
+<p>O <code>systemd --user</code> vive enquanto você tem alguma sessão aberta (um terminal, um login gráfico, um SSH). Fechar <strong>uma</strong> janela não tem problema; sair de <strong>todas</strong> encerra o gerente e os serviços dele. Para que continuem depois do logout, o usuário precisa de <em>linger</em> ("permanecer"): <code>loginctl enable-linger</code>. Na VM do laboratório, <code>loginctl show-user ana -p Linger</code> mostra <code>Linger=no</code> (o padrão). O que precisa rodar sempre, inclusive depois de reiniciar, vira um serviço de verdade: veja <a href="systemd.html">systemctl e Serviços</a> e <a href="timers.html">Timers e Tarefas</a>.</p>
+</div>
+
+<p class="tip">O simulador do guia não tem o <code>systemd-run</code> nem o <code>systemctl --user</code>: pratique no seu Arch. Para desfazer o exemplo, basta o <code>systemctl --user stop backup</code>.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Liberar o terminal por alguns minutos, sem fechar a janela</td><td><code>comando &amp;</code></td></tr>
+<tr><td>Esqueceu o <code>&amp;</code> e o comando já começou</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> e depois <code>bg</code></td></tr>
+<tr><td>Num script, esperar vários comandos paralelos</td><td><code>wait</code></td></tr>
+<tr><td>Rodar algo longo e poder fechar o terminal, sem precisar ver a tela</td><td><code>nohup comando &gt; log 2&gt;&amp;1 &amp;</code></td></tr>
+<tr><td>Já está rodando e você precisa sair agora</td><td><code>bg</code> (se pausado) + <code>disown</code></td></tr>
+<tr><td>Trabalho longo por SSH (como <code>pacman -Syu</code> num servidor), querendo voltar e ver a tela</td><td><code>tmux</code></td></tr>
+<tr><td>Rodar fora do terminal, com log no journal e controle pelo <code>systemctl</code></td><td><code>systemd-run --user</code></td></tr>
+<tr><td>Algo que precisa rodar sempre, inclusive depois de reiniciar</td><td>um serviço ou timer do systemd (<a href="timers.html">Timers</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"bash: fg: %3: trabalho não existe"</strong>
+<pre class="term">$ fg %3
+bash: fg: %3: trabalho não existe</pre>
+<p><strong>O que aconteceu:</strong> não há job número 3 neste terminal. Cada janela tem a sua lista, e jobs que terminaram ou passaram por <code>disown</code> saem dela. Sem número, a mensagem é <code>bash: fg: atual: trabalho não existe</code>.</p>
+<p><strong>Como resolver:</strong> rode <code>jobs</code> para ver os números certos. Se o processo foi aberto em outra janela, use <code>pgrep -a nome</code> e <code>kill PID</code> (veja <a href="kill.html">Encerrar Programas</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Fechei o SSH e o comando morreu</strong>
+<p><strong>O que aconteceu:</strong> a conexão caiu, o sistema mandou SIGHUP e o processo encerrou (no <code>jobs</code> ele apareceria como <code>Desconexão</code>).</p>
+<p><strong>Como resolver:</strong> da próxima vez, abra um <code>tmux</code> antes de começar. Se a tarefa vai demorar (uma atualização grande, uma compilação do AUR), isso é obrigatório. Um <code>pacman -Syu</code> interrompido no meio pode deixar o sistema em estado inconsistente (veja <a href="problemas-update.html">Erros de Atualização</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"bash: tmux: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o Arch não instala o tmux por padrão, e também não tem o "command-not-found" que sugere o pacote.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S tmux</code>. Para descobrir o pacote de um comando qualquer: <code>pacman -F nome</code> (depois de um <code>sudo pacman -Fy</code>). Se quiser a sugestão automática, o pacote <code>pkgfile</code> traz um "command-not-found" para o Bash.</p>
+</div>
+
+<div class="cenario">
+<strong>"no server running on /tmp/tmux-1000/default"</strong>
+<pre class="term">$ tmux ls
+no server running on /tmp/tmux-1000/default</pre>
+<p><strong>O que aconteceu:</strong> não há nenhuma sessão tmux aberta para o seu usuário. Talvez ela tenha sido encerrada, ou a máquina reiniciou (no Arch, o <code>/tmp</code> fica na memória e é esvaziado a cada boot). Mensagem ilustrativa.</p>
+<p><strong>Como resolver:</strong> crie uma nova com <code>tmux new -s nome</code>. Tentar voltar a uma sessão que não existe dá <code>can't find session: nome</code>, e criar uma com nome repetido dá <code>duplicate session: nome</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to start transient service unit: … was already loaded"</strong>
+<p><strong>O que aconteceu:</strong> já existe uma unidade com aquele nome (o <code>systemd-run</code> anterior ainda está rodando).</p>
+<p><strong>Como resolver:</strong> veja com <code>systemctl --user status nome</code>; pare com <code>systemctl --user stop nome</code> ou use outro <code>--unit=</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O job em segundo plano parou sozinho</strong>
+<p><strong>O que aconteceu:</strong> um programa em segundo plano que tenta <strong>ler do teclado</strong> é pausado automaticamente (aparece <code>Parado</code>). Acontece, por exemplo, com <code>sudo pacman -Syu &amp;</code>: o sudo quer a senha, e o pacman quer o <code>[S/n]</code>.</p>
+<p><strong>Como resolver:</strong> traga com <code>fg</code> e responda. Para atualizações, prefira rodar em primeiro plano dentro de um <code>tmux</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>comando &amp;</code></td><td>Roda em segundo plano</td></tr>
+<tr><td><code>jobs</code> / <code>jobs -l</code></td><td>Lista os jobs (com PID)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Pausa o job em primeiro plano</td></tr>
+<tr><td><code>bg [%n]</code></td><td>Continua em segundo plano</td></tr>
+<tr><td><code>fg [%n]</code></td><td>Traz para o primeiro plano</td></tr>
+<tr><td><code>kill %n</code> / <code>kill -HUP %n</code></td><td>Encerra o job n / manda o sinal de "desconexão"</td></tr>
+<tr><td><code>wait [%n|PID]</code></td><td>Espera os jobs (ou um deles) terminarem</td></tr>
+<tr><td><code>$!</code></td><td>PID do último job em segundo plano</td></tr>
+<tr><td><code>disown %n</code></td><td>Desliga o job do terminal</td></tr>
+<tr><td><code>nohup comando &amp;</code></td><td>Roda imune ao fechamento do terminal (saída em <code>nohup.out</code>)</td></tr>
+<tr><td><code>tmux new -s nome</code></td><td>Cria sessão tmux (<code>sudo pacman -S tmux</code>)</td></tr>
+<tr><td><code>tmux ls</code> / <code>tmux attach -t nome</code></td><td>Lista / volta para a sessão</td></tr>
+<tr><td><code>tmux kill-session -t nome</code></td><td>Encerra a sessão</td></tr>
+<tr><td><code>systemd-run --user --unit=nome cmd</code></td><td>Roda como serviço temporário do usuário</td></tr>
+<tr><td><code>systemctl --user status/stop nome</code></td><td>Vê / para esse serviço</td></tr>
+<tr><td><code>journalctl --user -u nome</code></td><td>Lê a saída dele</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Segundo plano</h3>
+<p>Complete para rodar o backup em segundo plano:</p>
+<div class="ex-code">./backup.sh <input data-answer="&amp;" aria-label="símbolo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Retomar</h3>
+<p>Você apertou <kbd>Ctrl</kbd>+<kbd>Z</kbd> num comando. Qual comando faz ele continuar em segundo plano?</p>
+<div class="ex-code"><input data-answer="bg" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Voltar à sessão</h3>
+<p>Complete para voltar à sessão tmux chamada <code>atualizacao</code>:</p>
+<div class="ex-code">tmux <input data-answer="attach -t" aria-label="subcomando e opção"> atualizacao</div>
+</div>
+
+<div class="exercise">
+<h3>4. Ler a saída do serviço temporário</h3>
+<p>Complete para ver o que o <code>backup</code> criado com <code>systemd-run --user</code> escreveu:</p>
+<div class="ex-code">journalctl <input data-answer="--user" aria-label="opção"> -u backup</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você vai rodar um <code>pacman -Syu</code> grande num servidor Arch por SSH e quer poder ver a tela depois. O que usar?</p>
+<label><input type="radio" name="q5"> <code>sudo pacman -Syu &amp;</code></label>
+<label><input type="radio" name="q5"> <kbd>Ctrl</kbd>+<kbd>Z</kbd></label>
+<label><input type="radio" name="q5"> <code>tmux</code></label>
+<label><input type="radio" name="q5"> <code>jobs</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Num Arch recém-instalado, você digita <code>tmux</code> e recebe "comando não encontrado". O que fazer?</p>
+<label><input type="radio" name="q6"> <code>sudo apt install tmux</code></label>
+<label><input type="radio" name="q6"> <code>sudo pacman -S tmux</code></label>
+<label><input type="radio" name="q6"> O Arch não tem tmux; use o screen, que já vem instalado</label>
+<label><input type="radio" name="q6"> Reiniciar o terminal</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. O <code>jobs</code> mostrou <code>[1]+  Desconexão  sleep 600</code>. O que aconteceu?</p>
+<label><input type="radio" name="q7"> O sleep terminou normalmente.</label>
+<label><input type="radio" name="q7"> A internet caiu.</label>
+<label><input type="radio" name="q7"> O job foi pausado com Ctrl+Z.</label>
+<label><input type="radio" name="q7"> O job recebeu o sinal HUP, o mesmo de quando o terminal é fechado.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>&amp;</code> manda para o segundo plano; <code>jobs</code> lista; <code>fg</code> e <code>bg</code> trazem e levam; <code>wait</code> espera.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> pausa, <kbd>Ctrl</kbd>+<kbd>C</kbd> cancela. Não deixe um pacman pausado.</li>
+  <li>Fechar o terminal manda SIGHUP (no <code>jobs</code>: "Desconexão"); <code>nohup</code> e <code>disown</code> protegem o processo.</li>
+  <li>No Arch, a mensagem do <code>nohup</code> vem em português, e o <code>tmux</code>/<code>screen</code> se instalam com <code>sudo pacman -S</code>.</li>
+  <li>Para sessões longas por SSH, use <code>tmux</code>: desanexe com <kbd>Ctrl</kbd>+<kbd>B</kbd> <kbd>D</kbd> e volte com <code>tmux attach</code>.</li>
+  <li><code>systemd-run --user</code> roda um comando como serviço temporário, com saída no <code>journalctl --user</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o controle de jobs é do shell, descrito em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> (<a href="https://wiki.archlinux.org/title/Bash_(Portugu%C3%AAs)">em português</a>). O <a href="https://wiki.archlinux.org/title/Tmux">tmux</a> e o <a href="https://wiki.archlinux.org/title/GNU_Screen">GNU Screen</a> têm páginas próprias, com configurações e atalhos. O gerente de serviços do usuário, o <code>systemd-run --user</code> e o <em>linger</em> estão em <a href="https://wiki.archlinux.org/title/Systemd/User">systemd/User</a> (<a href="https://wiki.archlinux.org/title/Systemd/User_(Portugu%C3%AAs)">em português</a>). Para descobrir o pacote de um comando, veja <a href="https://wiki.archlinux.org/title/Pkgfile">pkgfile</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
