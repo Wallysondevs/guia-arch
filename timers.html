@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch timers — tarefas agendadas com systemd timers e cron (cronie) | Guia Arch</title>
+<meta name="description" content="Agendar tarefas no Arch Linux: systemd timers (list-timers, .service + .timer em ~/.config/systemd/user, OnCalendar, systemd-analyze calendar, Persistent, systemd-run), cronie e crontab, e por que o at não vem instalado, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Timers e <span class="hl">tarefas agendadas</span></h1>
+
+<p class="intro">Fazer backup toda noite, limpar uma pasta toda semana, lembrar de beber água a cada hora: são <strong>tarefas agendadas</strong>. Em muitas distros quem faz isso é o velho <code>cron</code>. No Arch, o jeito nativo são os <strong>timers do systemd</strong>, e o próprio sistema já usa vários. O <code>cron</code> continua disponível (pacote <code>cronie</code>), mas não vem ligado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ver os timers que o Arch já usa, com <code>systemctl list-timers</code>.</li>
+  <li>Criar o seu par <code>.service</code> + <code>.timer</code> em <code>~/.config/systemd/user/</code>, sem sudo.</li>
+  <li>Escrever horários com <code>OnCalendar=</code> e conferir com <code>systemd-analyze calendar</code>.</li>
+  <li>Usar o <code>cronie</code> e o <code>crontab</code>, e o que fazer se você procura o <code>at</code>.</li>
+  <li>Escolher entre timer e cron.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: um despertador e uma tarefa</h2>
+<p>Um timer do systemd são <strong>dois arquivos</strong> que trabalham juntos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Papel</th><th>Comparação</th></tr>
+<tr><td><code>nome.service</code></td><td><strong>O quê</strong>: o comando a rodar</td><td>A tarefa escrita no bilhete</td></tr>
+<tr><td><code>nome.timer</code></td><td><strong>Quando</strong>: o horário ou intervalo</td><td>O despertador que manda fazer a tarefa</td></tr>
+</table>
+</div>
+
+<p>Por padrão, o <code>nome.timer</code> dispara o <code>nome.service</code> de mesmo nome. Quem fica ligado (<code>enable</code>) é o timer; o serviço só roda quando o timer manda. Como é tudo systemd, você ganha de graça o log no journal, o <code>systemctl status</code> e a chance de rodar tarefas perdidas enquanto o computador estava desligado. Se ainda não leu, veja <a href="systemd.html">systemctl e Serviços</a>.</p>
+
+<hr>
+
+<h2>Os timers que já vêm no Arch</h2>
+
+<dl class="anatomy">
+  <dt>systemctl</dt><dd>Fala com o systemd.</dd>
+  <dt>list-timers</dt><dd>Lista os timers ativos, do mais próximo ao mais distante. <code>--all</code> inclui os inativos.</dd>
+</dl>
+
+<pre class="term">$ systemctl list-timers --no-pager
+NEXT                          LEFT LAST                           PASSED UNIT                             ACTIVATES
+Fri 2026-10-16 14:00:00 -03  21min -                                   - snapper-timeline.timer           snapper-timeline.service
+Sat 2026-10-17 00:00:00 -03    10h Fri 2026-10-16 12:12:00 -03         - shadow.timer                     shadow.service
+Sat 2026-10-17 06:28:50 -03    16h Fri 2026-10-16 12:12:00 -03         - man-db.timer                     man-db.service
+Sat 2026-10-17 13:21:26 -03    23h Fri 2026-10-16 13:21:26 -03 17min ago systemd-tmpfiles-clean.timer     systemd-tmpfiles-clean.service
+Tue 2026-10-20 10:34:32 -03 3 days Fri 2026-10-16 12:12:00 -03         - archlinux-keyring-wkd-sync.timer archlinux-keyring-wkd-sync.service
+
+5 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>NEXT</code> / <code>LEFT</code></td><td>Quando dispara de novo / quanto falta</td></tr>
+<tr><td><code>LAST</code> / <code>PASSED</code></td><td>Quando disparou pela última vez / há quanto tempo (<code>-</code> = ainda não, neste boot)</td></tr>
+<tr><td><code>UNIT</code></td><td>O timer</td></tr>
+<tr><td><code>ACTIVATES</code></td><td>O serviço que ele liga</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Timer</th><th>Vem do pacote</th><th>O que faz</th></tr>
+<tr><td><code>shadow.timer</code></td><td><code>shadow</code></td><td>Todo dia confere se <code>/etc/passwd</code> e <code>/etc/group</code> estão íntegros (veja <a href="usuarios.html">Usuários e Grupos</a>)</td></tr>
+<tr><td><code>man-db.timer</code></td><td><code>man-db</code></td><td>Atualiza o índice do <code>man -k</code></td></tr>
+<tr><td><code>systemd-tmpfiles-clean.timer</code></td><td><code>systemd</code></td><td>Limpa arquivos velhos de pastas temporárias, 15 minutos depois do boot e depois a cada dia</td></tr>
+<tr><td><code>archlinux-keyring-wkd-sync.timer</code></td><td><code>archlinux-keyring</code></td><td>Atualiza as chaves dos empacotadores (veja <a href="chaves.html">Chaves e Assinaturas</a>)</td></tr>
+<tr><td><code>snapper-timeline.timer</code></td><td><code>snapper</code></td><td>Tira um snapshot por hora (instalado na VM para outra aula: <a href="snapshots.html">Snapshots</a>)</td></tr>
+</table>
+</div>
+
+<p>Repare que a lista não traz o <code>paccache.timer</code> (limpeza do cache do pacman): ele existe no pacote <code>pacman-contrib</code>, mas, como tudo no Arch, só roda se você habilitar (veja <a href="cache-orfaos.html">Cache e Órfãos</a>).</p>
+
+<h3>Por dentro de um timer do sistema</h3>
+<pre class="term">$ systemctl cat shadow.timer
+# /usr/lib/systemd/system/shadow.timer
+[Unit]
+Description=Daily verification of password and group files
+
+[Timer]
+OnCalendar=daily
+AccuracySec=12h
+Persistent=true</pre>
+
+<dl class="anatomy">
+  <dt>[Timer]</dt><dd>A seção que só os timers têm.</dd>
+  <dt>OnCalendar=daily</dt><dd>Quando: todo dia à meia-noite (detalhes abaixo).</dd>
+  <dt>AccuracySec=12h</dt><dd>Margem de atraso permitida: o systemd pode rodar até 12 horas depois, para juntar tarefas e economizar energia. O padrão é 1 minuto.</dd>
+  <dt>Persistent=true</dt><dd>Se o computador estava desligado na hora marcada, roda assim que ligar. É o que o <code>cron</code> não faz sozinho.</dd>
+</dl>
+
+<p>O <code>shadow.timer</code> não tem seção <code>[Install]</code> e ninguém rodou <code>enable</code> nele: o próprio pacote já traz o link que o liga, numa pasta de <code>/usr/lib</code>. Já o do snapper foi habilitado à mão, e o link dele fica em <code>/etc</code>:</p>
+
+<pre class="term">$ ls /usr/lib/systemd/system/timers.target.wants/ /etc/systemd/system/timers.target.wants/
+/etc/systemd/system/timers.target.wants/:
+snapper-timeline.timer               « habilitado pelo administrador
+
+/usr/lib/systemd/system/timers.target.wants/:
+archlinux-keyring-wkd-sync.timer     « ligados pelos pacotes
+man-db.timer
+shadow.timer
+systemd-tmpfiles-clean.timer</pre>
+
+<p>Os seus timers terão <code>[Install]</code> com <code>WantedBy=timers.target</code>, para o <code>enable</code> saber onde criar o link.</p>
+
+<hr>
+
+<h2>Criar o seu timer (como usuário, sem sudo)</h2>
+<p>Vamos criar um lembrete que escreve "Hora de beber água!" no journal a cada minuto (curto de propósito, para ver funcionando; na vida real seria a cada hora). Tudo como a ana, com <code>systemctl --user</code>, na pasta das unidades do usuário.</p>
+
+<ol class="passo">
+<li>
+<p><strong>Crie a pasta</strong> (ela não existe numa conta nova):</p>
+<pre class="term">$ mkdir -p ~/.config/systemd/user
+$ cd ~/.config/systemd/user</pre>
+</li>
+<li>
+<p><strong>O serviço (o quê).</strong> Crie <code>a6-lembrete.service</code> com o editor que preferir:</p>
+<pre class="file" data-file="~/.config/systemd/user/a6-lembrete.service">[Unit]
+Description=Lembrete de beber água (a6)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -t lembrete "Hora de beber água!"
+</pre>
+<dl class="anatomy">
+  <dt>Type=oneshot</dt><dd>Roda uma vez e termina (não é um programa que fica rodando). É o tipo certo para tarefas agendadas.</dd>
+  <dt>ExecStart=</dt><dd>O comando, com o <strong>caminho completo</strong> do programa. Aqui, o <code>logger</code> escreve uma linha no journal com a etiqueta <code>lembrete</code>. Para um script seu: <code>ExecStart=%h/bin/backup.sh</code> (<code>%h</code> = a sua pasta pessoal).</dd>
+  <dt>Sem [Install]</dt><dd>O serviço não precisa ser habilitado: quem o chama é o timer.</dd>
+</dl>
+</li>
+<li>
+<p><strong>O timer (quando).</strong> Crie <code>a6-lembrete.timer</code>, com o <strong>mesmo nome</strong>:</p>
+<pre class="file" data-file="~/.config/systemd/user/a6-lembrete.timer">[Unit]
+Description=Lembrete a cada minuto (a6)
+
+[Timer]
+OnCalendar=minutely
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+</pre>
+<dl class="anatomy">
+  <dt>OnCalendar=minutely</dt><dd>A cada minuto, no segundo 00. Para cada hora: <code>hourly</code>.</dd>
+  <dt>Persistent=true</dt><dd>Recupera execuções perdidas com a máquina desligada.</dd>
+  <dt>WantedBy=timers.target</dt><dd>O <code>enable</code> liga este timer junto com os outros timers, no login.</dd>
+</dl>
+</li>
+<li>
+<p><strong>Avise o systemd e ligue o timer</strong> (não o serviço):</p>
+<pre class="term" data-cwd="~/.config/systemd/user">$ systemctl --user daemon-reload
+$ systemctl --user enable --now a6-lembrete.timer
+Created symlink '/home/ana/.config/systemd/user/timers.target.wants/a6-lembrete.timer' → '/home/ana/.config/systemd/user/a6-lembrete.timer'.
+$ echo $?
+0</pre>
+</li>
+<li>
+<p><strong>Confira.</strong> Real, na VM:</p>
+<pre class="term">$ systemctl --user list-timers --no-pager
+NEXT                        LEFT LAST PASSED UNIT              ACTIVATES
+Fri 2026-10-16 13:40:00 -03  51s -         - a6-lembrete.timer a6-lembrete.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+$ systemctl --user status a6-lembrete.timer --no-pager
+● a6-lembrete.timer - Lembrete a cada minuto (a6)
+     Loaded: loaded (/home/ana/.config/systemd/user/a6-lembrete.timer; enabled; preset: enabled)
+     Active: active (waiting) since Fri 2026-10-16 13:39:08 -03; 41ms ago       « "waiting" = esperando a hora
+ Invocation: d4eb07577eba42f8bb62114d22f614e8
+    Trigger: Fri 2026-10-16 13:40:00 -03; 51s left                              « próximo disparo
+   Triggers: ● a6-lembrete.service                                             « o que ele dispara
+
+out 16 13:39:08 notebook systemd[2032]: Started Lembrete a cada minuto (a6).</pre>
+</li>
+<li>
+<p><strong>Teste a tarefa sem esperar</strong>: dá para rodar o serviço à mão, quando quiser:</p>
+<pre class="term">$ systemctl --user start a6-lembrete.service
+$ journalctl --user -t lembrete --no-pager
+out 16 13:39:08 notebook lembrete[90051]: Hora de beber água!</pre>
+</li>
+<li>
+<p><strong>Espere o timer.</strong> Uns 90 segundos depois:</p>
+<pre class="term">$ systemctl --user list-timers --no-pager
+NEXT                        LEFT LAST                         PASSED UNIT              ACTIVATES
+Fri 2026-10-16 13:41:00 -03   5s Fri 2026-10-16 13:40:34 -03 19s ago a6-lembrete.timer a6-lembrete.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+$ journalctl --user -t lembrete --no-pager
+out 16 13:39:08 notebook lembrete[90051]: Hora de beber água!       « o teste à mão
+out 16 13:40:35 notebook lembrete[92849]: Hora de beber água!       « o timer</pre>
+<p>Marcado para 13:40:00, rodou às 13:40:34. Não é defeito: é o <code>AccuracySec</code> padrão de 1 minuto. Se precisar de pontualidade ao segundo, ponha <code>AccuracySec=1s</code> no <code>.timer</code>.</p>
+</li>
+<li>
+<p><strong>Desfazer</strong> (como foi feito na VM):</p>
+<pre class="term">$ systemctl --user disable --now a6-lembrete.timer
+Removed '/home/ana/.config/systemd/user/timers.target.wants/a6-lembrete.timer'.
+$ rm ~/.config/systemd/user/a6-lembrete.service ~/.config/systemd/user/a6-lembrete.timer
+$ systemctl --user daemon-reload
+$ systemctl --user list-timers --no-pager
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+0 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+</li>
+</ol>
+
+<div class="tip">
+<strong>Timer de usuário só roda com você logado</strong>
+<p>O systemd do usuário nasce no seu login e morre quando a última sessão fecha. Para que os seus timers rodem com você deslogado (num servidor, por exemplo), ative o <em>lingering</em>: <code>sudo loginctl enable-linger ana</code>. Tarefas do sistema inteiro (backup de <code>/etc</code>, por exemplo) vão em <code>/etc/systemd/system/</code>, com <code>sudo systemctl</code>, e rodam como root.</p>
+</div>
+
+<div class="try" data-goal="contains:~/.config/systemd/user/backup.timer=OnCalendar=daily" data-solucao="mkdir -p ~/.config/systemd/user;;printf '[Timer]\nOnCalendar=daily\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n' &gt; ~/.config/systemd/user/backup.timer">
+<p class="try-task"><strong>Missão:</strong> crie o arquivo <code>~/.config/systemd/user/backup.timer</code> com uma seção <code>[Timer]</code> que dispare <strong>todo dia</strong> (<code>OnCalendar=daily</code>). Dica: <code>mkdir -p</code> e <code>printf '…\n…\n' &gt; arquivo</code>.</p>
+</div>
+
+<hr>
+
+<h2>OnCalendar: como escrever o horário</h2>
+<p>O formato completo é <code>DiaDaSemana Ano-Mês-Dia Hora:Minuto:Segundo</code>. O <code>*</code> quer dizer "qualquer"; partes omitidas viram o padrão (data = qualquer dia; segundos = 00). Os dias da semana são em <strong>inglês</strong> (<code>Mon</code>, <code>Tue</code>, <code>Wed</code>, <code>Thu</code>, <code>Fri</code>, <code>Sat</code>, <code>Sun</code>).</p>
+
+<h3>Confira antes com systemd-analyze calendar</h3>
+<p>Nunca adivinhe: o <code>systemd-analyze calendar</code> traduz a expressão e mostra quando ela dispararia.</p>
+
+<pre class="term">$ systemd-analyze calendar daily
+  Original form: daily
+Normalized form: *-*-* 00:00:00              « "daily" = todo dia, meia-noite
+    Next elapse: Sat 2026-10-17 00:00:00 -03
+       (in UTC): Sat 2026-10-17 03:00:00 UTC
+       From now: 10h left
+$ systemd-analyze calendar 'Mon..Fri 08:30'
+  Original form: Mon..Fri 08:30
+Normalized form: Mon..Fri *-*-* 08:30:00     « dias úteis às 8h30
+    Next elapse: Mon 2026-10-19 08:30:00 -03
+       (in UTC): Mon 2026-10-19 11:30:00 UTC
+       From now: 2 days left</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Significado</th></tr>
+<tr><td><code>Original form</code></td><td>O que você escreveu</td></tr>
+<tr><td><code>Normalized form</code></td><td>A forma completa, com tudo preenchido: confira se é o que você queria</td></tr>
+<tr><td><code>Next elapse</code></td><td>O próximo disparo, no seu fuso (<code>-03</code> = São Paulo)</td></tr>
+<tr><td><code>(in UTC)</code> / <code>From now</code></td><td>O mesmo em UTC / quanto falta</td></tr>
+</table>
+</div>
+
+<p>Com <code>--iterations=N</code>, ele mostra os N próximos disparos. "A cada 15 minutos":</p>
+<pre class="term">$ systemd-analyze calendar '*-*-* *:00/15:00' --iterations=3
+Normalized form: *-*-* *:00/15:00
+    Next elapse: Fri 2026-10-16 13:45:00 -03
+       (in UTC): Fri 2026-10-16 16:45:00 UTC
+       From now: 6min left
+   Iteration #2: Fri 2026-10-16 14:00:00 -03
+       (in UTC): Fri 2026-10-16 17:00:00 UTC
+       From now: 21min left
+   Iteration #3: Fri 2026-10-16 14:15:00 -03
+       (in UTC): Fri 2026-10-16 17:15:00 UTC
+       From now: 36min left
+$ systemd-analyze calendar 'Sat *-*-1..7 03:00'
+  Original form: Sat *-*-1..7 03:00
+Normalized form: Sat *-*-01..07 03:00:00      « o primeiro sábado de cada mês, 3h
+    Next elapse: Sat 2026-11-07 03:00:00 -03
+       (in UTC): Sat 2026-11-07 06:00:00 UTC
+       From now: 3 weeks 0 days left</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th><code>OnCalendar=</code></th></tr>
+<tr><td>A cada minuto / hora</td><td><code>minutely</code> / <code>hourly</code> (= <code>*-*-* *:00:00</code>)</td></tr>
+<tr><td>Todo dia à meia-noite</td><td><code>daily</code></td></tr>
+<tr><td>Toda segunda à meia-noite</td><td><code>weekly</code> (= <code>Mon *-*-* 00:00:00</code>)</td></tr>
+<tr><td>Dia 1 de cada mês</td><td><code>monthly</code></td></tr>
+<tr><td>Todo dia às 22h</td><td><code>22:00</code></td></tr>
+<tr><td>Dias úteis às 8h30</td><td><code>Mon..Fri 08:30</code></td></tr>
+<tr><td>Sábado e domingo às 10h</td><td><code>Sat,Sun 10:00</code></td></tr>
+<tr><td>A cada 15 minutos</td><td><code>*:00/15</code></td></tr>
+<tr><td>Dia 15 de cada mês, 12h</td><td><code>*-*-15 12:00</code></td></tr>
+</table>
+</div>
+
+<h3>Em vez de horário, intervalo</h3>
+<p>Além do relógio, um timer pode contar tempo a partir de um evento (os <em>monotonic timers</em>):</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Dispara…</th></tr>
+<tr><td><code>OnBootSec=15min</code></td><td>15 minutos depois do boot</td></tr>
+<tr><td><code>OnStartupSec=5min</code></td><td>5 minutos depois que o systemd (do usuário, no <code>--user</code>) começou: depois do login</td></tr>
+<tr><td><code>OnUnitActiveSec=1h</code></td><td>1 hora depois da última vez que o serviço rodou (repete)</td></tr>
+<tr><td><code>OnActiveSec=10s</code></td><td>10 segundos depois que o timer foi ligado</td></tr>
+</table>
+</div>
+
+<h3>Uma vez só: systemd-run</h3>
+<p>Para "rode isto daqui a 10 segundos (ou 2 horas), uma vez", não precisa criar arquivos. O <code>systemd-run</code> cria um timer <strong>temporário</strong>, que some depois de disparar:</p>
+<pre class="term">$ systemd-run --user --on-active=10s logger -t lembrete 'Uma vez só, daqui a 10 s'
+Running timer as unit: run-p93154-i91943.timer
+Will run service as unit: run-p93154-i91943.service
+$ systemctl --user list-timers --no-pager
+NEXT                        LEFT LAST PASSED UNIT                    ACTIVATES
+Fri 2026-10-16 13:41:13 -03   9s -         - run-p93154-i91943.timer run-p93154-i91943.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+<p>Ele rodou às 13:41:23 (de novo, o minuto de tolerância) e o timer desapareceu da lista. Também aceita horário: <code>systemd-run --user --on-calendar='18:00' comando</code>.</p>
+
+<hr>
+
+<h2>O cron no Arch: cronie</h2>
+<p>O <strong>cron</strong> (de <em>chronos</em>, "tempo" em grego) é o agendador clássico do Unix: uma tabela, a <strong>crontab</strong>, com uma linha por tarefa. No Arch, a implementação oficial é o pacote <code>cronie</code>. Na VM ele está instalado, mas, como todo serviço no Arch, <strong>não vem ligado</strong>:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/crontab
+/usr/bin/crontab pertence a cronie 1.7.2-2
+$ systemctl is-active cronie; systemctl is-enabled cronie
+inactive
+disabled</pre>
+
+<p>Num Arch novo, você instala com <code>sudo pacman -S cronie</code>. Ligar:</p>
+<pre class="term">$ sudo systemctl enable --now cronie
+Created symlink '/etc/systemd/system/multi-user.target.wants/cronie.service' → '/usr/lib/systemd/system/cronie.service'.
+$ systemctl status cronie --no-pager | head -10
+● cronie.service - Command Scheduler
+     Loaded: loaded (/usr/lib/systemd/system/cronie.service; enabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:39:18 -03; 47ms ago
+ Invocation: 529934216164404793c3bff5bc29e5c0
+   Main PID: 90178 (crond)                 « o programa se chama crond (cron daemon)
+      Tasks: 1 (limit: 4621)
+     Memory: 668K (peak: 2.4M)
+        CPU: 18ms
+     CGroup: /system.slice/cronie.service
+             └─90178 /usr/sbin/crond -n</pre>
+
+<h3>A linha da crontab</h3>
+<p>Cinco campos de tempo e o comando:</p>
+
+<pre class="file" data-file="crontab">#  ┌──────── minuto       (0-59)
+#  │ ┌────── hora         (0-23)
+#  │ │ ┌──── dia do mês   (1-31)
+#  │ │ │ ┌── mês          (1-12)
+#  │ │ │ │ ┌ dia da semana (0-7; 0 e 7 = domingo)
+#  │ │ │ │ │
+   0 3 * * * /home/ana/bin/backup.sh
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Quando</th><th>Equivalente no timer</th></tr>
+<tr><td><code>* * * * *</code></td><td>Todo minuto</td><td><code>minutely</code></td></tr>
+<tr><td><code>0 3 * * *</code></td><td>Todo dia às 3h</td><td><code>03:00</code></td></tr>
+<tr><td><code>*/15 * * * *</code></td><td>A cada 15 minutos</td><td><code>*:00/15</code></td></tr>
+<tr><td><code>30 8 * * 1-5</code></td><td>Dias úteis, 8h30</td><td><code>Mon..Fri 08:30</code></td></tr>
+<tr><td><code>0 0 1 * *</code></td><td>Dia 1 de cada mês</td><td><code>monthly</code></td></tr>
+<tr><td><code>@reboot</code></td><td>Uma vez, quando o cron inicia</td><td><code>OnBootSec=</code></td></tr>
+</table>
+</div>
+
+<h3>crontab -e, -l, -r</h3>
+<dl class="anatomy">
+  <dt>crontab -e</dt><dd><em>edit</em>: abre a sua crontab no editor da variável <code>EDITOR</code> (sem ela, o <code>vi</code>, que nem sempre está instalado; use <code>EDITOR=nano crontab -e</code>). Ao salvar, ela é instalada.</dd>
+  <dt>crontab -l</dt><dd><em>list</em>: mostra a sua crontab.</dd>
+  <dt>crontab -r</dt><dd><em>remove</em>: apaga a sua crontab inteira (o cronie guarda uma cópia de segurança).</dd>
+  <dt>crontab arquivo</dt><dd>Instala o conteúdo de um arquivo como a sua crontab (substitui a anterior).</dd>
+</dl>
+
+<p>Na VM, para não depender de editor, a crontab foi instalada a partir de um arquivo, com uma tarefa por minuto:</p>
+
+<pre class="term">$ crontab -l
+no crontab for ana                      « ainda não há tabela
+$ echo $?
+1
+$ mkdir -p /tmp/a6
+$ printf '# minuto hora dia mês dia-da-semana  comando\n* * * * * date &gt;&gt; /tmp/a6/cron.log\n' &gt; /tmp/a6/minha.cron
+$ crontab /tmp/a6/minha.cron
+$ crontab -l
+# minuto hora dia mês dia-da-semana  comando
+* * * * * date &gt;&gt; /tmp/a6/cron.log
+$ ls -l /var/spool/cron/
+total 4
+-rw------- 1 ana ana 81 16 out 13:39 ana       « é aqui que as crontabs dos usuários moram</pre>
+
+<p>Um minuto e pouco depois:</p>
+<pre class="term">$ cat /tmp/a6/cron.log
+sex 16 out 2026 13:40:00 -03                  « pontual: o cron roda no segundo 00
+$ journalctl -u cronie --no-pager -n 6
+out 16 13:39:18 notebook crond[90178]: (CRON) INFO (RANDOM_DELAY will be scaled with factor 65% if used.)
+out 16 13:39:18 notebook crond[90178]: (CRON) INFO (running with inotify support)
+out 16 13:40:00 notebook crond[92631]: pam_unix(crond:session): session opened for user ana(uid=1000) by ana(uid=0)
+out 16 13:40:00 notebook CROND[92633]: (ana) CMD (date &gt;&gt; /tmp/a6/cron.log)
+out 16 13:40:00 notebook CROND[92631]: (ana) CMDEND (date &gt;&gt; /tmp/a6/cron.log)
+out 16 13:40:00 notebook CROND[92631]: pam_unix(crond:session): session closed for user ana</pre>
+
+<p>E a limpeza, devolvendo a VM ao estado original (cronie parado e desabilitado):</p>
+<pre class="term">$ crontab -r
+Backup of ana's previous crontab saved to /home/ana/.cache/crontab/crontab.bak
+$ crontab -l
+no crontab for ana
+$ sudo systemctl disable --now cronie
+Removed '/etc/systemd/system/multi-user.target.wants/cronie.service'.</pre>
+
+<div class="warning">
+<strong>O cron roda com um ambiente mínimo</strong>
+<p>Na crontab, o <code>PATH</code> é curto e o seu <code>.bashrc</code> não é lido. Um comando que funciona no terminal pode falhar no cron por "comando não encontrado". Use caminhos completos (<code>/usr/bin/rsync</code>) e redirecione a saída para um arquivo para poder ver os erros (<code>… &gt;&gt; ~/cron.log 2&gt;&amp;1</code>). Nos timers o problema é parecido, mas os erros vão sozinhos para o journal.</p>
+</div>
+
+<h3>As pastas do sistema: /etc/cron.*</h3>
+<p>O <code>cronie</code> também traz um esquema de pastas: scripts colocados em <code>/etc/cron.hourly/</code> rodam a cada hora, por causa desta linha do pacote:</p>
+<pre class="term">$ cat /etc/cron.d/0hourly
+# Run the hourly jobs
+SHELL=/bin/bash
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=root
+01 * * * * root run-parts /etc/cron.hourly
+$ ls /etc/cron.d /etc/cron.daily /etc/cron.hourly
+/etc/cron.d:
+0hourly
+
+/etc/cron.daily:
+
+/etc/cron.hourly:
+0anacron
+snapper</pre>
+<p>Repare na sexta coluna: nas tabelas do sistema (<code>/etc/cron.d/</code>), há um campo a mais, o <strong>usuário</strong> (<code>root</code>). O <code>0anacron</code> roda o <em>anacron</em>, que executa as tarefas diárias/semanais perdidas com a máquina desligada. <code>/etc/cron.daily</code> está vazio: os pacotes do Arch usam timers, não cron.</p>
+
+<hr>
+
+<h2>E o at?</h2>
+<p>O <code>at</code> é o agendador "uma vez só" clássico (<code>echo comando | at 18:00</code>). Ele não vem no Arch e não estava na VM:</p>
+<pre class="term">$ at
+bash: at: comando não encontrado
+$ pacman -Si at | head -4
+Repositório          : extra
+Nome                 : at
+Versão               : 3.2.5-5
+Descrição            : AT and batch delayed command scheduling utility and daemon</pre>
+<p>Se quiser, instale com <code>sudo pacman -S at</code> e ligue o serviço dele com <code>sudo systemctl enable --now atd</code>. Mas o <code>systemd-run --on-active=</code> / <code>--on-calendar=</code>, que você viu acima, faz o mesmo sem pacote extra.</p>
+
+<hr>
+
+<h2>Timer ou cron: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>systemd timer</th><th>cron (cronie)</th></tr>
+<tr><td>Vem pronto no Arch</td><td>Sim (parte do systemd)</td><td>Não: pacote <code>cronie</code> + <code>enable</code></td></tr>
+<tr><td>Arquivos por tarefa</td><td>Dois (<code>.service</code> + <code>.timer</code>)</td><td>Uma linha</td></tr>
+<tr><td>Onde vão os erros</td><td>Journal (<code>journalctl -u</code>), automaticamente</td><td>E-mail local (se houver) ou para onde você redirecionar</td></tr>
+<tr><td>Tarefas perdidas com a máquina desligada</td><td><code>Persistent=true</code></td><td>Só com o anacron</td></tr>
+<tr><td>Testar a tarefa à mão</td><td><code>systemctl start nome.service</code></td><td>Copiar o comando para o terminal (com outro ambiente)</td></tr>
+<tr><td>Ver o próximo disparo</td><td><code>systemctl list-timers</code></td><td>Não há</td></tr>
+<tr><td>Limites de CPU/memória, sandbox</td><td>Sim (tudo de um <code>.service</code>)</td><td>Não</td></tr>
+<tr><td>Intervalos desde o boot / desde a última vez</td><td>Sim (<code>OnBootSec</code>, <code>OnUnitActiveSec</code>)</td><td>Só <code>@reboot</code></td></tr>
+<tr><td>Uma vez só</td><td><code>systemd-run --on-active=</code></td><td>Não (seria o <code>at</code>)</td></tr>
+<tr><td>Bom para</td><td>O padrão no Arch; tarefas do sistema e do usuário</td><td>Quem já sabe cron, ou para copiar receitas prontas da internet</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O timer está na lista, mas a tarefa falha</strong>
+<p><strong>O que aconteceu:</strong> o timer disparou, mas o <code>.service</code> deu erro (caminho errado no <code>ExecStart</code>, script sem permissão de execução).</p>
+<p><strong>Como confirmar:</strong> <code>systemctl --user status nome.service</code> e <code>journalctl --user -u nome.service</code>. Rode o serviço à mão: <code>systemctl --user start nome.service</code>.</p>
+<p><strong>Como resolver:</strong> use caminhos completos; <code>chmod +x</code> no script (veja <a href="permissoes.html">Permissões</a>); depois de editar, <code>systemctl --user daemon-reload</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to parse calendar specification"</strong>
+<pre class="term">$ systemd-analyze calendar 'segunda 08:00'
+Failed to parse calendar specification 'segunda 08:00': Argumento inválido
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> os nomes dos dias são em inglês (<code>Mon</code>). A mesma expressão num <code>.timer</code> faz o timer não carregar.</p>
+<p><strong>Como resolver:</strong> <code>Mon 08:00</code>. Teste sempre com <code>systemd-analyze calendar</code> antes de colocar no arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>Escrevi a crontab, mas nada acontece</strong>
+<p><strong>O que aconteceu:</strong> no Arch, o <code>cronie</code> não vem ligado (e às vezes nem instalado). A crontab é aceita, mas ninguém a lê.</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-active cronie</code> responde <code>inactive</code>; <code>journalctl -u cronie</code> não mostra linhas <code>CMD</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl enable --now cronie</code>. Se ainda falhar, é o ambiente: caminhos completos e <code>&gt;&gt; arquivo 2&gt;&amp;1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"no crontab for ana"</strong>
+<p><strong>O que aconteceu:</strong> não é erro: você ainda não tem crontab (código de saída 1). Crie com <code>crontab -e</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Meu timer de usuário não rodou à noite</strong>
+<p><strong>O que aconteceu:</strong> você estava deslogado: o systemd do usuário só existe com uma sessão aberta.</p>
+<p><strong>Como resolver:</strong> <code>sudo loginctl enable-linger ana</code>, ou transforme-o em timer do sistema (<code>/etc/systemd/system/</code>, <code>User=ana</code> no <code>.service</code>). Com <code>Persistent=true</code>, ele roda no próximo login.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>systemctl list-timers</code> (<code>--all</code>)</td><td>Timers do sistema e próximos disparos</td></tr>
+<tr><td><code>systemctl --user list-timers</code></td><td>Os seus timers</td></tr>
+<tr><td><code>systemctl --user enable --now nome.timer</code></td><td>Liga um timer seu (<code>disable --now</code> desliga)</td></tr>
+<tr><td><code>systemctl --user start nome.service</code></td><td>Roda a tarefa agora, à mão</td></tr>
+<tr><td><code>systemctl --user daemon-reload</code></td><td>Relê os arquivos depois de criar/editar</td></tr>
+<tr><td><code>systemd-analyze calendar 'expr' --iterations=3</code></td><td>Testa uma expressão <code>OnCalendar</code></td></tr>
+<tr><td><code>systemd-run --user --on-active=10min cmd</code></td><td>Roda uma vez, daqui a 10 minutos</td></tr>
+<tr><td><code>journalctl --user -u nome.service</code></td><td>O que a tarefa escreveu</td></tr>
+<tr><td><code>sudo loginctl enable-linger ana</code></td><td>Timers de usuário rodam mesmo deslogado</td></tr>
+<tr><td><code>sudo systemctl enable --now cronie</code></td><td>Liga o cron</td></tr>
+<tr><td><code>crontab -e</code> · <code>-l</code> · <code>-r</code></td><td>Editar · listar · apagar a sua crontab</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Dias úteis</h3>
+<p>Complete a linha do <code>.timer</code> para disparar de segunda a sexta às 7h:</p>
+<div class="ex-code">OnCalendar=<input data-answer="Mon..Fri 07:00|Mon..Fri 07:00:00|Mon..Fri *-*-* 07:00:00|Mon-Fri 07:00" aria-label="expressão"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Ligar o despertador</h3>
+<p>Você criou <code>backup.service</code> e <code>backup.timer</code> em <code>~/.config/systemd/user/</code>. Complete:</p>
+<div class="ex-code">systemctl <input data-answer="--user" aria-label="escopo"> enable --now <input data-answer="backup.timer" aria-label="unidade"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A crontab</h3>
+<p>Complete a linha da crontab que roda <code>/home/ana/bin/backup.sh</code> todo dia às 3h:</p>
+<div class="ex-code"><input data-answer="0" aria-label="minuto"> <input data-answer="3" aria-label="hora"> * * * /home/ana/bin/backup.sh</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>Persistent=true</code> faz num timer?</p>
+<label><input type="radio" name="q4"> Mantém o serviço rodando para sempre.</label>
+<label><input type="radio" name="q4"> Faz o timer sobreviver ao <code>disable</code>.</label>
+<label><input type="radio" name="q4"> Roda a tarefa perdida assim que o computador liga, se ele estava desligado na hora marcada.</label>
+<label><input type="radio" name="q4"> Grava a saída num arquivo.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Num Arch recém-instalado, você escreve uma crontab e nada roda. Qual a causa mais provável?</p>
+<label><input type="radio" name="q5"> O Arch não suporta cron.</label>
+<label><input type="radio" name="q5"> O serviço <code>cronie</code> não está instalado ou não foi ligado com <code>systemctl enable --now cronie</code>.</label>
+<label><input type="radio" name="q5"> Falta reiniciar o computador.</label>
+<label><input type="radio" name="q5"> As crontabs só funcionam como root.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual comando mostra quando os timers do sistema vão disparar?</p>
+<label><input type="radio" name="q6"> <code>systemctl list-timers</code></label>
+<label><input type="radio" name="q6"> <code>crontab -l</code></label>
+<label><input type="radio" name="q6"> <code>journalctl -f</code></label>
+<label><input type="radio" name="q6"> <code>at -l</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No Arch, o jeito nativo de agendar é o timer do systemd: um <code>.service</code> (o quê) + um <code>.timer</code> (quando).</li>
+  <li>Os seus vão em <code>~/.config/systemd/user/</code> e se ligam com <code>systemctl --user enable --now nome.timer</code>.</li>
+  <li><code>OnCalendar=</code> usa dias em inglês; teste com <code>systemd-analyze calendar</code>.</li>
+  <li><code>Persistent=true</code> recupera execuções perdidas; o atraso de até 1 minuto é o <code>AccuracySec</code>.</li>
+  <li>O cron existe (<code>cronie</code>), mas precisa de <code>enable --now</code>; o <code>at</code> não vem instalado (use <code>systemd-run</code>).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os timers estão em <a href="https://wiki.archlinux.org/title/Systemd/Timers">systemd/Timers</a> (<a href="https://wiki.archlinux.org/title/Systemd/Timers_(Portugu%C3%AAs)">em português</a>), com a seção "As a cron replacement" comparando com o cron; o cron e o cronie, em <a href="https://wiki.archlinux.org/title/Cron">Cron</a>; os serviços de usuário e o <em>lingering</em>, em <a href="https://wiki.archlinux.org/title/Systemd/User">systemd/User</a>. O formato completo de horários está em <code>man systemd.time</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
