@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch SSH — sshd, conectar, chaves, sshd_config, scp e rsync | Guia Arch</title>
+<meta name="description" content="SSH no Arch Linux: o serviço sshd (OpenSSH), conectar com ssh, a primeira conexão e o known_hosts, chaves ed25519 com ssh-keygen e ssh-copy-id, o sshd_config do Arch e seus drop-ins, PermitRootLogin e PasswordAuthentication, scp, rsync e fail2ban, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">SSH</span>: acesso remoto</h1>
+
+<p class="intro">O <strong>SSH</strong> (<em>Secure Shell</em>) abre um terminal de outro computador, pela rede, com tudo criptografado. É assim que se administra um servidor sem monitor, que se copia arquivos entre máquinas e, neste guia, é assim que cada saída foi conferida: todos os comandos rodaram por SSH na VM de laboratório. No Arch, o SSH é o pacote <code>openssh</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ligar o servidor <code>sshd</code> e conferir se ele está escutando.</li>
+  <li>Conectar com <code>ssh usuário@máquina</code> e entender a pergunta da primeira conexão.</li>
+  <li>Criar chaves com <code>ssh-keygen</code> e instalá-las com <code>ssh-copy-id</code>.</li>
+  <li>Ler o <code>sshd_config</code> do Arch e endurecê-lo com segurança (<code>PasswordAuthentication</code>, <code>PermitRootLogin</code>).</li>
+  <li>Copiar arquivos com <code>scp</code> e <code>rsync</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Cliente e servidor</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>Programa</th><th>Onde roda</th></tr>
+<tr><td><strong>Servidor</strong></td><td><code>sshd</code> (o "d" é de <em>daemon</em>)</td><td>Na máquina que vai <strong>receber</strong> conexões; escuta na porta 22</td></tr>
+<tr><td><strong>Cliente</strong></td><td><code>ssh</code>, <code>scp</code>, <code>sftp</code></td><td>Na máquina de onde você <strong>se conecta</strong></td></tr>
+</table>
+</div>
+
+<p>O pacote <code>openssh</code> traz os dois. Para <em>usar</em> SSH (conectar em outra máquina), basta o cliente: nada a ligar. Para <em>receber</em> conexões, é preciso ligar o serviço <code>sshd</code>, que no Arch, como todo serviço, vem desligado.</p>
+
+<pre class="term">$ pacman -Q openssh
+openssh 10.6p1-2
+$ ssh -V
+OpenSSH_10.6p1, OpenSSL 3.6.5 29 Sep 2026</pre>
+
+<hr>
+
+<h2>O servidor: sshd</h2>
+<p>Na VM do guia, o <code>sshd</code> foi habilitado ainda na instalação, junto com a rede:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt systemctl enable NetworkManager sshd</pre>
+
+<p>No seu Arch, o equivalente é <code>sudo systemctl enable --now sshd</code>. O estado real na VM (trecho; a explicação de cada linha está em <a href="systemd.html">systemctl e Serviços</a>):</p>
+
+<pre class="term">$ systemctl status sshd --no-pager
+● sshd.service - OpenSSH Daemon
+     Loaded: loaded (/usr/lib/systemd/system/sshd.service; enabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:06:48 -03; 23min ago
+ Invocation: 37dac664c0094a4e8e5efbc488be0bd6
+       Docs: man:sshd(8)
+             man:sshd_config(5)
+   Main PID: 310 (sshd)
+      Tasks: 1 (limit: 4621)
+     Memory: 22.8M (peak: 29.4M)
+        CPU: 19.680s
+     CGroup: /system.slice/sshd.service
+             └─310 "sshd: /usr/bin/sshd -D [listener] 0 of 10-100 startups"
+
+out 16 13:30:15 notebook sshd-session[45587]: Accepted publickey for root from 10.0.2.2 port 44816 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+out 16 13:30:15 notebook sshd-session[45587]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+…</pre>
+
+<p>As linhas do log são os autores do guia entrando: <code>Accepted publickey for ana from 10.0.2.2</code> = a ana entrou com uma <strong>chave</strong>, vinda do endereço 10.0.2.2. A última linha do <code>CGroup</code> diz <code>0 of 10-100 startups</code>: nenhuma conexão "pela metade" no momento (acima de 10, o sshd começa a recusar algumas, uma proteção contra ataques).</p>
+
+<p>Para ver a porta aberta (veja também <a href="rede.html">NetworkManager e iwd</a>):</p>
+<pre class="term">$ sudo ss -tlnp | grep sshd
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))
+LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
+
+<hr>
+
+<h2>Conectar: ssh</h2>
+
+<dl class="anatomy">
+  <dt>ssh</dt><dd>O cliente.</dd>
+  <dt>-p 2223</dt><dd>A porta, se não for a 22. (No <code>scp</code> é <code>-P</code>, maiúsculo.)</dd>
+  <dt>ana@</dt><dd>O usuário <strong>na outra máquina</strong>. Sem ele, o ssh usa o seu nome local.</dd>
+  <dt>127.0.0.1</dt><dd>A máquina: IP ou nome (<code>servidor.lan</code>, <code>exemplo.com</code>).</dd>
+  <dt>'comando'</dt><dd>Opcional: roda só esse comando lá e volta. Sem ele, abre um terminal interativo; <code>exit</code> ou <kbd>Ctrl</kbd>+<kbd>D</kbd> sai.</dd>
+</dl>
+
+<h3>O exemplo real: como este guia entra na VM</h3>
+<p>A VM está dentro do VirtualBox, numa rede virtual (<code>10.0.2.x</code>). Para alcançá-la, o VirtualBox faz um <strong>redirecionamento de porta</strong>: o que chega na porta <code>2223</code> do computador do autor (só em <code>127.0.0.1</code>, ou seja, só ele mesmo) é entregue na porta <code>22</code> da VM:</p>
+
+<pre class="term" data-user="autor" data-host="desktop">$ VBoxManage showvminfo arch-guia --machinereadable | grep -i forwarding
+Forwarding(0)="ssh,tcp,127.0.0.1,2223,,22"</pre>
+
+<p>Então, do computador do autor (que não é Arch; o prompt abaixo é simplificado), a conexão é <code>ssh -p 2223 ana@127.0.0.1</code>. O laboratório acrescenta a chave dele (<code>-i lab_ed25519</code>) e duas opções para não guardar a identidade da VM, que é reinstalada às vezes:</p>
+
+<pre class="term" data-user="autor" data-host="desktop">$ ssh -p 2223 -i lab_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ana@127.0.0.1 'hostname; whoami; echo $SSH_CONNECTION'
+Warning: Permanently added '[127.0.0.1]:2223' (ED25519) to the list of known hosts.
+notebook                       « o nome da VM
+ana
+10.0.2.2 49856 10.0.2.15 22    « de onde veio (IP e porta) → para onde chegou (IP e porta)</pre>
+
+<p>A variável <code>SSH_CONNECTION</code> mostra o caminho real: a conexão chega à VM vinda de <code>10.0.2.2</code> (o "roteador" do VirtualBox) na porta 22, embora o autor tenha digitado 127.0.0.1:2223. Num servidor de verdade na sua rede, seria simplesmente <code>ssh ana@192.168.0.50</code>.</p>
+
+<h3>A primeira conexão: "The authenticity of host…"</h3>
+<p>Na primeira vez que você conecta numa máquina, o ssh não a conhece e pergunta. Real, da VM conectando nela mesma (<code>localhost</code>), entrando com a senha:</p>
+
+<pre class="term">$ ssh ana@localhost 'hostname; whoami'
+The authenticity of host 'localhost (::1)' can't be established.
+ED25519 key fingerprint is: SHA256:3xsqL2Q+A9qsuD59Q1KJcB4pcekUf2F9RzaGx+72BT4
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'localhost' (ED25519) to the list of known hosts.
+ana@localhost's password:
+notebook
+ana</pre>
+
+<p>Cada servidor tem uma <strong>chave de host</strong>, a "impressão digital" dele. O ssh mostra a impressão (<code>SHA256:3xsq…</code>) e pergunta se é mesmo a máquina que você quer. Para conferir, compare com a impressão vista <strong>no próprio servidor</strong> (por outro caminho: no monitor dele, ou com quem o administra):</p>
+
+<pre class="term">$ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+256 SHA256:3xsqL2Q+A9qsuD59Q1KJcB4pcekUf2F9RzaGx+72BT4 root@notebook (ED25519)     « igual: é ela</pre>
+
+<p>Respondendo <code>yes</code>, a chave vai para <code>~/.ssh/known_hosts</code> e a pergunta não aparece mais. Respondendo <code>no</code>:</p>
+
+<pre class="term">Are you sure you want to continue connecting (yes/no/[fingerprint])? no
+Host key verification failed.</pre>
+
+<p>Essa verificação é o que protege você de um impostor no meio do caminho: se um dia a impressão <strong>mudar</strong>, o ssh se recusa a conectar com um aviso grande (<code>WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!</code>). Se você sabe o motivo (reinstalou o servidor), apague a chave antiga com <code>ssh-keygen -R máquina</code> e conecte de novo.</p>
+
+<hr>
+
+<h2>Chaves: entrar sem senha (e com mais segurança)</h2>
+<p>Senhas podem ser adivinhadas, e robôs na internet tentam milhares por dia em qualquer porta 22 aberta. Uma <strong>chave SSH</strong> é um par de arquivos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>O que é</th><th>Onde fica</th></tr>
+<tr><td><code>id_ed25519</code></td><td><strong>Chave privada</strong>: o seu segredo. Nunca sai do seu computador.</td><td>No cliente, <code>~/.ssh/</code>, modo 600</td></tr>
+<tr><td><code>id_ed25519.pub</code></td><td><strong>Chave pública</strong>: pode ser mostrada a qualquer um.</td><td>Copiada para o <code>~/.ssh/authorized_keys</code> do servidor</td></tr>
+</table>
+</div>
+
+<p>Pense num cadeado (a pública) que você entrega ao servidor e na única chave que o abre (a privada), que só você tem.</p>
+
+<h3>Criar: ssh-keygen</h3>
+<dl class="anatomy">
+  <dt>ssh-keygen</dt><dd>Gera chaves.</dd>
+  <dt>-t ed25519</dt><dd>O tipo: <strong>Ed25519</strong>, moderno, curto e rápido. É o recomendado (e já é o padrão do OpenSSH atual).</dd>
+  <dt>-C 'ana@notebook'</dt><dd>Um comentário para você saber de quem é a chave.</dd>
+  <dt>-f arquivo</dt><dd>Onde salvar. Sem ele, pergunta (o padrão é <code>~/.ssh/id_ed25519</code>).</dd>
+  <dt>-N ''</dt><dd>A senha da chave (<em>passphrase</em>), aqui vazia, só para o teste. <strong>Na vida real, não use -N</strong>: deixe ele perguntar e escolha uma senha.</dd>
+</dl>
+
+<p>Na VM, para não mexer na pasta <code>.ssh</code> real da ana, a chave de teste foi criada em <code>/tmp/a6</code>:</p>
+
+<pre class="term">$ ssh-keygen -t ed25519 -f /tmp/a6/id_ed25519 -N '' -C 'ana@notebook'
+Generating public/private ed25519 key pair.
+Your identification has been saved in /tmp/a6/id_ed25519
+Your public key has been saved in /tmp/a6/id_ed25519.pub
+The key fingerprint is:
+SHA256:mcT3nHqE6Q+l8hd8RPulShxtsxsWJ/H/sXAxL6mCIKI ana@notebook
+The key's randomart image is:
++--[ED25519 256]--+
+|                 |
+|       .      o  |
+|        o .  o + |
+|       . + =..Oo+|
+|        S oo*+ X*|
+|  . . .  . ==.Oo+|
+| . . . ...=..*o++|
+|E       .o.++ ...|
+|          .o.    |
++----[SHA256]-----+
+$ ls -l /tmp/a6/id_ed25519*
+-rw------- 1 ana ana 399 16 out 13:54 /tmp/a6/id_ed25519          « privada: 600, só a ana
+-rw-r--r-- 1 ana ana  94 16 out 13:54 /tmp/a6/id_ed25519.pub      « pública: 644
+$ cat /tmp/a6/id_ed25519.pub
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO7K21tH4wYUvAnJ76UHgQqPU3D/FURc0tbNQoV2pLDt ana@notebook</pre>
+
+<p>A pública é uma linha só: tipo, a chave em si e o comentário. O desenho (<em>randomart</em>) é a impressão digital em forma de figura, para os olhos compararem mais fácil.</p>
+
+<h3>Instalar no servidor: ssh-copy-id</h3>
+<p>O <code>ssh-copy-id</code> entra no servidor (com a senha, uma última vez) e acrescenta a sua chave pública ao <code>~/.ssh/authorized_keys</code> de lá, com as permissões certas. <strong>Ilustrativo</strong> (não foi rodado: mudaria o acesso da VM compartilhada; "servidor" é um nome de exemplo):</p>
+
+<pre class="term">$ ssh-copy-id ana@servidor
+$ ssh ana@servidor                  « agora entra com a chave (pede a passphrase, se houver)</pre>
+
+<p>Sem o <code>ssh-copy-id</code>, o mesmo à mão, no servidor: colar a linha do <code>.pub</code> no fim do <code>~/.ssh/authorized_keys</code> e acertar as permissões (<code>chmod 700 ~/.ssh</code>, <code>chmod 600 ~/.ssh/authorized_keys</code>; veja <a href="permissoes.html">Permissões</a>). É assim que a VM do guia aceita o laboratório: a ana tem exatamente uma chave autorizada, a do lab:</p>
+
+<pre class="term">$ ls -la ~/.ssh
+total 12
+drwx------  2 ana ana 4096 16 out 12:11 .
+drwx------ 15 ana ana 4096 16 out 13:53 ..
+-rw-r--r--  1 ana ana   90 16 out 12:11 authorized_keys
+$ awk '{print $1, $3}' ~/.ssh/authorized_keys
+ssh-ed25519 lab-arch                 « tipo e comentário (o meio, a chave, foi omitido)</pre>
+
+<p>A chave nova de teste, que <strong>não</strong> foi autorizada, é recusada:</p>
+<pre class="term">$ ssh -o BatchMode=yes -i /tmp/a6/id_ed25519 ana@localhost true
+ana@localhost: Permission denied (publickey,password).
+$ echo $?
+255                                   « o ssh devolve 255 para erros dele mesmo</pre>
+
+<div class="tip">
+<strong>Não quer digitar a passphrase toda hora?</strong>
+<p>Use o <code>ssh-agent</code>, que guarda a chave destravada na memória durante a sessão: <code>eval "$(ssh-agent)"</code> e <code>ssh-add</code>. Os desktops GNOME e KDE já trazem um agente que faz isso no login.</p>
+</div>
+
+<h3>Atalhos: ~/.ssh/config</h3>
+<p>Em vez de lembrar porta, usuário e chave, crie apelidos no cliente (<strong>ilustrativo</strong>, com os dados do laboratório):</p>
+<pre class="file" data-file="~/.ssh/config">Host lab
+    HostName 127.0.0.1
+    Port 2223
+    User ana
+    IdentityFile ~/.ssh/lab_ed25519
+</pre>
+<p>Depois, <code>ssh lab</code>, <code>scp arquivo lab:</code> e <code>rsync … lab:</code> já usam tudo isso.</p>
+
+<hr>
+
+<h2>O sshd_config do Arch</h2>
+<p>A configuração do servidor fica em <code>/etc/ssh/sshd_config</code>. No Arch atual, ele tem quase tudo comentado; só três linhas estão ativas:</p>
+
+<pre class="term">$ grep -v '^#' /etc/ssh/sshd_config | grep -v '^$'
+Include /etc/ssh/sshd_config.d/*.conf
+AuthorizedKeysFile	.ssh/authorized_keys
+Subsystem	sftp	/usr/lib/ssh/sftp-server</pre>
+
+<dl class="anatomy">
+  <dt>Include /etc/ssh/sshd_config.d/*.conf</dt><dd>Lê primeiro os arquivos da pasta <code>sshd_config.d</code>, em ordem alfabética. No sshd, <strong>o primeiro valor encontrado vence</strong> (ao contrário de quase todos os outros programas).</dd>
+  <dt>AuthorizedKeysFile</dt><dd>Onde procurar as chaves públicas autorizadas de cada usuário.</dd>
+  <dt>Subsystem sftp</dt><dd>Liga o SFTP (transferência de arquivos, usado pelo <code>scp</code> moderno e por programas gráficos).</dd>
+</dl>
+
+<pre class="term">$ ls -l /etc/ssh/sshd_config.d/
+total 8
+lrwxrwxrwx 1 root root 61 22 set 10:13 20-systemd-userdb.conf -&gt; ../../../usr/lib/systemd/sshd_config.d/20-systemd-userdb.conf
+-rw-r--r-- 1 root root 93 12 out 12:15 99-archlinux.conf
+$ cat /etc/ssh/sshd_config.d/99-archlinux.conf
+# sshd_config defaults on Arch Linux
+KbdInteractiveAuthentication no
+UsePAM yes
+PrintMotd no</pre>
+
+<p>O <code>99-archlinux.conf</code> é o "jeito Arch": usa o PAM (o sistema de login, onde moram o <code>faillock</code> e o <code>pam_umask</code>), desliga a autenticação "teclado-interativo" e não mostra a mensagem do dia (quem mostra é o PAM). O <code>20-systemd-userdb.conf</code>, do systemd, deixa o sshd aceitar chaves guardadas em registros de usuário do <code>systemd-homed</code>.</p>
+
+<h3>As duas opções que importam</h3>
+<p>Os valores <strong>efetivos</strong> (com padrões e drop-ins somados) aparecem com <code>sshd -T</code>, como root. Real, na VM:</p>
+
+<pre class="term">$ sudo sshd -T | grep -iE '^(port|permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication|usepam) '
+Port 22
+UsePAM yes
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication no</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Padrão (Arch)</th><th>Recomendação para um servidor exposto</th></tr>
+<tr><td><code>PermitRootLogin</code></td><td><code>prohibit-password</code>: o root entra só com chave, nunca com senha</td><td><code>no</code>: ninguém entra direto como root; entre como você e use <code>sudo</code></td></tr>
+<tr><td><code>PasswordAuthentication</code></td><td><code>yes</code>: aceita senha</td><td><code>no</code>, <strong>depois</strong> de confirmar que a sua chave funciona</td></tr>
+<tr><td><code>PubkeyAuthentication</code></td><td><code>yes</code></td><td>Manter</td></tr>
+<tr><td><code>Port</code></td><td><code>22</code></td><td>Mudar só reduz o barulho dos robôs no log; não é segurança de verdade</td></tr>
+</table>
+</div>
+
+<h3>Mudar sem se trancar do lado de fora</h3>
+<p><strong>Ilustrativo:</strong> a VM do guia <strong>não</strong> foi alterada (o laboratório entra como root por chave; trocar <code>PermitRootLogin</code> cortaria o acesso dos autores). No seu servidor, crie um drop-in seu, com número <strong>menor</strong> que 99 (lembre: o primeiro valor vence):</p>
+
+<pre class="file" data-file="/etc/ssh/sshd_config.d/50-seguranca.conf">PermitRootLogin no
+PasswordAuthentication no
+</pre>
+
+<ol class="passo">
+<li><p>Confirme que você entra <strong>com chave</strong> (o log mostra <code>Accepted publickey</code>, não <code>Accepted password</code>).</p></li>
+<li><p>Teste a sintaxe. Sem erro, o <code>sshd -t</code> não escreve nada (real, na VM, com a configuração original):</p>
+<pre class="term">$ sudo sshd -t
+$ echo $?
+0</pre></li>
+<li><p><strong>Deixe uma sessão SSH aberta</strong> e recarregue em outra: <code>sudo systemctl reload sshd</code>. As conexões abertas continuam (o <code>KillMode=process</code> da unidade garante isso).</p></li>
+<li><p>Abra uma <strong>terceira</strong> conexão para testar. Só feche a primeira quando a nova funcionar.</p></li>
+</ol>
+
+<div class="warning">
+<strong>O erro clássico</strong>
+<p>Desligar <code>PasswordAuthentication</code> antes de instalar a chave, ou errar uma linha e reiniciar o sshd, tranca você fora de um servidor remoto. Num computador doméstico, você vai até ele; numa VPS, só pelo console de emergência do provedor. Por isso: <code>sshd -t</code>, uma sessão aberta e um teste numa nova.</p>
+</div>
+
+<hr>
+
+<h2>Copiar arquivos: scp e rsync</h2>
+
+<h3>scp: uma cópia simples</h3>
+<dl class="anatomy">
+  <dt>scp</dt><dd><em>secure copy</em>: o <code>cp</code> pela rede.</dd>
+  <dt>fotos/foto1.jpg</dt><dd>Origem (local).</dd>
+  <dt>ana@localhost:/tmp/a6/copia.jpg</dt><dd>Destino remoto: <code>usuário@máquina:caminho</code>. Os <code>:</code> marcam "do outro lado". Sem caminho depois dos dois-pontos (<code>ana@servidor:</code>), vai para a pasta pessoal.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/a6">$ scp fotos/foto1.jpg ana@localhost:/tmp/a6/copia.jpg
+ana@localhost's password:
+foto1.jpg                                     100%   20KB  12.4MB/s   00:00</pre>
+
+<p>Ao contrário também funciona (<code>scp ana@servidor:arquivo .</code> traz para cá), e <code>-r</code> copia pastas. Porta diferente: <code>scp -P 2223</code>.</p>
+
+<h3>rsync: sincronizar</h3>
+<p>O <code>rsync</code> copia só o que <strong>mudou</strong>, então é o ideal para backups e pastas grandes. Ele precisa estar instalado nos dois lados (<code>sudo pacman -S rsync</code>; na VM, <code>rsync 3.5.1-3</code>). Real, pela rede (para a própria VM, por SSH):</p>
+
+<pre class="term" data-cwd="/tmp/a6">$ rsync -av fotos/ ana@localhost:/tmp/a6/backup/
+ana@localhost's password:
+sending incremental file list
+created directory /tmp/a6/backup
+./
+foto1.jpg
+foto2.jpg
+foto3.jpg
+
+sent 60.245 bytes  received 113 bytes  17.245,14 bytes/sec
+total size is 60.000  speedup is 0,99</pre>
+
+<dl class="anatomy">
+  <dt>-a</dt><dd><em>archive</em>: recursivo e preserva permissões, datas, links.</dd>
+  <dt>-v</dt><dd><em>verbose</em>: lista o que copiou.</dd>
+  <dt>fotos/</dt><dd>Origem. <strong>A barra no fim importa</strong>: "o conteúdo de fotos". Sem ela, copia a pasta <code>fotos</code> inteira para dentro do destino.</dd>
+  <dt>ana@localhost:/tmp/a6/backup/</dt><dd>Destino; o rsync usa o SSH sozinho. Com porta diferente: <code>-e 'ssh -p 2223'</code>.</dd>
+</dl>
+
+<p>Rodando de novo (aqui, local, sem SSH), ele não copia nada; depois de um arquivo novo, copia só ele:</p>
+
+<pre class="term" data-cwd="/tmp/a6">$ rsync -av fotos/ backup/
+sending incremental file list
+
+sent 109 bytes  received 12 bytes  242,00 bytes/sec
+total size is 60.000  speedup is 495,87          « nada mudou: nada copiado
+$ touch fotos/foto4.jpg
+$ rsync -av fotos/ backup/
+sending incremental file list
+./
+foto4.jpg                                        « só o novo
+
+sent 176 bytes  received 38 bytes  428,00 bytes/sec
+total size is 60.000  speedup is 280,37
+$ rsync -av fotos backup2                        « sem a barra
+sending incremental file list
+created directory backup2
+fotos/
+fotos/foto1.jpg
+fotos/foto2.jpg
+fotos/foto3.jpg
+fotos/foto4.jpg
+
+sent 60.320 bytes  received 126 bytes  120.892,00 bytes/sec
+total size is 60.000  speedup is 0,99
+$ ls backup backup2
+backup:
+foto1.jpg
+foto2.jpg
+foto3.jpg
+foto4.jpg
+
+backup2:
+fotos                                            « a pasta veio junto</pre>
+
+<p>Com <code>--delete</code>, o rsync também apaga do destino o que sumiu da origem (um espelho exato); teste antes com <code>-n</code> (<em>dry run</em>, só mostra). Os números usam ponto de milhar e vírgula decimal por causa do português.</p>
+
+<h3>scp × rsync × sftp: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Quando usar</th></tr>
+<tr><td><code>scp</code></td><td>Um arquivo ou uma pasta pequena, uma vez</td></tr>
+<tr><td><code>rsync -av</code></td><td>Pastas grandes, backups, copiar de novo só o que mudou, retomar cópias interrompidas (<code>--partial</code>)</td></tr>
+<tr><td><code>sftp</code></td><td>Navegar no servidor e escolher arquivos interativamente (<code>ls</code>, <code>get</code>, <code>put</code>)</td></tr>
+<tr><td>Gerenciador de arquivos</td><td>No GNOME/KDE, digite <code>sftp://ana@servidor</code> na barra de endereço</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Contra robôs: fail2ban (e o que o sshd já faz)</h2>
+<p>Qualquer servidor SSH na internet recebe tentativas de senha automáticas. A defesa principal é a que você já viu: <strong>chaves e <code>PasswordAuthentication no</code></strong>. Duas camadas extras:</p>
+
+<ul>
+  <li>O próprio OpenSSH (desde a versão 9.8) tem o <code>PerSourcePenalties</code>, ligado por padrão: endereços que falham muito ficam um tempo bloqueados.</li>
+  <li>O <strong>fail2ban</strong> lê o log, e endereços com muitas falhas são bloqueados no firewall. Não vem instalado (<code>pacman -Q fail2ban</code> na VM: <code>erro: o pacote "fail2ban" não foi encontrado</code>).</li>
+</ul>
+
+<p><strong>Ilustrativo</strong> (não instalado na VM): com <code>sudo pacman -S fail2ban</code>, a configuração mínima para o SSH no Arch lê o journal:</p>
+<pre class="file" data-file="/etc/fail2ban/jail.local">[DEFAULT]
+bantime = 1h
+backend = systemd
+
+[sshd]
+enabled = true
+</pre>
+<pre class="term">$ sudo systemctl enable --now fail2ban
+$ sudo fail2ban-client status sshd      « quantos endereços foram banidos</pre>
+<p>O bloqueio em si usa o firewall (veja <a href="firewall.html">Firewall</a>).</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Connection refused"</strong>
+<pre class="term">$ ssh -p 2299 ana@localhost
+ssh: connect to host localhost port 2299: Connection refused
+$ echo $?
+255</pre>
+<p><strong>O que aconteceu:</strong> a máquina respondeu, mas ninguém escuta naquela porta: o <code>sshd</code> está desligado ou a porta está errada.</p>
+<p><strong>Como confirmar (no servidor):</strong> <code>systemctl status sshd</code> e <code>sudo ss -tlnp | grep ssh</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl enable --now sshd</code>; confira o <code>-p</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Could not resolve hostname"</strong>
+<pre class="term">$ ssh ana@servidor-que-nao-existe
+ssh: Could not resolve hostname servidor-que-nao-existe: Temporary failure in name resolution</pre>
+<p><strong>O que aconteceu:</strong> o nome não virou IP (erro de digitação ou DNS).</p>
+<p><strong>Como resolver:</strong> use o IP, ou ponha o nome no <code>/etc/hosts</code> ou no <code>~/.ssh/config</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permission denied (publickey,password)"</strong>
+<p><strong>O que aconteceu:</strong> o servidor recusou todas as formas que você ofereceu. Os parênteses dizem quais ele aceita. Causas: senha errada, chave não autorizada, usuário errado, ou <code>PermitRootLogin</code> recusando o root.</p>
+<p><strong>Como confirmar:</strong> do cliente, <code>ssh -v ana@servidor</code> mostra quais chaves foram tentadas; no servidor, <code>journalctl -u sshd -n 20</code> diz o motivo (<code>Failed password</code>, <code>Authentication refused: bad ownership or modes</code>…).</p>
+<p><strong>Como resolver:</strong> confira o usuário; reinstale a chave (<code>ssh-copy-id</code>); no servidor, permissões: <code>~/.ssh</code> 700 e <code>authorized_keys</code> 600, a home sem escrita para outros. Lembre do <code>faillock</code>: 3 senhas erradas travam a conta por 10 minutos (veja <a href="usuarios.html">Usuários e Grupos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Host key verification failed"</strong>
+<p><strong>O que aconteceu:</strong> você respondeu <code>no</code> na primeira conexão, ou a chave do servidor mudou e o ssh bloqueou (com o aviso <code>REMOTE HOST IDENTIFICATION HAS CHANGED</code>).</p>
+<p><strong>Como resolver:</strong> se a mudança é esperada (servidor reinstalado), <code>ssh-keygen -R máquina</code> e conecte de novo, conferindo a impressão. Se não é esperada, <strong>não conecte</strong>: pode ser um ataque.</p>
+</div>
+
+<div class="cenario">
+<strong>Fiquei trancado fora depois de mudar o sshd_config</strong>
+<p><strong>Como resolver:</strong> vá ao console da máquina (teclado e monitor, ou o console web da VPS), corrija ou apague o seu drop-in em <code>/etc/ssh/sshd_config.d/</code>, rode <code>sudo sshd -t</code> e <code>sudo systemctl reload sshd</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo systemctl enable --now sshd</code></td><td>Liga o servidor SSH</td></tr>
+<tr><td><code>ssh usuário@máquina</code> · <code>-p porta</code></td><td>Conecta</td></tr>
+<tr><td><code>ssh usuário@máquina 'comando'</code></td><td>Roda um comando lá</td></tr>
+<tr><td><code>ssh-keygen -t ed25519 -C "comentário"</code></td><td>Cria um par de chaves</td></tr>
+<tr><td><code>ssh-keygen -lf arquivo.pub</code></td><td>Mostra a impressão digital</td></tr>
+<tr><td><code>ssh-keygen -R máquina</code></td><td>Esquece a chave de host de uma máquina</td></tr>
+<tr><td><code>ssh-copy-id usuário@máquina</code></td><td>Instala a sua chave pública no servidor</td></tr>
+<tr><td><code>scp [-P porta] [-r] origem usuário@máquina:destino</code></td><td>Copia</td></tr>
+<tr><td><code>rsync -av [-n] [--delete] origem/ usuário@máquina:destino/</code></td><td>Sincroniza</td></tr>
+<tr><td><code>sudo sshd -t</code> · <code>sudo sshd -T</code></td><td>Testa a configuração · mostra os valores efetivos</td></tr>
+<tr><td><code>sudo systemctl reload sshd</code></td><td>Aplica a configuração sem derrubar sessões</td></tr>
+<tr><td><code>journalctl -u sshd</code></td><td>Log de entradas e falhas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Outra porta</h3>
+<p>Complete para entrar como ana na máquina 127.0.0.1, porta 2223:</p>
+<div class="ex-code">ssh <input data-answer="-p" aria-label="opção"> 2223 <input data-answer="ana@127.0.0.1" aria-label="destino"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A chave moderna</h3>
+<p>Complete para criar uma chave do tipo recomendado:</p>
+<div class="ex-code">ssh-keygen -t <input data-answer="ed25519" aria-label="tipo"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Só o conteúdo</h3>
+<p>Complete para sincronizar o <strong>conteúdo</strong> da pasta <code>fotos</code> para <code>backup</code> no servidor:</p>
+<div class="ex-code">rsync -av <input data-answer="fotos/" aria-label="origem"> ana@servidor:backup/</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual arquivo nunca deve sair do seu computador?</p>
+<label><input type="radio" name="q4"> <code>~/.ssh/id_ed25519.pub</code></label>
+<label><input type="radio" name="q4"> <code>~/.ssh/id_ed25519</code></label>
+<label><input type="radio" name="q4"> <code>~/.ssh/known_hosts</code></label>
+<label><input type="radio" name="q4"> <code>/etc/ssh/sshd_config</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No Arch, qual é o padrão de <code>PermitRootLogin</code>?</p>
+<label><input type="radio" name="q5"> <code>yes</code>: o root entra com senha.</label>
+<label><input type="radio" name="q5"> <code>no</code>: o root nunca entra.</label>
+<label><input type="radio" name="q5"> <code>prohibit-password</code>: o root só entra com chave.</label>
+<label><input type="radio" name="q5"> Não existe essa opção no Arch.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Antes de pôr <code>PasswordAuthentication no</code> num servidor remoto, o que você precisa garantir?</p>
+<label><input type="radio" name="q6"> Que já entra com chave, testou com <code>sshd -t</code> e tem uma sessão aberta enquanto testa.</label>
+<label><input type="radio" name="q6"> Que o fail2ban está instalado.</label>
+<label><input type="radio" name="q6"> Que a porta foi trocada para 2222.</label>
+<label><input type="radio" name="q6"> Nada: o sshd avisa antes de bloquear.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>openssh</code> traz cliente e servidor; o servidor <code>sshd</code> precisa de <code>enable --now</code>.</li>
+  <li><code>ssh usuário@máquina</code> (<code>-p</code> para outra porta); confira a impressão digital na primeira conexão.</li>
+  <li>Chaves Ed25519: <code>ssh-keygen</code> cria, <code>ssh-copy-id</code> instala; a privada fica com você, modo 600.</li>
+  <li>O <code>sshd_config</code> do Arch usa drop-ins em <code>sshd_config.d/</code>; no sshd, o primeiro valor vence.</li>
+  <li>Para endurecer: <code>PermitRootLogin no</code> e <code>PasswordAuthentication no</code>, com <code>sshd -t</code> e uma sessão aberta.</li>
+  <li><code>scp</code> copia; <code>rsync -av</code> sincroniza (atenção à barra no fim da origem).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/OpenSSH">OpenSSH</a> cobre o servidor, as opções de segurança e a solução de problemas; as chaves estão em <a href="https://wiki.archlinux.org/title/SSH_keys">SSH keys</a>; as cópias, em <a href="https://wiki.archlinux.org/title/SCP_and_SFTP">SCP and SFTP</a> e <a href="https://wiki.archlinux.org/title/Rsync">rsync</a>; e a proteção contra robôs, em <a href="https://wiki.archlinux.org/title/Fail2ban">fail2ban</a>. (Em outubro de 2026, essas páginas não têm versão em português.)</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
