@@ -41,9 +41,14 @@
 <tr><td>Processador</td><td>64 bits (x86_64). O Arch oficial não roda em processadores de 32 bits nem em ARM.</td><td>2 núcleos (VM)</td></tr>
 <tr><td>Memória</td><td>512 MiB para iniciar o live; 2 GB ou mais para usar com conforto</td><td>4 GB</td></tr>
 <tr><td>Disco</td><td>uns 2 GiB para o sistema mínimo; 20 GiB ou mais na prática</td><td>30 GB</td></tr>
-<tr><td>Internet</td><td>obrigatória: a ISO só traz o instalador, os pacotes são baixados na hora</td><td>cabo (na VM, a rede NAT)</td></tr>
+<tr><td>Internet</td><td>obrigatória: a ISO só traz o instalador, os pacotes são baixados na hora (cabo, Wi-Fi ou o celular por USB; veja <a href="internet-live.html">Internet no Live</a>)</td><td>cabo (na VM, a rede NAT)</td></tr>
 <tr><td>Pendrive</td><td>2 GB ou mais (a ISO tem cerca de 1,5 GB) — <strong>tudo nele será apagado</strong></td><td>não precisou (VM)</td></tr>
 </table>
+</div>
+
+<div class="tip">
+<strong>Wi-Fi USB Realtek? Teste antes e tenha um plano B</strong>
+<p>No live, o Wi-Fi é conectado à mão com o <code>iwctl</code>, e só funciona se o kernel da ISO tiver driver para a sua placa. Placas internas de notebook costumam funcionar; adaptadores Wi-Fi <strong>USB</strong> (principalmente os Realtek baratos) são os que mais falham. Antes do dia da instalação, descubra o <strong>chip</strong> do seu adaptador e verifique se ele funciona no Linux sem driver extra. E tenha um plano B à mão: um cabo de rede ou o <strong>celular com cabo USB</strong> (a "ancoragem USB" funciona sozinha no live). Detalhes em <a href="internet-live.html#naoaparece">O Wi-Fi não aparece</a>.</p>
 </div>
 
 <h3>Antes de tudo: backup</h3>

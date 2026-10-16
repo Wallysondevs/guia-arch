@@ -35,7 +35,7 @@
 <tr><th>Etapa</th><th>Aula</th><th>Tempo estimado</th></tr>
 <tr><td>1. Criar a VM</td><td><a href="preparar.html">Baixar e Verificar a ISO</a></td><td>10 a 15 min</td></tr>
 <tr><td>2. Baixar e conferir a ISO</td><td><a href="preparar.html">Baixar e Verificar a ISO</a></td><td>10 a 30 min (depende da internet)</td></tr>
-<tr><td>3. Ligar o live</td><td><a href="ambiente-live.html">O Ambiente Live</a></td><td>5 a 10 min</td></tr>
+<tr><td>3. Ligar o live</td><td><a href="ambiente-live.html">O Ambiente Live</a> (rede: <a href="internet-live.html">Internet no Live</a>)</td><td>5 a 10 min</td></tr>
 <tr><td>4. Particionar</td><td><a href="particionar.html">Particionar o Disco</a></td><td>10 min</td></tr>
 <tr><td>5. Formatar e montar</td><td><a href="formatar-montar.html">Formatar e Montar</a></td><td>5 min</td></tr>
 <tr><td>6. Espelhos e pacstrap</td><td><a href="pacstrap.html">Espelhos e pacstrap</a></td><td>10 a 30 min (na VM do guia: 7 min para 765 MiB)</td></tr>
@@ -91,7 +91,7 @@ System clock synchronized: yes
 …
 </pre></li>
 </ol>
-<p><strong>O que você deve ver:</strong> <code>64</code> (UEFI de 64 bits), <code>0% packet loss</code> e <code>System clock synchronized: yes</code>. Se o arquivo <code>fw_platform_size</code> não existe, você está em modo BIOS: volte à etapa 1 e ligue o EFI. Aula: <a href="ambiente-live.html">O Ambiente Live</a>.</p>
+<p><strong>O que você deve ver:</strong> <code>64</code> (UEFI de 64 bits), <code>0% packet loss</code> e <code>System clock synchronized: yes</code>. Se o arquivo <code>fw_platform_size</code> não existe, você está em modo BIOS: volte à etapa 1 e ligue o EFI. Aula: <a href="ambiente-live.html">O Ambiente Live</a>. Na VM, a rede NAT funciona como um cabo e a internet já vem pronta; num computador de verdade só com Wi-Fi (ou com o celular por USB), conecte antes do <code>ping</code>, como em <a href="internet-live.html">Internet no Live</a>.</p>
 
 <hr>
 
@@ -356,7 +356,7 @@ O <code>pacman -Qm</code> lista os pacotes que não vieram dos repositórios ofi
 <table class="ref">
 <tr><th>Etapa</th><th>Mensagem ou sintoma</th><th>Causa</th><th>Solução</th></tr>
 <tr><td>3</td><td><code>fw_platform_size</code> não existe</td><td>VM ou pendrive em modo BIOS</td><td>Ligar o EFI na VM (etapa 1) e reiniciar o live</td></tr>
-<tr><td>3</td><td><code>ping: archlinux.org: Temporary failure in name resolution</code></td><td>Sem rede no live</td><td>Cabo/NAT na VM; Wi-Fi com <code>iwctl</code> (<a href="ambiente-live.html">Ambiente Live</a>)</td></tr>
+<tr><td>3</td><td><code>ping: archlinux.org: Temporary failure in name resolution</code></td><td>Sem rede no live</td><td>Cabo/NAT na VM; Wi-Fi com <code>iwctl</code> ou celular por USB (<a href="internet-live.html">Internet no Live</a>)</td></tr>
 <tr><td>6</td><td><code>WARNING: failed to rate http(s) download … timed out</code> (reflector)</td><td>Espelho lento no momento do teste <strong>(aconteceu na VM)</strong></td><td>Nada: o reflector o deixa de fora</td></tr>
 <tr><td>6</td><td><code>error: failed retrieving file '…' from mirror.ufscar.br : Operation too slow</code></td><td>Um espelho travou no meio do download <strong>(aconteceu na VM)</strong></td><td>Nada: o pacman tenta o próximo espelho da lista; só preocupe se a instalação terminar com erro</td></tr>
 <tr><td>6</td><td><code>WARNING: sd-vconsole: "/etc/vconsole.conf" not found</code></td><td>O pacstrap gera o initramfs antes de você configurar o teclado <strong>(aconteceu na VM)</strong></td><td>Normal; some no <code>mkinitcpio -P</code> da etapa 7</td></tr>

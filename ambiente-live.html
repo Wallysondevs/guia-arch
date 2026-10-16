@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Arch ambiente live — teclado, UEFI, rede e relógio | Guia Arch</title>
-<meta name="description" content="O ambiente live da ISO do Arch explicado linha por linha: login automático como root, teclado br-abnt2, fonte maior, confirmar UEFI, rede por cabo e Wi-Fi com iwctl, ping, relógio com timedatectl e SSH para instalar de outro computador.">
+<meta name="description" content="O ambiente live da ISO do Arch explicado linha por linha: login automático como root, teclado br-abnt2, fonte maior, confirmar UEFI, rede por cabo, resumo do Wi-Fi com iwctl, ping, relógio com timedatectl e SSH para instalar de outro computador.">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -26,7 +26,7 @@
   <li>O que é o ambiente live e o que cada linha da tela inicial quer dizer.</li>
   <li>Trocar o teclado para ABNT2 (<code>loadkeys br-abnt2</code>) e aumentar a fonte.</li>
   <li>Confirmar que iniciou em modo UEFI (<code>fw_platform_size</code>).</li>
-  <li>Conectar à internet por cabo ou Wi-Fi (<code>iwctl</code>) e testar com <code>ping</code>.</li>
+  <li>Ver as placas de rede (<code>ip link</code>), o resumo do Wi-Fi com <code>iwctl</code> e testar a internet com <code>ping</code> (o passo a passo completo fica em <a href="internet-live.html">Internet no Live</a>).</li>
   <li>Conferir o relógio (<code>timedatectl</code>) e, se quiser, instalar de outro computador por SSH.</li>
 </ul>
 </div>
@@ -52,8 +52,8 @@
 <tr><td><code>Arch Linux 7.0.10-arch1-1 (tty1)</code></td><td>—</td><td>O nome do sistema, a versão do <strong>kernel</strong> que veio na ISO e o terminal em que você está (<code>tty1</code>, o primeiro console de texto). O sistema instalado terá um kernel mais novo, baixado na hora.</td></tr>
 <tr><td><code>archiso login: root (automatic login)</code></td><td>login em archiso: root (login automático)</td><td><code>archiso</code> é o nome da máquina no live. Você já entrou como <strong>root</strong>, o administrador, sem senha.</td></tr>
 <tr><td><code>To install Arch Linux follow the installation guide: https://wiki.archlinux.org/title/Installation_guide</code></td><td>Para instalar o Arch Linux, siga o guia de instalação: …</td><td>O roteiro oficial, que este guia acompanha passo a passo.</td></tr>
-<tr><td><code>For Wi-Fi, authenticate to the wireless network using the iwctl utility.</code></td><td>Para Wi-Fi, autentique-se na rede sem fio com o utilitário iwctl.</td><td>Veja <a href="#wifi">Wi-Fi com iwctl</a>, abaixo.</td></tr>
-<tr><td><code>For mobile broadband (WWAN) modems, connect with the mmcli utility.</code></td><td>Para modems de banda larga móvel (WWAN), conecte com o mmcli.</td><td>Para notebooks com chip 4G/5G. Raro.</td></tr>
+<tr><td><code>For Wi-Fi, authenticate to the wireless network using the iwctl utility.</code></td><td>Para Wi-Fi, autentique-se na rede sem fio com o utilitário iwctl.</td><td>Veja o <a href="#wifi">resumo</a> abaixo e o passo a passo em <a href="internet-live.html">Internet no Live</a>.</td></tr>
+<tr><td><code>For mobile broadband (WWAN) modems, connect with the mmcli utility.</code></td><td>Para modems de banda larga móvel (WWAN), conecte com o mmcli.</td><td>Para notebooks com chip 4G/5G. Raro (veja <a href="internet-live.html#modem">Internet no Live</a>).</td></tr>
 <tr><td><code>Ethernet, WLAN and WWAN interfaces using DHCP should work automatically.</code></td><td>Interfaces cabeadas, sem fio e móveis com DHCP devem funcionar sozinhas.</td><td>Com <strong>cabo</strong>, a internet já deve estar funcionando. (DHCP é o serviço do roteador que entrega um endereço para a máquina.)</td></tr>
 <tr><td><code>After connecting to the internet, the installation guide can be accessed via the convenience script Installation_guide.</code></td><td>Depois de conectar, o guia de instalação pode ser lido pelo script <code>Installation_guide</code>.</td><td>Digitar <code>Installation_guide</code> abre a página da Wiki num navegador de texto, no próprio terminal.</td></tr>
 <tr><td>a faixa de blocos coloridos</td><td>—</td><td>Só decoração: mostra as cores que o console consegue exibir.</td></tr>
@@ -154,7 +154,7 @@ us-acentos
 
 <h2>Internet</h2>
 
-<p>A ISO não traz os pacotes do sistema: eles são baixados durante a instalação. Sem internet, não há instalação.</p>
+<p>A ISO não traz os pacotes do sistema: eles são baixados durante a instalação. Sem internet, não há instalação. Aqui vai o essencial; Wi-Fi, celular por USB e modem têm uma aula só para eles: <a href="internet-live.html">Internet no Live</a>.</p>
 
 <h3>Ver as placas de rede: ip link</h3>
 
@@ -183,52 +183,22 @@ us-acentos
 </table>
 </div>
 
-<p><strong>Com cabo</strong>, é só isso: o live pede um endereço ao roteador sozinho (DHCP). Pule para <a href="#ping">testar com ping</a>.</p>
+<p><strong>Com cabo</strong>, é só isso: o live pede um endereço ao roteador sozinho (DHCP). Pule para <a href="#ping">testar com ping</a>. Sem cabo, mas com um celular? Ligue a "ancoragem USB" dele: também funciona sozinho (veja <a href="internet-live.html#celular">celular por USB</a>).</p>
 
-<h3 id="wifi">Wi-Fi com iwctl</h3>
+<h3 id="wifi">Wi-Fi com iwctl (resumo)</h3>
 
-<p>Para Wi-Fi, o live traz o <strong>iwd</strong> (<em>iNet wireless daemon</em>), um serviço da Intel para redes sem fio, e o <code>iwctl</code>, o programa para conversar com ele. A VM do guia não tem placa Wi-Fi, então a sessão abaixo é <strong>ilustrativa</strong> (o formato é o do <code>iwctl</code>; o nome da rede e o MAC são inventados). Primeiro, entre no <code>iwctl</code>; o prompt muda para <code>[iwd]#</code>:</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> iwctl
-[iwd]# device list
-                                    Devices
---------------------------------------------------------------------------------
-  Name                  Address               Powered     Adapter     Mode
---------------------------------------------------------------------------------
-  wlan0                 3c:a9:f4:12:34:56     on          phy0        station
-[iwd]# station wlan0 scan
-[iwd]# station wlan0 get-networks
-                               Available networks
---------------------------------------------------------------------------------
-      Network name                      Security            Signal
---------------------------------------------------------------------------------
-      CasaDaAna                         psk                 ****
-      Vizinho_5G                        psk                 ***
-[iwd]# station wlan0 connect CasaDaAna
-Passphrase: ********
-[iwd]# station wlan0 show
-…
-            State                 connected
-            Connected network     CasaDaAna
-…
-[iwd]# exit
-</pre>
+<p>Sem cabo, o live <strong>não</strong> entra no Wi-Fi sozinho: você escolhe a rede e digita a senha com o <code>iwctl</code>, o programa que conversa com o <code>iwd</code> (o serviço de Wi-Fi do live). Em resumo:</p>
 
 <ol class="passo">
-  <li><code>device list</code> — lista as placas Wi-Fi. Anote o nome (<code>wlan0</code>). Se <code>Powered</code> estiver <code>off</code>, ligue com <code>device wlan0 set-property Powered on</code>.</li>
-  <li><code>station wlan0 scan</code> — manda a placa procurar redes. Não mostra nada; espere um ou dois segundos.</li>
-  <li><code>station wlan0 get-networks</code> — mostra as redes encontradas: nome, segurança (<code>psk</code> = com senha; <code>open</code> = aberta) e sinal (mais <code>*</code>, melhor).</li>
-  <li><code>station wlan0 connect CasaDaAna</code> — conecta. Pede a senha (<em>Passphrase</em>), que não aparece enquanto você digita. Rede com espaço no nome: use aspas, <code>connect "Casa da Ana"</code>.</li>
-  <li><code>station wlan0 show</code> — confira o <code>State</code>: tem que ser <code>connected</code>.</li>
-  <li><code>exit</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd>) — volta para o prompt do live. A conexão continua.</li>
+  <li><code>iwctl</code> — entra no programa; o prompt vira <code>[iwd]#</code>.</li>
+  <li><code>device list</code> e <code>station wlan0 scan</code> — veja o nome da placa (<code>wlan0</code>) e mande procurar redes.</li>
+  <li><code>station wlan0 get-networks</code> e <code>station wlan0 connect NomeDaRede</code> — escolha a rede e digite a senha (cada letra vira um <code>*</code>).</li>
+  <li><code>station wlan0 show</code> — tem de dizer <code>State connected</code>; saia com <code>exit</code> e teste com <code>ping</code>.</li>
 </ol>
 
-<p>A palavra <code>station</code> é o modo "cliente" da placa (a que se conecta num roteador). Tudo também funciona numa linha só, sem entrar no <code>iwctl</code>, o que é bom para copiar:</p>
+<figure><img src="img/iwctl-1-redes.png" alt="Console do live: iwctl aberto, device list com a placa wlan0 em modo station, station wlan0 scan e station wlan0 get-networks listando as redes CasaDaAna e Vizinho_2G" loading="lazy"><figcaption>Tela real do <code>iwctl</code> no live do laboratório: a placa <code>wlan0</code> e as redes encontradas.</figcaption></figure>
 
-<pre class="term" data-host="archiso" data-user="root">#> iwctl --passphrase 'minha senha' station wlan0 connect CasaDaAna
-</pre>
-
-<p>No sistema instalado, o Wi-Fi fica por conta do NetworkManager (veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a> e <a href="rede.html">NetworkManager e iwd</a>).</p>
+<p>Cada passo explicado com as telas reais (a senha certa, a senha errada, o <code>show</code> linha por linha), o Wi-Fi bloqueado pelo modo avião, o adaptador USB que não aparece, a internet do celular pelo cabo USB e o modem 4G estão na próxima aula: <a href="internet-live.html">Internet no Live (Wi-Fi, cabo, celular)</a>. Lembre que o <code>iwctl</code> só existe no live: no sistema instalado, o Wi-Fi fica por conta do NetworkManager (veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a>).</p>
 
 <h3 id="ping">Testar a conexão: ping</h3>
 
@@ -356,13 +326,13 @@ loadkeys: Unable to open file: br-abnt3: No such file or directory
 <strong>O <code>ping</code> diz "Temporary failure in name resolution"</strong>
 <p><strong>O que aconteceu:</strong> o live não está conectado ou não recebeu o endereço do DNS ("falha temporária na resolução de nomes"). Mensagem <strong>ilustrativa</strong>: a rede da VM funcionou de primeira.</p>
 <p><strong>Como confirmar:</strong> <code>ip link</code> mostra a placa com <code>LOWER_UP</code>? <code>ip -brief addr</code> mostra um endereço IP na placa? Se a placa não tiver IP, o DHCP não funcionou: confira o cabo, o roteador ou a conexão Wi-Fi.</p>
-<p><strong>Como resolver:</strong> reconecte o cabo (ou refaça o <code>station wlan0 connect</code>), espere alguns segundos e teste de novo.</p>
+<p><strong>Como resolver:</strong> reconecte o cabo (ou refaça o <code>station wlan0 connect</code>), espere alguns segundos e teste de novo. Outros casos em <a href="internet-live.html#problemas">Internet no Live</a>.</p>
 </div>
 
 <div class="cenario">
 <strong>O <code>iwctl</code> não mostra nenhuma placa, ou ela não liga</strong>
 <p><strong>O que aconteceu:</strong> a placa Wi-Fi está bloqueada (pela tecla de "modo avião" do notebook, por exemplo) ou o live não tem o driver dela.</p>
-<p><strong>Como confirmar e resolver:</strong> <code>rfkill list</code> mostra <code>Soft blocked: yes</code> ou <code>Hard blocked: yes</code>? O bloqueio por software sai com <code>rfkill unblock wifi</code>; o por hardware, só com a tecla ou chave do notebook. Se a placa nem aparece em <code>ip link</code>, use um cabo (ou o celular conectado por USB, com "ancoragem USB"), que funciona como placa com cabo.</p>
+<p><strong>Como confirmar e resolver:</strong> <code>rfkill list</code> mostra <code>Soft blocked: yes</code> ou <code>Hard blocked: yes</code>? O bloqueio por software sai com <code>rfkill unblock wifi</code>; o por hardware, só com a tecla ou chave do notebook. Se a placa nem aparece em <code>ip link</code>, use um cabo (ou o celular conectado por USB, com "ancoragem USB"), que funciona como placa com cabo. Passo a passo em <a href="internet-live.html#naoaparece">O Wi-Fi não aparece</a>.</p>
 </div>
 
 <div class="cenario">
@@ -436,12 +406,12 @@ loadkeys: Unable to open file: br-abnt3: No such file or directory
   <li>O live é um Arch temporário que roda da memória: você já é root, o shell é o zsh e nada fica salvo.</li>
   <li><code>loadkeys br-abnt2</code> acerta o teclado (só no live).</li>
   <li><code>cat /sys/firmware/efi/fw_platform_size</code> → <code>64</code> confirma o modo UEFI.</li>
-  <li>Cabo funciona sozinho; Wi-Fi, com <code>iwctl</code> (<code>station wlan0 scan / get-networks / connect</code>).</li>
+  <li>Cabo funciona sozinho; Wi-Fi, com <code>iwctl</code> (<code>station wlan0 scan / get-networks / connect</code>), em detalhes em <a href="internet-live.html">Internet no Live</a>.</li>
   <li><code>ping -c 3 archlinux.org</code> testa a internet; <code>timedatectl</code> deve dizer <code>synchronized: yes</code>.</li>
   <li>Opcional: <code>passwd</code> + <code>systemctl start sshd</code> para instalar de outro computador.</li>
 </ul>
 
-<p>Teclado, UEFI, internet e relógio prontos: hora de preparar o disco em <a href="particionar.html">Particionar o Disco</a>.</p>
+<p>Sem cabo? A próxima aula, <a href="internet-live.html">Internet no Live</a>, conecta o Wi-Fi passo a passo. Com teclado, UEFI, internet e relógio prontos, o disco é preparado em <a href="particionar.html">Particionar o Disco</a>.</p>
 
 <p><strong>Na Arch Wiki:</strong> esta aula cobre as seções 1.4 a 1.8 do <a href="https://wiki.archlinux.org/title/Installation_guide#Boot_the_live_environment">Installation guide</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). Para ir além: o teclado e as fontes do console em <a href="https://wiki.archlinux.org/title/Linux_console/Keyboard_configuration">Linux console/Keyboard configuration</a> e <a href="https://wiki.archlinux.org/title/Linux_console#Fonts">Linux console — Fonts</a>; o Wi-Fi em <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>); a rede em <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a>; o relógio em <a href="https://wiki.archlinux.org/title/System_time">System time</a> (<a href="https://wiki.archlinux.org/title/System_time_(Portugu%C3%AAs)">em português</a>); e a instalação por SSH em <a href="https://wiki.archlinux.org/title/Install_Arch_Linux_via_SSH">Install Arch Linux via SSH</a>.</p>
 

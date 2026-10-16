@@ -61,7 +61,13 @@
 <hr>
 
 <h2>Iniciar o archinstall</h2>
-<p>Ligue o pendrive do Arch, como em <a href="ambiente-live.html">O Ambiente Live</a>, e garanta a internet (com cabo funciona sozinho; Wi-Fi com <code>iwctl</code>). O <code>archinstall</code> baixa tudo da internet e não funciona sem ela. Depois é só digitar o nome:</p>
+
+<div class="warning">
+<strong>O archinstall precisa de internet: conecte antes</strong>
+<p>O <code>archinstall</code> não conecta no Wi-Fi para você: ele baixa tudo da internet e para logo no começo se ela não existir. Antes de digitar <code>archinstall</code>, conecte o live por cabo (funciona sozinho), por Wi-Fi com o <code>iwctl</code> ou pelo celular no cabo USB (ancoragem), e teste com <code>ping -c 3 archlinux.org</code>. Passo a passo em <a href="internet-live.html">Internet no Live (Wi-Fi, cabo, celular)</a>.</p>
+</div>
+
+<p>Ligue o pendrive do Arch, como em <a href="ambiente-live.html">O Ambiente Live</a>, e garanta a internet (veja o aviso acima). Depois é só digitar o nome:</p>
 
 <dl class="anatomy">
   <dt>archinstall</dt><dd>Inicia o instalador guiado (pacote <code>archinstall</code>, já presente na ISO). Sem opções, abre o menu principal.</dd>
@@ -312,7 +318,7 @@
 <div class="table-wrap">
 <table class="ref">
 <tr><th>Opção (4.5)</th><th>O que faz</th></tr>
-<tr><td>Copy ISO network configuration to installation</td><td>Copia a configuração de rede do live (systemd-networkd). Simples, mas ruim para Wi-Fi em notebook.</td></tr>
+<tr><td>Copy ISO network configuration to installation</td><td>Copia a configuração de rede do live para o sistema instalado: os arquivos do <code>systemd-networkd</code> e, se você conectou com o <code>iwctl</code>, o <code>iwd</code> com a rede salva. O sistema liga com a mesma rede do live. Serve, mas fica sem <code>nmcli</code>, <code>nmtui</code> e ícone de rede no desktop.</td></tr>
 <tr><td>Use Network Manager (default backend)</td><td>Instala e ativa o NetworkManager. <strong>O mesmo do guia</strong>; a melhor escolha para quase todos.</td></tr>
 <tr><td>Use Network Manager (iwd backend)</td><td>NetworkManager usando o <code>iwd</code> para o Wi-Fi.</td></tr>
 <tr><td>Use standalone iwd</td><td>Só o <code>iwd</code>, sem NetworkManager.</td></tr>
@@ -322,7 +328,7 @@
 
 <div class="warning">
 <strong>Não deixe a rede em branco</strong>
-<p>Sem nenhuma opção, o archinstall avisa <em>No network configuration selected. Network will need to be set up manually on the installed system.</em> e o sistema liga <strong>sem internet</strong>, o mesmo problema de esquecer o <code>systemctl enable NetworkManager</code> (veja <a href="primeiro-boot.html">Primeiro Boot</a>).</p>
+<p>Sem nenhuma opção, o archinstall avisa <em>No network configuration selected. Network will need to be set up manually on the installed system.</em> e o sistema liga <strong>sem internet</strong>, o mesmo problema de esquecer o <code>systemctl enable NetworkManager</code> (veja <a href="primeiro-boot.html">Primeiro Boot</a>). O Wi-Fi que você conectou no live com o <code>iwctl</code> <strong>não vai junto sozinho</strong>: para o sistema instalado ter rede e Wi-Fi, escolha <strong>Use Network Manager (default backend)</strong> (o recomendado) ou <em>Copy ISO network configuration to installation</em>. Veja <a href="internet-live.html#depois">Depois da instalação: o Wi-Fi não vai junto</a>.</p>
 </div>
 
 <h3>Additional packages</h3>
@@ -427,7 +433,7 @@
 <div class="cenario">
 <strong>O archinstall para logo no começo, sem conseguir baixar nada</strong>
 <p><strong>O que aconteceu:</strong> sem internet, ele não baixa a lista de pacotes. </p>
-<p><strong>Como resolver:</strong> confira com <code>ping -c 3 archlinux.org</code> e conecte como em <a href="ambiente-live.html">O Ambiente Live</a> (Wi-Fi com <code>iwctl</code>).</p>
+<p><strong>Como resolver:</strong> confira com <code>ping -c 3 archlinux.org</code> e conecte como em <a href="internet-live.html">Internet no Live</a> (cabo, Wi-Fi com <code>iwctl</code> ou celular por USB).</p>
 </div>
 
 <div class="cenario">
@@ -445,7 +451,7 @@
 <div class="cenario">
 <strong>Instalou, mas ligou sem rede</strong>
 <p><strong>O que aconteceu:</strong> o item <em>Network configuration</em> ficou em branco.</p>
-<p><strong>Como resolver:</strong> se o <code>networkmanager</code> não foi instalado, volte ao pendrive e use <code>arch-chroot</code> para instalá-lo e ativá-lo, como em <a href="primeiro-boot.html">Primeiro Boot</a>.</p>
+<p><strong>Como resolver:</strong> se o <code>networkmanager</code> não foi instalado, volte ao pendrive, conecte o live à internet e use <code>arch-chroot</code> para instalá-lo e ativá-lo, como em <a href="internet-live.html#depois">Internet no Live</a> e <a href="primeiro-boot.html">Primeiro Boot</a>.</p>
 </div>
 
 <hr>

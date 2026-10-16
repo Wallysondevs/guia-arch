@@ -273,7 +273,7 @@ STATE      CONNECTIVITY  WIFI-HW   WIFI        WWAN-HW   WWAN        METERED
 conectado  completa      faltando  habilitado  faltando  habilitado  não (adivinhado)
 </pre>
 
-<p>Num notebook, os passos abaixo conectam no Wi-Fi. Eles não foram executados na VM (não há placa); siga a sequência e leia as mensagens:</p>
+<p>Num notebook, os passos abaixo conectam no Wi-Fi. Eles não foram executados na VM (não há placa); siga a sequência e leia as mensagens. Repare que aqui não se usa mais o <code>iwctl</code>: ele e a senha que você digitou no live ficaram no pendrive (veja <a href="internet-live.html#depois">Internet no Live</a>); no sistema instalado, quem cuida do Wi-Fi é o NetworkManager:</p>
 
 <ol class="passo">
   <li><strong>Veja se a placa existe.</strong> <code>nmcli device</code> deve listar um dispositivo do tipo <code>wifi</code> (o nome costuma ser <code>wlan0</code> ou <code>wlp2s0</code>). Se ele não aparece, falta o firmware da placa: o pacote <code>linux-firmware</code> resolve na maioria dos casos.</li>
@@ -342,7 +342,7 @@ conectado  completa      faltando  habilitado  faltando  habilitado  não (adivi
 <div class="cenario">
 <strong>Ligou, mas sem rede</strong>
 <p><strong>Como confirmar:</strong> <code>nmcli device</code> responde que o NetworkManager não está rodando, ou <code>systemctl is-enabled NetworkManager</code> diz <code>disabled</code>.</p>
-<p><strong>Como resolver:</strong> se o pacote está instalado mas faltou ativar: <code>sudo systemctl enable --now NetworkManager</code> (o <code>--now</code> ativa e já liga). Se o pacote nem foi instalado (esqueceu o <code>networkmanager</code> no <code>pacstrap</code>), não dá para baixá-lo sem rede: ligue o pendrive, monte, <code>arch-chroot /mnt</code> e rode <code>pacman -S networkmanager</code> (o live tem internet), depois <code>systemctl enable NetworkManager</code>.</p>
+<p><strong>Como resolver:</strong> se o pacote está instalado mas faltou ativar: <code>sudo systemctl enable --now NetworkManager</code> (o <code>--now</code> ativa e já liga). Se o pacote nem foi instalado (esqueceu o <code>networkmanager</code> no <code>pacstrap</code>), não dá para baixá-lo sem rede: ligue o pendrive, conecte o live à internet (cabo, <code>iwctl</code> ou celular por USB, como em <a href="internet-live.html">Internet no Live</a>), monte, <code>arch-chroot /mnt</code> e rode <code>pacman -S networkmanager</code>, depois <code>systemctl enable NetworkManager</code>. Passo a passo em <a href="internet-live.html#depois">Esqueci! E agora?</a>.</p>
 </div>
 
 <div class="cenario">

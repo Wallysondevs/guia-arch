@@ -269,11 +269,12 @@ default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100        « o 
 <p>Na VM, o <code>iwd</code> não está instalado (<code>pacman -Q iwd</code> → <code>erro: o pacote "iwd" não foi encontrado</code>) e o <code>systemd-networkd</code> está desabilitado. Se um dia quiser usar o iwd como motor de Wi-Fi do NetworkManager (conecta mais rápido), a Arch Wiki explica: instale o <code>iwd</code>, crie <code>/etc/NetworkManager/conf.d/wifi_backend.conf</code> com <code>[device]</code> e <code>wifi.backend=iwd</code>, e reinicie o NetworkManager (sem habilitar o serviço <code>iwd</code> separado).</p>
 
 <h3>No ambiente de instalação: iwctl</h3>
-<p>Na ISO, antes de existir NetworkManager, o Wi-Fi é pelo <code>iwctl</code> (<strong>ilustrativo</strong>, a VM usa cabo; veja <a href="ambiente-live.html">O Ambiente Live</a>):</p>
+<p>Na ISO, antes de existir NetworkManager, o Wi-Fi é pelo <code>iwctl</code>, o cliente do <code>iwd</code>. Os comandos são estes; a aula <a href="internet-live.html">Internet no Live</a> mostra cada um com as saídas e as telas reais do live (senha certa, senha errada, <code>station wlan0 show</code> linha por linha, redes salvas em <code>/var/lib/iwd</code>):</p>
 <pre class="term" data-host="archiso" data-user="root">#> iwctl device list
 #> iwctl station wlan0 scan
 #> iwctl station wlan0 get-networks
 #> iwctl --passphrase 'minha senha' station wlan0 connect CasaDaAna</pre>
+<p>A rede e a senha que você conecta no live <strong>não</strong> passam para o sistema instalado: nele, conecte de novo com o <code>nmcli</code> ou o <code>nmtui</code> (acima).</p>
 
 <hr>
 

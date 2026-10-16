@@ -37,7 +37,7 @@
 
 <p>Os pacotes do Arch ficam em centenas de servidores pelo mundo, cada um com uma cópia idêntica de tudo: os <strong>espelhos</strong> (<em>mirrors</em>). O <code>pacman</code> (e o <code>pacstrap</code>, que usa o <code>pacman</code>) baixa de um deles, na ordem do arquivo <code>/etc/pacman.d/mirrorlist</code>: tenta o primeiro; se falhar, o segundo; e assim por diante. Um espelho rápido e próximo no topo da lista faz a instalação levar minutos em vez de uma hora.</p>
 
-<p>O live já cuida disso sozinho: logo depois de conectar à internet, ele roda o <code>reflector</code>, que escolhe os 20 espelhos HTTPS sincronizados mais recentemente no mundo e os ordena por velocidade. Funciona, mas pode pôr espelhos de outros continentes no topo. Na VM do guia, refizemos a lista só com espelhos do Brasil.</p>
+<p>O live já cuida disso sozinho: logo depois de conectar à internet (veja <a href="internet-live.html">Internet no Live</a>), ele roda o <code>reflector</code>, que escolhe os 20 espelhos HTTPS sincronizados mais recentemente no mundo e os ordena por velocidade. Funciona, mas pode pôr espelhos de outros continentes no topo. Na VM do guia, refizemos a lista só com espelhos do Brasil.</p>
 
 <h3>reflector</h3>
 
@@ -126,7 +126,7 @@ Server = https://mirrors.ic.unicamp.br/archlinux/$repo/os/$arch    « no fim
 <tr><td><code>linux</code></td><td>O <strong>kernel</strong> (e os módulos). Alternativas: <code>linux-lts</code> (suporte longo), <code>linux-zen</code>… (veja <a href="kernels.html">Kernels</a>)</td><td><strong>obrigatório</strong> (um kernel; numa VM ou container você até poderia não ter, mas não neste guia)</td></tr>
 <tr><td><code>linux-firmware</code></td><td>Arquivos de <em>firmware</em> que placas de Wi-Fi, vídeo, Bluetooth etc. carregam para funcionar. Hoje é dividido em pacotes por fabricante (<code>linux-firmware-intel</code>, <code>-amdgpu</code>, <code>-realtek</code>…)</td><td><strong>recomendado</strong> em computador real; a VM não precisa</td></tr>
 <tr><td><code>intel-ucode</code> ou <code>amd-ucode</code></td><td>O <strong>microcode</strong>: correções que o fabricante manda para o processador a cada boot (veja <a href="microcode.html">Microcode</a>). Escolha <strong>um</strong>, conforme o seu processador. A VM usou <code>intel-ucode</code> porque o computador do guia é Intel</td><td><strong>recomendado</strong></td></tr>
-<tr><td><code>networkmanager</code></td><td>Gerencia a rede (cabo e Wi-Fi) no sistema instalado. O <code>iwctl</code> do live <strong>não</strong> vem junto</td><td><strong>na prática, obrigatório</strong>: sem um gerenciador de rede, o Arch reinicia sem internet</td></tr>
+<tr><td><code>networkmanager</code></td><td>Gerencia a rede (cabo e Wi-Fi) no sistema instalado. O <code>iwctl</code> do live <strong>não</strong> vem junto (veja <a href="internet-live.html#depois">Internet no Live</a>)</td><td><strong>na prática, obrigatório</strong>: sem um gerenciador de rede, o Arch reinicia sem internet</td></tr>
 <tr><td><code>sudo</code></td><td>Para o seu usuário rodar comandos como administrador (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>)</td><td>recomendado</td></tr>
 <tr><td><code>nano</code> / <code>vim</code></td><td>Editores de texto no terminal. O <code>base</code> <strong>não traz editor nenhum</strong>, e a próxima aula edita arquivos</td><td><strong>pelo menos um</strong></td></tr>
 <tr><td><code>man-db</code>, <code>man-pages</code></td><td>O comando <code>man</code> e os manuais (o <code>base</code> também não traz)</td><td>recomendado</td></tr>
@@ -402,7 +402,7 @@ error: failed to synchronize all databases (download library error)
 ==&gt; ERROR: Failed to install packages to new root
 </pre>
 <p><strong>O que aconteceu:</strong> o <code>pacman</code> não conseguiu baixar nem a lista de pacotes: "não foi possível resolver o nome" = sem internet ou sem DNS.</p>
-<p><strong>Como resolver:</strong> volte ao <a href="ambiente-live.html#ping">teste com ping</a>. Se a internet funciona e só os espelhos falham (todos com <code>Operation too slow</code> ou <code>timed out</code>, como os avisos reais acima), refaça a lista com o <code>reflector</code> sem o filtro de país, ou com <code>--download-timeout 15</code>.</p>
+<p><strong>Como resolver:</strong> volte ao <a href="internet-live.html#passo-0">teste com ping</a> e conecte o live (cabo, Wi-Fi com <code>iwctl</code> ou celular por USB: veja <a href="internet-live.html">Internet no Live</a>). Se a internet funciona e só os espelhos falham (todos com <code>Operation too slow</code> ou <code>timed out</code>, como os avisos reais acima), refaça a lista com o <code>reflector</code> sem o filtro de país, ou com <code>--download-timeout 15</code>.</p>
 </div>
 
 <div class="cenario">
