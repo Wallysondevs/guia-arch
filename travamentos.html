@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch travou — TTY, kill, Magic SysRq e o boot anterior | Guia Arch</title>
+<meta name="description" content="O que fazer quando o Arch Linux trava: ir para outro TTY com Ctrl+Alt+F3, matar o programa culpado, Magic SysRq (REISUB) e o valor padrão 16 do Arch, botão de energia e journalctl -b -1 para descobrir o que aconteceu.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Quando o sistema <span class="hl">trava</span></h1>
+
+<p class="intro">A tela congelou, o mouse não mexe, nada responde. Antes de apertar o botão de energia, o Linux oferece uma <strong>escada de saídas</strong>, da mais suave para a mais bruta: trocar para outro terminal (TTY), matar o programa culpado, pedir ajuda direto ao kernel (Magic SysRq) e, só no fim, o botão. Depois do susto, o <code>journalctl</code> mostra o que aconteceu.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre "um programa travou", "a interface gráfica travou" e "o sistema inteiro travou".</li>
+  <li>Usar os consoles de texto (TTY) com <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd> e como o Arch os cria.</li>
+  <li>O que é o Magic SysRq, o que o valor <code>16</code> do Arch permite e como habilitar o REISUB.</li>
+  <li>O que o botão de energia faz com um toque e com o dedo segurando.</li>
+  <li>Ler o log do boot anterior com <code>journalctl -b -1</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Três tipos de "travou"</h2>
+<p>"Travar" não é uma coisa só. Descobrir qual é o seu caso decide a saída:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que você vê</th><th>O que provavelmente aconteceu</th><th>Primeira tentativa</th></tr>
+<tr><td>Uma janela não responde, o resto funciona</td><td>Um <strong>programa</strong> travou</td><td>Fechar pela janela ou matar o processo (<a href="processos.html">Processos e kill</a>)</td></tr>
+<tr><td>Nada responde, mas a luz do disco pisca ou a ventoinha acelera</td><td>A <strong>interface gráfica</strong> travou ou a memória acabou e o sistema está "afogado"</td><td>Esperar 1–2 minutos; depois ir para um TTY</td></tr>
+<tr><td>Nem o <kbd>Caps Lock</kbd> acende, nenhuma tecla tem efeito</td><td>O <strong>kernel</strong> travou (raro: driver, hardware)</td><td>Magic SysRq; se nem isso, o botão</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Primeiro degrau: esperar</strong>
+<p>Muitas vezes o sistema está só sem memória, trocando dados com a <a href="swap-zram.html">swap</a>. Isso deixa tudo lentíssimo por um ou dois minutos e depois volta. Antes de qualquer coisa, espere um pouco.</p>
+</div>
+
+<hr>
+
+<h2>Degrau 2: outro terminal (TTY)</h2>
+
+<h3>O que é um TTY</h3>
+<p>Além da tela gráfica, o Linux tem <strong>consoles virtuais</strong>: telas de texto puro, cada uma com o seu próprio login. O nome <strong>TTY</strong> vem de <em>teletypewriter</em> (teletipo), as máquinas de escrever ligadas a computadores antigos. Eles ficam de prontidão mesmo quando a interface gráfica trava, porque são desenhados pelo próprio kernel.</p>
+
+<dl class="anatomy">
+  <dt>Ctrl+Alt+F3</dt><dd>Vai para o console virtual 3 (<code>tty3</code>). Vale de <kbd>F1</kbd> a <kbd>F6</kbd>.</dd>
+  <dt>Ctrl+Alt+F1 ou F2</dt><dd>Volta para a tela gráfica. Qual dos dois depende do gerenciador de login (GDM costuma usar o <code>tty1</code> para a tela de login e o <code>tty2</code> para a sessão; SDDM e LightDM, o <code>tty1</code> ou o <code>tty7</code>). Experimente.</dd>
+  <dt>Alt+F3</dt><dd>Já dentro de um TTY de texto, basta <kbd>Alt</kbd>+<kbd>F-número</kbd> (ou <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd>) para trocar.</dd>
+</dl>
+
+<p>No TTY aparece o pedido de login em texto, igual ao do primeiro boot. Digite o seu usuário e a senha (a senha não aparece enquanto você digita):</p>
+
+<figure><img src="img/primeiro-boot-login.png" alt="Tela de texto preta com Arch Linux 7.2.10-arch1-1 (tty1) e notebook login:" loading="lazy"><figcaption>O login de um console de texto na VM do guia. Nos outros TTYs a tela é igual, só muda o <code>(tty1)</code> para <code>(tty3)</code>, <code>(tty4)</code>…</figcaption></figure>
+
+<h3>No Arch, os TTYs nascem quando você chega neles</h3>
+<p>Quem desenha o <code>login:</code> é um programa chamado <code>agetty</code>, iniciado pelo serviço <code>getty@ttyN</code>. Na VM do guia, logo depois do boot, só existe <strong>um</strong>:</p>
+
+<pre class="term">$ systemctl list-units 'getty@*'
+  UNIT               LOAD   ACTIVE SUB     DESCRIPTION
+  getty@tty1.service loaded active running Getty on tty1     « só o tty1 está rodando
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+1 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'.</pre>
+
+<p>Então como o <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd> funciona? Quem cria os outros é o <code>systemd-logind</code>, <strong>na hora em que você troca para eles</strong>. O limite está no <code>/etc/systemd/logind.conf</code>:</p>
+
+<pre class="term">$ grep -n 'NAutoVTs\|ReserveVT' /etc/systemd/logind.conf
+20:#NAutoVTs=6       « até 6 consoles são criados sob demanda (tty1 a tty6)
+21:#ReserveVT=6      « o tty6 fica sempre reservado para um login de texto</pre>
+
+<p>As linhas começam com <code>#</code>: são comentários que mostram o <strong>valor padrão</strong>. Ninguém mudou nada; o padrão já dá seis consoles. O serviço criado sob demanda se chama <code>autovt@ttyN</code>, que no Arch é só outro nome (um <em>alias</em>) do mesmo <code>getty@</code>:</p>
+
+<pre class="term">$ systemctl list-unit-files 'getty@*' 'autovt@*'
+UNIT FILE       STATE   PRESET
+autovt@.service alias   -               « "alias" = apelido de outra unidade
+getty@.service  enabled enabled
+
+2 unit files listed.</pre>
+
+<p>Detalhes de serviços e unidades estão em <a href="systemd.html">systemctl e Serviços</a>. O que importa aqui: <strong>o tty3 não aparece na lista até alguém ir para ele</strong>, e isso é normal.</p>
+
+<h3>No TTY: achar e matar o culpado</h3>
+<p>Já logado no TTY, a sequência é: listar os processos que mais gastam, achar o nome, matar. Na VM, um <code>sleep</code> faz o papel do "programa travado":</p>
+
+<pre class="term">$ pgrep -a sleep
+5853 sleep 700          « PID (número do processo) e o comando
+$ kill 5853             « pede para ele terminar (sinal TERM)
+$ pgrep -a sleep
+$ echo $?
+1                       « 1 = nenhum processo encontrado: ele morreu</pre>
+
+<p>Se o programa ignorar o pedido, <code>kill -9 PID</code> mata à força. A aula <a href="processos.html">Processos e kill</a> explica <code>ps</code>, <code>top</code>, <code>htop</code>, sinais, <code>pkill</code> e <code>killall</code> em detalhes. Um atalho para quem sabe o nome: <code>killall firefox</code>.</p>
+
+<h3>Reiniciar só a interface gráfica</h3>
+<p>Se o que travou foi o ambiente gráfico inteiro (GNOME, KDE…), reinicie o gerenciador de login. <strong>Ilustrativo:</strong> a VM do guia não tem interface gráfica; o nome do serviço depende do que você instalou em <a href="desktop.html">Instalar um Desktop</a>.</p>
+
+<pre class="term">$ sudo systemctl restart gdm       « GNOME
+$ sudo systemctl restart sddm      « KDE Plasma
+$ sudo systemctl restart lightdm   « XFCE e outros</pre>
+
+<div class="warning">
+<strong>Isso fecha tudo o que estava aberto na sessão gráfica</strong>
+<p>Reiniciar o gerenciador de login encerra a sessão: documentos não salvos se perdem. É melhor que o botão de energia (o disco é desmontado direito), mas não é "grátis".</p>
+</div>
+
+<hr>
+
+<h2>Degrau 3: Magic SysRq, falar direto com o kernel</h2>
+
+<h3>O que é</h3>
+<p>A <strong>Magic SysRq</strong> (<em>System Request</em>, "pedido ao sistema") é uma combinação de teclas que vai <strong>direto para o kernel</strong>, sem passar por interface gráfica, terminal ou programa nenhum. Enquanto o kernel estiver vivo, ela funciona. A combinação é:</p>
+
+<dl class="anatomy">
+  <dt>Alt</dt><dd>Segure o <kbd>Alt</kbd> (o da esquerda).</dd>
+  <dt>SysRq</dt><dd>A tecla <kbd>SysRq</kbd> é a mesma do <kbd>Print Screen</kbd> (<kbd>PrtSc</kbd>). Em notebooks pode exigir <kbd>Fn</kbd>.</dd>
+  <dt>letra</dt><dd>Sem soltar as duas, aperte uma letra: cada letra é um comando (<kbd>s</kbd> = gravar no disco, <kbd>b</kbd> = reiniciar…).</dd>
+</dl>
+
+<h3>O que vem ligado no Arch: só o "s"</h3>
+<p>Por segurança (qualquer pessoa no teclado poderia reiniciar a máquina), o kernel deixa você escolher quais comandos aceitar. A escolha fica em <code>/proc/sys/kernel/sysrq</code>:</p>
+
+<pre class="term">$ cat /proc/sys/kernel/sysrq
+16
+$ sysctl kernel.sysrq
+kernel.sysrq = 16</pre>
+
+<p>Quem coloca esse 16 é o próprio <code>systemd</code>, num arquivo de configuração do kernel que vem no pacote:</p>
+
+<pre class="term">$ sed -n '14,19p' /usr/lib/sysctl.d/50-default.conf
+# System Request functionality of the kernel (SYNC)
+#
+# Use kernel.sysrq = 1 to allow all keys.
+# See https://docs.kernel.org/admin-guide/sysrq.html for a list
+# of values and keys.
+kernel.sysrq = 16
+$ pacman -Qo /usr/lib/sysctl.d/50-default.conf
+/usr/lib/sysctl.d/50-default.conf pertence a systemd 262-1</pre>
+
+<p>O número é uma <strong>soma</strong>: cada grupo de comandos vale uma potência de 2, e o valor final diz quais grupos estão liberados.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor</th><th>Libera</th><th>Letras</th></tr>
+<tr><td><code>0</code></td><td>Nada (SysRq desligada)</td><td>—</td></tr>
+<tr><td><code>1</code></td><td><strong>Tudo</strong></td><td>todas</td></tr>
+<tr><td><code>2</code></td><td>Nível das mensagens do kernel no console</td><td>0–9</td></tr>
+<tr><td><code>4</code></td><td>Controle do teclado</td><td><kbd>r</kbd>, <kbd>k</kbd></td></tr>
+<tr><td><code>8</code></td><td>Diagnóstico (listar processos, memória…)</td><td><kbd>t</kbd>, <kbd>m</kbd>, <kbd>w</kbd>, <kbd>l</kbd>…</td></tr>
+<tr><td><code>16</code></td><td>Gravar tudo no disco (<em>sync</em>)</td><td><kbd>s</kbd></td></tr>
+<tr><td><code>32</code></td><td>Remontar os discos só leitura</td><td><kbd>u</kbd></td></tr>
+<tr><td><code>64</code></td><td>Mandar sinais aos processos</td><td><kbd>e</kbd>, <kbd>i</kbd>, <kbd>f</kbd></td></tr>
+<tr><td><code>128</code></td><td>Reiniciar e desligar</td><td><kbd>b</kbd>, <kbd>o</kbd></td></tr>
+<tr><td><code>256</code></td><td>Baixar a prioridade de tarefas de tempo real</td><td><kbd>n</kbd></td></tr>
+</table>
+</div>
+
+<p>Com <code>16</code>, o Arch aceita do teclado <strong>só o <kbd>Alt</kbd>+<kbd>SysRq</kbd>+<kbd>s</kbd></strong>: gravar no disco o que estiver na memória. As outras letras são ignoradas.</p>
+
+<h3>REISUB: reiniciar "com educação"</h3>
+<p>A sequência clássica para reiniciar uma máquina travada sem estragar o disco é <strong>R E I S U B</strong>, uma letra por vez, com uns 2 segundos entre elas. Um jeito de decorar (em inglês): <em>"<strong>R</strong>eboot <strong>E</strong>ven <strong>I</strong>f <strong>S</strong>ystem <strong>U</strong>tterly <strong>B</strong>roken"</em>, ou ao contrário, "BUSIER".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla</th><th>Nome no kernel</th><th>O que faz</th><th>Precisa do bit</th></tr>
+<tr><td><kbd>R</kbd></td><td><code>unraw</code></td><td>Tira o teclado do controle da interface gráfica</td><td>4</td></tr>
+<tr><td><kbd>E</kbd></td><td><code>terminate-all-tasks</code></td><td>Manda o sinal TERM a todos os processos ("feche com calma")</td><td>64</td></tr>
+<tr><td><kbd>I</kbd></td><td><code>kill-all-tasks</code></td><td>Manda o sinal KILL a quem sobrou ("morra agora")</td><td>64</td></tr>
+<tr><td><kbd>S</kbd></td><td><code>sync</code></td><td>Grava no disco os dados pendentes</td><td>16</td></tr>
+<tr><td><kbd>U</kbd></td><td><code>unmount</code></td><td>Remonta todos os sistemas de arquivos como só leitura</td><td>32</td></tr>
+<tr><td><kbd>B</kbd></td><td><code>reboot</code></td><td>Reinicia na hora</td><td>128</td></tr>
+</table>
+</div>
+
+<p>Trocando o último <kbd>B</kbd> por <kbd>O</kbd> (<code>poweroff</code>) você tem o <strong>REISUO</strong>: a mesma sequência, mas <strong>desliga</strong> em vez de reiniciar. Somando os bits da tabela, o REISUB precisa de 4 + 64 + 16 + 32 + 128 = <strong>244</strong>.</p>
+
+<p>Os nomes da coluna "Nome no kernel" são os que o próprio kernel usa. Como root, você pode pedir a ajuda da SysRq escrevendo <code>h</code> em <code>/proc/sysrq-trigger</code> (é inofensivo: só escreve a lista no log):</p>
+
+<pre class="term" data-user="root">#> echo h &gt; /proc/sysrq-trigger
+#> journalctl -k -n 1 --no-pager
+out 16 13:22:45 notebook kernel: sysrq: HELP : loglevel(0-9) reboot(b) crash(c) terminate-all-tasks(e) memory-full-oom-kill(f) kill-all-tasks(i) thaw-filesystems(j) sak(k) show-backtrace-all-active-cpus(l) show-memory-usage(m) nice-all-RT-tasks(n) poweroff(o) show-registers(p) show-all-timers(q) unraw(r) sync(s) show-task-states(t) unmount(u) force-fb(v) show-blocked-tasks(w) dump-ftrace-buffer(z) dump-sched-ext(D) replay-kernel-logs(R) reset-sched-ext(S) </pre>
+
+<div class="warning">
+<strong>Não escreva outras letras no /proc/sysrq-trigger</strong>
+<p>O valor 16 só limita o <strong>teclado</strong>. O arquivo <code>/proc/sysrq-trigger</code> aceita <strong>todas</strong> as letras, sempre: <code>echo b</code> ali reinicia a máquina na hora, sem gravar nada; <code>echo c</code> derruba o kernel de propósito. Use só o <code>h</code> para estudar.</p>
+</div>
+
+<h3>A letra F: quando a memória acabou</h3>
+<p>A letra <kbd>f</kbd> (<code>memory-full-oom-kill</code>) chama o "matador por falta de memória" do kernel, que escolhe o processo que mais gasta e o mata. É o resgate ideal para o caso "tudo lento, disco piscando": um só aperto e o navegador com 80 abas some, o resto volta. Também precisa do bit 64. No Arch, nem o <code>systemd-oomd</code> nem o <code>earlyoom</code> (que fazem isso sozinhos) vêm ligados:</p>
+
+<pre class="term" data-user="root">#> systemctl is-enabled systemd-oomd
+disabled
+#> pacman -Q earlyoom
+erro: o pacote "earlyoom" não foi encontrado</pre>
+
+<h3>Habilitar mais letras</h3>
+<p>Para usar o REISUB e o F, crie um arquivo seu em <code>/etc/sysctl.d/</code> (o próprio comentário do <code>50-default.conf</code> manda fazer assim). <strong>Ilustrativo:</strong> não foi aplicado na VM do guia, que é compartilhada.</p>
+
+<pre class="file" data-file="/etc/sysctl.d/99-sysrq.conf"># Libera REISUB/REISUO (4+16+32+64+128) para o teclado
+kernel.sysrq = 244
+</pre>
+
+<pre class="term">$ sudo sysctl --system           « relê todos os arquivos de /etc/sysctl.d e /usr/lib/sysctl.d
+* Aplicando /usr/lib/sysctl.d/10-arch.conf ...
+* Aplicando /usr/lib/sysctl.d/50-coredump.conf ...
+* Aplicando /usr/lib/sysctl.d/50-default.conf ...
+* Aplicando /usr/lib/sysctl.d/50-pid-max.conf ...
+* Aplicando /etc/sysctl.d/99-sysrq.conf ...        « o seu arquivo, por último
+…
+kernel.sysrq = 244
+$ cat /proc/sys/kernel/sysrq
+244</pre>
+
+<p>As linhas <code>* Aplicando</code> sem o seu arquivo e a lista de valores são as reais da VM (onde o comando foi rodado sem o <code>99-sysrq.conf</code>, e o valor continuou 16); a linha do seu arquivo e o 244 são o que você verá depois de criá-lo.</p>
+
+<dl class="anatomy">
+  <dt>/etc/sysctl.d/</dt><dd>Pasta das <strong>suas</strong> configurações do kernel. Ela vence a <code>/usr/lib/sysctl.d/</code>, que é do pacote e seria sobrescrita numa atualização.</dd>
+  <dt>99-</dt><dd>Os arquivos são lidos em ordem alfabética; o último a definir um valor vence. O 99 garante que o seu vem depois do <code>50-default.conf</code>.</dd>
+  <dt>sysctl --system</dt><dd>Aplica agora, sem reiniciar. No próximo boot, o <code>systemd-sysctl</code> aplica sozinho.</dd>
+</dl>
+
+<p>Quer liberar tudo? Use <code>kernel.sysrq = 1</code>. Para mudar só até o próximo boot: <code>sudo sysctl kernel.sysrq=244</code>. Sem <code>sudo</code>, o kernel recusa:</p>
+
+<pre class="term">$ sysctl kernel.sysrq=1
+sysctl: permissão negada pela chave "kernel.sysrq"
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>Degrau 4: o botão de energia</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Como aperta</th><th>Quem age</th><th>O que acontece</th></tr>
+<tr><td>Um toque curto</td><td>O <code>systemd-logind</code></td><td>Desligamento <strong>normal</strong>: programas fecham, discos são desmontados. Só funciona se o sistema ainda responde.</td></tr>
+<tr><td>Segurar 4–10 segundos</td><td>O hardware (a placa-mãe)</td><td>Corta a energia na hora. É como puxar a tomada.</td></tr>
+</table>
+</div>
+
+<p>O toque curto é configurado no mesmo <code>logind.conf</code>; o padrão (comentado) é desligar:</p>
+
+<pre class="term">$ grep -n 'HandlePowerKey\|HandleLidSwitch' /etc/systemd/logind.conf
+28:#HandlePowerKey=poweroff           « toque curto: desliga direito
+29:#HandlePowerKeyLongPress=ignore    « segurar: o logind não faz nada (quem age é o hardware)
+36:#HandleLidSwitch=suspend           « fechar a tampa do notebook: suspende
+37:#HandleLidSwitchExternalPower=suspend
+38:#HandleLidSwitchDocked=ignore</pre>
+
+<div class="warning">
+<strong>Segurar o botão é o último recurso</strong>
+<p>Os dados que ainda estavam na memória se perdem, e o sistema de arquivos precisa ser consertado no próximo boot. Se der, faça antes pelo menos <kbd>Alt</kbd>+<kbd>SysRq</kbd>+<kbd>s</kbd> (liberado no Arch) e espere uns segundos. E nunca corte a energia durante uma atualização do <code>pacman</code>: veja o que acontece em <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<hr>
+
+<h2>Depois do susto: o que aconteceu?</h2>
+
+<h3>O journal guarda os boots anteriores</h3>
+<p>O <code>systemd-journald</code> grava as mensagens do sistema. No Arch, ele grava <strong>no disco</strong>, então os logs sobrevivem ao reinício. Para conferir, veja se a pasta existe:</p>
+
+<pre class="term">$ ls /var/log/journal
+42634ff99dd3440394e6cd711c974f65        « uma pasta com o "machine ID": o journal é persistente
+$ pacman -Qo /var/log/journal
+/var/log/journal/ pertence a systemd 262-1
+$ grep -n 'Storage' /etc/systemd/journald.conf
+20:#Storage=persistent                   « o padrão do Arch: gravar em /var/log/journal</pre>
+
+<p>A lista de boots que o journal conhece:</p>
+
+<pre class="term">$ journalctl --list-boots
+IDX BOOT ID                          FIRST ENTRY                 LAST ENTRY
+ -7 d89c67becb284e04b53080f044b99d6c Fri 2026-10-16 12:11:49 -03 Fri 2026-10-16 12:41:56 -03
+ -6 0a35caea7372467c8e40d3facce2c6d3 Fri 2026-10-16 12:52:28 -03 Fri 2026-10-16 12:53:04 -03
+ -5 c53600baf07d4b18b3fbfaac3f374f79 Fri 2026-10-16 12:53:28 -03 Fri 2026-10-16 13:01:03 -03
+ -4 2695c95bc57f420da057e28d473e9d6d Fri 2026-10-16 13:01:17 -03 Fri 2026-10-16 13:02:02 -03
+ -3 f9360906b79e4501a01ef16854387016 Fri 2026-10-16 13:02:12 -03 Fri 2026-10-16 13:03:06 -03
+ -2 d61af177708f4005aedaa923bae12950 Fri 2026-10-16 13:03:21 -03 Fri 2026-10-16 13:03:59 -03
+ -1 e5617e25b2f040a893da013b1b683170 Fri 2026-10-16 13:04:16 -03 Fri 2026-10-16 13:06:13 -03
+  0 86ee4580648946d2959176115208e7c0 Fri 2026-10-16 13:06:28 -03 Fri 2026-10-16 13:20:57 -03</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>IDX</code></td><td>Posição relativa: <code>0</code> é o boot atual, <code>-1</code> o anterior, <code>-2</code> o de antes…</td></tr>
+<tr><td><code>BOOT ID</code></td><td>Identificador único daquele boot (também serve no <code>-b</code>)</td></tr>
+<tr><td><code>FIRST ENTRY</code> / <code>LAST ENTRY</code></td><td>Primeira e última mensagem gravadas. A última mostra <strong>quando</strong> a máquina parou.</td></tr>
+</table>
+</div>
+
+<h3>journalctl -b -1: o boot anterior</h3>
+<dl class="anatomy">
+  <dt>journalctl</dt><dd>Lê o journal.</dd>
+  <dt>-b -1</dt><dd><em>boot</em>: só as mensagens do boot de índice -1 (o anterior). <code>-b</code> sozinho = o boot atual.</dd>
+  <dt>-n 8</dt><dd>Só as últimas 8 linhas: o fim daquele boot é o que interessa.</dd>
+  <dt>--no-pager</dt><dd>Imprime tudo de uma vez, sem abrir o <code>less</code>. Sem ela, use <kbd>q</kbd> para sair.</dd>
+</dl>
+
+<p>Um desligamento <strong>normal</strong> termina assim:</p>
+
+<pre class="term">$ journalctl -b -1 -n 8 --no-pager
+out 16 13:06:11 notebook systemd[1]: systemd-poweroff.service: Deactivated successfully.
+out 16 13:06:11 notebook systemd[1]: Finished System Power Off.
+out 16 13:06:11 notebook systemd[1]: Reached target System Power Off.
+out 16 13:06:11 notebook systemd[1]: Shutting down.
+out 16 13:06:13 notebook systemd-shutdown[1]: Syncing filesystems and block devices.     « gravou tudo no disco
+out 16 13:06:13 notebook systemd-shutdown[1]: Sending SIGTERM to remaining processes...
+out 16 13:06:13 notebook systemd-journald[198]: Received SIGTERM from PID 1 (systemd-shutdow).
+out 16 13:06:13 notebook systemd-journald[198]: Journal stopped                            « fim limpo</pre>
+
+<p>Já um boot que terminou com <strong>energia cortada</strong> simplesmente para no meio de uma frase. Este é real: durante a montagem do laboratório, a VM foi desligada à força às 12:41 (boot -7):</p>
+
+<pre class="term">$ journalctl -b -7 -n 6 --no-pager
+out 16 12:40:02 notebook systemd[1]: Started User Manager for UID 0.
+out 16 12:40:02 notebook systemd[1]: Started Session 4 of User root.
+out 16 12:41:56 notebook sshd-session[444]: Received disconnect from 10.0.2.2 port 44408:11: disconnected by user
+out 16 12:41:56 notebook sshd-session[444]: Disconnected from user root 10.0.2.2 port 44408
+out 16 12:41:56 notebook sshd-session[427]: pam_unix(sshd:session): session closed for user root
+out 16 12:41:56 notebook systemd-logind[287]: Session 4 logged out. Waiting for processes to exit.   « e acabou: sem "Shutting down", sem "Journal stopped"</pre>
+
+<p>E o boot seguinte (-6) conta as consequências: o journal estava "sujo", o ext4 da raiz teve de recuperar o próprio diário e a partição EFI (FAT) não tinha sido desmontada:</p>
+
+<pre class="term">$ journalctl -b -6 --no-pager | grep -i -m3 'unclean\|corrupt\|recovering'
+out 16 12:52:30 archlinux systemd-fsck[135]: /dev/sda3: recovering journal
+out 16 12:52:38 notebook systemd-journald[191]: File /var/log/journal/42634ff99dd3440394e6cd711c974f65/system.journal corrupted or uncleanly shut down, renaming and replacing: Device or resource busy
+out 16 12:52:40 notebook kernel: FAT-fs (sda1): Volume was not properly unmounted. Some data may be corrupt. Please run fsck.</pre>
+
+<p>Nesse caso nada se perdeu, mas essas linhas são o "boletim de ocorrência" do corte de energia. O aviso da FAT se resolve com <code>fsck.fat</code>, que no Arch vem no pacote <code>dosfstools</code> (veja <a href="discos.html">lsblk, df, du</a>).</p>
+
+<h3>Procurar a causa</h3>
+<p>Para achar o motivo de um travamento, filtre por prioridade e olhe o final:</p>
+
+<pre class="term">$ journalctl -b -1 -p err -n 3 --no-pager
+out 16 13:05:01 notebook sudo[413]:      ana : a password is required ; PWD=/home/ana ; USER=root ; COMMAND=/usr/bin/true
+out 16 13:06:09 notebook (sd-pam)[674]: pam_systemd(systemd-user:session): Varlink call io.systemd.Login.ReleaseSession failed: io.systemd.Login.NoSuchSession
+out 16 13:06:09 notebook dbus-broker-launch[289]: Activation request for 'org.freedesktop.nm_dispatcher' failed.</pre>
+
+<p><code>-p err</code> mostra só erros (e o que for mais grave). Nesse boot não houve nada assustador: um <code>sudo</code> sem senha e avisos normais do desligamento. Num travamento de verdade, procure linhas com <code>Out of memory: Killed process</code> (a memória acabou), <code>BUG:</code>, <code>watchdog</code>, <code>hung_task</code> ou o nome do driver de vídeo (<code>amdgpu</code>, <code>i915</code>, <code>nvidia</code>). Tudo sobre filtros está em <a href="journal.html">Logs (journalctl)</a>.</p>
+
+<div class="try" data-goal="ran:journalctl.*-b *-1" data-solucao="journalctl -b -1 -n 8">
+<p class="try-task"><strong>Missão:</strong> mostre as últimas 8 linhas do <strong>boot anterior</strong> com o <code>journalctl</code>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de sair de um travamento: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Saída</th><th>Quando usar</th><th>Perde dados?</th></tr>
+<tr><td>Esperar 1–2 minutos</td><td>Disco piscando, sistema lento (falta de memória)</td><td>Não</td></tr>
+<tr><td><code>kill</code> / <code>killall</code> no programa</td><td>Uma janela travou; ou do TTY, quando a tela gráfica congelou</td><td>Só o que não foi salvo naquele programa</td></tr>
+<tr><td><code>systemctl restart gdm</code> (ou sddm…)</td><td>A interface gráfica inteira travou, mas o TTY funciona</td><td>Tudo o que estava aberto na sessão</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>SysRq</kbd>+<kbd>f</kbd></td><td>Sem memória e sem conseguir chegar ao TTY (precisa habilitar)</td><td>O programa que o kernel escolher matar</td></tr>
+<tr><td>REISUB / REISUO</td><td>Nada responde, nem o TTY (precisa habilitar; no padrão do Arch só o <kbd>s</kbd> funciona)</td><td>O que não foi salvo; o disco fica íntegro</td></tr>
+<tr><td>Toque curto no botão</td><td>O sistema responde, mas você não consegue usar a tela</td><td>O que não foi salvo</td></tr>
+<tr><td>Segurar o botão</td><td>Nada mais funcionou</td><td>Pode perder dados e exige reparo no boot</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Alt+SysRq+R, E, I… não fazem nada</strong>
+<p><strong>O que aconteceu:</strong> no Arch, <code>kernel.sysrq = 16</code> libera só o <kbd>s</kbd>. As outras letras são ignoradas sem aviso.</p>
+<p><strong>Como confirmar:</strong> <code>cat /proc/sys/kernel/sysrq</code> mostra <code>16</code>.</p>
+<p><strong>Como resolver:</strong> crie <code>/etc/sysctl.d/99-sysrq.conf</code> com <code>kernel.sysrq = 244</code> (ou <code>1</code>) e rode <code>sudo sysctl --system</code>, <strong>antes</strong> do próximo travamento. Em alguns notebooks a tecla SysRq exige <kbd>Fn</kbd>, ou a combinação é <kbd>Alt</kbd>+<kbd>Fn</kbd>+<kbd>PrtSc</kbd>.</p>
+</div>
+
+<div class="cenario">
+<strong>Ctrl+Alt+F3 mostra uma tela preta, sem "login:"</strong>
+<p><strong>O que aconteceu:</strong> o <code>autovt@tty3</code> não subiu, ou você foi para um console acima do <code>NAutoVTs</code> (por exemplo, F8 com o padrão 6). Também acontece de o driver de vídeo demorar a trocar de modo.</p>
+<p><strong>Como confirmar:</strong> de outro TTY ou por SSH, <code>systemctl status getty@tty3</code>.</p>
+<p><strong>Como resolver:</strong> tente <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> a <kbd>F6</kbd>; aperte <kbd>Enter</kbd> uma vez (o <code>login:</code> às vezes só aparece depois). Se o computador tem rede e SSH ligado, entrar por outra máquina (<a href="ssh.html">SSH</a>) é outra porta de saída.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida" no kill</strong>
+<pre class="term">$ kill 1
+bash: kill: (1) - Operação não permitida</pre>
+<p><strong>O que aconteceu:</strong> o processo é de outro usuário (aqui, o <code>systemd</code>, do root). Um usuário comum só mata os próprios processos.</p>
+<p><strong>Como resolver:</strong> confira se é mesmo o processo certo (<code>ps -o user,pid,cmd -p PID</code>) e use <code>sudo kill PID</code>. Veja <a href="processos.html">Processos e kill</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"No journal boot entry found"</strong>
+<pre class="term">$ journalctl -b -10
+No journal boot entry found for the specified boot (-10).
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> o journal não tem esse boot: ele é mais antigo do que os logs guardados (o journal apaga os mais velhos quando enche) ou o journal não é persistente.</p>
+<p><strong>Como confirmar:</strong> <code>journalctl --list-boots</code> mostra quais existem; <code>ls /var/log/journal</code> mostra se há logs no disco.</p>
+<p><strong>Como resolver:</strong> use um índice que aparece na lista. Se <code>/var/log/journal</code> não existir (alguém apagou ou mudou <code>Storage=</code>), crie-a com <code>sudo mkdir -p /var/log/journal</code> e reinicie o <code>systemd-journald</code>; os próximos boots passam a ser guardados (veja <a href="journal.html">Logs (journalctl)</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla ou comando</th><th>O que faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd>…<kbd>F6</kbd></td><td>Vai para um console de texto (TTY)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F1</kbd> (ou <kbd>F2</kbd>, <kbd>F7</kbd>)</td><td>Volta para a tela gráfica</td></tr>
+<tr><td><code>systemctl list-units 'getty@*'</code></td><td>Consoles com login rodando</td></tr>
+<tr><td><code>pgrep -a nome</code> · <code>kill PID</code> · <code>killall nome</code></td><td>Achar e matar o programa travado</td></tr>
+<tr><td><code>sudo systemctl restart gdm</code></td><td>Reinicia a interface gráfica (ou <code>sddm</code>, <code>lightdm</code>)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>SysRq</kbd>+<kbd>s</kbd></td><td>Grava no disco (o único liberado no padrão do Arch)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>SysRq</kbd> + R E I S U B</td><td>Reinicia com segurança (precisa de <code>kernel.sysrq</code> 244 ou 1)</td></tr>
+<tr><td>… R E I S U O</td><td>Idem, desligando</td></tr>
+<tr><td><code>cat /proc/sys/kernel/sysrq</code></td><td>Quais comandos SysRq estão liberados</td></tr>
+<tr><td><code>/etc/sysctl.d/99-sysrq.conf</code></td><td>Onde mudar o valor de forma permanente</td></tr>
+<tr><td><code>journalctl --list-boots</code></td><td>Boots guardados no journal</td></tr>
+<tr><td><code>journalctl -b -1 -n 50</code></td><td>O fim do boot anterior</td></tr>
+<tr><td><code>journalctl -b -1 -p err</code></td><td>Só os erros do boot anterior</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Para o console 4</h3>
+<p>Complete a combinação de teclas que leva ao <code>tty4</code>:</p>
+<div class="ex-code">Ctrl+Alt+<input data-answer="F4|f4" aria-label="tecla"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O boot de antes</h3>
+<p>Complete o comando que mostra as mensagens do boot anterior:</p>
+<div class="ex-code">journalctl -b <input data-answer="-1" aria-label="índice"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A soma dos bits</h3>
+<p>Qual valor de <code>kernel.sysrq</code> libera exatamente as letras do REISUB (4 + 64 + 16 + 32 + 128)?</p>
+<div class="ex-code">kernel.sysrq = <input data-answer="244" aria-label="valor"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Num Arch recém-instalado, <code>cat /proc/sys/kernel/sysrq</code> mostra <code>16</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> Todas as letras da SysRq funcionam.</label>
+<label><input type="radio" name="q4"> Só o <kbd>Alt</kbd>+<kbd>SysRq</kbd>+<kbd>s</kbd> (gravar no disco) funciona pelo teclado.</label>
+<label><input type="radio" name="q4"> A SysRq está desligada.</label>
+<label><input type="radio" name="q4"> Existem 16 consoles de texto.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. <code>systemctl list-units 'getty@*'</code> mostra só o <code>getty@tty1</code>. O <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd> vai funcionar?</p>
+<label><input type="radio" name="q5"> Não: é preciso habilitar o <code>getty@tty3</code> antes.</label>
+<label><input type="radio" name="q5"> Não: o Arch só tem um console.</label>
+<label><input type="radio" name="q5"> Sim: o <code>systemd-logind</code> cria o console quando você troca para ele.</label>
+<label><input type="radio" name="q5"> Só se o journal for persistente.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O último registro de um boot é <code>Session 4 logged out. Waiting for processes to exit.</code>, sem <code>Journal stopped</code>. O que isso indica?</p>
+<label><input type="radio" name="q6"> Um desligamento normal.</label>
+<label><input type="radio" name="q6"> Que o journal não é persistente.</label>
+<label><input type="radio" name="q6"> Que a sessão travou, mas o sistema continuou ligado.</label>
+<label><input type="radio" name="q6"> Que a energia foi cortada (ou o sistema travou) sem desligar direito.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Suba a escada: esperar → TTY (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd>) → <code>kill</code> → reiniciar o gerenciador de login → SysRq → botão.</li>
+  <li>No Arch só o <code>getty@tty1</code> roda no boot; os outros TTYs são criados sob demanda (<code>NAutoVTs=6</code>).</li>
+  <li>O Arch vem com <code>kernel.sysrq = 16</code>: só o <kbd>s</kbd>. Para o REISUB/REISUO, use 244 (ou 1) em <code>/etc/sysctl.d/</code>.</li>
+  <li>Toque curto no botão = desligamento normal; segurar = corte de energia.</li>
+  <li>O journal do Arch é persistente: <code>journalctl --list-boots</code> e <code>journalctl -b -1</code> contam o que houve.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a SysRq e os atalhos do console estão em <a href="https://wiki.archlinux.org/title/Keyboard_shortcuts">Keyboard shortcuts</a> (<a href="https://wiki.archlinux.org/title/Keyboard_shortcuts_(Portugu%C3%AAs)">em português</a>); os consoles de texto, em <a href="https://wiki.archlinux.org/title/Getty">Getty</a> (<a href="https://wiki.archlinux.org/title/Getty_(Portugu%C3%AAs)">em português</a>) e <a href="https://wiki.archlinux.org/title/Linux_console">Linux console</a>; o journal, em <a href="https://wiki.archlinux.org/title/Systemd/Journal">Systemd/Journal</a> (<a href="https://wiki.archlinux.org/title/Systemd/Journal_(Portugu%C3%AAs)">em português</a>); e um roteiro geral de diagnóstico, em <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> (<a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">em português</a>). Para falta de memória, veja <a href="https://wiki.archlinux.org/title/Improving_performance#Improving_system_responsiveness_under_low-memory_conditions">Improving performance</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
