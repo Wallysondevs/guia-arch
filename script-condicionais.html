@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Condicionais — if, [ ], [[ ]], case e códigos de saída | Guia Arch</title>
+<meta name="description" content="Scripts Bash que tomam decisões no Arch Linux: if com pacman -Qi e systemctl is-active, test, [ ], [[ ]], (( )), &amp;&amp;, ||, case e os códigos de saída do checkupdates, com cada parte explicada, erros reais e exercícios.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Condicionais</span></h1>
+
+<p class="intro">Até agora seus scripts faziam sempre a mesma coisa, linha após linha. Com <strong>condicionais</strong>, o script passa a tomar decisões: "se o pacote está instalado, mostre a versão; senão, avise". "Se o pacman está travado, pare". Esta aula mostra o <code>if</code> e seus parceiros, parte por parte, com perguntas que você faz ao seu Arch todo dia.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que o <code>if</code> do Bash testa <strong>comandos</strong> (como <code>pacman -Qi</code>), e não "verdadeiro ou falso".</li>
+  <li>Como usar <code>[ ]</code>, <code>[[ ]]</code> e <code>(( ))</code> para testar arquivos, textos e números.</li>
+  <li>Quando trocar o <code>if</code> por <code>&amp;&amp;</code>, <code>||</code> ou <code>case</code>.</li>
+  <li>Ler códigos de saída com vários significados, como os do <code>checkupdates</code> (0, 1 e 2).</li>
+  <li>Os erros mais comuns: "faltando `]'", "esperava operador unário" e "esperava número inteiro".</li>
+</ul>
+</div>
+
+<p>Antes, leia <a href="script-intro.html">Primeiro Script</a> e <a href="script-variaveis.html">Variáveis e Argumentos</a>. Os exemplos rodam na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>; as saídas vêm de um Arch Linux real.</p>
+
+<hr>
+
+<h2>A ideia: todo comando diz se deu certo</h2>
+<p>Você já viu que todo comando devolve um <strong>código de saída</strong>: <code>0</code> quando deu certo e outro número quando deu errado. O <code>if</code> do Bash usa exatamente isso. Ele roda um comando e olha o código:</p>
+<ul>
+  <li>Código <code>0</code> → o <code>if</code> considera <strong>verdadeiro</strong> e executa o bloco do <code>then</code>.</li>
+  <li>Qualquer outro código → <strong>falso</strong>: pula para o <code>else</code>, se existir.</li>
+</ul>
+
+<p>O <code>pacman -Qi</code> (<em>query info</em>) é um ótimo exemplo: ele responde com 0 se o pacote está instalado e com 1 se não está.</p>
+
+<pre class="term">$ pacman -Qi htop &gt; /dev/null
+$ echo $?
+0                                                   « instalado = verdadeiro
+$ pacman -Qi firefox &gt; /dev/null
+erro: o pacote "firefox" não foi encontrado
+$ echo $?
+1                                                   « não instalado = falso</pre>
+
+<p>O <code>&gt; /dev/null</code> joga fora a ficha do pacote (só queremos o código). Mas a mensagem de erro ainda apareceu: ela sai por outro canal, a <strong>saída de erros</strong>. Para calar as duas, acrescente <code>2&gt;&amp;1</code> (veja <a href="redirecionamento.html">Redirecionamento</a>):</p>
+
+<pre class="term">$ pacman -Qi firefox &gt; /dev/null 2&gt;&amp;1
+$ echo $?
+1                                                   « nenhuma mensagem, só o código</pre>
+
+<div class="tip">
+<strong>Ao contrário de outras linguagens</strong>
+<p>Em Python ou JavaScript, 0 significa "falso". No shell é o oposto: <strong>0 significa sucesso</strong>. Pense em "zero problemas".</p>
+</div>
+
+<hr>
+
+<h2>A estrutura do if</h2>
+
+<pre class="syntax">if COMANDO; then
+  comandos se COMANDO deu certo
+fi</pre>
+
+<dl class="anatomy">
+  <dt>if</dt><dd>"Se". Começa a decisão.</dd>
+  <dt>pacman -Qi htop &gt; /dev/null 2&gt;&amp;1</dt><dd>O comando testado, sem mostrar nada na tela. Só o código importa.</dd>
+  <dt>; then</dt><dd>"Então". O <code>;</code> separa o comando do <code>then</code> quando estão na mesma linha.</dd>
+  <dt>echo "o htop está instalado"</dt><dd>O que fazer quando o comando deu certo.</dd>
+  <dt>; fi</dt><dd>Fim do if. <code>fi</code> é <code>if</code> ao contrário.</dd>
+</dl>
+
+<pre class="term">$ if pacman -Qi htop &gt; /dev/null 2&gt;&amp;1; then echo "o htop está instalado"; fi
+o htop está instalado
+$ if pacman -Qi firefox &gt; /dev/null 2&gt;&amp;1; then echo "o firefox está instalado"; fi
+$ echo $?
+0</pre>
+
+<p>Na segunda vez, nada apareceu: o <code>pacman</code> devolveu 1, e o <code>if</code> pulou o <code>echo</code>. Repare que o <code>echo $?</code> mostra <code>0</code>: um <code>if</code> sem <code>else</code> que não executou nada termina com sucesso.</p>
+
+<p>Em scripts, escrevemos em várias linhas, com o bloco <strong>indentado</strong> (recuado com espaços), e acrescentamos o <code>else</code> ("senão"), que roda quando o comando falha:</p>
+
+<pre class="file" data-file="instalado.sh">#!/usr/bin/env bash
+pacote="$1"
+
+if pacman -Qi "$pacote" &gt; /dev/null 2&gt;&amp;1; then
+  echo "O $pacote está instalado."
+else
+  echo "O $pacote NÃO está instalado."
+fi</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./instalado.sh htop
+O htop está instalado.
+$ ./instalado.sh firefox
+O firefox NÃO está instalado.</pre>
+
+<p>O mesmo vale para o <code>systemctl</code>: <code>systemctl is-active --quiet nginx</code> não mostra nada (<code>--quiet</code>) e devolve 0 se o serviço está rodando. Então <code>if systemctl is-active --quiet nginx; then …</code> lê-se "se o nginx está ativo, então…" (veja <a href="systemd.html">systemctl e Serviços</a>).</p>
+
+<hr>
+
+<h2>Testar condições: o comando <code>[ ]</code></h2>
+<p>E quando você quer perguntar "este arquivo existe?" ou "este número é maior que 30?". Para isso existe o comando <code>test</code>, que tem um apelido: <code>[</code>. Isso mesmo: o colchete é um <strong>comando</strong>, e também responde só com o código de saída.</p>
+
+<pre class="term">$ type [
+[ é um comando interno do shell
+$ test -f /etc/pacman.conf
+$ echo $?
+0                                                   « o pacman.conf existe e é um arquivo
+$ [ -e /var/lib/pacman/db.lck ]
+$ echo $?
+1                                                   « não há trava do pacman: ótimo</pre>
+
+<dl class="anatomy">
+  <dt>[</dt><dd>O comando de teste (o mesmo que <code>test</code>).</dd>
+  <dt>-e</dt><dd>O tipo de teste: "existe" (<em>exists</em>).</dd>
+  <dt>/var/lib/pacman/db.lck</dt><dd>O que está sendo testado. Com variáveis, sempre entre aspas: <code>"$arquivo"</code>.</dd>
+  <dt>]</dt><dd>Fecha o teste. É obrigatório e precisa de espaço antes.</dd>
+</dl>
+
+<div class="warning">
+<strong>Espaços são obrigatórios</strong>
+<p>Como <code>[</code> é um comando, ele precisa de espaço depois, e o <code>]</code> é o último argumento, com espaço antes. <code>[-f arq]</code> e <code>[ -f arq]</code> dão erro. O certo é <code>[ -f arq ]</code>.</p>
+</div>
+
+<hr>
+
+<h2>Os testes mais usados</h2>
+
+<h3>Arquivos e pastas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>Verdadeiro quando…</th><th>Exemplo no Arch</th></tr>
+<tr><td><code>-e</code></td><td>O caminho existe (arquivo, pasta, qualquer coisa)</td><td><code>[ -e /var/lib/pacman/db.lck ]</code> (o pacman está travado?)</td></tr>
+<tr><td><code>-f</code></td><td>Existe e é um arquivo comum</td><td><code>[ -f /etc/pacman.conf ]</code></td></tr>
+<tr><td><code>-d</code></td><td>Existe e é uma pasta</td><td><code>[ -d ~/aur ]</code></td></tr>
+<tr><td><code>-s</code></td><td>Existe e não está vazio (tamanho maior que 0)</td><td><code>[ -s /var/log/pacman.log ]</code></td></tr>
+<tr><td><code>-r</code> <code>-w</code> <code>-x</code></td><td>Você pode ler / escrever / executar</td><td><code>[ -x /usr/bin/yay ]</code></td></tr>
+<tr><td><code>-L</code></td><td>É um link simbólico</td><td><code>[ -L /bin ]</code> (no Arch, <code>/bin</code> aponta para <code>usr/bin</code>)</td></tr>
+</table>
+</div>
+
+<pre class="term">$ [ -L /bin ] &amp;&amp; echo "/bin é um link"
+/bin é um link
+$ [ -x /usr/bin/yay ] &amp;&amp; echo "posso executar o yay"
+posso executar o yay
+$ [ -s /var/log/pacman.log ] &amp;&amp; echo "o log do pacman tem conteúdo"
+o log do pacman tem conteúdo</pre>
+
+<p>(O <code>&amp;&amp;</code> é um "if de uma linha": o <code>echo</code> só roda se o teste deu certo. Ele é explicado mais abaixo.)</p>
+
+<h3>Textos (strings)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>Verdadeiro quando…</th><th>Exemplo</th></tr>
+<tr><td><code>"$a" = "$b"</code></td><td>Os textos são iguais</td><td><code>[ "$USER" = "ana" ]</code></td></tr>
+<tr><td><code>"$a" != "$b"</code></td><td>Os textos são diferentes</td><td><code>[ "$resp" != "s" ]</code></td></tr>
+<tr><td><code>-z "$a"</code></td><td>O texto está vazio (<em>zero</em>)</td><td><code>[ -z "$1" ]</code> (faltou o argumento?)</td></tr>
+<tr><td><code>-n "$a"</code></td><td>O texto não está vazio (<em>non-zero</em>)</td><td><code>[ -n "$lista" ]</code></td></tr>
+</table>
+</div>
+
+<h3>Números inteiros</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>Significa</th><th>Vem do inglês</th></tr>
+<tr><td><code>-eq</code></td><td>igual</td><td><em>equal</em></td></tr>
+<tr><td><code>-ne</code></td><td>diferente</td><td><em>not equal</em></td></tr>
+<tr><td><code>-lt</code></td><td>menor que</td><td><em>less than</em></td></tr>
+<tr><td><code>-le</code></td><td>menor ou igual</td><td><em>less or equal</em></td></tr>
+<tr><td><code>-gt</code></td><td>maior que</td><td><em>greater than</em></td></tr>
+<tr><td><code>-ge</code></td><td>maior ou igual</td><td><em>greater or equal</em></td></tr>
+</table>
+</div>
+
+<p>Um teste numérico clássico: "estou rodando como root?". A variável <code>$EUID</code> guarda o número do usuário efetivo; o root é sempre 0:</p>
+
+<pre class="term">$ echo $EUID
+1000
+$ [ "$EUID" -eq 0 ] &amp;&amp; echo "sou root" || echo "sou um usuário comum"
+sou um usuário comum</pre>
+
+<div class="warning">
+<strong>Para números, <code>-gt</code>; nunca <code>&gt;</code> dentro de <code>[ ]</code></strong>
+<p>Dentro de <code>[ ]</code>, o <code>&gt;</code> é um <a href="redirecionamento.html">redirecionamento</a>. Veja o estrago:</p>
+<pre class="term">$ if [ 3 &gt; 5 ]; then echo "3 é maior que 5?!"; fi
+3 é maior que 5?!                                   « resposta errada…
+$ ls 5
+5                                                   « …e ainda criou um arquivo chamado "5"</pre>
+<p>O <code>&gt; 5</code> mandou a saída do teste para um arquivo "5", e o teste que sobrou (<code>[ 3 ]</code>) é sempre verdadeiro. Use <code>[ 3 -gt 5 ]</code> ou <code>(( 3 &gt; 5 ))</code>.</p>
+</div>
+
+<h3>Negar e combinar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Significa</th><th>Exemplo</th></tr>
+<tr><td><code>!</code></td><td>"não": inverte o resultado</td><td><code>if ! command -v checkupdates &gt; /dev/null; then</code></td></tr>
+<tr><td><code>&amp;&amp;</code> entre testes</td><td>"e": os dois precisam ser verdade</td><td><code>[ -f "$a" ] &amp;&amp; [ -r "$a" ]</code></td></tr>
+<tr><td><code>||</code> entre testes</td><td>"ou": basta um ser verdade</td><td><code>[ "$r" = s ] || [ "$r" = S ]</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Várias saídas: <code>elif</code> e <code>else</code></h2>
+<p><code>elif</code> é a junção de <em>else if</em>, "senão, se". O Bash testa de cima para baixo e executa <strong>só o primeiro</strong> bloco verdadeiro. Um script que aconselha você sobre a atualização, conforme a quantidade de pacotes pendentes:</p>
+
+<pre class="file" data-file="atualizacoes.sh">#!/usr/bin/env bash
+qtd="$1"
+
+if [ "$qtd" -eq 0 ]; then
+  echo "Sistema em dia."
+elif [ "$qtd" -lt 30 ]; then
+  echo "$qtd atualizações: pode rodar o pacman -Syu."
+else
+  echo "$qtd atualizações: leia as notícias do archlinux.org antes."
+fi</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./atualizacoes.sh 0
+Sistema em dia.
+$ ./atualizacoes.sh 12
+12 atualizações: pode rodar o pacman -Syu.        « 12 não é 0, mas é &lt; 30
+$ ./atualizacoes.sh 30
+30 atualizações: leia as notícias do archlinux.org antes.</pre>
+
+<p>Por que ler as notícias? Porque, de vez em quando, uma atualização grande do Arch pede uma ação manual, anunciada em <a href="https://archlinux.org/news/">archlinux.org/news</a> (veja <a href="atualizar.html">Atualizar o Sistema</a>).</p>
+
+<hr>
+
+<h2>Formas diferentes de testar</h2>
+<p>O Bash tem vários jeitos de escrever um teste. Todos funcionam; cada um tem seu ponto forte.</p>
+
+<h3><code>[[ ]]</code>: o teste moderno do Bash</h3>
+<p>O colchete duplo é uma <strong>palavra-chave</strong> do Bash (não um comando). Ele aceita variáveis sem aspas, <code>&amp;&amp;</code> e <code>||</code> por dentro e comparação com curingas:</p>
+
+<pre class="term">$ kernel=$(uname -r)
+$ if [[ $kernel == *lts ]]; then echo "kernel LTS"; else echo "kernel padrão: $kernel"; fi
+kernel padrão: 7.2.10-arch1-1
+$ if [[ -f /etc/pacman.conf &amp;&amp; -r /etc/pacman.conf ]]; then echo "posso ler o pacman.conf"; fi
+posso ler o pacman.conf</pre>
+
+<p>O <code>*lts</code> é um curinga: "qualquer coisa terminada em <code>lts</code>". Quem iniciou com o kernel <code>linux-lts</code> veria "kernel LTS" (veja <a href="kernels.html">Kernels</a>). Com <code>=~</code>, o <code>[[ ]]</code> compara com uma expressão regular: <code>[[ $qtd =~ ^[0-9]+$ ]]</code> pergunta "só tem dígitos?".</p>
+
+<h3><code>(( ))</code>: contas e comparações de números</h3>
+<p>Dentro de <code>(( ))</code>, os sinais <code>&gt;</code> <code>&lt;</code> <code>==</code> funcionam como na matemática, sem <code>$</code> nas variáveis:</p>
+
+<pre class="term">$ aur=$(pacman -Qqm | wc -l)
+$ if (( aur &gt; 0 )); then echo "Você tem $aur pacotes do AUR"; fi
+Você tem 4 pacotes do AUR</pre>
+
+<h3><code>&amp;&amp;</code> e <code>||</code>: o if de uma linha</h3>
+<p>Para decisões curtas, você nem precisa do <code>if</code>:</p>
+
+<dl class="anatomy">
+  <dt>pacman -Q yay-bin &gt; /dev/null</dt><dd>Primeiro comando: o yay-bin está instalado?</dd>
+  <dt>&amp;&amp; echo "yay instalado"</dt><dd>"E então": só roda se o anterior deu certo.</dd>
+  <dt>|| echo "sem yay"</dt><dd>"Ou então": só roda se o anterior deu errado.</dd>
+</dl>
+
+<pre class="term">$ pacman -Q yay-bin &gt; /dev/null &amp;&amp; echo "yay instalado" || echo "sem yay"
+yay instalado
+$ [ -d ~/backups ] || mkdir ~/backups                « cria só se não existir
+$ mkdir ~/backups &amp;&amp; echo "pasta criada" || echo "falhou"
+mkdir: não foi possível criar o diretório “/home/ana/backups”: Arquivo existe
+falhou</pre>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td><code>if comando</code></td><td><code>if pacman -Qi x &gt;/dev/null 2&gt;&amp;1; then</code></td><td>A pergunta é "esse comando deu certo?"</td></tr>
+<tr><td><code>[ ]</code> / <code>test</code></td><td><code>[ -f "$a" ]</code></td><td>Scripts que precisam rodar em qualquer shell (<code>sh</code>, dash)</td></tr>
+<tr><td><code>[[ ]]</code></td><td><code>[[ $k == *lts ]]</code></td><td>Scripts Bash: é o mais seguro e flexível</td></tr>
+<tr><td><code>(( ))</code></td><td><code>(( aur &gt; 0 ))</code></td><td>Comparações e contas com números</td></tr>
+<tr><td><code>&amp;&amp;</code> / <code>||</code></td><td><code>[ -d x ] || mkdir x</code></td><td>Decisões de uma linha, sem else complexo</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="dir:~/backups,ran:systemctl is-active,ran:\|\|" data-solucao="systemctl is-active --quiet nginx || echo &quot;o nginx está parado&quot;;;echo $?;;[ -d ~/backups ] || mkdir ~/backups;;mkdir ~/backups &amp;&amp; echo ok || echo &quot;já existe&quot;">
+<p class="try-task"><strong>Missão:</strong> pratique os atalhos. Rode <code>systemctl is-active --quiet nginx || echo "o nginx está parado"</code> e depois <code>echo $?</code>. Use <code>[ -d ~/backups ] || mkdir ~/backups</code> para criar a pasta só se ela não existir. Por fim, rode <code>mkdir ~/backups &amp;&amp; echo ok || echo "já existe"</code> e veja qual mensagem aparece. (O simulador também entende um <code>if … ; then … ; fi</code> numa linha só: tente <code>if pacman -Qi htop &gt; /dev/null 2&gt;&amp;1; then echo sim; fi</code>.)</p>
+</div>
+
+<hr>
+
+<h2>Escolher entre muitas opções: <code>case</code></h2>
+<p>Quando uma variável pode ter vários valores, uma fila de <code>elif</code> fica longa. O <code>case</code> ("caso") compara o valor com uma lista de padrões. Um exemplo: traduzir a resposta do <code>systemctl is-active</code>, que é uma palavra em inglês (<code>active</code>, <code>inactive</code>, <code>failed</code>…):</p>
+
+<pre class="file" data-file="estado.sh">#!/usr/bin/env bash
+servico="${1:-sshd}"
+estado=$(systemctl is-active "$servico")
+
+case "$estado" in
+  active)
+    echo "$servico: rodando"
+    ;;
+  inactive)
+    echo "$servico: parado"
+    ;;
+  failed)
+    echo "$servico: FALHOU (veja: journalctl -u $servico)"
+    ;;
+  *)
+    echo "$servico: estado '$estado'"
+    ;;
+esac</pre>
+
+<dl class="anatomy">
+  <dt>case "$estado" in</dt><dd>"No caso do valor de $estado…"</dd>
+  <dt>active)</dt><dd>Um padrão. O <code>)</code> fecha o padrão. Vários padrões se juntam com <code>|</code> ("ou"): <code>activating|reloading)</code>.</dd>
+  <dt>;;</dt><dd>Fim deste caso. O case para aqui.</dd>
+  <dt>*)</dt><dd>Qualquer outra coisa (o "senão" do case). Fica sempre por último.</dd>
+  <dt>esac</dt><dd>Fim do case (<code>case</code> ao contrário).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./estado.sh
+sshd: rodando                                       « sem argumento: o padrão sshd
+$ ./estado.sh nginx
+nginx: parado</pre>
+
+<p>Os padrões aceitam curingas: <code>*.pkg.tar.zst)</code> pega pacotes, <code>[sS]|[sS]im)</code> pega "s", "S", "sim" e "Sim".</p>
+
+<div class="tryscript" data-file="estado.sh" data-args="nginx" data-goal="out:nginx: parado,src:inactive\)">
+<p class="try-task"><strong>Missão:</strong> este <code>estado.sh</code> ainda não conhece o estado <code>inactive</code>, e por isso o nginx cai no <code>*)</code>. Acrescente um caso <code>inactive)</code> que mostre <code>nginx: parado</code> (use <code>$servico</code>, não o nome fixo) e clique em Rodar. Depois troque o argumento para <code>sshd</code> e para <code>NetworkManager</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+servico="${1:-sshd}"
+estado=$(systemctl is-active "$servico")
+
+case "$estado" in
+  active)
+    echo "$servico: rodando"
+    ;;
+  *)
+    echo "$servico: estado '$estado'"
+    ;;
+esac
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+servico="${1:-sshd}"
+estado=$(systemctl is-active "$servico")
+
+case "$estado" in
+  active)
+    echo "$servico: rodando"
+    ;;
+  inactive)
+    echo "$servico: parado"
+    ;;
+  *)
+    echo "$servico: estado '$estado'"
+    ;;
+esac
+</pre>
+</div>
+
+<hr>
+
+<h2>Quando o código tem vários significados: o <code>checkupdates</code></h2>
+<p>Nem todo comando usa só "0 = deu certo, resto = deu errado". O <code>checkupdates</code>, do pacote <code>pacman-contrib</code>, consulta os espelhos <strong>sem mexer</strong> no banco de dados do pacman (por isso é seguro, ao contrário de um <code>pacman -Sy</code> solto) e usa três códigos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Significado no <code>checkupdates</code></th></tr>
+<tr><td><code>0</code></td><td>Há atualizações (a lista sai na tela, uma por linha).</td></tr>
+<tr><td><code>1</code></td><td>Erro: não conseguiu consultar (sem internet, espelho fora do ar…).</td></tr>
+<tr><td><code>2</code></td><td>Nenhuma atualização: o sistema está em dia. Não mostra nada.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ checkupdates
+$ echo $?
+2                                                   « silêncio + 2 = está tudo em dia</pre>
+
+<p>Se você testasse com um simples <code>if checkupdates</code>, o "em dia" (2) cairia no mesmo lugar que o "erro" (1). Com <code>case</code>, cada código ganha a sua resposta:</p>
+
+<pre class="file" data-file="verifica-updates.sh">#!/usr/bin/env bash
+lista=$(checkupdates)
+codigo=$?
+
+case $codigo in
+  0) echo "Há $(wc -l &lt;&lt;&lt; "$lista") atualização(ões):"
+     echo "$lista" ;;
+  2) echo "Nada para atualizar." ;;
+  *) echo "Não consegui verificar (código $codigo)." &gt;&amp;2
+     exit 1 ;;
+esac</pre>
+
+<dl class="anatomy">
+  <dt>lista=$(checkupdates)</dt><dd>Guarda a lista. Depois de uma atribuição com <code>$( )</code>, o <code>$?</code> é o código do comando de dentro.</dd>
+  <dt>codigo=$?</dt><dd>Guarda o código <strong>já</strong>, na linha seguinte: qualquer outro comando trocaria o <code>$?</code>.</dd>
+  <dt>wc -l &lt;&lt;&lt; "$lista"</dt><dd>Conta as linhas do texto da variável (o <code>&lt;&lt;&lt;</code> entrega o texto ao <code>wc</code>).</dd>
+  <dt>&gt;&amp;2</dt><dd>Manda a mensagem para a saída de erros, como fazem os comandos de verdade.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./verifica-updates.sh
+Nada para atualizar.
+$ CHECKUPDATES_DB=/proc/nao-existe ./verifica-updates.sh
+mkdir: não foi possível criar o diretório “/proc/nao-existe”: Arquivo ou diretório inexistente
+==&gt; ERROR: Cannot fetch updates
+Não consegui verificar (código 1).</pre>
+
+<p>Na segunda execução, provocamos o erro de propósito, dando ao <code>checkupdates</code> uma pasta impossível para o banco temporário. Sem internet, a linha <code>==&gt; ERROR: Cannot fetch updates</code> (em inglês, como todo o <code>pacman-contrib</code>) e o código 1 são os mesmos. Quando há atualizações, cada linha da lista tem a forma <code>pacote versão-instalada -&gt; versão-nova</code>, como no <code>pacman -Qu</code>.</p>
+
+<p>O <code>checkupdates</code> não funciona no terminal simulado (ele precisa da internet); experimente na sua máquina, depois de <code>sudo pacman -S pacman-contrib</code>.</p>
+
+<hr>
+
+<h2>Exemplo completo: é uma boa hora para atualizar?</h2>
+<p>Este script junta o que você aprendeu. Antes de você rodar o <code>sudo pacman -Syu</code>, ele confere quatro coisas, e cada problema devolve um código diferente:</p>
+
+<pre class="file" data-file="~/.local/bin/antes-de-atualizar">#!/usr/bin/env bash
+# antes-de-atualizar — confere se é uma boa hora para o pacman -Syu
+
+if [ "$EUID" -eq 0 ]; then
+  echo "Rode como usuário comum, não como root." &gt;&amp;2
+  exit 1
+fi
+
+if [ -e /var/lib/pacman/db.lck ]; then
+  echo "Erro: o pacman está travado (/var/lib/pacman/db.lck)." &gt;&amp;2
+  exit 2
+fi
+
+livre=$(df --output=avail -m / | tail -1)
+if (( livre &lt; 2048 )); then
+  echo "Erro: só $livre MiB livres na raiz; libere espaço antes." &gt;&amp;2
+  exit 3
+fi
+
+if ! command -v checkupdates &gt; /dev/null; then
+  echo "Erro: instale o pacman-contrib (sudo pacman -S pacman-contrib)." &gt;&amp;2
+  exit 4
+fi
+
+lista=$(checkupdates)
+case $? in
+  0) echo "Há $(wc -l &lt;&lt;&lt; "$lista") atualização(ões). Pode rodar: sudo pacman -Syu" ;;
+  2) echo "Nada para atualizar." ;;
+  *) echo "Erro: não consegui consultar os espelhos." &gt;&amp;2
+     exit 5 ;;
+esac</pre>
+
+<ul>
+  <li><code>[ "$EUID" -eq 0 ]</code>: o root tem EUID 0. Rodar tudo como root é um mau hábito; o script recusa.</li>
+  <li><code>[ -e /var/lib/pacman/db.lck ]</code>: outro pacman está rodando, ou um travamento antigo ficou para trás (veja <a href="pacman.html">pacman</a>).</li>
+  <li><code>df --output=avail -m /</code> mostra só o espaço livre, em MiB, com um cabeçalho (<code>Disp.</code>) que o <code>tail -1</code> descarta. <code>(( livre &lt; 2048 ))</code> pede pelo menos 2 GiB.</li>
+  <li><code>! command -v checkupdates</code>: o <code>!</code> inverte. "Se o checkupdates <strong>não</strong> existe…".</li>
+  <li>Cada <code>exit</code> tem um número diferente, para quem chamou o script saber o que houve.</li>
+</ul>
+
+<pre class="term">$ df --output=avail -m /
+Disp.
+18717
+$ antes-de-atualizar
+Nada para atualizar.
+$ echo $?
+0</pre>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"faltando `]'"</strong>
+<pre class="term">$ if [ -f /etc/pacman.conf]; then echo ok; fi
+bash: [: faltando `]'</pre>
+<p><strong>O que aconteceu:</strong> faltou o espaço antes do <code>]</code>. O <code>[</code> recebeu <code>/etc/pacman.conf]</code> como uma palavra só e não achou o <code>]</code> de fechamento.</p>
+<p><strong>Como resolver:</strong> espaço dos dois lados: <code>[ -f /etc/pacman.conf ]</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"[a: comando não encontrado"</strong>
+<pre class="term">$ if ["a" = "a"]; then echo ok; fi
+bash: [a: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> sem espaço depois do <code>[</code>, o Bash procurou um comando chamado <code>[a</code>.</p>
+<p><strong>Como resolver:</strong> <code>[ "a" = "a" ]</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"esperava operador unário"</strong>
+<pre class="term">$ nome=""
+$ if [ $nome = "ana" ]; then echo oi; fi
+bash: [: =: esperava operador unário</pre>
+<p><strong>O que aconteceu:</strong> a variável estava vazia e sem aspas. O teste virou <code>[ = "ana" ]</code>, que não faz sentido.</p>
+<p><strong>Como resolver:</strong> sempre coloque variáveis entre aspas dentro de <code>[ ]</code>: <code>[ "$nome" = "ana" ]</code>. Ou use <code>[[ ]]</code>, que não tem esse problema.</p>
+</div>
+
+<div class="cenario">
+<strong>"esperava número inteiro"</strong>
+<pre class="term" data-cwd="~/scripts">$ ./atualizacoes.sh doze
+./atualizacoes.sh: linha 4: [: doze: esperava número inteiro
+./atualizacoes.sh: linha 6: [: doze: esperava número inteiro
+doze atualizações: leia as notícias do archlinux.org antes.</pre>
+<p><strong>O que aconteceu:</strong> <code>-eq</code> e <code>-lt</code> só comparam números inteiros. Com "doze", os dois testes deram erro (código 2, que conta como falso), e o script caiu no <code>else</code>. Repare que ele <strong>não parou</strong>: deu uma resposta errada.</p>
+<p><strong>Como resolver:</strong> valide a entrada antes. Por exemplo: <code>[[ $qtd =~ ^[0-9]+$ ]] || { echo "Digite um número" &gt;&amp;2; exit 1; }</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro de sintaxe próximo ao token inesperado `fi'"</strong>
+<pre class="term">$ if [ "ana" = "ana" ] then echo oi; fi
+bash: erro de sintaxe próximo ao token inesperado `fi'</pre>
+<p><strong>O que aconteceu:</strong> faltou o <code>;</code> antes do <code>then</code>. Na mesma linha, o Bash precisa dele para saber onde o teste termina.</p>
+<p><strong>Como resolver:</strong> <code>if [ … ]; then …; fi</code>. Em várias linhas, o <code>then</code> pode ir na linha de baixo, sem <code>;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>if pacman -Qi …</code> funciona, mas suja a tela com "erro: o pacote … não foi encontrado"</strong>
+<p><strong>O que aconteceu:</strong> você calou só a saída normal (<code>&gt; /dev/null</code>); a mensagem de erro vai pela saída de erros.</p>
+<p><strong>Como resolver:</strong> <code>&gt; /dev/null 2&gt;&amp;1</code> (ou <code>&amp;&gt; /dev/null</code>, a forma curta do Bash).</p>
+</div>
+
+<div class="cenario">
+<strong><code>systemctl is-active</code> deu "verdadeiro" com um serviço parado</strong>
+<pre class="term">$ systemctl is-active sshd nginx
+active
+inactive
+$ echo $?
+0</pre>
+<p><strong>O que aconteceu:</strong> com <strong>vários</strong> serviços, o <code>is-active</code> devolve 0 se <strong>pelo menos um</strong> estiver ativo. E um nome que não existe (<code>systemctl is-active xyz</code>) responde <code>inactive</code> (código 4, "unidade desconhecida"), como se fosse um serviço parado.</p>
+<p><strong>Como resolver:</strong> teste um serviço por vez (num laço, veja <a href="script-lacos.html">Laços</a>), e confira o nome com <code>systemctl status</code> antes.</p>
+</div>
+
+<div class="cenario">
+<strong>O terminal mostra <code>&gt;</code> e não responde</strong>
+<pre class="term">$ if [ -f /etc/pacman.conf ]; then echo ok
+&gt;</pre>
+<p><strong>O que aconteceu:</strong> o <code>if</code> não foi fechado com <code>fi</code>. O <code>&gt;</code> é o Bash pedindo o resto do comando.</p>
+<p><strong>Como resolver:</strong> digite <code>fi</code> e Enter, ou cancele com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estrutura</th><th>Sintaxe</th></tr>
+<tr><td>if simples</td><td><code>if COND; then …; fi</code></td></tr>
+<tr><td>if / else</td><td><code>if COND; then …; else …; fi</code></td></tr>
+<tr><td>if / elif</td><td><code>if C1; then …; elif C2; then …; else …; fi</code></td></tr>
+<tr><td>Pacote instalado?</td><td><code>if pacman -Qi "$p" &gt;/dev/null 2&gt;&amp;1; then</code></td></tr>
+<tr><td>Serviço ativo?</td><td><code>if systemctl is-active --quiet "$s"; then</code></td></tr>
+<tr><td>Teste POSIX</td><td><code>[ -f "$a" ]</code> ou <code>test -f "$a"</code></td></tr>
+<tr><td>Teste Bash</td><td><code>[[ $a == *.zst &amp;&amp; -s $a ]]</code></td></tr>
+<tr><td>Números</td><td><code>(( a &gt;= 10 ))</code></td></tr>
+<tr><td>Regex</td><td><code>[[ $a =~ ^[0-9]+$ ]]</code></td></tr>
+<tr><td>Uma linha</td><td><code>COND &amp;&amp; SE_SIM || SE_NAO</code></td></tr>
+<tr><td>Negar</td><td><code>if ! COMANDO; then</code></td></tr>
+<tr><td>case</td><td><code>case "$v" in a|b) …;; *) …;; esac</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A pasta existe?</h3>
+<p>Complete para escrever "achei" se <code>~/aur</code> for uma pasta:</p>
+<div class="ex-code">if [ <input data-answer="-d" aria-label="teste"> ~/aur ]; then echo "achei"; fi</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pacote instalado?</h3>
+<p>Complete o comando que responde só com o código (0 = instalado):</p>
+<div class="ex-code">if pacman <input data-answer="-Qi|-Q|-Qq" aria-label="opção"> htop &gt; /dev/null 2&gt;&amp;1; then echo "tem htop"; fi</div>
+</div>
+
+<div class="exercise">
+<h3>3. Fechando o if</h3>
+<p>Complete a palavra que encerra o bloco:</p>
+<div class="ex-code">if [ -z "$1" ]; then echo "faltou o pacote"; <input data-answer="fi" aria-label="fim"></div>
+</div>
+
+<div class="exercise">
+<h3>4. Criar só se faltar</h3>
+<p>Complete para criar a pasta <code>logs</code> apenas se ela <strong>não</strong> existir:</p>
+<div class="ex-code">[ -d logs ] <input data-answer="||" aria-label="operador"> mkdir logs</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O <code>checkupdates</code> não mostrou nada e <code>echo $?</code> deu <code>2</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q5"> Que falhou por falta de internet.</label>
+<label><input type="radio" name="q5"> Que há duas atualizações.</label>
+<label><input type="radio" name="q5"> Que não há atualizações: o sistema está em dia.</label>
+<label><input type="radio" name="q5"> Que ele precisa de sudo.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Por que <code>[ 3 &gt; 5 ]</code> é perigoso?</p>
+<label><input type="radio" name="q6"> Porque compara em ordem alfabética.</label>
+<label><input type="radio" name="q6"> Porque o <code>&gt;</code> vira redirecionamento e cria um arquivo "5".</label>
+<label><input type="radio" name="q6"> Porque o Bash não aceita números.</label>
+<label><input type="radio" name="q6"> Porque falta o <code>then</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>if</code> roda um comando: código 0 é verdadeiro, qualquer outro é falso. <code>pacman -Qi</code> e <code>systemctl is-active --quiet</code> são perguntas prontas.</li>
+  <li><code>[ ]</code> é um comando: precisa de espaços e de variáveis entre aspas.</li>
+  <li>Arquivos: <code>-e -f -d -s -x -L</code>; textos: <code>= != -z -n</code>; números: <code>-eq -ne -lt -le -gt -ge</code>.</li>
+  <li><code>[[ ]]</code> é o teste mais seguro no Bash; <code>(( ))</code> é o melhor para números.</li>
+  <li><code>&amp;&amp;</code> e <code>||</code> fazem decisões de uma linha; <code>case</code> organiza muitas opções, inclusive códigos como os do <code>checkupdates</code> (0, 1, 2).</li>
+</ul>
+
+<p><strong>Para ir mais fundo:</strong> no Guia Bash, veja <a href="https://wallysondevs.github.io/guia-bash/if.html">if</a>, <a href="https://wallysondevs.github.io/guia-bash/testes.html">testes</a>, <a href="https://wallysondevs.github.io/guia-bash/case.html">case</a>, <a href="https://wallysondevs.github.io/guia-bash/codigo-saida.html">códigos de saída</a> e <a href="https://wallysondevs.github.io/guia-bash/operadores.html">operadores</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> o <code>checkupdates</code> e o resto do <code>pacman-contrib</code> aparecem em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>; a rotina de conferir antes de atualizar (ler as notícias, ver espaço, tratar <code>.pacnew</code>) está em <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a>; e os estados que o <code>systemctl is-active</code> devolve são explicados em <a href="https://wiki.archlinux.org/title/Systemd">systemd</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
