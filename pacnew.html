@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch .pacnew e .pacsave — o que são e como resolver com pacdiff | Guia Arch</title>
+<meta name="description" content="Arquivos .pacnew e .pacsave no Arch Linux: quando aparecem, a lista backup do PKGBUILD, NoUpgrade, como encontrar (pacdiff -o, find /etc), comparar com diff e mesclar com pacdiff, vimdiff ou meld, com um exemplo real reproduzido num pacote de teste.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>.pacnew e <span class="hl">.pacsave</span></h1>
+
+<p class="intro">Quando um pacote traz uma versão nova de um arquivo de configuração que <strong>você editou</strong>, o pacman não apaga o seu trabalho: ele instala a versão nova ao lado, com a extensão <code>.pacnew</code>, e deixa a decisão com você. Na remoção, ele faz o contrário e guarda a sua versão como <code>.pacsave</code>. Cuidar desses arquivos faz parte da manutenção do Arch.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são <code>.pacnew</code> e <code>.pacsave</code> e em que situação cada um aparece.</li>
+  <li>Os arquivos "de backup" de um pacote (a lista <code>backup</code> do PKGBUILD) e a opção <code>NoUpgrade</code>.</li>
+  <li>Encontrar os pendentes: <code>pacdiff -o</code> e <code>find /etc</code>.</li>
+  <li>Comparar com <code>diff</code> e mesclar com <code>pacdiff</code>, <code>vimdiff</code> ou <code>meld</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Arquivos de configuração são "do usuário"</h2>
+
+<p>A maior parte dos arquivos de um pacote (programas em <code>/usr/bin</code>, bibliotecas em <code>/usr/lib</code>) é substituída sem cerimônia a cada atualização: ninguém deve editá-los. Já os arquivos de configuração em <code>/etc</code> existem justamente para você editar. Quem empacota marca esses arquivos numa lista chamada <code>backup</code>, no <a href="pkgbuild.html">PKGBUILD</a>:</p>
+
+<pre class="file" data-file="PKGBUILD (trecho)">backup=(etc/a4-demo.conf)          # caminho sem a barra inicial</pre>
+
+<p>Para os arquivos dessa lista, o pacman é cuidadoso. Veja quais são, e se você mexeu neles, com <code>pacman -Qii</code> (dois <code>i</code>):</p>
+
+<pre class="term">$ pacman -Qii pacman-mirrorlist | grep -A1 "^Arquivos backup"
+Arquivos backup      : /etc/pacman.d/mirrorlist [modified]     « o reflector reescreveu este arquivo
+Extended Data   : pkgtype=pkg
+$ pacman -Qii sudo | grep -A3 "^Arquivos backup"
+Arquivos backup      : /etc/pam.d/sudo [unmodified]
+                       /etc/sudo.conf [unmodified]
+                       /etc/sudo_logsrvd.conf [unmodified]
+                       /etc/sudoers [modified]                 « editado com visudo na instalação</pre>
+
+<p>O <code>expac</code> mostra a lista mais compacta: <code>expac '%B' filesystem</code> responde <code>etc/crypttab  etc/fstab  etc/group  …  etc/subuid</code> (17 arquivos).</p>
+
+<h2>Quando aparece cada um</h2>
+
+<p>Na atualização, o pacman compara três versões do arquivo: a <strong>original</strong> (do pacote antigo), a <strong>atual</strong> (a que está no disco) e a <strong>nova</strong> (do pacote novo).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>O que o pacman faz</th></tr>
+<tr><td>Você não mexeu no arquivo</td><td>Troca pela versão nova, em silêncio.</td></tr>
+<tr><td>Você mexeu, mas o pacote não mudou o arquivo</td><td>Mantém o seu, em silêncio.</td></tr>
+<tr><td>Você mexeu <strong>e</strong> o pacote mudou o arquivo</td><td>Mantém o seu e instala o novo como <strong><code>arquivo.pacnew</code></strong>, com um aviso.</td></tr>
+<tr><td>Remoção (<code>-R</code>, <code>-Rs</code>) de um pacote com arquivo que você alterou</td><td>Renomeia o seu para <strong><code>arquivo.pacsave</code></strong>, com um aviso.</td></tr>
+<tr><td>Remoção com <code>-Rn</code>/<code>-Rns</code></td><td>Apaga, sem <code>.pacsave</code>.</td></tr>
+<tr><td>Arquivo listado em <code>NoUpgrade</code> no <code>pacman.conf</code></td><td>Nunca sobrescreve; o novo vira <code>.pacnew</code> sempre.</td></tr>
+</table>
+</div>
+
+<p>Existe ainda o raro <code>.pacorig</code>: quando um pacote instala um arquivo de configuração por cima de um que já existia e não era de ninguém, o antigo é guardado com essa extensão.</p>
+
+<hr>
+
+<h2>Um .pacnew de verdade (pacote de teste)</h2>
+
+<p>A VM do guia é nova e não tem nenhum <code>.pacnew</code>. Para mostrar o processo com saídas reais, sem mexer no <code>/etc</code> da VM, criamos um pacote de teste, o <code>a4-demo</code>, com um arquivo de configuração na lista <code>backup</code>, e o instalamos numa <strong>raiz falsa</strong> em <code>/tmp/a4/raiz</code> (a opção <code>--root</code> do pacman). As duas versões do arquivo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>/etc/a4-demo.conf</code> do pacote 1.0</th><th>Do pacote 2.0</th></tr>
+<tr><td><pre class="file" data-file="versão 1.0"># Configuração do a4-demo
+cor=azul
+porta=8080</pre></td><td><pre class="file" data-file="versão 2.0"># Configuração do a4-demo
+cor=azul
+porta=8080
+# novo na versão 2.0:
+idioma=pt_BR</pre></td></tr>
+</table>
+</div>
+
+<ol class="passo">
+  <li>Instalamos a versão 1.0.</li>
+  <li>"Editamos" a configuração, trocando <code>azul</code> por <code>verde</code>, como você faria.</li>
+  <li>Atualizamos para a 2.0. Como você mexeu e o pacote também mudou o arquivo, nasce o <code>.pacnew</code>:</li>
+</ol>
+
+<pre class="term">#> sed -i s/azul/verde/ /tmp/a4/raiz/etc/a4-demo.conf
+#> pacman --root /tmp/a4/raiz -U a4-demo-2.0-1-any.pkg.tar.zst
+…
+:: Processando alterações do pacote...
+atualizando a4-demo...
+atenção: /tmp/a4/raiz/etc/a4-demo.conf instalado como /tmp/a4/raiz/etc/a4-demo.conf.pacnew
+#> ls /tmp/a4/raiz/etc
+a4-demo.conf                « o seu, com cor=verde, intocado
+a4-demo.conf.pacnew         « o novo do pacote</pre>
+
+<p>A linha <code>atenção: … instalado como … .pacnew</code> é o aviso que você vai ver no meio de um <code>pacman -Syu</code> real (no seu sistema, com caminhos como <code>/etc/pacman.d/mirrorlist</code>). O aviso também fica no <code>/var/log/pacman.log</code>, em inglês:</p>
+
+<pre class="term">[2026-10-16T13:27:51-0300] [ALPM] warning: /tmp/a4/raiz/etc/a4-demo.conf installed as /tmp/a4/raiz/etc/a4-demo.conf.pacnew
+[2026-10-16T13:27:51-0300] [ALPM] upgraded a4-demo (1.0-1 -&gt; 2.0-1)</pre>
+
+<p>E a remoção com <code>-R</code> (sem o <code>n</code>) guardou a configuração alterada como <code>.pacsave</code>:</p>
+
+<pre class="term">#> pacman --root /tmp/a4/raiz -R a4-demo
+…
+removendo a4-demo...
+atenção: /tmp/a4/raiz/etc/a4-demo.conf salvo como /tmp/a4/raiz/etc/a4-demo.conf.pacsave</pre>
+
+<div class="tip">
+<strong>Ninguém resolve por você</strong>
+<p>O pacman não faz mais nada depois do aviso. O programa continua usando o <strong>seu</strong> arquivo, o antigo, até você agir. Se a versão nova trouxe uma opção obrigatória, o programa pode reclamar. Por isso: depois de cada atualização, procure os <code>.pacnew</code>.</p>
+</div>
+
+<hr>
+
+<h2>Encontrar os .pacnew pendentes</h2>
+
+<h3>pacdiff -o</h3>
+
+<p>O <code>pacdiff</code> vem no pacote <code>pacman-contrib</code>. Com <code>-o</code> (<em>output</em>), ele só <strong>lista</strong>. Por padrão, procura nos arquivos de backup registrados no banco do pacman, o jeito mais rápido:</p>
+
+<pre class="term">$ sudo pacdiff -o
+$ echo $?
+0                                « nada listado: nenhum pendente na VM</pre>
+
+<p>Na raiz de teste, com <code>-f</code> (procurar com <code>find</code>) e a variável <code>DIFFSEARCHPATH</code> apontando para a pasta:</p>
+
+<pre class="term">#> DIFFSEARCHPATH=/tmp/a4/raiz/etc pacdiff -o -f
+/tmp/a4/raiz/etc/a4-demo.conf.pacnew</pre>
+
+<h3>find /etc</h3>
+
+<p>Sem o <code>pacman-contrib</code>, o <code>find</code> resolve. Procure só em <code>/etc</code>, onde ficam as configurações (varrer o disco inteiro é lento e desnecessário):</p>
+
+<dl class="anatomy">
+  <dt>find /etc</dt><dd>Procurar dentro de <code>/etc</code>.</dd>
+  <dt>-name "*.pacnew"</dt><dd>Nomes terminados em <code>.pacnew</code> (as aspas impedem o Bash de expandir o <code>*</code>).</dd>
+  <dt>-o -name "*.pacsave"</dt><dd><em>ou</em> terminados em <code>.pacsave</code>.</dd>
+</dl>
+
+<pre class="term">$ sudo find /etc -name "*.pacnew" -o -name "*.pacsave"
+$ echo $?
+0                                « nada encontrado também é sucesso para o find</pre>
+
+<p>Com <code>sudo</code>, porque algumas pastas de <code>/etc</code> só o root lê. E o histórico: <code>grep -E "pacnew|pacsave" /var/log/pacman.log</code> mostra todos os avisos que já apareceram (na VM: nenhum).</p>
+
+<hr>
+
+<h2>Comparar: diff</h2>
+
+<p>Antes de decidir, veja a diferença. Copiamos os dois arquivos do exemplo para <code>/tmp/a4/exemplo</code>, para trabalhar como ana:</p>
+
+<pre class="term" data-cwd="/tmp/a4">$ cd exemplo
+$ ls
+a4-demo.conf
+a4-demo.conf.pacnew
+$ diff a4-demo.conf a4-demo.conf.pacnew
+2c2                              « linha 2: muda ("c" de change)
+&lt; cor=verde                      « &lt; = o seu arquivo
+---
+&gt; cor=azul                       « &gt; = o .pacnew
+3a4,5                            « depois da linha 3, o novo acrescenta ("a" de add) as linhas 4 e 5
+&gt; # novo na versão 2.0:
+&gt; idioma=pt_BR
+$ echo $?
+1                                « 1 = os arquivos são diferentes</pre>
+
+<p>Leitura: a diferença na linha 2 é <strong>a sua</strong> alteração (você quer manter <code>verde</code>). As linhas 4 e 5 são <strong>novidade do pacote</strong> (você quer trazer). O formato unificado (<code>diff -u</code>), o mesmo do Git, costuma ser mais fácil de ler:</p>
+
+<pre class="term" data-cwd="/tmp/a4/exemplo">$ diff -u a4-demo.conf a4-demo.conf.pacnew
+--- a4-demo.conf	2026-10-16 13:44:46.011750324 -0300
++++ a4-demo.conf.pacnew	2026-10-16 13:27:39.000000000 -0300
+@@ -1,3 +1,5 @@
+ # Configuração do a4-demo
+-cor=verde                       « - = só no seu
++cor=azul                        « + = só no novo
+ porta=8080
++# novo na versão 2.0:
++idioma=pt_BR</pre>
+
+<h2>Mesclar e limpar</h2>
+
+<p>"Mesclar" é montar um arquivo final com o melhor dos dois: as suas alterações + as novidades do pacote. Aqui, basta trazer as duas linhas novas para o seu arquivo e apagar o <code>.pacnew</code>:</p>
+
+<pre class="term" data-cwd="/tmp/a4/exemplo">$ grep -A1 "^# novo" a4-demo.conf.pacnew &gt;&gt; a4-demo.conf     « copia a linha do comentário e a seguinte
+$ cat a4-demo.conf
+# Configuração do a4-demo
+cor=verde                        « a sua escolha, mantida
+porta=8080
+# novo na versão 2.0:
+idioma=pt_BR                     « a novidade, trazida
+$ diff a4-demo.conf a4-demo.conf.pacnew
+2c2
+&lt; cor=verde
+---
+&gt; cor=azul                       « sobrou só a diferença que você quer
+$ rm a4-demo.conf.pacnew
+$ ls
+a4-demo.conf</pre>
+
+<p>No mundo real, o arquivo é maior e você edita com um editor (<code>sudoedit /etc/arquivo</code>). <strong>Apague o <code>.pacnew</code> no fim</strong>: se ele ficar, você não sabe mais se já resolveu, e o <code>pacdiff</code> continua listando.</p>
+
+<h3>pacdiff: o assistente</h3>
+
+<p>Sem <code>-o</code>, o <code>pacdiff</code> percorre os pendentes e pergunta o que fazer com cada um (como root, porque mexe em <code>/etc</code>). Saída real na raiz de teste:</p>
+
+<pre class="term">#> DIFFSEARCHPATH=/tmp/a4/raiz/etc pacdiff -f
+==&gt; pacnew file found for /tmp/a4/raiz/etc/a4-demo.conf
+:: (V)iew, (M)erge, (S)kip, (R)emove pacnew, (O)verwrite with pacnew, (Q)uit: [v/m/s/r/o/q] s</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla</th><th>O que faz</th><th>Quando escolher</th></tr>
+<tr><td><code>v</code> (<em>view</em>)</td><td>Abre os dois lado a lado no programa de diff (padrão: <code>vim -d</code>, o <code>vimdiff</code>), onde você edita e copia trechos</td><td>Quase sempre: é onde a mescla acontece.</td></tr>
+<tr><td><code>m</code> (<em>merge</em>)</td><td>Mescla automática em 3 vias (usa a versão antiga do pacote, se estiver no cache)</td><td>Arquivos grandes com mudanças pequenas dos dois lados.</td></tr>
+<tr><td><code>s</code> (<em>skip</em>)</td><td>Pula este arquivo</td><td>Resolver depois.</td></tr>
+<tr><td><code>r</code> (<em>remove</em>)</td><td>Apaga o <code>.pacnew</code> e fica com o seu</td><td>A novidade não importa, ou você já trouxe o que queria.</td></tr>
+<tr><td><code>o</code> (<em>overwrite</em>)</td><td>Troca o seu pelo <code>.pacnew</code></td><td>Você nunca quis aquela alteração, ou vai refazê-la.</td></tr>
+<tr><td><code>q</code></td><td>Sai</td><td></td></tr>
+</table>
+</div>
+
+<p>Para usar outro programa de comparação, defina <code>DIFFPROG</code>. O <code>meld</code> (gráfico, pacote <code>meld</code>) é o favorito de muita gente: <code>sudo DIFFPROG=meld pacdiff</code>. No <code>vimdiff</code>, os comandos básicos são <kbd>]c</kbd> (próxima diferença), <code>do</code> (trazer do outro lado), <code>dp</code> (mandar para o outro lado) e <code>:wqa</code> (salvar tudo e sair). Esses programas são interativos e não aparecem aqui com saída; o <a href="https://wallysondevs.github.io/guia-vim/">Guia Vim</a> ensina o <code>vimdiff</code>.</p>
+
+<h3>Os .pacsave</h3>
+
+<p>Um <code>.pacsave</code> é a sua configuração de um programa que você <strong>removeu</strong>. Se reinstalar o programa e quiser a configuração de volta, renomeie (<code>sudo mv arquivo.pacsave arquivo</code>). Se não pretende reinstalar, apague. Para não gerar <code>.pacsave</code>, remova com <code>-Rns</code>.</p>
+
+<hr>
+
+<h2>NoUpgrade: "nunca mexa neste arquivo"</h2>
+
+<p>No <code>/etc/pacman.conf</code> há uma opção, comentada de fábrica, para arquivos que o pacman nunca deve sobrescrever, mesmo que você não os tenha alterado:</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho)">#NoUpgrade   =
+#NoExtract   =</pre>
+
+<p>Exemplo: <code>NoUpgrade = etc/pacman.d/mirrorlist</code> (sem a barra inicial). Com isso, toda versão nova do arquivo vira <code>.pacnew</code>. Use com moderação: é mais uma lista para lembrar de conferir.</p>
+
+<hr>
+
+<h2>Formas diferentes de resolver</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Vantagem</th><th>Quando usar</th></tr>
+<tr><td><code>sudo pacdiff</code></td><td>Acha todos e pergunta um a um</td><td>A forma recomendada, depois de cada <code>-Syu</code> com avisos.</td></tr>
+<tr><td><code>sudo DIFFPROG=meld pacdiff</code></td><td>Comparação gráfica, com setas para copiar trechos</td><td>Se você tem ambiente gráfico.</td></tr>
+<tr><td><code>diff -u</code> + editor</td><td>Não precisa de nada além do básico</td><td>Um arquivo só, ou num servidor sem <code>pacman-contrib</code>.</td></tr>
+<tr><td><code>sudo mv arquivo.pacnew arquivo</code></td><td>Rápido</td><td>Quando você não quer manter nenhuma alteração sua (ex.: um <code>mirrorlist</code> que o <code>reflector</code> vai reescrever de qualquer jeito).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Um programa parou depois da atualização, sem erro do pacman</strong>
+<p><strong>O que aconteceu:</strong> a versão nova pode exigir uma opção que só existe no <code>.pacnew</code>, e o programa ainda lê a sua configuração antiga.</p>
+<p><strong>Como confirmar:</strong> <code>sudo pacdiff -o</code>, ou <code>grep pacnew /var/log/pacman.log | tail</code> para ver os avisos recentes.</p>
+<p><strong>Como resolver:</strong> mescle o <code>.pacnew</code> daquele programa e reinicie o serviço (<code>sudo systemctl restart nome</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>pacdiff: "comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>pacdiff</code> é do <code>pacman-contrib</code>, que não vem no <code>base</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S pacman-contrib</code>. Ele precisa também de um programa de diff (o padrão é o <code>vim</code>; sem ele, use <code>DIFFPROG</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O .pacnew do mirrorlist</strong>
+<p><strong>O que aconteceu:</strong> o pacote <code>pacman-mirrorlist</code> atualizou a lista de espelhos, e a sua foi gerada pelo <code>reflector</code> (marcada <code>[modified]</code>).</p>
+<p><strong>Como resolver:</strong> normalmente, apague o <code>.pacnew</code> e rode o <code>reflector</code> de novo (veja <a href="espelhos.html">Espelhos</a>). É o <code>.pacnew</code> mais comum do Arch.</p>
+</div>
+
+<div class="cenario">
+<strong>Arquivos de usuários e senhas: passwd, group, shadow</strong>
+<p><strong>O que aconteceu:</strong> o pacote <code>filesystem</code> trouxe <code>/etc/passwd.pacnew</code> ou <code>/etc/group.pacnew</code>.</p>
+<p><strong>Como resolver:</strong> <strong>nunca</strong> use "overwrite" nesses: você perderia os seus usuários. Compare com <code>diff</code> e traga só as linhas novas (normalmente um usuário ou grupo de sistema novo); na dúvida, apague o <code>.pacnew</code>. Os usuários de sistema novos são criados pelo próprio pacman, nos hooks (<code>Creating system user accounts...</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo pacdiff -o</code></td><td>Lista os <code>.pacnew</code>/<code>.pacsave</code> pendentes</td></tr>
+<tr><td><code>sudo pacdiff</code></td><td>Resolve um a um (ver, mesclar, remover, sobrescrever)</td></tr>
+<tr><td><code>sudo DIFFPROG=meld pacdiff</code></td><td>Idem, com o meld</td></tr>
+<tr><td><code>sudo find /etc -name "*.pacnew" -o -name "*.pacsave"</code></td><td>Procura sem o pacman-contrib</td></tr>
+<tr><td><code>diff -u arquivo arquivo.pacnew</code></td><td>Mostra as diferenças</td></tr>
+<tr><td><code>pacman -Qii pacote</code></td><td>Arquivos de backup do pacote e se foram modificados</td></tr>
+<tr><td><code>grep -E "pacnew|pacsave" /var/log/pacman.log</code></td><td>Histórico dos avisos</td></tr>
+<tr><td><code>NoUpgrade = caminho</code> (pacman.conf)</td><td>Nunca sobrescrever aquele arquivo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Listar os pendentes</h3>
+<p>Complete para o <code>pacdiff</code> só listar, sem perguntar nada:</p>
+<div class="ex-code">sudo pacdiff <input data-answer="-o|--output" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Procurar com find</h3>
+<p>Procure arquivos <code>.pacnew</code> só dentro de <code>/etc</code>:</p>
+<div class="ex-code">sudo find <input data-answer="/etc" aria-label="pasta"> -name <input data-answer="&quot;*.pacnew&quot;|'*.pacnew'|\*.pacnew" aria-label="padrão"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Durante um <code>-Syu</code> apareceu <code>atenção: /etc/ssh/sshd_config instalado como /etc/ssh/sshd_config.pacnew</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q3"> A atualização falhou e o SSH foi removido.</label>
+<label><input type="radio" name="q3"> O pacman substituiu a sua configuração pela nova.</label>
+<label><input type="radio" name="q3"> A sua configuração foi mantida e a versão nova do pacote ficou ao lado, para você comparar.</label>
+<label><input type="radio" name="q3"> É um arquivo temporário que some no próximo boot.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Você removeu o <code>nginx</code> com <code>sudo pacman -R nginx</code> e apareceu <code>nginx.conf.pacsave</code>. Por quê?</p>
+<label><input type="radio" name="q4"> Você tinha alterado o <code>nginx.conf</code>, e o <code>-R</code> sem <code>n</code> guarda a sua versão.</label>
+<label><input type="radio" name="q4"> O nginx ainda está instalado.</label>
+<label><input type="radio" name="q4"> É o arquivo novo que veio com a remoção.</label>
+<label><input type="radio" name="q4"> O pacman sempre cria <code>.pacsave</code> de todos os arquivos.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Apareceu <code>/etc/passwd.pacnew</code>. Qual é a pior escolha no <code>pacdiff</code>?</p>
+<label><input type="radio" name="q5"> <code>v</code>, para ver as diferenças.</label>
+<label><input type="radio" name="q5"> <code>o</code>, sobrescrever com o <code>.pacnew</code>.</label>
+<label><input type="radio" name="q5"> <code>s</code>, pular e ver depois.</label>
+<label><input type="radio" name="q5"> <code>r</code>, remover o <code>.pacnew</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>.pacnew</code> = versão nova de uma configuração que você alterou; a sua continua valendo até você mesclar.</li>
+  <li><code>.pacsave</code> = a sua configuração guardada quando o pacote foi removido sem <code>-n</code>.</li>
+  <li>Só arquivos da lista <code>backup</code> do pacote recebem esse cuidado (<code>pacman -Qii</code> mostra quais).</li>
+  <li>Encontre com <code>sudo pacdiff -o</code> (ou <code>find /etc</code>), compare com <code>diff -u</code>, mescle com <code>pacdiff</code>/<code>vimdiff</code>/<code>meld</code>.</li>
+  <li>Apague o <code>.pacnew</code> depois de resolver; nunca sobrescreva <code>passwd</code>, <code>group</code> e <code>shadow</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Pacman/Pacnew_and_Pacsave">Pacman/Pacnew and Pacsave</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)/Pacnew_e_Pacsave">Pacman/Pacnew e Pacsave</a>) explica todos os casos e lista outras ferramentas de mescla. A lista <code>backup</code> está documentada em <a href="https://wiki.archlinux.org/title/PKGBUILD#backup">PKGBUILD – backup</a>, e o <code>pacdiff</code> em <a href="https://wiki.archlinux.org/title/Pacman-contrib">pacman-contrib</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
