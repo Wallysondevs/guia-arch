@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch systemctl — serviços, status, enable, unidades e drop-ins | Guia Arch</title>
+<meta name="description" content="Gerenciar serviços no Arch Linux com systemctl: status explicado linha por linha, start, stop, restart, reload, enable, disable, --now, list-units, --failed, arquivos .service, daemon-reload, systemctl edit e systemctl --user, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>systemctl e <span class="hl">serviços</span></h1>
+
+<p class="intro">Um <strong>serviço</strong> é um programa que roda em segundo plano, sem janela: o servidor SSH, o gerenciador de rede, um servidor web. No Arch, quem liga, desliga e vigia esses programas é o <strong>systemd</strong>, e você conversa com ele pelo comando <code>systemctl</code> (<em>system control</em>). É uma das ferramentas mais usadas na administração do Arch.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são o systemd, as unidades e os estados <em>active</em> e <em>enabled</em>.</li>
+  <li>Ler o <code>systemctl status</code> linha por linha.</li>
+  <li>Ligar, desligar, reiniciar e habilitar no boot (<code>start</code>, <code>stop</code>, <code>restart</code>, <code>reload</code>, <code>enable</code>, <code>disable</code>, <code>--now</code>).</li>
+  <li>Listar serviços, achar os que falharam e ler um arquivo <code>.service</code>.</li>
+  <li>Personalizar um serviço com <code>systemctl edit</code> e usar serviços do seu usuário com <code>systemctl --user</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>systemd, unidades e o PID 1</h2>
+<p>Quando o kernel termina de carregar, ele inicia <strong>um</strong> programa, o de PID 1. No Arch, esse programa é o <code>systemd</code>: ele monta os discos, sobe a rede, abre o <code>login:</code> e inicia os serviços (você viu a árvore em <a href="processos.html">Processos e kill</a>). Cada coisa que o systemd gerencia é uma <strong>unidade</strong> (<em>unit</em>), descrita num arquivo de texto. O tipo vem no fim do nome:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>O que é</th><th>Exemplo na VM</th></tr>
+<tr><td><code>.service</code></td><td>Um programa (serviço)</td><td><code>sshd.service</code>, <code>NetworkManager.service</code></td></tr>
+<tr><td><code>.socket</code></td><td>Uma porta ou socket que liga o serviço quando alguém conecta</td><td><code>podman.socket</code></td></tr>
+<tr><td><code>.timer</code></td><td>Um agendamento (o "cron" do systemd)</td><td><code>snapper-timeline.timer</code> (veja <a href="timers.html">Timers e Tarefas</a>)</td></tr>
+<tr><td><code>.target</code></td><td>Um grupo de unidades, um "ponto" do boot</td><td><code>multi-user.target</code></td></tr>
+<tr><td><code>.mount</code></td><td>Um ponto de montagem</td><td><code>boot.mount</code></td></tr>
+</table>
+</div>
+
+<p>Quando o tipo é <code>.service</code>, pode omitir: <code>systemctl status sshd</code> é o mesmo que <code>systemctl status sshd.service</code>.</p>
+
+<h3>Dois estados que não se misturam</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Estado</th><th>Muda com</th></tr>
+<tr><td>Está rodando <strong>agora</strong>?</td><td><code>active</code> / <code>inactive</code> / <code>failed</code></td><td><code>start</code>, <code>stop</code></td></tr>
+<tr><td>Vai ligar <strong>no próximo boot</strong>?</td><td><code>enabled</code> / <code>disabled</code></td><td><code>enable</code>, <code>disable</code></td></tr>
+</table>
+</div>
+
+<p>Um serviço pode estar ativo e desabilitado (você ligou à mão; no próximo boot não volta) ou habilitado e inativo (vai ligar no boot, mas agora está parado). Essa é a confusão número 1 de quem chega ao systemd.</p>
+
+<div class="note">
+<strong>No Arch, instalar não liga nada</strong>
+<p>No Debian e no Ubuntu, instalar o <code>nginx</code> já deixa o serviço rodando. No Arch, <strong>não</strong>: o pacote só traz os arquivos, e você decide o que ligar. Por isso a instalação manual termina com <code>systemctl enable NetworkManager sshd</code> (foi exatamente o que a VM do guia recebeu). Os <em>presets</em> do Arch são quase todos <code>disabled</code>, como você verá abaixo.</p>
+</div>
+
+<hr>
+
+<h2>systemctl status: a ficha do serviço</h2>
+
+<dl class="anatomy">
+  <dt>systemctl</dt><dd>Fala com o systemd.</dd>
+  <dt>status</dt><dd>Mostra o estado de uma unidade e as últimas linhas do log dela.</dd>
+  <dt>sshd</dt><dd>A unidade (<code>sshd.service</code>, o servidor SSH; o "d" é de <em>daemon</em>, nome tradicional de serviço no Unix).</dd>
+</dl>
+
+<p>Qualquer usuário pode ver o status. A saída real do <code>sshd</code> na VM (sem o <code>--no-pager</code>, ela abre no <code>less</code>: saia com <kbd>q</kbd>):</p>
+
+<pre class="term">$ systemctl status sshd --no-pager
+● sshd.service - OpenSSH Daemon
+     Loaded: loaded (/usr/lib/systemd/system/sshd.service; enabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:06:48 -03; 23min ago
+ Invocation: 37dac664c0094a4e8e5efbc488be0bd6
+       Docs: man:sshd(8)
+             man:sshd_config(5)
+   Main PID: 310 (sshd)
+      Tasks: 1 (limit: 4621)
+     Memory: 22.8M (peak: 29.4M)
+        CPU: 19.680s
+     CGroup: /system.slice/sshd.service
+             └─310 "sshd: /usr/bin/sshd -D [listener] 0 of 10-100 startups"
+
+out 16 13:30:15 notebook sshd-session[45587]: Accepted publickey for root from 10.0.2.2 port 44816 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+out 16 13:30:15 notebook sshd-session[45587]: pam_unix(sshd:session): session opened for user root(uid=0) by root(uid=0)
+out 16 13:30:15 notebook sshd-session[45586]: Accepted publickey for ana from 10.0.2.2 port 44800 ssh2: ED25519 SHA256:6M/mVNpF+bW06tP4uvsWog9MyDbccU3itKRoSUIIgls
+…</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>● sshd.service - OpenSSH Daemon</code></td><td>O nome da unidade e a descrição. A bolinha é verde quando ativo, branca (<code>○</code>) quando parado, vermelha (<code>×</code>) quando falhou.</td></tr>
+<tr><td><code>Loaded: loaded (…/sshd.service; enabled; preset: disabled)</code></td><td>O arquivo da unidade foi lido sem erro; <strong>onde</strong> ele está; <code>enabled</code> = liga no boot; <code>preset: disabled</code> = o padrão sugerido pelo Arch seria desligado (alguém habilitou de propósito).</td></tr>
+<tr><td><code>Active: active (running) since … 23min ago</code></td><td>Rodando há 23 minutos. Outros valores: <code>inactive (dead)</code>, <code>failed</code>, <code>active (exited)</code> (fez o trabalho e saiu, normal para tarefas de uma vez), <code>activating</code>.</td></tr>
+<tr><td><code>Invocation:</code></td><td>Identificador desta execução (muda a cada <code>start</code>). Novidade do systemd recente.</td></tr>
+<tr><td><code>Docs:</code></td><td>Onde ler mais: <code>man sshd</code>, <code>man sshd_config</code>.</td></tr>
+<tr><td><code>Main PID: 310 (sshd)</code></td><td>O processo principal. É o mesmo 310 do <code>pgrep -x sshd</code>.</td></tr>
+<tr><td><code>Tasks: 1 (limit: 4621)</code></td><td>Quantos processos/threads ele tem agora, e o limite.</td></tr>
+<tr><td><code>Memory: 22.8M (peak: 29.4M)</code> / <code>CPU: 19.680s</code></td><td>Memória agora (e o pico) e tempo de processador gasto desde que começou.</td></tr>
+<tr><td><code>CGroup: /system.slice/sshd.service</code></td><td>O "grupo de controle": a caixa onde o systemd guarda <strong>todos</strong> os processos do serviço, para poder pará-los juntos.</td></tr>
+<tr><td>Linhas finais</td><td>As 10 últimas mensagens do serviço no journal. Aqui: logins por chave (<code>Accepted publickey</code>). Para ver mais, <code>journalctl -u sshd</code> (veja <a href="journal.html">Logs (journalctl)</a>).</td></tr>
+</table>
+</div>
+
+<p>O do <code>NetworkManager</code> segue o mesmo formato; as linhas de log contam como ele pegou o endereço da rede:</p>
+
+<pre class="term">$ systemctl status NetworkManager --no-pager
+● NetworkManager.service - Network Manager
+     Loaded: loaded (/usr/lib/systemd/system/NetworkManager.service; enabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:06:48 -03; 23min ago
+ Invocation: dadfab1939204fb99ffcdbb46379d307
+       Docs: man:NetworkManager(8)
+   Main PID: 289 (NetworkManager)
+      Tasks: 4 (limit: 4621)                « 1 processo + 3 threads (as {NetworkManager} do pstree)
+     Memory: 21.3M (peak: 22.1M)
+        CPU: 683ms
+     CGroup: /system.slice/NetworkManager.service
+             └─289 /usr/bin/NetworkManager --no-daemon
+
+out 16 13:06:48 notebook NetworkManager[289]: &lt;info&gt;  [1792166808.8066] dhcp4 (enp0s3): state changed new lease, address=10.0.2.15
+out 16 13:06:48 notebook NetworkManager[289]: &lt;info&gt;  [1792166808.8092] policy: set 'Conexão cabeada 1' (enp0s3) as default for IPv4 routing and DNS
+…
+out 16 13:06:50 notebook NetworkManager[289]: &lt;info&gt;  [1792166810.6964] manager: NetworkManager state is now CONNECTED_GLOBAL</pre>
+
+<p>E um serviço parado e desabilitado, o <code>nginx</code> (o servidor web de <a href="servidor-web.html">Servidor Web</a>):</p>
+
+<pre class="term">$ systemctl status nginx --no-pager
+○ nginx.service - nginx web server                   « ○ = parado
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: inactive (dead)
+…</pre>
+
+<h3>Perguntas rápidas: is-active e is-enabled</h3>
+<p>Para scripts e para conferir depressa, há duas perguntas de uma palavra. A resposta vem na tela <strong>e</strong> no código de saída:</p>
+
+<pre class="term">$ systemctl is-enabled sshd NetworkManager nginx
+enabled
+enabled
+disabled
+$ systemctl is-active nginx
+inactive
+$ echo $?
+3                       « 0 = ativo; diferente de 0 = não ativo</pre>
+
+<div class="try" data-goal="out:enabled" data-solucao="systemctl is-enabled sshd">
+<p class="try-task"><strong>Missão:</strong> pergunte ao systemd se o <code>sshd</code> está habilitado para ligar no boot.</p>
+</div>
+
+<hr>
+
+<h2>Ligar e desligar: start, stop, restart, reload</h2>
+
+<h3>Precisa de sudo</h3>
+<p>Mudar o estado de um serviço do sistema é tarefa de administrador. Sem <code>sudo</code>, depende de onde você está. Num terminal de verdade, o <strong>polkit</strong> (o porteiro das permissões do systemd) pede a senha. Na VM havia dois administradores no momento, então ele perguntou primeiro <em>quem</em> ia se autenticar:</p>
+
+<pre class="term">$ systemctl start nginx
+==== AUTHENTICATING FOR org.freedesktop.systemd1.manage-units ====
+É necessária autenticação para iniciar “nginx.service”.
+Multiple identities can be used for authentication:
+ 1.  ana
+ 2.  teste-a1
+Choose identity to authenticate as (1-2): </pre>
+
+<p>Com um só administrador, ele vai direto ao <code>Password:</code>. Já num script, por SSH sem terminal ou com <code>--no-ask-password</code>, não há como perguntar, e vem a recusa:</p>
+
+<pre class="term">$ systemctl --no-ask-password start nginx
+Failed to start nginx.service: Access denied as the requested operation requires interactive authentication. However, interactive authentication has not been enabled by the calling program.
+See system logs and 'systemctl status nginx.service' for details.
+$ echo $?
+1</pre>
+
+<p>O caminho de sempre é o <code>sudo</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). Nas sessões abaixo, o <code>[sudo] senha para ana:</code> aparece só no primeiro comando; o <code>sudo</code> lembra a senha por alguns minutos.</p>
+
+<h3>As quatro ações</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>start</code></td><td>Liga agora</td><td>Precisa do serviço já</td></tr>
+<tr><td><code>stop</code></td><td>Desliga agora (manda TERM a todos os processos do cgroup)</td><td>Não quer mais ele rodando</td></tr>
+<tr><td><code>restart</code></td><td><code>stop</code> + <code>start</code>. Se estava parado, só liga.</td><td>Depois de mudar a configuração; quando ele "se perdeu"</td></tr>
+<tr><td><code>reload</code></td><td>Pede para reler a configuração <strong>sem parar</strong> (conexões abertas continuam)</td><td>Servidores que suportam (nginx, sshd). Se não suportar, dá erro: use <code>restart</code>.</td></tr>
+</table>
+</div>
+
+<p>Uma sessão real com o <code>nginx</code>, que estava <strong>inativo e desabilitado</strong> e voltou a esse estado no fim:</p>
+
+<pre class="term">$ sudo systemctl start nginx
+[sudo] senha para ana:
+$ echo $?
+0                                   « deu certo e não escreveu nada: é o normal
+$ systemctl is-active nginx
+active
+$ systemctl status nginx --no-pager
+● nginx.service - nginx web server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)    « ativo, mas ainda disabled
+     Active: active (running) since Fri 2026-10-16 13:31:13 -03; 25ms ago
+ Invocation: 112b047e000b41d09fbe96136ba0ce5e
+    Process: 58046 ExecStart=/usr/bin/nginx (code=exited, status=0/SUCCESS)
+   Main PID: 58047 (nginx)
+      Tasks: 2 (limit: 4621)
+     Memory: 3M (peak: 3.1M)
+        CPU: 32ms
+     CGroup: /system.slice/nginx.service
+             ├─58047 "nginx: master process /usr/bin/nginx"
+             └─58048 "nginx: worker process"
+
+out 16 13:31:13 notebook systemd[1]: Starting nginx web server...
+out 16 13:31:13 notebook nginx[58046]: 2026/10/16 13:31:13 [warn] 58046#58046: could not build optimal types_hash, you should increase either types_hash_max_size: 1024 or types_hash_bucket_size: 64; ignoring types_hash_bucket_size
+out 16 13:31:13 notebook systemd[1]: Started nginx web server.
+$ sudo systemctl reload nginx
+$ sudo systemctl restart nginx
+$ sudo systemctl stop nginx
+$ systemctl is-active nginx
+inactive</pre>
+
+<p>A linha <code>Process: … ExecStart=/usr/bin/nginx (code=exited, status=0/SUCCESS)</code> mostra o comando de partida: o <code>nginx</code> se divide em dois (um <em>master</em> e um <em>worker</em>) e o primeiro sai com sucesso. O <code>[warn]</code> é um aviso de configuração do próprio nginx, não do systemd.</p>
+
+<hr>
+
+<h2>Ligar no boot: enable, disable e --now</h2>
+
+<dl class="anatomy">
+  <dt>enable</dt><dd>Faz a unidade ligar nos próximos boots. Não liga agora.</dd>
+  <dt>disable</dt><dd>Desfaz. Não desliga agora.</dd>
+  <dt>--now</dt><dd>Junto com <code>enable</code>, também faz <code>start</code>; junto com <code>disable</code>, também faz <code>stop</code>.</dd>
+</dl>
+
+<pre class="term">$ sudo systemctl enable nginx
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+$ systemctl is-enabled nginx
+enabled
+$ sudo systemctl disable nginx
+Removed '/etc/systemd/system/multi-user.target.wants/nginx.service'.
+$ sudo systemctl enable --now nginx
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+$ systemctl is-active nginx; systemctl is-enabled nginx
+active
+enabled
+$ sudo systemctl disable --now nginx
+Removed '/etc/systemd/system/multi-user.target.wants/nginx.service'.
+$ systemctl is-active nginx; systemctl is-enabled nginx
+inactive
+disabled                         « de volta ao estado original</pre>
+
+<p>Repare no que o <code>enable</code> realmente faz: cria um <strong>link simbólico</strong> numa pasta <code>multi-user.target.wants</code>. "Wants" = "quer": quando o boot chega ao <code>multi-user.target</code> (o sistema pronto para uso), ele "quer" o nginx junto. Por que esse alvo? Porque o arquivo da unidade diz, na seção <code>[Install]</code>: <code>WantedBy=multi-user.target</code> (você verá abaixo).</p>
+
+<div class="try" data-goal="svc:nginx=enabled,svc:nginx=active" data-solucao="sudo systemctl enable --now nginx">
+<p class="try-task"><strong>Missão:</strong> com um único comando, habilite o <code>nginx</code> para o boot <strong>e</strong> ligue-o agora. (A senha da ana no simulador é <code>ana</code>.)</p>
+</div>
+
+<h3>start × enable: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Comando</th></tr>
+<tr><td>Testar um serviço só hoje</td><td><code>sudo systemctl start nome</code></td></tr>
+<tr><td>Que ele ligue sempre, a partir de agora</td><td><code>sudo systemctl enable --now nome</code></td></tr>
+<tr><td>Que ligue a partir do próximo boot (não agora)</td><td><code>sudo systemctl enable nome</code></td></tr>
+<tr><td>Desligar agora e para sempre</td><td><code>sudo systemctl disable --now nome</code></td></tr>
+<tr><td>Que nunca mais ligue, nem se outro serviço pedir</td><td><code>sudo systemctl mask nome</code> (desfaz com <code>unmask</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Listar: list-units, --failed, list-unit-files</h2>
+
+<h3>O que está carregado agora</h3>
+<pre class="term">$ systemctl list-units --type=service --no-pager
+  UNIT                                                  LOAD   ACTIVE SUB     DESCRIPTION
+  dbus-broker.service                                   loaded active running D-Bus System Message Bus
+  dm-event.service                                      loaded active running Device-mapper event daemon
+  flatpak-system-helper.service                         loaded active running flatpak system helper
+  getty@tty1.service                                    loaded active running Getty on tty1
+  kmod-static-nodes.service                             loaded active exited  Create List of Static Device Nodes
+…
+  NetworkManager.service                                loaded active running Network Manager
+  polkit.service                                        loaded active running Authorization Manager
+  sshd.service                                          loaded active running OpenSSH Daemon
+  systemd-fsck-root.service                             loaded active exited  File System Check on Root Device
+…
+  user@1000.service                                     loaded active running User Manager for UID 1000
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+33 loaded units listed. Pass --all to see loaded but inactive units, too.
+To show all installed unit files use 'systemctl list-unit-files'.</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>LOAD</code></td><td>O arquivo foi lido? (<code>loaded</code>, <code>not-found</code>, <code>masked</code>)</td></tr>
+<tr><td><code>ACTIVE</code></td><td>O estado geral: <code>active</code>, <code>inactive</code>, <code>failed</code></td></tr>
+<tr><td><code>SUB</code></td><td>O detalhe: <code>running</code> (rodando), <code>exited</code> (fez e saiu), <code>dead</code>, <code>failed</code></td></tr>
+</table>
+</div>
+
+<p>Sem <code>--type=service</code>, aparecem também sockets, timers, montagens e dispositivos (bem mais linhas). Com <code>--all</code>, também os inativos.</p>
+
+<h3>O que falhou</h3>
+<pre class="term">$ systemctl --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.            « nenhuma falha: é o que você quer ver</pre>
+
+<p>Rode <code>systemctl --failed</code> depois de cada atualização grande ou quando o boot pareceu estranho. Mais abaixo há um exemplo com uma unidade falhada de verdade.</p>
+
+<h3>O que está instalado (ligado ou não)</h3>
+<pre class="term">$ systemctl list-unit-files --type=service --state=enabled --no-pager
+UNIT FILE                          STATE   PRESET
+getty@.service                     enabled enabled
+NetworkManager-dispatcher.service  enabled disabled
+NetworkManager-wait-online.service enabled disabled
+NetworkManager.service             enabled disabled
+sshd.service                       enabled disabled
+
+5 unit files listed.                « tudo o que o boot da VM liga por escolha</pre>
+
+<p>Sem <code>--state</code>, a lista mostra todos os arquivos de unidade, com outros estados:</p>
+
+<pre class="term">$ systemctl list-unit-files --type=service --no-pager | head -8
+UNIT FILE                                    STATE           PRESET
+accounts-daemon.service                      disabled        disabled
+archlinux-keyring-wkd-sync.service           static          -
+arptables.service                            disabled        disabled
+audit-rules.service                          disabled        disabled
+auditd.service                               disabled        disabled
+autovt@.service                              alias           -
+avahi-daemon.service                         disabled        disabled</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>STATE</th><th>Significado</th></tr>
+<tr><td><code>enabled</code> / <code>disabled</code></td><td>Liga ou não no boot</td></tr>
+<tr><td><code>static</code></td><td>Não tem seção <code>[Install]</code>: não se habilita; é chamada por outra unidade (um timer, por exemplo)</td></tr>
+<tr><td><code>alias</code></td><td>Outro nome de uma unidade (<code>autovt@</code> = <code>getty@</code>)</td></tr>
+<tr><td><code>masked</code></td><td>Bloqueada com <code>mask</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Por dentro: o arquivo .service</h2>
+<p>Uma unidade é um arquivo de texto no formato "seções e chaves" (parecido com um <code>.ini</code>). <code>systemctl cat</code> mostra o arquivo e de onde ele vem. O do <code>sshd</code> no Arch:</p>
+
+<pre class="term">$ systemctl cat sshd
+# /usr/lib/systemd/system/sshd.service
+[Unit]
+After=network.target sshdgenkeys.service
+Before=ssh-access.target
+Description=OpenSSH Daemon
+Documentation=man:sshd(8) man:sshd_config(5)
+Wants=sshdgenkeys.service ssh-access.target
+
+[Service]
+Type=notify-reload
+ExecStart=/usr/bin/sshd -D
+KillMode=process
+Restart=always
+
+[Install]
+WantedBy=multi-user.target</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><th colspan="2"><code>[Unit]</code>: quem é e com quem se relaciona</th></tr>
+<tr><td><code>Description=</code> / <code>Documentation=</code></td><td>O nome bonito (aparece no status) e onde ler mais</td></tr>
+<tr><td><code>After=network.target sshdgenkeys.service</code></td><td><strong>Ordem</strong>: só começa depois da rede e do serviço que gera as chaves do servidor</td></tr>
+<tr><td><code>Wants=sshdgenkeys.service …</code></td><td><strong>Dependência fraca</strong>: liga essas unidades junto (se falharem, o sshd sobe mesmo assim)</td></tr>
+<tr><td><code>Before=ssh-access.target</code></td><td>Termina antes desse alvo</td></tr>
+<tr><th colspan="2"><code>[Service]</code>: como rodar</th></tr>
+<tr><td><code>Type=notify-reload</code></td><td>O programa avisa o systemd quando está pronto e sabe recarregar a configuração (por isso o <code>reload</code> funciona)</td></tr>
+<tr><td><code>ExecStart=/usr/bin/sshd -D</code></td><td>O comando. <code>-D</code> = não ir para segundo plano sozinho: quem cuida disso é o systemd.</td></tr>
+<tr><td><code>KillMode=process</code></td><td>No <code>stop</code>, mata só o processo principal: as conexões SSH abertas <strong>sobrevivem</strong> a um <code>restart</code> do sshd</td></tr>
+<tr><td><code>Restart=always</code></td><td>Se o sshd morrer, o systemd o liga de novo</td></tr>
+<tr><th colspan="2"><code>[Install]</code>: o que o <code>enable</code> faz</th></tr>
+<tr><td><code>WantedBy=multi-user.target</code></td><td>O <code>enable</code> cria o link em <code>multi-user.target.wants/</code></td></tr>
+</table>
+</div>
+
+<h3>Onde ficam as unidades</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>De quem</th></tr>
+<tr><td><code>/usr/lib/systemd/system/</code></td><td>Dos <strong>pacotes</strong>. Não edite: a próxima atualização sobrescreve.</td></tr>
+<tr><td><code>/etc/systemd/system/</code></td><td>Do <strong>administrador</strong> (você). Vence a de cima. Os links do <code>enable</code> também moram aqui.</td></tr>
+<tr><td><code>~/.config/systemd/user/</code></td><td>Unidades do seu usuário (<code>systemctl --user</code>)</td></tr>
+</table>
+</div>
+
+<h3>daemon-reload: avisar que um arquivo mudou</h3>
+<p>O systemd lê os arquivos de unidade uma vez e guarda na memória. Se você cria ou muda um arquivo à mão, ele avisa que está usando a versão velha. Real, com uma unidade de teste do usuário ana:</p>
+
+<pre class="term">$ systemctl --user status a6-ok --no-pager | head -4
+Warning: The unit file, source configuration file or drop-ins of a6-ok.service changed on disk. Run 'systemctl --user daemon-reload' to reload units.
+● a6-ok.service
+     Loaded: loaded (/home/ana/.config/systemd/user/a6-ok.service; static)
+     Active: active (running) since Fri 2026-10-16 13:31:54 -03; 24ms ago
+$ systemctl --user daemon-reload       « relê todos os arquivos; não reinicia nenhum serviço</pre>
+
+<p>Para unidades do sistema: <code>sudo systemctl daemon-reload</code>. Ele não escreve nada quando dá certo.</p>
+
+<hr>
+
+<h2>Personalizar sem estragar: systemctl edit</h2>
+<p>Quer mudar um detalhe de um serviço do pacote (por exemplo, fazer o nginx reiniciar sozinho se cair)? <strong>Não edite</strong> o arquivo em <code>/usr/lib</code>. Crie um <strong>drop-in</strong>: um arquivo pequeno, só com as linhas que mudam, numa pasta <code>NOME.service.d/</code>. O systemd junta os dois.</p>
+
+<p>Os próprios pacotes usam isso. Na VM, o <code>snapper</code> acrescenta uma linha ao timer dele, e o <code>systemctl cat</code> mostra o arquivo principal e o drop-in, um depois do outro:</p>
+
+<pre class="term">$ systemctl cat snapper-timeline.timer
+# /usr/lib/systemd/system/snapper-timeline.timer
+[Unit]
+Description=Timeline of Snapper Snapshots
+Documentation=man:snapper(8) man:snapper-configs(5)
+
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target
+
+# /usr/lib/systemd/system/snapper-timeline.timer.d/10-snapper-sync-override.conf     « o drop-in
+[Unit]
+After=snapper-sync.service</pre>
+
+<p>Para criar o seu, <code>systemctl edit</code> abre um editor, e ao salvar ele grava o drop-in e já faz o <code>daemon-reload</code>. <strong>Ilustrativo</strong> (não aplicado na VM compartilhada):</p>
+
+<pre class="term">$ sudo systemctl edit nginx</pre>
+
+<pre class="file" data-file="/etc/systemd/system/nginx.service.d/override.conf">[Service]
+Restart=on-failure
+RestartSec=5
+</pre>
+
+<dl class="anatomy">
+  <dt>systemctl edit nginx</dt><dd>Abre o editor com um arquivo vazio (e o original comentado, para consulta). Ao salvar, cria <code>/etc/systemd/system/nginx.service.d/override.conf</code>.</dd>
+  <dt>[Service]</dt><dd>A seção que você quer mudar precisa aparecer de novo.</dd>
+  <dt>Restart=on-failure</dt><dd>Reinicia o nginx se ele sair com erro. <code>RestartSec=5</code>: espera 5 segundos antes.</dd>
+  <dt>systemctl edit --full nginx</dt><dd>Copia o arquivo inteiro para <code>/etc/systemd/system/</code> e edita a cópia. Funciona, mas você deixa de receber as mudanças que o pacote fizer no original.</dd>
+  <dt>systemctl revert nginx</dt><dd>Apaga os seus drop-ins e volta ao arquivo do pacote.</dd>
+</dl>
+
+<div class="tip">
+<strong>Qual editor ele abre?</strong>
+<p>O da variável <code>SYSTEMD_EDITOR</code>, ou <code>EDITOR</code>, ou <code>VISUAL</code>; se nenhuma existir, tenta <code>editor</code>, <code>nano</code>, <code>vim</code> e <code>vi</code>, nessa ordem. Lembre que o pacote <code>base</code> do Arch não traz editor nenhum: sem <code>nano</code> ou <code>vim</code> instalados, o <code>systemctl edit</code> não tem o que abrir. Para escolher: <code>sudo SYSTEMD_EDITOR=vim systemctl edit nginx</code>. Para ver todas as personalizações do sistema: <code>systemd-delta</code>.</p>
+</div>
+
+<hr>
+
+<h2>systemctl --user: serviços só seus</h2>
+<p>Além do systemd do sistema (PID 1), cada usuário logado ganha um systemd <strong>próprio</strong> (o <code>user@1000.service</code> da lista acima). Com <code>--user</code>, você gerencia unidades que rodam como você, <strong>sem sudo</strong>, guardadas em <code>~/.config/systemd/user/</code>.</p>
+
+<pre class="term">$ systemctl --user status --no-pager | head -8
+● notebook
+    State: running
+    Units: 172 loaded (incl. loaded aliases)
+     Jobs: 0 queued
+   Failed: 0 units
+    Since: Fri 2026-10-16 13:21:47 -03; 9min ago
+  systemd: 262-1-arch                « versão do systemd no Arch
+   CGroup: /user.slice/user-1000.slice/user@1000.service</pre>
+
+<p>Para ver uma falha de verdade, uma unidade de teste que roda <code>/usr/bin/false</code> (um comando que sempre "falha"). O arquivo:</p>
+
+<pre class="file" data-file="~/.config/systemd/user/a6-falha.service">[Unit]
+Description=Teste que falha (a6)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/false
+</pre>
+
+<pre class="term">$ systemctl --user start a6-falha
+Job for a6-falha.service failed because the control process exited with error code.
+See "systemctl --user status a6-falha.service" and "journalctl --user -xeu a6-falha.service" for details.
+$ echo $?
+1
+$ systemctl --user status a6-falha --no-pager
+× a6-falha.service - Teste que falha (a6)                       « × vermelho = falhou
+     Loaded: loaded (/home/ana/.config/systemd/user/a6-falha.service; static)
+     Active: failed (Result: exit-code) since Fri 2026-10-16 13:31:38 -03; 219ms ago
+ Invocation: 1a2d5699014344089fff96daa6070d86
+    Process: 62421 ExecStart=/usr/bin/false (code=exited, status=1/FAILURE)    « o comando saiu com código 1
+   Main PID: 62421 (code=exited, status=1/FAILURE)
+   Mem peak: 2M
+        CPU: 8ms
+
+out 16 13:31:38 notebook systemd[2032]: Starting Teste que falha (a6)...
+out 16 13:31:38 notebook systemd[2032]: a6-falha.service: Main process exited, code=exited, status=1/FAILURE
+out 16 13:31:38 notebook systemd[2032]: a6-falha.service: Failed with result 'exit-code'.
+out 16 13:31:38 notebook systemd[2032]: Failed to start Teste que falha (a6).
+$ systemctl --user --failed
+  UNIT             LOAD   ACTIVE SUB    DESCRIPTION
+● a6-falha.service loaded failed failed Teste que falha (a6)
+
+Legend: LOAD   → Reflects whether the unit definition was properly loaded.
+        ACTIVE → The high-level unit activation state, i.e. generalization of SUB.
+        SUB    → The low-level unit activation state, values depend on unit type.
+
+1 loaded units listed.
+$ systemctl --user reset-failed a6-falha     « limpa o estado "failed"
+$ rm ~/.config/systemd/user/a6-falha.service
+$ systemctl --user daemon-reload</pre>
+
+<p>O uso mais comum do <code>--user</code> é agendar tarefas pessoais com timers (veja <a href="timers.html">Timers e Tarefas</a>) e rodar programas como o <code>podman</code> ou o <code>syncthing</code> sem root.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Unit … not found"</strong>
+<pre class="term">$ sudo systemctl start nginx-teste
+Failed to start nginx-teste.service: Unit nginx-teste.service not found.
+$ echo $?
+5</pre>
+<p><strong>O que aconteceu:</strong> não existe unidade com esse nome. Erro de digitação, pacote não instalado, ou o nome é outro (no Arch é <code>sshd</code>, não <code>ssh</code> como no Debian; é <code>cronie</code>, não <code>cron</code>).</p>
+<p><strong>Como resolver:</strong> <code>systemctl list-unit-files | grep parte-do-nome</code> e, se não aparecer, <code>pacman -Ql pacote | grep '\.service'</code> para ver o nome que o pacote instalou.</p>
+</div>
+
+<div class="cenario">
+<strong>"Access denied … requires interactive authentication"</strong>
+<p><strong>O que aconteceu:</strong> você mandou mudar um serviço do sistema sem <code>sudo</code>, num lugar onde o polkit não pode perguntar a senha (script, SSH sem terminal). Num terminal normal, aparece <code>==== AUTHENTICATING FOR … ====</code> pedindo a senha.</p>
+<p><strong>Como resolver:</strong> repita com <code>sudo</code>. Se for um serviço seu, use <code>systemctl --user</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Job for X.service failed because the control process exited with error code"</strong>
+<p><strong>O que aconteceu:</strong> o systemd tentou ligar e o programa saiu com erro (configuração errada, porta já em uso, arquivo faltando).</p>
+<p><strong>Como confirmar:</strong> exatamente o que a mensagem manda: <code>systemctl status X</code> (veja a linha <code>Process: … status=</code>) e <code>journalctl -xeu X</code> (as últimas mensagens dele, com explicações).</p>
+<p><strong>Como resolver:</strong> corrija o que o log apontar. Muitos programas testam a própria configuração: <code>sudo nginx -t</code>, <code>sudo sshd -t</code>. Depois, <code>sudo systemctl restart X</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Liguei, mas depois do reboot estava desligado</strong>
+<p><strong>O que aconteceu:</strong> você usou <code>start</code>, que vale só até desligar.</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-enabled nome</code> responde <code>disabled</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl enable nome</code> (ou <code>enable --now</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Warning: The unit file … changed on disk"</strong>
+<p><strong>O que aconteceu:</strong> você editou o arquivo da unidade à mão e o systemd ainda usa a versão antiga.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl daemon-reload</code> (ou <code>systemctl --user daemon-reload</code>) e depois <code>restart</code> no serviço.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>systemctl status nome</code></td><td>Estado e últimos logs</td></tr>
+<tr><td><code>sudo systemctl start|stop|restart|reload nome</code></td><td>Liga, desliga, reinicia, relê a configuração</td></tr>
+<tr><td><code>sudo systemctl enable|disable nome</code></td><td>Liga/não liga no boot (<code>--now</code> também liga/desliga agora)</td></tr>
+<tr><td><code>sudo systemctl mask|unmask nome</code></td><td>Bloqueia/desbloqueia de vez</td></tr>
+<tr><td><code>systemctl is-active|is-enabled|is-failed nome</code></td><td>Pergunta rápida (código de saída 0 = sim)</td></tr>
+<tr><td><code>systemctl list-units --type=service</code></td><td>Serviços carregados (<code>--all</code> inclui os inativos)</td></tr>
+<tr><td><code>systemctl --failed</code></td><td>Unidades que falharam</td></tr>
+<tr><td><code>systemctl list-unit-files --state=enabled</code></td><td>O que liga no boot</td></tr>
+<tr><td><code>systemctl cat nome</code></td><td>Mostra o arquivo da unidade e os drop-ins</td></tr>
+<tr><td><code>sudo systemctl edit nome</code></td><td>Cria um drop-in (<code>--full</code>: copia o arquivo inteiro)</td></tr>
+<tr><td><code>sudo systemctl revert nome</code></td><td>Desfaz as personalizações</td></tr>
+<tr><td><code>sudo systemctl daemon-reload</code></td><td>Relê os arquivos de unidade</td></tr>
+<tr><td><code>systemctl --user …</code></td><td>Os mesmos comandos, para as unidades do seu usuário (sem sudo)</td></tr>
+<tr><td><code>systemd-delta</code></td><td>Lista as personalizações (drop-ins, substituições)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Para sempre, a partir de agora</h3>
+<p>Complete para habilitar o <code>cronie</code> no boot e ligá-lo já:</p>
+<div class="ex-code">sudo systemctl <input data-answer="enable" aria-label="ação"> <input data-answer="--now" aria-label="opção"> cronie</div>
+</div>
+
+<div class="exercise">
+<h3>2. O arquivo da unidade</h3>
+<p>Qual subcomando mostra o conteúdo de <code>sshd.service</code>, com os drop-ins?</p>
+<div class="ex-code">systemctl <input data-answer="cat" aria-label="subcomando"> sshd</div>
+</div>
+
+<div class="exercise">
+<h3>3. Depois de editar à mão</h3>
+<p>Você mudou um arquivo em <code>/etc/systemd/system/</code>. Complete o comando que faz o systemd reler:</p>
+<div class="ex-code">sudo systemctl <input data-answer="daemon-reload" aria-label="subcomando"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. <code>systemctl status nginx</code> mostra <code>Loaded: … disabled</code> e <code>Active: active (running)</code>. O que acontece no próximo boot?</p>
+<label><input type="radio" name="q4"> O nginx liga, porque está ativo.</label>
+<label><input type="radio" name="q4"> O nginx dá erro.</label>
+<label><input type="radio" name="q4"> O nginx não liga, porque está desabilitado.</label>
+<label><input type="radio" name="q4"> O systemd pergunta se deve ligar.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Onde você deve guardar uma personalização de um serviço que veio de um pacote?</p>
+<label><input type="radio" name="q5"> Editando <code>/usr/lib/systemd/system/nome.service</code>.</label>
+<label><input type="radio" name="q5"> Num drop-in em <code>/etc/systemd/system/nome.service.d/</code> (com <code>systemctl edit</code>).</label>
+<label><input type="radio" name="q5"> Em <code>~/.bashrc</code>.</label>
+<label><input type="radio" name="q5"> Em <code>/etc/pacman.conf</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Você instalou o <code>nginx</code> com o pacman. Ele já está rodando?</p>
+<label><input type="radio" name="q6"> Sim, como no Debian.</label>
+<label><input type="radio" name="q6"> Sim, mas só depois do reboot.</label>
+<label><input type="radio" name="q6"> Depende do espelho.</label>
+<label><input type="radio" name="q6"> Não: no Arch, os pacotes não ligam serviços; você usa <code>systemctl enable --now</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O systemd é o PID 1; o <code>systemctl</code> é o controle remoto dele.</li>
+  <li><em>active</em> = rodando agora (<code>start</code>/<code>stop</code>); <em>enabled</em> = liga no boot (<code>enable</code>/<code>disable</code>); <code>--now</code> faz os dois.</li>
+  <li>Mudar serviços do sistema exige <code>sudo</code>; ver o status, não.</li>
+  <li>No Arch, instalar um pacote não liga o serviço.</li>
+  <li><code>systemctl --failed</code> depois de atualizar; <code>status</code> e <code>journalctl -u</code> quando algo falha.</li>
+  <li>Personalize com <code>systemctl edit</code> (drop-in em <code>/etc</code>), nunca editando <code>/usr/lib</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> tudo desta aula, e muito mais (dependências, alvos, sandbox de serviços), está em <a href="https://wiki.archlinux.org/title/Systemd">systemd</a> (<a href="https://wiki.archlinux.org/title/Systemd_(Portugu%C3%AAs)">em português</a>); os serviços do usuário, em <a href="https://wiki.archlinux.org/title/Systemd/User">systemd/User</a>; e a lista de dicas, em <a href="https://wiki.archlinux.org/title/Systemd/FAQ">systemd/FAQ</a>. As permissões do polkit estão em <a href="https://wiki.archlinux.org/title/Polkit">Polkit</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
