@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Rolling Release — sem versões, ISO mensal, testing e notícias | Guia Arch</title>
+<meta name="description" content="Rolling release no Arch Linux: por que não há versões, para que serve a ISO mensal, o que muda toda semana, os repositórios testing e staging, por que a atualização parcial é proibida e como acompanhar as notícias do Arch.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Rolling Release</span></h1>
+
+<p class="intro">No Arch não existe "a versão 12" nem "a versão 26.04". Cada programa é atualizado assim que sai uma versão nova e passa pelos testes, e o seu sistema acompanha com um único comando. Isso se chama <strong>rolling release</strong> (lançamento contínuo). Esta aula mostra o que isso significa na prática, com as versões reais da VM do guia, e as duas regras que evitam quase todos os problemas: nunca fazer atualização parcial e ler as notícias.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre lançamento por versões e lançamento contínuo.</li>
+  <li>Para que serve a ISO mensal, se o sistema não tem versão.</li>
+  <li>Como ler as versões dos pacotes (<code>7.2.10.arch1-1</code>, <code>1:26.2.4-1</code>…) e ver o que mudou.</li>
+  <li>O que são os repositórios <em>testing</em> e <em>staging</em>.</li>
+  <li>Por que a atualização parcial é proibida e como acompanhar as notícias.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Versões × lançamento contínuo</h2>
+<p>Pense em duas formas de receber notícias. A <strong>revista anual</strong> junta tudo o que aconteceu e entrega um volume grosso uma vez por ano; entre uma edição e outra, nada muda. O <strong>jornal diário</strong> entrega um pouco todo dia; você nunca precisa "trocar de edição", só ler o de hoje.</p>
+<p>O Debian e o Ubuntu são a revista: a cada versão (Debian 13, Ubuntu 26.04) os programas são congelados, testados juntos e só recebem correções de segurança até a próxima versão. Para ganhar programas novos, você "atualiza a versão" do sistema inteiro. O Arch é o jornal: cada pacote anda sozinho, e o <code>sudo pacman -Syu</code> traz o que saiu desde a última vez.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Por versões (Debian, Ubuntu, Fedora)</th><th>Rolling (Arch)</th></tr>
+<tr><td>Programas novos</td><td>Só na próxima versão do sistema</td><td>Dias depois do lançamento</td></tr>
+<tr><td>Troca de versão do sistema</td><td>A cada 6 meses a 2 anos, com um processo próprio</td><td>Nunca</td></tr>
+<tr><td>Tamanho de cada mudança</td><td>Grande e rara</td><td>Pequena e frequente</td></tr>
+<tr><td>Quem testa a combinação</td><td>A distribuição, por meses</td><td>A distribuição, por dias; o resto do teste é o uso real</td></tr>
+<tr><td>O que você precisa fazer</td><td>Pouco no dia a dia; muito na troca de versão</td><td>Um pouco toda semana</td></tr>
+</table>
+</div>
+
+<h3>O sistema não tem número de versão</h3>
+<p>Peça ao Arch a versão dele e veja o que ele responde:</p>
+
+<pre class="term">$ cat /etc/os-release
+NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"       « no Ubuntu, aqui aparece "Ubuntu 26.04 LTS"
+ID=arch
+BUILD_ID=rolling               « no lugar do VERSION_ID: "contínuo"
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo
+$ cat /etc/arch-release
+                               « vazio: o arquivo existe só para dizer "isto é um Arch"
+$ ls -l /etc/arch-release
+-rw-r--r-- 1 root root 1 12 out  2025 /etc/arch-release</pre>
+
+<p>Não há <code>VERSION_ID</code>, e o <code>/etc/arch-release</code> tem 1 byte (só uma quebra de linha). Programas que precisam saber "que sistema é este" olham o <code>ID=arch</code>; a "versão" do seu Arch é, na prática, a data da última atualização.</p>
+
+<hr>
+
+<h2>A ISO mensal</h2>
+<p>Se não há versão, o que é aquele arquivo <code>archlinux-2026.10.01-x86_64.iso</code>? É só um <strong>retrato do mês</strong>: uma imagem para dar boot e instalar, gerada no dia 1º de cada mês com os pacotes daquele dia. Ela não é "o Arch de outubro": o sistema que você instala com ela baixa os pacotes da internet na hora da instalação (o <a href="pacstrap.html">pacstrap</a>), então ele já nasce atualizado.</p>
+<p>A VM do guia mostra isso bem. Ela foi instalada com uma ISO de junho, e o próprio leitor de CD da VM mostra o nome:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsblk -f
+NAME   FSTYPE   FSVER            LABEL       UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0  squashfs 4.0                                                                     0   100% /run/archiso/airootfs
+sda
+|-sda1 vfat     FAT32                        C509-6CB1                              1022M     0% /mnt/boot
+|-sda2 swap     1                            02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+`-sda3 ext4     1.0                          75d167c8-1dad-4d0a-a0ae-b063058a18e9   23.2G     0% /mnt
+sr0    iso9660  Joliet Extension ARCH_202606 2026-06-01-15-21-12-00                     0   100% /run/archiso/bootmnt   « a ISO de 1º de junho</pre>
+
+<p>O ambiente live dessa ISO rodava o kernel <strong>7.0.10</strong> (ele aparece na primeira linha da tela, <code>Arch Linux 7.0.10-arch1-1 (tty1)</code>; veja a figura em <a href="ambiente-live.html">O Ambiente Live</a>). Mas o sistema instalado em outubro já subiu com o <strong>7.2.10</strong>, porque o <code>pacstrap</code> baixou o kernel do dia:</p>
+
+<pre class="term">$ uname -r
+7.2.10-arch1-1                 « o kernel em uso, quatro meses mais novo que o da ISO</pre>
+
+<div class="tip">
+<strong>Qual ISO usar?</strong>
+<p>Sempre a mais nova (em outubro de 2026, a <code>2026.10.01</code>). Uma ISO antiga ainda instala, mas pode ter chaves de assinatura vencidas ou não reconhecer hardware novo. Depois de instalado, a ISO não importa mais: você nunca "atualiza a ISO". Veja <a href="preparar.html">Baixar e Verificar a ISO</a>.</p>
+</div>
+
+<hr>
+
+<h2>O que muda toda semana</h2>
+<p>O que muda são os <strong>pacotes</strong>, cada um no seu ritmo. Veja as versões de quatro pacotes importantes na VM, em outubro de 2026:</p>
+
+<dl class="anatomy">
+  <dt>pacman</dt><dd>O gerenciador de pacotes.</dd>
+  <dt>-Q</dt><dd><em>Query</em>: pergunta ao banco de dados local, o dos pacotes instalados (não usa a internet).</dd>
+  <dt>linux bash pacman glibc</dt><dd>Os pacotes que você quer ver: o kernel, o shell, o próprio pacman e a biblioteca C (a base de quase todos os programas).</dd>
+</dl>
+
+<pre class="term">$ pacman -Q linux bash pacman glibc
+linux 7.2.10.arch1-1                   « o kernel
+bash 5.3.20-1
+pacman 7.1.0.r9.g54d9411-3             « uma versão tirada direto do git do pacman
+glibc 2.44+r50+g1848099f063e-1         « idem: a glibc 2.44 mais 50 mudanças do git
+$ echo $?
+0</pre>
+
+<p>Cada linha é <code>nome versão-lançamento</code>. As versões parecem estranhas, mas seguem regras:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Exemplo</th><th>Parte</th><th>Significado</th></tr>
+<tr><td><code>bash 5.3.20-1</code></td><td><code>5.3.20</code></td><td>A versão do programa, como os autores lançaram.</td></tr>
+<tr><td></td><td><code>-1</code></td><td>O <em>pkgrel</em>: quantas vezes o Arch empacotou essa mesma versão. Uma correção no pacote vira <code>-2</code>.</td></tr>
+<tr><td><code>linux 7.2.10.arch1-1</code></td><td><code>.arch1</code></td><td>Primeira revisão do kernel feita pelo Arch. No <code>uname -r</code> ela aparece como <code>7.2.10-arch1-1</code> (com hífen).</td></tr>
+<tr><td><code>pacman 7.1.0.r9.g54d9411-3</code></td><td><code>.r9.g54d9411</code></td><td>Tirado do git: 9 mudanças depois da 7.1.0, no commit <code>54d9411</code>.</td></tr>
+<tr><td><code>mesa 1:26.2.4-1</code></td><td><code>1:</code></td><td>A <em>época</em> (epoch): usada quando o esquema de versões mudou e o número novo pareceria "menor" que o antigo. Ela vence qualquer comparação.</td></tr>
+</table>
+</div>
+
+<p>Para saber <strong>quando</strong> cada pacote foi compilado e instalado, use <code>-Qi</code> (<em>info</em>):</p>
+
+<pre class="term">$ pacman -Qi linux | grep -E "^(Nome|Versão|Data|Motivo|Tamanho)"
+Nome                 : linux
+Versão               : 7.2.10.arch1-1
+Tamanho instalado    : 161,60 MiB
+Data da compilação   : seg 12 out 2026 03:58:10      « o Arch empacotou na segunda
+Data de instalação   : sex 16 out 2026 12:08:47      « chegou à VM na sexta
+Motivo da instalação : Instalado explicitamente
+$ pacman -Qi bash | grep -E "^(Data)"
+Data da compilação   : ter 15 set 2026 16:47:19      « o bash estava parado havia um mês
+Data de instalação   : sex 16 out 2026 12:08:24</pre>
+
+<p>O kernel tinha quatro dias; o Bash, um mês. Cada pacote anda no seu ritmo. Numa semana típica, algumas dezenas de pacotes do seu sistema ganham versão nova.</p>
+
+<h3>Ver o que há para atualizar, sem mexer em nada</h3>
+<p>O <code>checkupdates</code>, do pacote <code>pacman-contrib</code>, baixa a lista nova numa pasta temporária e compara com o que você tem. Ele não muda o sistema e roda sem <code>sudo</code>:</p>
+
+<pre class="term">$ checkupdates
+$ echo $?
+2                              « 2 = nada para atualizar; 0 = há atualizações (e ele lista)</pre>
+
+<p>Quando há atualizações, cada linha mostra <code>pacote versão-atual -&gt; versão-nova</code>. Não mostrar nada não é erro: o código de saída <code>2</code> diz que estava tudo em dia (a VM tinha sido atualizada horas antes).</p>
+
+<div class="try" data-goal="ran:pacman -Q.*linux,ran:uname -r" data-solucao="pacman -Q linux;;uname -r">
+<p class="try-task"><strong>Missão:</strong> compare a versão do pacote do kernel com a do kernel em uso. Rode <code>pacman -Q linux</code> e depois <code>uname -r</code>. Repare no ponto (<code>.arch1</code>) de um e no hífen (<code>-arch1</code>) do outro. Experimente também <code>pacman -Q bash pacman glibc</code>.</p>
+</div>
+
+<hr>
+
+<h2>testing e staging: onde os pacotes esperam</h2>
+<p>Um pacote novo não vai direto para você. O caminho, simplificado:</p>
+<ol class="passo">
+  <li><strong>staging</strong>: quando uma biblioteca muda de um jeito que exige recompilar muitos outros pacotes, tudo é recompilado aqui primeiro, longe dos usuários.</li>
+  <li><strong>testing</strong> (<code>core-testing</code>, <code>extra-testing</code>): o pacote fica disponível para voluntários e desenvolvedores testarem.</li>
+  <li><strong>core</strong> / <strong>extra</strong>: depois de aprovado, ele entra nos repositórios que todo mundo usa.</li>
+</ol>
+<p>Os repositórios <em>testing</em> vêm desligados. Eles aparecem comentados (com <code>#</code>) no <code>/etc/pacman.conf</code> da VM:</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho, linhas 70–93)"># The testing repositories are disabled by default. To enable, uncomment the
+# repo name header and Include lines. You can add preferred servers immediately
+# after the header, and they will be used before the default mirrors.
+
+#[core-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+#[extra-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+# If you want to run 32 bit applications on your x86_64 system,
+# enable the multilib repositories as required here.
+
+#[multilib-testing]
+#Include = /etc/pacman.d/mirrorlist
+
+#[multilib]</pre>
+
+<div class="warning">
+<strong>Não ligue o testing "para ter coisas mais novas"</strong>
+<p>O testing é para quem vai testar e relatar problemas. Quem liga e depois desliga fica com pacotes de versões que não existem nos repositórios normais. Deixe como está. O <code>multilib</code> é outro assunto (programas de 32 bits, como o Steam) e é seguro de ativar quando você precisar.</p>
+</div>
+
+<hr>
+
+<h2>A regra de ouro: nada de atualização parcial</h2>
+<p>No Arch, todos os pacotes dos repositórios foram compilados <strong>uns contra os outros, na mesma época</strong>. Quando uma biblioteca muda de versão de um jeito incompatível, todos os programas que usam essa biblioteca são recompilados juntos e chegam juntos. O <code>pacman</code> registra essas amarrações:</p>
+
+<pre class="term">$ pacman -Qi pacman | grep -E "^(Provê|Depende de)"
+Provê                : libalpm.so=16-64     « o pacman entrega a biblioteca libalpm versão 16
+Depende de           : bash  coreutils  curl  libcurl.so=4-64  gawk  gettext  glibc  gnupg  gpgme  libgpgme.so=45-64  grep  libarchive  libarchive.so=13-64  openssl  libcrypto.so=3-64  pacman-mirrorlist  systemd  libmakepkg-dropins</pre>
+
+<p>Entradas como <code>libcurl.so=4-64</code> dizem: "este programa precisa da versão 4 da biblioteca libcurl". Se só uma parte do sistema for atualizada, um programa novo pode exigir uma biblioteca que o resto do sistema ainda não tem, ou o contrário, e aí ele nem abre.</p>
+<p>Isso é a <strong>atualização parcial</strong>. Ela acontece quando você baixa a lista nova de pacotes (<code>-y</code>) mas não atualiza tudo (<code>-u</code>):</p>
+
+<div class="warning">
+<strong>Nunca rode <code>pacman -Sy pacote</code></strong>
+<p><code>sudo pacman -Sy firefox</code> parece inocente: "atualize a lista e instale o Firefox". Mas o Firefox novo vem compilado contra as bibliotecas novas, que você não instalou. O resultado pode ser um programa que não abre ou, se for algo central, um sistema que não liga. As formas certas são:</p>
+<ul>
+  <li><code>sudo pacman -S firefox</code> (instala usando a lista que você já tem), ou</li>
+  <li><code>sudo pacman -Syu firefox</code> (atualiza tudo <strong>e</strong> instala o Firefox).</li>
+</ul>
+<p>Pelo mesmo motivo, não segure pacotes "para sempre" com <code>IgnorePkg</code> e não instale pacotes antigos soltos. Os detalhes estão em <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Seguro?</th><th>Por quê</th></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>Sim</td><td>Baixa a lista nova e atualiza tudo junto.</td></tr>
+<tr><td><code>sudo pacman -S pacote</code></td><td>Sim</td><td>Usa a mesma lista com que o sistema foi atualizado.</td></tr>
+<tr><td><code>sudo pacman -Syu pacote</code></td><td>Sim</td><td>Atualiza tudo e instala o pacote.</td></tr>
+<tr><td><code>sudo pacman -Sy pacote</code></td><td><strong>Não</strong></td><td>Lista nova, sistema velho: atualização parcial.</td></tr>
+<tr><td><code>sudo pacman -Sy</code> e mais nada</td><td><strong>Não</strong></td><td>Deixa a armadilha pronta para o próximo <code>-S</code>.</td></tr>
+<tr><td><code>checkupdates</code></td><td>Sim</td><td>Usa uma cópia temporária da lista; não toca no sistema.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Leia as notícias antes de atualizar</h2>
+<p>Quando uma atualização precisa de uma ação sua (um arquivo para editar, um comando antes ou depois), o Arch publica uma notícia em <a href="https://archlinux.org/news/">archlinux.org/news</a>. Elas são poucas (menos de uma por mês) e curtas. Há três jeitos de acompanhar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Como</th></tr>
+<tr><td>Site</td><td>Abra <a href="https://archlinux.org/">archlinux.org</a> antes de atualizar: as notícias ficam na página inicial.</td></tr>
+<tr><td>RSS ou e-mail</td><td>O feed <code>https://archlinux.org/feeds/news/</code> num leitor de RSS, ou a lista de e-mail <em>arch-announce</em>.</td></tr>
+<tr><td>No terminal</td><td>Ajudantes do AUR como o <code>yay</code> e o <code>paru</code> mostram as notícias; o <code>informant</code> trava a atualização até você ler.</td></tr>
+</table>
+</div>
+
+<p>Na VM do guia, o <code>yay</code> está instalado (ele vem do AUR; veja <a href="yay-paru.html">yay e paru</a>):</p>
+
+<dl class="anatomy">
+  <dt>yay</dt><dd>Um ajudante do AUR que também aceita as opções do <code>pacman</code>.</dd>
+  <dt>-P</dt><dd><em>Print</em>: operações que só mostram informações.</dd>
+  <dt>w</dt><dd><em>News</em>: as notícias do archlinux.org. Com um <code>w</code>, só as que saíram depois da sua última atualização; com <code>ww</code>, todas as recentes.</dd>
+</dl>
+
+<pre class="term">$ yay -Pw
+$ echo $?
+0                              « nada novo desde a última atualização: está tudo lido
+$ yay -Pww | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} '
+2025-11-05 waydroid >= 1.5.4-3 update may require manual intervention
+2025-12-11 .NET packages may require manual intervention
+2025-12-20 NVIDIA 590 driver drops Pascal and lower support; main packages switch to Open Kernel Modules
+2026-04-05 iptables now defaults to the nft backend
+2026-04-07 kea >= 1:3.0.3-6 update requires manual intervention
+2026-05-25 Breaking changes for all users of `varnish`, which is renamed to `vinyl-cache`
+2026-06-04 Arch Linux 2026 Leader Election Results
+2026-06-12 Active AUR malicious packages incident
+2026-07-21 virtualbox-ext-vnc >= 7.2.12-2 requires manual intervention
+2026-09-22 Mkinitcpio >=42 requires manual intervention for TPM2-based unlocking of LUKS devices</pre>
+
+<p>O <code>grep</code> deixou só as linhas de título (data e assunto); sem ele, o <code>yay</code> mostra cada notícia inteira, em inglês, com os comandos a rodar. Leia o título e pergunte: "eu uso isso?". Se a resposta for não, siga em frente.</p>
+
+<p>O <code>informant</code> (do AUR) vai além: ele se instala como um <em>hook</em> do <code>pacman</code> e interrompe o <code>pacman -Syu</code> enquanto houver notícia não lida; <code>informant read</code> marca como lida. Ele não foi instalado na VM, então esta parte é <strong>ilustrativa</strong>.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Instalei um programa e ele não abre: "error while loading shared libraries"</strong>
+<p><strong>Causa provável:</strong> uma atualização parcial. O programa novo procura uma versão de biblioteca (<code>libalgo.so.N</code>) que o resto do sistema ainda não tem.</p>
+<p><strong>Como confirmar:</strong> veja no <code>/var/log/pacman.log</code> se houve um <code>pacman -Sy</code> seguido de <code>-S</code> sem <code>-u</code>.</p>
+<p><strong>Como resolver:</strong> complete a atualização com <code>sudo pacman -Syu</code>. Se o sistema não liga mais, veja <a href="chroot-resgate.html">Resgate com chroot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>checkupdates</code> não mostrou nada</strong>
+<pre class="term">$ checkupdates
+$ echo $?
+2</pre>
+<p><strong>Causa:</strong> não há atualizações. Não é erro.</p>
+<p><strong>Como confirmar:</strong> o código <code>2</code> quer dizer "nada pendente"; <code>1</code> seria um erro de verdade (sem internet, por exemplo).</p>
+</div>
+
+<div class="cenario">
+<strong>Uma atualização pediu para eu fazer algo e eu não fiz</strong>
+<p><strong>Causa:</strong> a notícia não foi lida antes do <code>-Syu</code>.</p>
+<p><strong>Como resolver:</strong> abra a notícia correspondente (pela data) e faça os passos agora; a maioria funciona do mesmo jeito depois da atualização. Os casos comuns estão em <a href="problemas-update.html">Erros de Atualização</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / termo</th><th>O que faz / o que é</th></tr>
+<tr><td><code>cat /etc/os-release</code></td><td>Identifica o sistema (<code>ID=arch</code>, <code>BUILD_ID=rolling</code>).</td></tr>
+<tr><td><code>pacman -Q pacote</code></td><td>Versão instalada de um pacote.</td></tr>
+<tr><td><code>pacman -Qi pacote</code></td><td>Detalhes: datas de compilação e instalação, dependências, tamanho.</td></tr>
+<tr><td><code>checkupdates</code></td><td>Lista atualizações pendentes sem mexer no sistema (código 2 = nenhuma).</td></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>A atualização completa (a única forma certa).</td></tr>
+<tr><td><code>yay -Pw</code> / <code>yay -Pww</code></td><td>Notícias novas / todas as recentes.</td></tr>
+<tr><td>ISO mensal</td><td>Retrato do dia 1º de cada mês, só para instalar.</td></tr>
+<tr><td>pkgrel (<code>-1</code>)</td><td>Número do empacotamento da mesma versão.</td></tr>
+<tr><td>epoch (<code>1:</code>)</td><td>Prefixo que força a ordem de versões quando o esquema muda.</td></tr>
+<tr><td>testing / staging</td><td>Repositórios de teste e de recompilação, desligados por padrão.</td></tr>
+<tr><td>Atualização parcial</td><td>Atualizar só parte do sistema (<code>-Sy pacote</code>): proibida.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Você instalou o Arch em outubro de 2026 com a ISO de junho. Qual kernel o sistema instalado terá?</p>
+<label><input type="radio" name="q1"> O kernel da ISO de junho, até você trocar de ISO.</label>
+<label><input type="radio" name="q1"> Nenhum: é preciso compilar.</label>
+<label><input type="radio" name="q1"> O kernel mais novo disponível no dia da instalação, porque o pacstrap baixa os pacotes da internet.</label>
+<label><input type="radio" name="q1"> O kernel LTS.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Qual destes comandos causa uma atualização parcial?</p>
+<label><input type="radio" name="q2"> <code>sudo pacman -Syu</code></label>
+<label><input type="radio" name="q2"> <code>sudo pacman -Sy htop</code></label>
+<label><input type="radio" name="q2"> <code>sudo pacman -S htop</code></label>
+<label><input type="radio" name="q2"> <code>checkupdates</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Em <code>mesa 1:26.2.4-1</code>, o que é o <code>1:</code>?</p>
+<label><input type="radio" name="q3"> O número do repositório.</label>
+<label><input type="radio" name="q3"> A prioridade do pacote.</label>
+<label><input type="radio" name="q3"> Quantas vezes ele foi instalado.</label>
+<label><input type="radio" name="q3"> A época (epoch), que força a ordem das versões quando o esquema de numeração muda.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O <code>checkupdates</code> não mostrou nada e <code>echo $?</code> deu <code>2</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> Não há atualizações pendentes.</label>
+<label><input type="radio" name="q4"> Faltou internet.</label>
+<label><input type="radio" name="q4"> Faltou usar <code>sudo</code>.</label>
+<label><input type="radio" name="q4"> Há duas atualizações.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o comando que mostra as datas de compilação e instalação do kernel:</p>
+<div class="ex-code">pacman <input data-answer="-Qi"> linux</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o comando seguro que atualiza tudo e instala o <code>htop</code>:</p>
+<div class="ex-code">sudo pacman <input data-answer="-Syu"> htop</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Rolling release: os pacotes são atualizados continuamente; o sistema não tem versão (<code>BUILD_ID=rolling</code>).</li>
+  <li>A ISO mensal é só para instalar; o sistema instalado já nasce com os pacotes do dia.</li>
+  <li>Versões: <code>versão-pkgrel</code>, às vezes com época (<code>1:</code>) ou trechos do git (<code>.r9.g54d9411</code>).</li>
+  <li>testing e staging são etapas antes do <code>core</code>/<code>extra</code>; ficam desligados.</li>
+  <li>Atualização parcial (<code>-Sy pacote</code>) é proibida: use <code>-Syu</code> ou <code>-S</code>.</li>
+  <li>Leia as notícias (site, RSS, <code>yay -Pw</code>) antes de atualizar; são menos de uma por mês.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o modelo está explicado em <a href="https://wiki.archlinux.org/title/Arch_Linux">Arch Linux</a> (<a href="https://wiki.archlinux.org/title/Arch_Linux_(Portugu%C3%AAs)">em português</a>); a regra da atualização parcial, em <a href="https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported">System maintenance — Partial upgrades are unsupported</a> (<a href="https://wiki.archlinux.org/title/System_maintenance_(Portugu%C3%AAs)">em português</a>); os repositórios de teste, em <a href="https://wiki.archlinux.org/title/Official_repositories#Testing_repositories">Official repositories — Testing repositories</a>; as versões dos pacotes, em <a href="https://wiki.archlinux.org/title/PKGBUILD#Version">PKGBUILD — Version</a>; e o <code>checkupdates</code>, em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>. As notícias ficam em <a href="https://archlinux.org/news/">archlinux.org/news</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Introdução — o que é o Arch Linux, história e filosofia | Guia Arch</title>
+<meta name="description" content="O que é o Arch Linux: a história desde Judd Vinet em 2002, os princípios do Arch Way (simplicidade, modernidade, pragmatismo, foco no usuário, versatilidade), rolling release, os pilares pacman, AUR e Arch Wiki e as distribuições derivadas.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Introdução</span></h1>
+
+<p class="intro">O Arch Linux é uma distribuição Linux leve e independente, que entrega um sistema mínimo e deixa você montar o resto peça por peça. Ele é atualizado continuamente (não tem "versão 12" nem "versão 24.04"), tem um gerenciador de pacotes próprio, o <code>pacman</code>, e é famoso pela documentação: a Arch Wiki, usada até por quem não usa Arch.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma distribuição e o que faz do Arch uma distribuição diferente.</li>
+  <li>A história do Arch, de Judd Vinet em 2002 até hoje.</li>
+  <li>Os cinco princípios do "Arch Way": simplicidade, modernidade, pragmatismo, foco no usuário e versatilidade.</li>
+  <li>Os três pilares: <code>pacman</code>, AUR e Arch Wiki.</li>
+  <li>As distribuições derivadas (Manjaro, EndeavourOS, CachyOS, Garuda, SteamOS) e como elas se diferenciam do Arch "puro".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Primeiro, o que é uma distribuição?</h2>
+<p>O <strong>Linux</strong>, a rigor, é só o <em>kernel</em>: o programa que conversa com o hardware (processador, memória, disco, placa de rede). Sozinho, ele não abre uma janela nem lista arquivos. Para virar um sistema usável, ele precisa de centenas de outros programas: o shell (Bash), os comandos básicos (<code>ls</code>, <code>cp</code>…), o systemd que liga os serviços, um gerenciador de pacotes e, se você quiser, uma interface gráfica.</p>
+<p>Uma <strong>distribuição</strong> é quem junta tudo isso, escolhe as versões, testa, empacota e entrega pronto. Pense numa cozinha: o kernel é o fogão; a distribuição é o restaurante que decide o cardápio. O Ubuntu é um restaurante com prato feito: você chega e já tem desktop, navegador e tudo configurado. O Arch é uma cozinha bem equipada com a despensa cheia: você escolhe cada ingrediente e monta o seu prato.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>No Arch</th><th>Para comparar: no Debian/Ubuntu</th></tr>
+<tr><td>Gerenciador de pacotes</td><td><code>pacman</code> (pacotes <code>.pkg.tar.zst</code>)</td><td><code>apt</code>/<code>dpkg</code> (pacotes <code>.deb</code>)</td></tr>
+<tr><td>Versões</td><td>Nenhuma: <em>rolling release</em></td><td>Debian 13, Ubuntu 26.04 LTS…</td></tr>
+<tr><td>Instalação</td><td>Roteiro de comandos (ou o <code>archinstall</code>, em modo texto)</td><td>Instalador gráfico</td></tr>
+<tr><td>Depois de instalado</td><td>Só o terminal; nada de desktop, editor ou <code>sudo</code> se você não pedir</td><td>Desktop, navegador e programas prontos</td></tr>
+<tr><td>Programas da comunidade</td><td>AUR (receitas para compilar)</td><td>PPAs, pacotes <code>.deb</code> soltos</td></tr>
+<tr><td>Documentação</td><td>Arch Wiki</td><td>Wiki do Debian, Ask Ubuntu</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Um pouco de história</h2>
+<p>O Arch nasceu em 2001, quando o programador canadense <strong>Judd Vinet</strong> quis uma distribuição simples e elegante, inspirada no CRUX (uma distribuição minimalista da época), mas com um gerenciador de pacotes que resolvesse dependências sozinho. Ele mesmo escreveu esse gerenciador: o <code>pacman</code>. A primeira versão do Arch, a 0.1 "Homer", saiu em <strong>11 de março de 2002</strong>.</p>
+<p>O nome dele está até hoje dentro do <code>pacman</code>. Na VM do guia:</p>
+
+<pre class="term">$ pacman --version
+
+ .--.                  Pacman v7.1.0 - libalpm v16.0.1     « versão do pacman e da biblioteca libalpm
+/ _.-' .-.  .-.  .-.   Copyright (C) 2006-2025 Pacman Development Team
+\  '-. '-'  '-'  '-'   Copyright (C) 2002-2006 Judd Vinet   « o criador do Arch e do pacman
+ '--'
+                       Este programa pode ser redistribuído livremente
+                       sob os termos da Licença Pública Geral GNU.
+</pre>
+
+<p>O desenho à esquerda é o próprio Pac-Man comendo as bolinhas: o nome <code>pacman</code> vem de <em>package manager</em> e a brincadeira com o jogo é proposital.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ano</th><th>Acontecimento</th></tr>
+<tr><td>2002</td><td>Primeira versão (0.1 "Homer"), por Judd Vinet, já com o <code>pacman</code>.</td></tr>
+<tr><td>2007</td><td>Judd Vinet deixa o projeto; Aaron Griffin assume a liderança (até 2020).</td></tr>
+<tr><td>2012</td><td>O Arch adota o systemd como sistema de inicialização, um dos primeiros grandes a fazer isso.</td></tr>
+<tr><td>2017</td><td>Fim do suporte a processadores de 32 bits (i686): o Arch oficial passa a ser só x86_64.</td></tr>
+<tr><td>2020</td><td>O líder do projeto passa a ser eleito pela equipe, com mandatos.</td></tr>
+<tr><td>2021</td><td>A ISO passa a trazer o <code>archinstall</code>, um instalador guiado em modo texto (<a href="archinstall.html">aula própria</a>).</td></tr>
+<tr><td>2022</td><td>A Valve lança o Steam Deck com o SteamOS 3, baseado no Arch.</td></tr>
+<tr><td>2023</td><td>Os pacotes oficiais migram para o GitLab do Arch.</td></tr>
+<tr><td>2024</td><td>A Valve passa a financiar projetos de infraestrutura do Arch (serviço de compilação e assinatura segura de pacotes).</td></tr>
+<tr><td>2026</td><td>Em junho, a página de notícias publica o resultado da eleição de líder de 2026. Em outubro, a ISO mais nova é a <code>2026.10.01</code>.</td></tr>
+</table>
+</div>
+
+<p>O Arch é <strong>independente</strong>: não é baseado em nenhuma outra distribuição (o Ubuntu é baseado no Debian; o Arch não é baseado em nada). E é feito por voluntários, sem empresa por trás.</p>
+
+<hr>
+
+<h2>O "Arch Way": os cinco princípios</h2>
+<p>A página principal da Arch Wiki resume a filosofia do projeto em cinco princípios. Conhecê-los explica quase todas as "estranhezas" que você vai encontrar.</p>
+
+<h3>1. Simplicidade</h3>
+<p>Para o Arch, simples quer dizer <strong>sem acréscimos nem modificações desnecessárias</strong>: os programas são empacotados como os autores originais (o <em>upstream</em>) os lançaram, com o mínimo de mudanças. É a ideia conhecida como <strong>KISS</strong> (<em>Keep It Simple, Stupid</em>, "mantenha simples"). Simples não quer dizer fácil: quer dizer que não há mágica escondida. A configuração fica em arquivos de texto que você lê e entende. O nome da máquina, por exemplo, é um arquivo de uma linha:</p>
+
+<pre class="term">$ cat /etc/hostname
+notebook                       « só isso: o nome da máquina, escrito na instalação</pre>
+
+<h3>2. Modernidade</h3>
+<p>O Arch entrega as versões novas dos programas pouco depois de lançadas. Em outubro de 2026, a VM tinha o kernel 7.2.10, lançado dias antes. Foi um dos primeiros a adotar o systemd, o Wayland e o PipeWire.</p>
+
+<h3>3. Pragmatismo</h3>
+<p>As decisões são técnicas e práticas, não ideológicas. O repositório oficial tem software livre e também programas proprietários quando eles são úteis (o driver da NVIDIA, o firmware de placas Wi-Fi).</p>
+
+<h3>4. Centrado no usuário</h3>
+<p>O Arch não tenta agradar a todo mundo: ele foi feito para quem quer entender e cuidar do próprio sistema. Espera-se que você leia a documentação antes de pedir ajuda, e que contribua de volta (corrigindo a Wiki, relatando bugs). Em troca, nada é decidido por você: nenhum programa é instalado "porque sim".</p>
+
+<h3>5. Versatilidade</h3>
+<p>A partir da mesma base mínima, você monta um servidor sem tela, um desktop KDE, uma estação de jogos ou um notebook com Hyprland. O Arch não vem "com cara" de nada.</p>
+
+<div class="tip">
+<strong>"O que você instala é o que você tem"</strong>
+<p>Essa frase resume os princípios na prática. A VM do guia foi instalada com o mínimo e depois recebeu as ferramentas das aulas. O <code>pacman</code> sabe exatamente o que foi pedido de propósito (<code>-Qe</code>, de <em>explicit</em>) e o que veio junto como dependência:</p>
+</div>
+
+<pre class="term">$ pacman -Q | wc -l
+408                            « todos os pacotes instalados
+$ pacman -Qe | wc -l
+45                             « só os que alguém pediu pelo nome
+$ pacman -Qi base | grep -E "^(Nome|Versão|Descrição|Depende)"
+Nome                 : base
+Versão               : 3-3
+Descrição            : Minimal package set to define a basic Arch Linux installation
+Depende de           : filesystem  gcc-libs  glibc  bash  coreutils  file  findutils  gawk  grep  procps-ng  sed  tar  gettext  pciutils  psmisc  shadow  util-linux  bzip2  gzip  xz  licenses  pacman  archlinux-keyring  systemd  systemd-sysvcompat  iputils  iproute2</pre>
+
+<p>O <code>base</code> é um <em>metapacote</em>: ele não tem programa nenhum, só uma lista de dependências que forma o sistema mínimo. Leia a lista com calma: não há editor de texto, não há <code>sudo</code>, não há <code>man</code>, não há rede sem fio, não há desktop. Logo depois da instalação, a VM tinha 193 pacotes; hoje tem 408 porque recebeu, de propósito, as ferramentas das aulas. Cada um deles está lá porque alguém pediu.</p>
+
+<div class="try" data-goal="ran:pacman -Qe" data-solucao="pacman -Qe;;pacman -Qe | wc -l">
+<p class="try-task"><strong>Missão:</strong> veja a lista dos pacotes que a Ana instalou de propósito com <code>pacman -Qe</code>. Procure nela o <code>nano</code>, o <code>sudo</code> e o <code>linux</code>. Depois conte quantos são com <code>pacman -Qe | wc -l</code>.</p>
+</div>
+
+<hr>
+
+<h2>Rolling release em uma frase</h2>
+<p>O Arch não lança versões: cada programa é atualizado assim que a nova versão é empacotada e testada, e o seu sistema acompanha com um único comando, <code>sudo pacman -Syu</code>. Você instala uma vez e nunca mais "atualiza a versão". O preço é que as mudanças chegam toda semana, e às vezes pedem que você leia uma notícia antes de atualizar. A aula <a href="rolling-release.html">Rolling Release</a> explica tudo isso com calma.</p>
+
+<hr>
+
+<h2>Os três pilares: pacman, AUR e Wiki</h2>
+
+<h3>pacman: os repositórios oficiais</h3>
+<p>Os pacotes oficiais ficam em <strong>repositórios</strong> (servidores com milhares de pacotes) mantidos pela equipe do Arch. Os dois principais são o <code>core</code> (o essencial para o sistema ligar) e o <code>extra</code> (todo o resto). Existe ainda o <code>multilib</code>, com programas de 32 bits como o Steam, que você ativa se precisar. Na VM do guia:</p>
+
+<pre class="term">$ pacman -Sl | cut -d" " -f1 | sort | uniq -c
+    299 core                   « o essencial: kernel, systemd, pacman, bash…
+  15031 extra                  « desktops, navegadores, servidores, linguagens…</pre>
+
+<dl class="anatomy">
+  <dt>pacman -Sl</dt><dd><em>Sync list</em>: lista todos os pacotes dos repositórios, um por linha, começando pelo nome do repositório.</dd>
+  <dt>| cut -d" " -f1</dt><dd>Fica só com a primeira palavra de cada linha (o repositório).</dd>
+  <dt>| sort | uniq -c</dt><dd>Agrupa as linhas iguais e conta quantas há de cada.</dd>
+</dl>
+
+<p>São pouco mais de 15 mil pacotes oficiais (em outubro de 2026). O <code>pacman</code> instala, remove e atualiza esses pacotes resolvendo as dependências sozinho. Ele é o assunto de <a href="pacman.html">pacman: o Básico</a>.</p>
+
+<h3>AUR: os pacotes da comunidade</h3>
+<p>O <strong>AUR</strong> (<em>Arch User Repository</em>) é um repositório mantido pelos próprios usuários. Ele não guarda programas prontos, e sim <strong>receitas</strong> (arquivos <code>PKGBUILD</code>) que dizem como baixar e compilar cada programa. Em outubro de 2026, a página do AUR mostrava 114.756 pacotes. Quase tudo que existe para Linux está lá: o Google Chrome, o VS Code da Microsoft, drivers de impressora…</p>
+<div class="warning">
+<strong>O AUR não é oficial</strong>
+<p>Qualquer pessoa pode publicar um pacote no AUR, e ninguém revisa antes. Em junho de 2026, uma notícia do Arch avisou sobre pacotes maliciosos ativos no AUR. Antes de instalar algo de lá, você precisa ler a receita. O Nível 2 ensina como: <a href="aur.html">O que é o AUR</a> e <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+</div>
+
+<h3>Arch Wiki: a documentação</h3>
+<p>A <strong>Arch Wiki</strong> (<a href="https://wiki.archlinux.org/">wiki.archlinux.org</a>) tem milhares de páginas sobre instalação, hardware, programas e solução de problemas. Ela é tão completa que usuários de Ubuntu, Fedora e até de BSD a consultam. No Arch, ela substitui o instalador gráfico e o assistente de configuração: quando você não sabe algo, a resposta é "leia a Wiki". A aula <a href="arch-wiki.html">A Arch Wiki</a> ensina a ler, buscar e pedir ajuda do jeito certo.</p>
+
+<hr>
+
+<h2>Distribuições derivadas</h2>
+<p>Como o Arch é uma ótima base, várias distribuições partem dele e acrescentam o que ele não tem: instalador gráfico, desktop pronto, configurações escolhidas por alguém. Elas usam o <code>pacman</code> e o AUR, mas <strong>não são o Arch</strong>: têm outros repositórios, outros padrões e outra equipe.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Distribuição</th><th>Desde</th><th>Pacotes</th><th>O que acrescenta</th><th>Para quem</th></tr>
+<tr><td><strong>Manjaro</strong></td><td>2011</td><td>Repositórios próprios: os pacotes do Arch chegam com algumas semanas de atraso, depois de testados</td><td>Instalador gráfico (Calamares), ferramenta própria de drivers e de kernels, loja gráfica (Pamac)</td><td>Quem quer o ecossistema do Arch com atualizações mais espaçadas</td></tr>
+<tr><td><strong>EndeavourOS</strong></td><td>2019</td><td>Os do próprio Arch, mais um repositório pequeno com as ferramentas dela</td><td>Instalador gráfico, desktop à escolha, configuração mínima</td><td>Quem quer o Arch "quase puro" sem a instalação manual</td></tr>
+<tr><td><strong>CachyOS</strong></td><td>2021</td><td>Os do Arch recompilados para processadores modernos (x86-64-v3/v4), mais repositórios próprios</td><td>Kernel próprio otimizado, foco em desempenho e jogos</td><td>Quem quer cada gota de desempenho</td></tr>
+<tr><td><strong>Garuda</strong></td><td>2020</td><td>Os do Arch, mais o repositório Chaotic-AUR (pacotes do AUR já compilados)</td><td>Btrfs com snapshots automáticos, visual carregado, ferramentas para jogos</td><td>Quem quer um sistema bonito e pronto para jogar</td></tr>
+<tr><td><strong>SteamOS 3</strong></td><td>2022</td><td>Repositórios da Valve, baseados no Arch</td><td>Sistema imutável (só leitura, atualizado inteiro de uma vez), interface do Steam, modo desktop com KDE Plasma</td><td>Quem tem um Steam Deck (ou outro console portátil compatível)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Ajuda e documentação nas derivadas</strong>
+<p>Muita coisa da Arch Wiki vale também para as derivadas, mas os fóruns do Arch só dão suporte ao Arch de verdade. Se você usa Manjaro e um pacote do AUR quebrou, a causa pode ser justamente o atraso dos repositórios dele: peça ajuda no fórum do Manjaro. Este guia trata do Arch oficial; a comparação completa com outras famílias está em <a href="arch-x-outras.html">Arch × Debian × Fedora</a>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Segui um tutorial e o comando não existe</strong>
+<pre class="term">$ apt install htop
+bash: apt: comando não encontrado
+$ echo $?
+127                            « 127 = o shell não achou o programa</pre>
+<p><strong>Causa:</strong> o tutorial era de Debian/Ubuntu. O Arch não tem <code>apt</code>.</p>
+<p><strong>Como confirmar:</strong> <code>cat /etc/os-release</code> mostra <code>ID=arch</code>.</p>
+<p><strong>Como resolver:</strong> traduza o comando para o <code>pacman</code> (<code>sudo pacman -S htop</code>) usando a tabela <a href="ref-pacman.html">pacman × apt × dnf</a>, ou procure o assunto na Arch Wiki, que é escrita para o seu sistema.</p>
+</div>
+
+<div class="cenario">
+<strong>O tutorial era de Manjaro (ou de outra derivada)</strong>
+<p><strong>Causa:</strong> comandos como <code>pamac</code>, <code>mhwd</code> ou <code>manjaro-settings-manager</code> só existem no Manjaro; o mesmo vale para as ferramentas próprias do Garuda e do CachyOS.</p>
+<p><strong>Como resolver:</strong> procure o equivalente no Arch (quase sempre um pacote oficial e um arquivo de configuração) na Arch Wiki. Os comandos do <code>pacman</code> desses tutoriais, em geral, funcionam igual.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th></tr>
+<tr><td>Distribuição</td><td>Kernel Linux + programas + gerenciador de pacotes + escolhas de uma equipe.</td></tr>
+<tr><td>Rolling release</td><td>Atualização contínua, sem versões do sistema.</td></tr>
+<tr><td><code>pacman</code></td><td>O gerenciador de pacotes do Arch (<em>package manager</em>).</td></tr>
+<tr><td><code>core</code> / <code>extra</code> / <code>multilib</code></td><td>Os repositórios oficiais: essencial / todo o resto / programas de 32 bits.</td></tr>
+<tr><td>AUR</td><td><em>Arch User Repository</em>: receitas da comunidade, sem revisão oficial.</td></tr>
+<tr><td><code>base</code></td><td>Metapacote com o sistema mínimo (sem editor, <code>sudo</code> ou <code>man</code>).</td></tr>
+<tr><td>Upstream</td><td>Os autores originais de um programa; o Arch empacota "como o upstream lançou".</td></tr>
+<tr><td>KISS</td><td><em>Keep It Simple, Stupid</em>: sem acréscimos desnecessários.</td></tr>
+<tr><td>Derivada</td><td>Distribuição baseada no Arch, com repositórios e decisões próprios (Manjaro, EndeavourOS…).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Quem criou o Arch Linux e o <code>pacman</code>?</p>
+<label><input type="radio" name="q1"> Linus Torvalds</label>
+<label><input type="radio" name="q1"> Judd Vinet</label>
+<label><input type="radio" name="q1"> A Valve</label>
+<label><input type="radio" name="q1"> A equipe do Debian</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Para o Arch, "simplicidade" quer dizer:</p>
+<label><input type="radio" name="q2"> Ser fácil de instalar com poucos cliques.</label>
+<label><input type="radio" name="q2"> Ter poucos pacotes disponíveis.</label>
+<label><input type="radio" name="q2"> Empacotar os programas sem acréscimos nem modificações desnecessárias.</label>
+<label><input type="radio" name="q2"> Não ter linha de comando.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Você instalou o Arch com o pacote <code>base</code> e digitou <code>nano notas.txt</code>. O que acontece?</p>
+<label><input type="radio" name="q3"> O <code>nano</code> abre normalmente.</label>
+<label><input type="radio" name="q3"> O <code>vim</code> abre no lugar.</label>
+<label><input type="radio" name="q3"> O Arch instala o <code>nano</code> sozinho.</label>
+<label><input type="radio" name="q3"> Aparece <code>bash: nano: comando não encontrado</code>: o <code>base</code> não traz editor.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Qual destas é a diferença mais importante entre o Manjaro e o Arch?</p>
+<label><input type="radio" name="q4"> O Manjaro tem repositórios próprios, em que os pacotes chegam depois dos do Arch.</label>
+<label><input type="radio" name="q4"> O Manjaro não usa o <code>pacman</code>.</label>
+<label><input type="radio" name="q4"> O Manjaro não é rolling release de forma nenhuma.</label>
+<label><input type="radio" name="q4"> O Manjaro não pode usar o AUR.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o comando que lista só os pacotes instalados <strong>explicitamente</strong> (pedidos pelo nome):</p>
+<div class="ex-code">pacman <input data-answer="-Qe"></div>
+</div>
+
+<div class="exercise">
+<p>6. Complete a sigla: o repositório da comunidade se chama AUR, de Arch <input data-answer="User"> Repository.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O Arch é uma distribuição independente, criada por Judd Vinet (primeira versão em março de 2002), mantida por voluntários.</li>
+  <li>Os princípios: simplicidade (KISS, sem modificações desnecessárias), modernidade, pragmatismo, foco no usuário e versatilidade.</li>
+  <li>É rolling release: sem versões, atualizado com <code>sudo pacman -Syu</code>.</li>
+  <li>Os pilares: <code>pacman</code> (repositórios <code>core</code> e <code>extra</code>), AUR (receitas da comunidade, sem revisão) e Arch Wiki.</li>
+  <li>"O que você instala é o que você tem": o <code>base</code> é mínimo; editor, <code>sudo</code>, <code>man</code> e desktop são escolhas suas.</li>
+  <li>Manjaro, EndeavourOS, CachyOS, Garuda e SteamOS são derivadas: parecidas, mas com repositórios e decisões próprios.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os princípios estão na página <a href="https://wiki.archlinux.org/title/Arch_Linux">Arch Linux</a> (<a href="https://wiki.archlinux.org/title/Arch_Linux_(Portugu%C3%AAs)">em português</a>); as perguntas comuns, em <a href="https://wiki.archlinux.org/title/Frequently_asked_questions">Frequently asked questions</a> (<a href="https://wiki.archlinux.org/title/Frequently_asked_questions_(Portugu%C3%AAs)">em português</a>); a história, na seção <a href="https://wiki.archlinux.org/title/Arch_Linux#History">History</a> da mesma página; os repositórios, em <a href="https://wiki.archlinux.org/title/Official_repositories">Official repositories</a> (<a href="https://wiki.archlinux.org/title/Official_repositories_(Portugu%C3%AAs)">em português</a>); o AUR, em <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> (<a href="https://wiki.archlinux.org/title/Arch_User_Repository_(Portugu%C3%AAs)">em português</a>); e as derivadas, em <a href="https://wiki.archlinux.org/title/Arch-based_distributions">Arch-based distributions</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Wiki — como ler, buscar e pedir ajuda | Guia Arch</title>
+<meta name="description" content="Como usar a Arch Wiki: a estrutura de uma página, as convenções # e $, Installation guide, General recommendations, List of applications, traduções em português, notas e avisos, como buscar, Wiki offline e como pedir ajuda no fórum com a saída dos comandos.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Wiki</span></h1>
+
+<p class="intro">A Arch Wiki (<a href="https://wiki.archlinux.org/">wiki.archlinux.org</a>) é o manual do Arch, escrito pelos próprios usuários. No Arch, ela faz o papel que em outros sistemas é do instalador gráfico, do assistente de configuração e do suporte técnico. Saber ler a Wiki é a habilidade mais importante desta trilha, e esta aula ensina como: a estrutura das páginas, as convenções dos comandos, as páginas que todo mundo usa, as traduções, a busca e como pedir ajuda quando a Wiki não basta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como uma página da Wiki é organizada e o que significam <code>#</code> e <code>$</code> nos comandos.</li>
+  <li>As páginas-chave: Installation guide, General recommendations e List of applications.</li>
+  <li>Como usar as traduções em português sem cair em informação velha.</li>
+  <li>Como buscar bem, inclusive sem internet.</li>
+  <li>Como pedir ajuda no fórum com as informações certas.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Por que a Wiki é tão boa</h2>
+<p>Três motivos. Ela é escrita <strong>para um sistema só</strong>, então os comandos funcionam do jeito que estão escritos. Ela é <strong>revisada o tempo todo</strong>, porque o Arch muda toda semana e os usuários corrigem as páginas junto. E ela segue o princípio do Arch de <strong>explicar em vez de esconder</strong>: em vez de "clique aqui", ela diz qual arquivo muda e por quê. Por isso usuários de outras distribuições também a leem: a explicação de como o systemd, o GRUB ou o PipeWire funcionam vale para todo Linux.</p>
+
+<hr>
+
+<h2>A anatomia de uma página</h2>
+<p>Quase todas as páginas sobre um programa seguem o mesmo roteiro. Veja a página <a href="https://wiki.archlinux.org/title/Sudo">Sudo</a>, em outubro de 2026:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Na página Sudo</th><th>Para que serve</th></tr>
+<tr><td>Título e idiomas</td><td>"Sudo", com links para outras línguas (inclusive Português) no menu de idiomas</td><td>Trocar de idioma</td></tr>
+<tr><td>Artigos relacionados (<em>Related articles</em>)</td><td>Caixa à direita: doas, run0, su, Users and groups…</td><td>Páginas vizinhas que você talvez precise</td></tr>
+<tr><td>Introdução</td><td>Um parágrafo: o que é o sudo</td><td>Saber se a página é a certa</td></tr>
+<tr><td><em>Installation</em></td><td>"Install the <code>sudo</code> package."</td><td>Qual pacote instalar</td></tr>
+<tr><td><em>Usage</em></td><td>Como usar no dia a dia</td><td>Os comandos básicos</td></tr>
+<tr><td><em>Configuration</em></td><td>O <code>/etc/sudoers</code>, o <code>visudo</code>, exemplos</td><td>Os arquivos que você vai editar</td></tr>
+<tr><td><em>Tips and tricks</em></td><td>Pedir senha menos vezes, colorir o prompt…</td><td>Ajustes opcionais</td></tr>
+<tr><td><em>Troubleshooting</em></td><td>Problemas comuns e soluções</td><td>Quando algo dá errado (leia antes de perguntar!)</td></tr>
+<tr><td><em>See also</em></td><td>Links externos: manual oficial, artigos</td><td>Ir mais fundo</td></tr>
+</table>
+</div>
+
+<h3>Os verbos da Wiki</h3>
+<p>A Wiki é econômica: ela não repete a cada página como instalar um pacote. Quando você lê certas palavras, já sabe o comando:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A Wiki diz</th><th>Você faz</th></tr>
+<tr><td><em>Install</em> the <code>sudo</code> package</td><td><code>sudo pacman -S sudo</code> (se o pacote é do AUR, a Wiki avisa com <code>sudo<sup>AUR</sup></code> e você segue <a href="aur.html">O que é o AUR</a>)</td></tr>
+<tr><td><em>Enable</em> / <em>start</em> <code>sshd.service</code></td><td><code>sudo systemctl enable sshd.service</code> / <code>sudo systemctl start sshd.service</code> (<a href="systemd.html">systemctl e Serviços</a>)</td></tr>
+<tr><td><em>Edit</em> <code>/etc/arquivo</code></td><td>Abra o arquivo num editor como root (<code>sudoedit /etc/arquivo</code> ou <code>sudo nano /etc/arquivo</code>)</td></tr>
+<tr><td><em>Append</em> to <code>/etc/arquivo</code></td><td>Acrescente as linhas mostradas ao fim do arquivo</td></tr>
+<tr><td><em>Regenerate the initramfs</em></td><td><code>sudo mkinitcpio -P</code> (<a href="mkinitcpio.html">mkinitcpio</a>)</td></tr>
+</table>
+</div>
+
+<h3><code>#</code> e <code>$</code>: quem roda o comando</h3>
+<p>Nos blocos de código da Wiki, o primeiro caractere diz quem deve rodar o comando. Ele <strong>não</strong> faz parte do comando: não copie.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na Wiki</th><th>Significa</th><th>Como a Ana roda</th></tr>
+<tr><td><code># pacman -S htop</code></td><td>Rode como <strong>root</strong></td><td><code>sudo pacman -S htop</code>, ou num shell de root aberto com <code>sudo -i</code></td></tr>
+<tr><td><code>$ makepkg -s</code></td><td>Rode como <strong>usuário comum</strong> (nunca como root)</td><td><code>makepkg -s</code></td></tr>
+<tr><td><code>[postgres]$ initdb …</code></td><td>Rode como o usuário entre colchetes</td><td><code>sudo -u postgres initdb …</code></td></tr>
+</table>
+</div>
+
+<p>É o mesmo jeito deste guia: <code>[ana@notebook ~]$</code> é a Ana; <code>[root@notebook ~]#</code> é o root. Se você esquecer e rodar como usuária comum um comando que a Wiki marcou com <code>#</code>, o próprio programa reclama:</p>
+
+<pre class="term">$ pacman -S htop
+erro: você não pode realizar esta operação a menos que seja root.
+$ echo $?
+1                              « 1 = falhou; nada foi instalado</pre>
+
+<div class="tip">
+<strong><code>sudo</code> nem sempre substitui o <code>#</code></strong>
+<p>A própria Wiki avisa (na página <a href="https://wiki.archlinux.org/title/Help:Reading">Help:Reading</a>): comandos com redirecionamento, como <code># echo texto &gt; /etc/arquivo</code>, não funcionam só com <code>sudo</code> na frente, porque quem grava no arquivo é o seu shell, não o <code>echo</code>. Nesses casos, abra um shell de root com <code>sudo -i</code>. A aula <a href="sudo-usuarios.html">sudo, root e Usuários</a> mostra o erro real.</p>
+</div>
+
+<h3>Notas, avisos e dicas</h3>
+<p>No meio do texto aparecem caixas coloridas. Leia todas, principalmente as de aviso:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em inglês</th><th>Em português</th><th>O que quer dizer</th></tr>
+<tr><td><strong>Note:</strong></td><td><strong>Nota:</strong></td><td>Um detalhe importante, fácil de passar batido.</td></tr>
+<tr><td><strong>Warning:</strong></td><td><strong>Atenção:</strong></td><td>Se você ignorar, pode perder dados ou quebrar o sistema.</td></tr>
+<tr><td><strong>Tip:</strong></td><td><strong>Dica:</strong></td><td>Um atalho ou jeito melhor de fazer.</td></tr>
+<tr><td><em>Out of date</em>, <em>Accuracy</em>, <em>Expansion</em></td><td>(caixas de manutenção)</td><td>A seção está desatualizada, pode estar errada ou está incompleta. Desconfie e confira.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>As páginas que todo mundo usa</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Página</th><th>Quando usar</th></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a></td><td>A instalação, passo a passo. Curta de propósito: cada passo tem links para os detalhes. É a página que a ISO sugere ao ligar (veja a tela em <a href="ambiente-live.html">O Ambiente Live</a>), e a base da trilha <a href="preparar.html">Instalação</a> deste guia.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a></td><td>O "e agora?" depois de instalar: usuários e grupos, segurança, serviços, manutenção, pacotes, boot, interface gráfica, energia, som, rede, teclado e mouse, otimização. Leia inteira uma vez.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/List_of_applications">List of applications</a></td><td>O catálogo: para cada tarefa (navegador, editor de texto, leitor de PDF, gerenciador de arquivos…), as opções com uma linha de descrição e o nome do pacote.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a></td><td>O que fazer toda semana e todo mês para o sistema ficar saudável.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/Frequently_asked_questions">Frequently asked questions</a></td><td>As dúvidas de quem está chegando.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/Help:Reading">Help:Reading</a></td><td>As convenções da Wiki (o <code>#</code>, o <code>$</code>, "install", "enable"…). Curta e valiosa.</td></tr>
+<tr><td><a href="https://wiki.archlinux.org/title/Table_of_contents">Table of contents</a></td><td>O índice de todas as categorias, para navegar por assunto.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Traduções: a Wiki em português</h2>
+<p>Muitas páginas têm versão em português, com o título terminado em <code>(Português)</code>: <a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">Sudo (Português)</a>, <a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">Installation guide (Português)</a>. Para chegar nelas, use o menu de idiomas da página em inglês.</p>
+<p>Mas atenção: a página original é a <strong>inglesa</strong>, e as traduções são feitas por voluntários quando dá. No topo de cada tradução há uma caixa de <strong>status de tradução</strong> com a data em que ela foi conferida com o original. Em outubro de 2026, a página Sudo em português dizia ter sido traduzida da revisão inglesa de <strong>4 de junho de 2020</strong>: mais de seis anos antes. Nesse meio tempo, a página inglesa ganhou, por exemplo, a seção sobre o <code>sudo-rs</code>, que não existe na tradução.</p>
+
+<div class="tip">
+<strong>Como usar as traduções com segurança</strong>
+<ul>
+  <li>Use a versão em português para <strong>entender</strong> o assunto.</li>
+  <li>Antes de rodar comandos, confira a página em inglês, principalmente se a data da tradução for antiga.</li>
+  <li>Se a tradução divergir, vale a inglesa. (E você pode atualizar a tradução: a Wiki é aberta a contribuições.)</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como buscar</h2>
+<ol class="passo">
+  <li><strong>Pelo nome do programa ou do assunto, em inglês</strong>: a caixa de busca da Wiki vai direto para a página quando o título bate (<code>sudo</code>, <code>NetworkManager</code>, <code>GRUB</code>).</li>
+  <li><strong>Pela mensagem de erro</strong>: copie a parte fixa da mensagem (sem nomes de arquivo ou números) e procure na Wiki e no fórum.</li>
+  <li><strong>Num buscador</strong>: acrescente <code>site:wiki.archlinux.org</code> para ficar só na Wiki, ou <code>site:bbs.archlinux.org</code> para o fórum.</li>
+  <li><strong>Leia a seção Troubleshooting</strong> da página do programa antes de qualquer outra coisa.</li>
+</ol>
+
+<h3>Mensagens em inglês ajudam a buscar</h3>
+<p>O seu Arch fala português, mas a Wiki e o fórum falam inglês. Para buscar (e para colar no fórum), rode o comando de novo com <code>LC_ALL=C</code> na frente: a variável troca o idioma só daquele comando.</p>
+
+<pre class="term">$ pacman -Q xyz
+erro: o pacote "xyz" não foi encontrado
+$ LC_ALL=C pacman -Q xyz
+error: package 'xyz' was not found      « a mesma mensagem, do jeito que está na Wiki e no fórum</pre>
+
+<h3>A Wiki sem internet (ilustrativo)</h3>
+<p>Se a sua rede não funciona, a Wiki online não ajuda. Por isso existem pacotes com a Wiki inteira para ler no próprio computador. Eles estão nos repositórios oficiais, mas <strong>não foram instalados</strong> na VM do guia; as informações abaixo são reais (o <code>-Si</code> consulta o repositório sem instalar nada), o uso é ilustrativo:</p>
+
+<pre class="term">$ pacman -Si arch-wiki-docs arch-wiki-lite wikiman | grep -E "^(Nome|Versão|Descrição|Tamanho instalado)"
+Nome                 : arch-wiki-docs
+Versão               : 20261003-1
+Descrição            : Pages from Arch Wiki optimized for offline browsing
+Tamanho instalado    : 225,81 MiB        « a Wiki em HTML, para o navegador
+Nome                 : arch-wiki-lite
+Versão               : 20261003-1
+Descrição            : Arch Wiki without HTML. 1/9 as big, easily searched & viewable on console
+Tamanho instalado    : 20,76 MiB         « só texto, para ler no terminal
+Nome                 : wikiman
+Versão               : 2.14.1-2
+Descrição            : Offline search engine for manual pages, Arch Wiki, Gentoo Wiki and other documentation
+Tamanho instalado    : 58,38 KiB         « um buscador para as páginas locais</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Como se usa (ilustrativo)</th><th>Bom para</th></tr>
+<tr><td><code>arch-wiki-docs</code></td><td>Abra os arquivos de <code>/usr/share/doc/arch-wiki/html/</code> no navegador</td><td>Desktop sem internet</td></tr>
+<tr><td><code>arch-wiki-lite</code></td><td><code>wiki-search termo</code> e <code>wiki-search número</code></td><td>Terminal puro, como no live</td></tr>
+<tr><td><code>wikiman</code></td><td><code>wikiman termo</code> (busca nas páginas <code>man</code> e, com o <code>arch-wiki-docs</code>, na Wiki)</td><td>Buscar em tudo de uma vez</td></tr>
+</table>
+</div>
+<p>E não esqueça das páginas de manual (<code>man pacman</code>), que já vêm com os programas. A aula <a href="comandos-essenciais.html">Comandos Essenciais</a> mostra como usá-las no Arch.</p>
+
+<hr>
+
+<h2>Quando a Wiki não basta: pedindo ajuda</h2>
+<p>O fórum oficial é o <a href="https://bbs.archlinux.org/">bbs.archlinux.org</a> (BBS, de <em>bulletin board system</em>), em inglês. Também há o canal <code>#archlinux</code> no IRC (rede Libera.Chat) e comunidades não oficiais, como o r/archlinux no Reddit e grupos brasileiros. Em todos, a regra é a mesma: <strong>quem mostra o que já tentou recebe ajuda</strong>.</p>
+
+<ol class="passo">
+  <li><strong>Procure antes</strong>: Wiki (seção Troubleshooting), notícias do Arch (<a href="https://archlinux.org/news/">archlinux.org/news</a>) e o próprio fórum.</li>
+  <li><strong>Título claro</strong>: "Wi-Fi some depois de suspender (iwlwifi, kernel 7.2.10)" é melhor que "AJUDA URGENTE".</li>
+  <li><strong>Diga o que você fez</strong>: o que esperava, o que aconteceu, o que já tentou.</li>
+  <li><strong>Cole a saída dos comandos como texto</strong>, entre as marcações de código do fórum (<code>[code]…[/code]</code>), nunca como foto da tela. Saídas longas vão num serviço de "pastebin".</li>
+  <li><strong>Quando resolver</strong>, conte como e acrescente <code>[SOLVED]</code> ao título: o próximo que buscar vai agradecer.</li>
+</ol>
+
+<h3>As informações que quase sempre pedem</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Mostra</th></tr>
+<tr><td><code>uname -r</code></td><td>O kernel em uso</td></tr>
+<tr><td><code>pacman -Q pacote</code></td><td>A versão do programa com problema</td></tr>
+<tr><td><code>systemctl --failed</code></td><td>Os serviços que falharam (<a href="systemd.html">systemctl</a>)</td></tr>
+<tr><td><code>journalctl -b -p 3</code></td><td>Os erros desde o último boot (<a href="journal.html">journalctl</a>)</td></tr>
+<tr><td><code>lspci -k</code></td><td>As placas (vídeo, rede, som) e o driver que cada uma usa</td></tr>
+<tr><td>A mensagem de erro completa, com <code>LC_ALL=C</code></td><td>O erro em inglês, como os outros vão procurar</td></tr>
+</table>
+</div>
+
+<p>Na VM do guia, a coleta ficou assim:</p>
+<pre class="term">$ uname -r
+7.2.10-arch1-1
+$ pacman -Q linux systemd
+linux 7.2.10.arch1-1
+systemd 262-1
+$ systemctl --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.                  « nenhum serviço falhou: ótimo sinal
+$ lspci -k | head -12
+00:00.0 Host bridge: Intel Corporation 440FX - 82441FX PMC [Natoma] (rev 02)
+        Kernel modules: intel_agp
+00:01.0 ISA bridge: Intel Corporation 82371SB PIIX3 ISA [Natoma/Triton II]
+00:02.0 VGA compatible controller: VMware SVGA II Adapter      « a placa de vídeo (virtual)
+        Subsystem: VMware SVGA II Adapter
+        Kernel driver in use: vmwgfx      « o driver que o kernel está usando
+        Kernel modules: vmwgfx
+00:03.0 Ethernet controller: Intel Corporation 82540EM Gigabit Ethernet Controller (rev 02)
+        Subsystem: Intel Corporation PRO/1000 MT Desktop Adapter
+        Kernel driver in use: e1000
+        Kernel modules: e1000
+00:04.0 System peripheral: InnoTek Systemberatung GmbH VirtualBox Guest Service</pre>
+
+<div class="try" data-goal="ran:uname -r,ran:pacman -Q" data-solucao="uname -r;;pacman -Q linux systemd">
+<p class="try-task"><strong>Missão:</strong> monte o "kit de pedido de ajuda" da Ana: rode <code>uname -r</code> e <code>pacman -Q linux systemd</code>. Depois experimente <code>systemctl --failed</code>.</p>
+</div>
+
+<div class="warning">
+<strong>Não cole o que não deve</strong>
+<p>Antes de publicar uma saída, olhe se não há senhas, chaves, endereços públicos ou nomes que você não quer expor. Arquivos como <code>/etc/shadow</code> e chaves SSH nunca se colam.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"você não pode realizar esta operação a menos que seja root"</strong>
+<pre class="term">$ pacman -S htop
+erro: você não pode realizar esta operação a menos que seja root.</pre>
+<p><strong>Causa:</strong> o comando estava na Wiki com <code>#</code> na frente (root), e você rodou como usuária comum.</p>
+<p><strong>Como resolver:</strong> rode com <code>sudo</code> na frente: <code>sudo pacman -S htop</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Copiei o comando da Wiki e deu "comando não encontrado"</strong>
+<p><strong>Causa provável:</strong> você copiou o <code>#</code> ou o <code>$</code> junto (<code>$ makepkg</code> vira o comando <code>$</code>), ou o programa ainda não está instalado (a seção <em>Installation</em> diz o pacote).</p>
+<p><strong>Como resolver:</strong> apague o prefixo e confira com <code>pacman -Q pacote</code> se o pacote está instalado.</p>
+</div>
+
+<div class="cenario">
+<strong>A página em português manda fazer algo que não existe mais</strong>
+<p><strong>Causa:</strong> a tradução está atrasada em relação à página inglesa (veja a data na caixa de status de tradução).</p>
+<p><strong>Como resolver:</strong> abra a mesma página em inglês pelo menu de idiomas e siga a versão inglesa.</p>
+</div>
+
+<div class="cenario">
+<strong>Ninguém respondeu no fórum</strong>
+<p><strong>Causa comum:</strong> faltou informação (sem saídas, sem versões), ou a resposta já estava na Wiki.</p>
+<p><strong>Como resolver:</strong> responda ao próprio tópico com as saídas da tabela acima e com o que você já tentou. Não abra um tópico repetido.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Onde / o que é</th></tr>
+<tr><td>Wiki</td><td><a href="https://wiki.archlinux.org/">wiki.archlinux.org</a></td></tr>
+<tr><td>Fórum</td><td><a href="https://bbs.archlinux.org/">bbs.archlinux.org</a> (inglês)</td></tr>
+<tr><td>Notícias</td><td><a href="https://archlinux.org/news/">archlinux.org/news</a></td></tr>
+<tr><td>Pacotes oficiais</td><td><a href="https://archlinux.org/packages/">archlinux.org/packages</a></td></tr>
+<tr><td><code># comando</code> / <code>$ comando</code></td><td>Rodar como root / como usuário comum</td></tr>
+<tr><td><em>Install</em> / <em>enable</em></td><td><code>pacman -S</code> / <code>systemctl enable</code></td></tr>
+<tr><td>Note / Warning / Tip</td><td>Nota / Atenção / Dica</td></tr>
+<tr><td><code>LC_ALL=C comando</code></td><td>Mostra a mensagem em inglês, para buscar e colar</td></tr>
+<tr><td><code>arch-wiki-docs</code>, <code>arch-wiki-lite</code>, <code>wikiman</code></td><td>A Wiki offline</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. A Wiki mostra <code># systemctl enable sshd.service</code>. Como a Ana deve rodar isso?</p>
+<label><input type="radio" name="q1"> <code># systemctl enable sshd.service</code>, copiando o <code>#</code>.</label>
+<label><input type="radio" name="q1"> <code>sudo systemctl enable sshd.service</code></label>
+<label><input type="radio" name="q1"> <code>systemctl enable sshd.service</code>, sem nada, como usuária comum.</label>
+<label><input type="radio" name="q1"> Não dá: só o root original pode.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. Qual página da Wiki responde "instalei o Arch, e agora?"</p>
+<label><input type="radio" name="q2"> Installation guide</label>
+<label><input type="radio" name="q2"> List of applications</label>
+<label><input type="radio" name="q2"> Help:Reading</label>
+<label><input type="radio" name="q2"> General recommendations</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. A página em português e a inglesa dizem coisas diferentes. Qual seguir?</p>
+<label><input type="radio" name="q3"> A inglesa: ela é a original, e a tradução pode estar atrasada.</label>
+<label><input type="radio" name="q3"> A portuguesa, sempre.</label>
+<label><input type="radio" name="q3"> A que tiver mais texto.</label>
+<label><input type="radio" name="q3"> Nenhuma: pergunte no fórum antes.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual destas é a melhor forma de mostrar um erro no fórum?</p>
+<label><input type="radio" name="q4"> Uma foto da tela tirada com o celular.</label>
+<label><input type="radio" name="q4"> "Deu erro no pacman, alguém ajuda?"</label>
+<label><input type="radio" name="q4"> O texto completo da saída, em bloco de código, junto com <code>uname -r</code> e a versão do pacote.</label>
+<label><input type="radio" name="q4"> Só o código de saída.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete para ver a mensagem de erro em inglês:</p>
+<div class="ex-code"><input data-answer="LC_ALL=C"> pacman -Q xyz</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o comando que mostra os serviços que falharam:</p>
+<div class="ex-code">systemctl <input data-answer="--failed"></div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Páginas de programa seguem o roteiro Installation → Usage → Configuration → Tips and tricks → Troubleshooting.</li>
+  <li><code>#</code> = root (use <code>sudo</code> ou <code>sudo -i</code>), <code>$</code> = usuário comum; não copie o prefixo.</li>
+  <li>Comece por Installation guide, General recommendations e List of applications.</li>
+  <li>Traduções ajudam a entender; confira a página inglesa (a data está no status de tradução).</li>
+  <li>Busque pelo nome em inglês ou pela mensagem de erro (<code>LC_ALL=C</code>); há a Wiki offline (<code>arch-wiki-docs</code>, <code>arch-wiki-lite</code>, <code>wikiman</code>).</li>
+  <li>No fórum: procure antes, título claro, saídas em texto, <code>[SOLVED]</code> no fim.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> as convenções estão em <a href="https://wiki.archlinux.org/title/Help:Reading">Help:Reading</a> (<a href="https://wiki.archlinux.org/title/Help:Reading_(Portugu%C3%AAs)">em português</a>); como escrever e corrigir páginas, em <a href="https://wiki.archlinux.org/title/Help:Editing">Help:Editing</a> e <a href="https://wiki.archlinux.org/title/ArchWiki:Contributing">ArchWiki:Contributing</a>; as traduções, em <a href="https://wiki.archlinux.org/title/ArchWiki_Translation_Team">ArchWiki Translation Team</a>; e as regras do fórum e do IRC, em <a href="https://terms.archlinux.org/docs/code-of-conduct/">Code of conduct</a> e <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> (<a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

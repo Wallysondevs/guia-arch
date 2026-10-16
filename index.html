@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial Arch Linux — aprenda Arch do zero, como numa escola | Guia Arch</title>
+<meta name="description" content="Curso de Arch Linux do zero ao avançado, em português: instalação manual, pacman, AUR, systemd e recuperação, com cada comando explicado parte por parte, terminal simulado e saídas conferidas num Arch Linux real.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="hero">
+<h1>Tutorial Arch Linux</h1>
+<p>Aprenda Arch Linux do zero, como numa escola: da instalação feita à mão até consertar um sistema que não liga. Cada comando é explicado parte por parte, você vê exatamente o que ele devolve e pratica num terminal simulado aqui mesmo no navegador. Tudo foi conferido num Arch Linux de verdade, instalado seguindo a Arch Wiki.</p>
+<a class="btn btn-lg" href="introducao.html">Comece pelo Nível 1 &#10095;</a>
+</div>
+
+<div class="pager"></div>
+
+<div class="warning">
+<strong>O sistema não liga depois de uma atualização?</strong>
+<p>Respire: quase sempre dá para consertar sem reinstalar. Dê boot pelo pendrive do Arch, entre no sistema instalado com <code>arch-chroot</code> e refaça o que faltou. O passo a passo está em <a href="chroot-resgate.html">Resgate com chroot</a>; os erros mais comuns do <code>pacman</code> (chaves, arquivos em conflito, atualização interrompida) estão em <a href="problemas-update.html">Erros de Atualização</a>. Se o problema é o computador <strong>travado agora</strong>, vá para <a href="travamentos.html">Quando o Sistema Trava</a>.</p>
+</div>
+
+<h2>Experimente agora</h2>
+<p>A caixa abaixo é um terminal simulado: uma máquina fictícia chamada <strong>notebook</strong>, com a usuária <strong>ana</strong>, rodando Arch Linux. Ela funciona dentro do seu navegador e nada do que você digitar afeta o seu computador. Clique dentro dela, digite <code>pacman -Q bash</code> e aperte <kbd>Enter</kbd>.</p>
+
+<div class="try" data-goal="ran:^\s*pacman -Q" data-solucao="pacman -Q bash;;cat /etc/os-release">
+<p class="try-task"><strong>Missão:</strong> pergunte ao <code>pacman</code> qual versão do Bash está instalada com <code>pacman -Q bash</code>. Depois veja a "carteira de identidade" do sistema com <code>cat /etc/os-release</code>, e digite <code>help</code> para ver tudo o que funciona aqui.</p>
+</div>
+
+<p>Na VM do guia, as respostas foram estas:</p>
+
+<pre class="term">$ pacman -Q bash
+bash 5.3.20-1                  « nome do pacote, versão 5.3.20, lançamento 1
+$ cat /etc/os-release
+NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch
+BUILD_ID=rolling               « não há "versão 12" ou "versão 40": o Arch é rolling release
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"   « a famosa Arch Wiki
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo</pre>
+
+<p>Repare em duas coisas que você só vê no Arch. Primeiro, o <code>-1</code> no fim de <code>5.3.20-1</code>: é o número do <em>lançamento do pacote</em> (se o Arch corrigir o empacotamento sem mudar o Bash, vira <code>5.3.20-2</code>). Segundo, <code>BUILD_ID=rolling</code>: enquanto o Debian e o Ubuntu têm versões com nome e número, o Arch não tem versão nenhuma. Ele é atualizado continuamente, e a aula <a href="rolling-release.html">Rolling Release</a> explica o que isso muda na sua vida.</p>
+
+<hr>
+
+<h2>Como as aulas funcionam</h2>
+<p>Nenhum comando aparece "seco". Toda aula segue o mesmo caminho:</p>
+<ol class="passo">
+  <li><strong>A ideia primeiro.</strong> Antes do comando, você entende o problema que ele resolve (o que é um pacote, um espelho, uma partição EFI…).</li>
+  <li><strong>Anatomia do comando.</strong> Cada pedaço é numerado e explicado: o programa, as opções e os argumentos, inclusive de onde vem o nome (<code>-S</code> = <em>sync</em>).</li>
+  <li><strong>Terminal com a resposta real.</strong> Você vê o que aparece na tela de um Arch Linux em português, com etiquetas apontando o que importa e o código de saída (<code>echo $?</code>).</li>
+  <li><strong>Várias formas de fazer.</strong> GRUB ou systemd-boot? <code>yay</code> ou <code>paru</code>? Uma tabela "Qual usar?" ajuda a escolher.</li>
+  <li><strong>Quando não funciona.</strong> A mensagem de erro real, a causa, como confirmar e como resolver.</li>
+  <li><strong>Experimente, exercícios e Arch Wiki.</strong> Missões no terminal simulado, exercícios com correção na hora e, no fim, as páginas da Wiki que aprofundam o tema.</li>
+</ol>
+
+<p>Veja um exemplo de anatomia, com o comando que todo usuário de Arch digita toda semana:</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda o comando seguinte como administrador (root). Mexer nos pacotes muda o sistema inteiro, por isso precisa de permissão. Veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</dd>
+  <dt>pacman</dt><dd>O gerenciador de pacotes do Arch. O nome vem de <em>package manager</em> (e lembra o jogo, de propósito).</dd>
+  <dt>-S</dt><dd><em>Sync</em>: a operação que conversa com os repositórios (instalar, procurar, atualizar).</dd>
+  <dt>y</dt><dd><em>Refresh</em>: baixa a lista atualizada de pacotes dos espelhos (os arquivos <code>core.db</code> e <code>extra.db</code>).</dd>
+  <dt>u</dt><dd><em>Sysupgrade</em>: atualiza todos os pacotes instalados que têm versão nova nessa lista.</dd>
+</dl>
+
+<p>Juntas, as letras formam <code>-Syu</code>: "sincronize, baixe a lista nova e atualize tudo". As opções de uma letra podem ser grudadas, por isso <code>-Syu</code> é o mesmo que <code>-S -y -u</code>. Na VM do guia, num dia em que estava tudo em dia, a resposta foi curta:</p>
+
+<pre class="term">$ checkupdates                « mostra o que o -Syu atualizaria, sem mexer no sistema
+$ echo $?
+2                              « 2 = nenhuma atualização pendente (0 = há atualizações)
+#> pacman -Su
+:: Iniciando atualização completa do sistema...
+nada para fazer                « tudo já está na versão mais nova</pre>
+
+<p>Quando há novidades, o <code>pacman</code> mostra a lista de pacotes, o tamanho do download e pergunta <code>:: Continuar a instalação? [S/n]</code>. A aula <a href="atualizar.html">Atualizar o Sistema</a> mostra uma atualização inteira, linha por linha, e explica por que nunca se deve rodar só o <code>-Sy</code> seguido de um <code>-S pacote</code> (a "atualização parcial").</p>
+
+<hr>
+
+<h2>Escolha sua trilha</h2>
+<div class="trilhas">
+  <div class="trilha n1">
+    <h3>Nível 1 · Iniciante</h3>
+    <p>Para quem nunca usou Arch (e talvez nunca tenha aberto um terminal).</p>
+    <ul>
+      <li>O que é o Arch e se ele é para você</li>
+      <li>Instalação manual, passo a passo, e o <code>archinstall</code></li>
+      <li><code>sudo</code>, usuários e um desktop</li>
+      <li><code>pacman</code> e atualizações</li>
+      <li>O que fazer quando trava</li>
+    </ul>
+    <a class="btn" href="introducao.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n2">
+    <h3>Nível 2 · Intermediário</h3>
+    <p>Administrar o seu próprio Arch.</p>
+    <ul>
+      <li><code>pacman</code> avançado, cache, <code>.pacnew</code>, espelhos e chaves</li>
+      <li>AUR: <code>makepkg</code>, <code>yay</code>, <code>paru</code> e segurança</li>
+      <li>systemd, journal, timers, usuários e permissões</li>
+      <li>Rede, SSH, firewall, discos e kernels</li>
+    </ul>
+    <a class="btn" href="pacman-avancado.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n3">
+    <h3>Nível 3 · Avançado</h3>
+    <p>Do sistema perfeito ao sistema recuperado.</p>
+    <ul>
+      <li>Btrfs, snapshots, LUKS e LVM</li>
+      <li>Resgate com chroot e erros de atualização</li>
+      <li>Escrever PKGBUILDs e hooks do pacman</li>
+      <li>nginx, containers e máquinas virtuais</li>
+    </ul>
+    <a class="btn" href="btrfs.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha proj">
+    <h3>Projetos</h3>
+    <p>Laboratórios completos numa máquina virtual.</p>
+    <ul>
+      <li>Instalação completa do zero</li>
+      <li>Montar um desktop KDE</li>
+      <li>Btrfs com snapshots automáticos</li>
+      <li>Empacotar um programa seu e servidor caseiro</li>
+    </ul>
+    <a class="btn" href="projetos.html">Ver projetos &#10095;</a>
+  </div>
+  <div class="trilha ref">
+    <h3>Referência</h3>
+    <p>Para consultar no dia a dia.</p>
+    <ul>
+      <li><code>pacman</code> × <code>apt</code> × <code>dnf</code></li>
+      <li>Referência de comandos e glossário</li>
+      <li>Solução de problemas</li>
+      <li>Quiz para testar o que você sabe</li>
+    </ul>
+    <a class="btn" href="ref-pacman.html">Consultar &#10095;</a>
+  </div>
+</div>
+
+<div class="tip">
+<strong>A regra de ouro</strong>
+<p>Ler não basta: digite cada exemplo. Use o terminal simulado das aulas e, quando ele não for suficiente, instale o Arch numa máquina virtual (VirtualBox, GNOME Boxes ou virt-manager). Se algo quebrar, você recria a VM em minutos e aprendeu algo no caminho. Foi assim que este guia foi feito: a VM tem o mesmo nome (<code>notebook</code>) e a mesma usuária (<code>ana</code>) que você vê nos exemplos.</p>
+</div>
+
+<hr>
+
+<h2>Como ler este guia</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Elemento</th><th>O que significa</th></tr>
+<tr><td><code>[ana@notebook ~]$</code></td><td>O prompt do Arch: usuária <code>ana</code>, na máquina <code>notebook</code>, na pasta pessoal (<code>~</code>). Entre colchetes aparece só o <strong>nome</strong> da pasta atual: em <code>/home/ana/Documentos</code> ele vira <code>[ana@notebook Documentos]$</code>. O que vem depois do <code>$</code> é o comando digitado.</td></tr>
+<tr><td><code>[root@notebook ~]#</code></td><td>Comando rodado como administrador (root). O <code>#</code> no fim avisa que esse shell pode mexer em tudo. Na prática, a <code>ana</code> chega lá com <code>sudo</code>.</td></tr>
+<tr><td><code>root@archiso ~ #</code></td><td>O ambiente live do pendrive de instalação (outro shell, o zsh, com outro prompt). Aparece só nas aulas de instalação.</td></tr>
+<tr><td>Linhas sem prompt</td><td>A resposta do computador, copiada da VM do guia.</td></tr>
+<tr><td><span class="t-a">← etiqueta</span></td><td>Uma explicação do guia sobre aquela linha. Não aparece no terminal real.</td></tr>
+<tr><td><code>…</code> numa saída</td><td>Trecho encurtado (a saída real era mais longa).</td></tr>
+<tr><td><code>&lt;texto&gt;</code></td><td>Troque pelo seu valor. Ex.: <code>pacman -Q &lt;pacote&gt;</code> vira <code>pacman -Q bash</code>.</td></tr>
+<tr><td>"ilustrativo"</td><td>Exemplo que não pôde ser rodado na VM (um disco de verdade, um reboot, um pacote que não foi instalado). O texto sempre avisa.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Versão de referência: Arch Linux de outubro de 2026</strong>
+<p>O Arch não tem versões, então o guia diz <em>quando</em> foi conferido. A VM foi instalada à mão com a ISO <code>2026.06.01</code> e atualizada em outubro de 2026: kernel <code>7.2.10-arch1-1</code> (mais o <code>linux-lts</code> 6.18.57), Bash 5.3.20, pacman 7.1 (libalpm 16.0.1), GRUB em modo UEFI, sistema em português do Brasil (<code>pt_BR.UTF-8</code>), teclado <code>br-abnt2</code>, fuso <code>America/Sao_Paulo</code>, sem interface gráfica. Os números de versão no seu Arch serão outros (mais novos); os comandos e as ideias continuam os mesmos.</p>
+</div>
+
+<div class="tip">
+<strong>Vem do Debian, do Ubuntu ou do Fedora?</strong>
+<p>Muita coisa é igual (Bash, systemd, as ferramentas GNU), mas o dia a dia muda: no lugar de <code>apt install</code> você usa <code>pacman -S</code>, não há "atualizar a versão" do sistema, o instalador é um roteiro de comandos e muito pacote que nesses sistemas vem pronto (<code>sudo</code>, um editor, o <code>man</code>) é instalado à parte. Veja a tabela <a href="ref-pacman.html">pacman × apt × dnf</a> e a comparação <a href="arch-x-outras.html">Arch × Debian × Fedora</a>.</p>
+</div>
+
+<p><strong>Na Arch Wiki:</strong> a porta de entrada oficial é a página <a href="https://wiki.archlinux.org/title/Arch_Linux">Arch Linux</a> (<a href="https://wiki.archlinux.org/title/Arch_Linux_(Portugu%C3%AAs)">em português</a>); a instalação está no <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>), e o que fazer depois, em <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a> (<a href="https://wiki.archlinux.org/title/General_recommendations_(Portugu%C3%AAs)">em português</a>). O <code>pacman</code> tem página própria: <a href="https://wiki.archlinux.org/title/Pacman">pacman</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>). A aula <a href="arch-wiki.html">A Arch Wiki</a> ensina a tirar o máximo dela.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

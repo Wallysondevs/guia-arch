@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Terminal Simulado — como usar o terminal e o editor de script do guia | Guia Arch</title>
+<meta name="description" content="Como usar o terminal simulado e o editor de script do Guia Arch: a máquina fictícia da Ana (igual à VM do guia), o que funciona (pacman, sudo, systemctl, journalctl…) e o que não funciona, atalhos, botões e uma trilha de missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Terminal Simulado</span></h1>
+
+<p class="intro">As aulas deste guia têm um terminal e um editor de script que rodam dentro da própria página. Eles imitam um Arch Linux de verdade: o Bash 5.3, os comandos do dia a dia e também o <code>pacman</code>, o <code>sudo</code> e o <code>systemctl</code>, numa máquina fictícia igual à VM onde o guia foi conferido. Nada do que você digita sai do navegador: pode "instalar", remover e errar à vontade, e um clique em <strong>Reiniciar</strong> traz tudo de volta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como usar as caixas "Experimente": digitar, teclas, missões e botões.</li>
+  <li>Como usar o editor de script: <strong>Rodar</strong>, <strong>Restaurar</strong> e argumentos.</li>
+  <li>O que existe na máquina fictícia: usuária, disco, pacotes, serviços e arquivos.</li>
+  <li>O que funciona (<code>pacman</code>, <code>sudo</code>, <code>systemctl</code>…) e o que não funciona.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Por que um terminal simulado?</h2>
+<p>Aprender Arch envolve comandos que, num computador de verdade, dão medo: remover pacotes, parar serviços, virar root. Aqui esse medo não existe: o simulador é um programa da página, não o seu sistema. Você pode rodar <code>sudo pacman -Rs</code> no que quiser, parar o <code>sshd</code>, apagar a pasta da Ana. Ao clicar em <strong>Reiniciar</strong>, a máquina volta ao estado inicial.</p>
+<p>Ele não é um Linux de verdade: é um interpretador de Bash escrito em JavaScript, com os dados reais da VM do guia (os pacotes instalados, os serviços, as mensagens em português). Por isso as respostas devem ser as mesmas que você veria num Arch. Quando quiser ir além do que ele sabe (instalar de verdade, editar arquivos com o <code>nano</code>, usar a rede), use uma máquina virtual com Arch (veja <a href="arch-e-para-voce.html">O Arch É para Você?</a>).</p>
+
+<hr>
+
+<h2>O terminal: caixas "Experimente você mesmo"</h2>
+<ol class="passo">
+  <li>Clique dentro da janela escura do terminal.</li>
+  <li>Digite um comando, por exemplo <code>pacman -Q bash</code>, e aperte <kbd>Enter</kbd>.</li>
+  <li>Leia a resposta. Um prompt novo (<code>[ana@notebook ~]$</code>) aparece quando o comando termina.</li>
+  <li>Se a caixa tiver uma <strong>missão</strong>, um aviso de missão cumprida aparece embaixo da janela quando você chegar ao objetivo.</li>
+</ol>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla</th><th>No simulador</th></tr>
+<tr><td><kbd>Enter</kbd></td><td>Executa a linha. Se o comando estiver incompleto (aspa aberta, <code>for</code> sem <code>done</code>), aparece o <code>&gt; </code> de continuação, como no Bash.</td></tr>
+<tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Navega pelos comandos já digitados naquela caixa.</td></tr>
+<tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Move o cursor dentro da linha.</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Completa nomes de comandos, pastas, arquivos e variáveis. Dois <kbd>Tab</kbd> listam as opções.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Limpa a tela (o comando <code>clear</code> também).</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Desiste da linha atual e interrompe um comando que está rodando.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Vai para o começo / o fim da linha.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>U</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Apaga até o começo / até o fim / cola de volta o que foi apagado.</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Busca no histórico daquela caixa.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Botão</th><th>Faz</th></tr>
+<tr><td><strong>Reiniciar</strong></td><td>Volta a máquina daquela caixa ao estado inicial: arquivos, pacotes, serviços, variáveis, pasta atual e histórico.</td></tr>
+<tr><td><strong>Ver solução</strong></td><td>Mostra uma forma de cumprir a missão. Tente antes de abrir.</td></tr>
+</table>
+</div>
+
+<p>Cada caixa é uma máquina independente: o que você instala ou apaga numa não aparece nas outras, nem em outra página.</p>
+
+<div class="try" data-goal="ran:^\s*ls,ran:pacman -Q" data-solucao="ls;;pacman -Q bash">
+<p class="try-task"><strong>Missão:</strong> explore à vontade. Comece por <code>ls</code>, depois <code>pacman -Q bash</code>. Experimente também <code>uname -r</code>, <code>cat /etc/os-release</code> e <code>help</code>.</p>
+</div>
+
+<h3>Perguntas do <code>sudo</code> e do <code>pacman</code></h3>
+<p>Como num Arch real, o <code>sudo</code> pede a senha da Ana e o <code>pacman</code> pede confirmação antes de mudar algo:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>O que responder no simulador</th></tr>
+<tr><td><code>[sudo] senha para ana:</code></td><td><code>ana</code> e <kbd>Enter</kbd>. Nada aparece enquanto você digita (nem asteriscos): é assim no Arch real. Depois de acertar, o <code>sudo</code> não pergunta de novo por 5 minutos.</td></tr>
+<tr><td><code>:: Continuar a instalação? [S/n]</code> ou <code>:: Deseja remover estes pacotes? [S/n]</code></td><td><kbd>Enter</kbd> ou <code>S</code> confirma; <code>n</code> cancela. A letra maiúscula é a resposta padrão.</td></tr>
+</table>
+</div>
+<p>A aula <a href="sudo-usuarios.html">sudo, root e Usuários</a> explica o <code>sudo</code> com calma, e <a href="pacman.html">pacman: o Básico</a>, as perguntas do <code>pacman</code>.</p>
+
+<hr>
+
+<h2>O editor de script: "Experimente: edite e rode o script"</h2>
+<p>Algumas aulas trazem um script para você mudar e rodar, como um "Try it Yourself":</p>
+
+<ol class="passo">
+  <li>O código aparece num editor de verdade: clique e altere o que quiser.</li>
+  <li>Se o script usa argumentos (<code>$1</code>, <code>$2</code>…), eles ficam num campo próprio; você pode mudá-los.</li>
+  <li>Clique em <strong>Rodar</strong>. O simulador grava o código num arquivo na pasta da Ana e executa <code>bash arquivo.sh argumentos</code>.</li>
+  <li>Aparecem a <strong>saída</strong> e o <strong>código de saída</strong> (<code>0</code> = deu certo).</li>
+</ol>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Botão / campo</th><th>Faz</th></tr>
+<tr><td><strong>Rodar</strong></td><td>Grava e executa o script, mostrando a saída e o código de saída.</td></tr>
+<tr><td><strong>Restaurar</strong></td><td>Volta o código ao original da aula (desfaz as suas mudanças).</td></tr>
+<tr><td><strong>Ver solução</strong></td><td>Mostra uma versão do script que cumpre a missão.</td></tr>
+<tr><td>Argumentos</td><td>O que vai depois do nome do script. Ex.: <code>bash htop</code> vira <code>$1=bash</code> e <code>$2=htop</code>.</td></tr>
+<tr><td>Entrada</td><td>Quando o script usa <code>read</code>, o simulador abre um campo para você digitar a resposta.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>A máquina fictícia (= a VM do guia)</h2>
+<p>Todos os exemplos do guia, no texto e nos simuladores, acontecem na mesma máquina. Ela existe de verdade: é uma VM no VirtualBox, instalada à mão seguindo a Arch Wiki, onde cada saída do guia foi conferida. O simulador começa sempre no estado dela.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Valor</th></tr>
+<tr><td>Usuária</td><td><code>ana</code> (uid 1000), grupos <code>ana</code> e <code>wheel</code> (o grupo que pode usar <code>sudo</code>)</td></tr>
+<tr><td>Senha para o <code>sudo</code></td><td><code>ana</code> (só no simulador)</td></tr>
+<tr><td>Nome da máquina</td><td><code>notebook</code></td></tr>
+<tr><td>Sistema</td><td>Arch Linux (rolling), kernel <code>7.2.10-arch1-1</code>; também instalado o <code>linux-lts</code> 6.18.57</td></tr>
+<tr><td>Shell</td><td>GNU Bash 5.3.20, com o <code>.bashrc</code> padrão do Arch</td></tr>
+<tr><td>Idioma, fuso, teclado</td><td><code>pt_BR.UTF-8</code>, <code>America/Sao_Paulo</code>, <code>br-abnt2</code></td></tr>
+<tr><td>Boot</td><td>UEFI com GRUB</td></tr>
+<tr><td>Rede</td><td>NetworkManager, placa <code>enp0s3</code> (no simulador, sem internet)</td></tr>
+<tr><td>Interface gráfica</td><td>Nenhuma: só o terminal (veja <a href="desktop.html">Instalar um Desktop</a>)</td></tr>
+<tr><td>Data e hora</td><td>Fixas no simulador: sexta-feira, 16 de outubro de 2026, 14:30</td></tr>
+</table>
+</div>
+
+<h3>O disco</h3>
+<pre class="term">$ lsblk /dev/sda
+NAME   MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+sda      8:0    0  30G  0 disk
+├─sda1   8:1    0   1G  0 part /boot      « partição EFI (vfat): bootloader e kernels
+├─sda2   8:2    0   4G  0 part [SWAP]     « área de troca
+└─sda3   8:3    0  25G  0 part /          « a raiz (ext4): todo o resto</pre>
+<p>Esse é o particionamento que a trilha de <a href="particionar.html">Instalação</a> constrói, passo a passo.</p>
+
+<h3>Pacotes e serviços</h3>
+<p>O simulador conhece os 408 pacotes instalados na VM, com as versões reais, e uma parte do repositório (os pacotes que as aulas usam). Os serviços também são os da VM: alguns ligados, outros desligados de propósito, para as aulas.</p>
+
+<pre class="term">$ pacman -Q linux bash pacman
+linux 7.2.10.arch1-1
+bash 5.3.20-1
+pacman 7.1.0.r9.g54d9411-3
+$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)
+$ systemctl is-active sshd NetworkManager nginx cronie
+active                                  « sshd: ligado
+active                                  « NetworkManager: ligado
+inactive                                « nginx: desligado (as aulas ligam)
+inactive                                « cronie: desligado</pre>
+
+<h3>Pastas e arquivos</h3>
+<p>A pasta pessoal (<code>/home/ana</code>, modo 700: só a Ana entra) tem as pastas comuns de um desktop em português, arquivos de exemplo e a pasta <code>aur</code>, com as receitas usadas nas aulas do AUR:</p>
+
+<pre class="term">$ ls
+'Área de trabalho'   Documentos   frutas.txt   Modelos   Público
+ aur                 Downloads    Imagens      Música    Vídeos
+$ ls Documentos Downloads aur
+aur:                               « o ls mostra as pastas em ordem alfabética
+downgrade  paru-bin  yay-bin
+
+Documentos:
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt
+
+Downloads:
+archlinux-x86_64.iso  foto.jpg  fotos-viagem.zip  manual.pdf  musica.mp3</pre>
+
+<p>Os arquivos de texto que as aulas mais usam:</p>
+
+<pre class="term">$ cat frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana                             « 7 linhas, com repetições: bom para sort e uniq
+$ cat Documentos/notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+$ cat Documentos/alunos.csv
+nome,idade,cidade,nota             « cabeçalho: os nomes das colunas
+Ana,29,Recife,9.5
+Bruno,34,Curitiba,7.0
+Carla,22,Salvador,8.5
+Diego,41,Manaus,6.0
+Elisa,27,Porto Alegre,10.0
+$ cat Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+192.168.0.10 - - [15/Oct/2026:09:06:44] "POST /login HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:07:02] "GET / HTTP/1.1" 200</pre>
+
+<p>Os arquivos de <code>Downloads</code> não têm conteúdo de verdade (a ISO, as fotos e a música são "cascas" do tamanho certo, cheias de zeros): servem para treinar curingas (<code>*.jpg</code>) e organização de arquivos.</p>
+
+<hr>
+
+<h2>O que funciona e o que não funciona</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Funciona</th><th>Exemplos</th></tr>
+<tr><td>A linguagem do Bash</td><td><code>;</code> <code>&amp;&amp;</code> <code>||</code>, pipes <code>|</code>, <code>if</code>, <code>case</code>, <code>for</code>, <code>while</code>, funções, variáveis, aspas, curingas, redirecionamentos</td></tr>
+<tr><td>Arquivos e texto</td><td><code>ls cd pwd cat less head tail cp mv rm mkdir touch chmod grep sed awk find sort uniq wc cut diff stat du df</code>…</td></tr>
+<tr><td>Pacotes</td><td><code>pacman -Q -Qi -Ql -Qo -Qs -Qe -Qm -Qdt -Qu -Ss -Si -S -R -Rs -Rns -Syu -Sc -F -Fy</code> (instalação e remoção simuladas, com as perguntas reais)</td></tr>
+<tr><td>Administrador</td><td><code>sudo</code> (senha <code>ana</code>), <code>sudo -i</code>, <code>su</code>, <code>su -</code></td></tr>
+<tr><td>Serviços e logs</td><td><code>systemctl status/start/stop/restart/enable/disable/is-active/is-enabled/list-units --type=service/--failed</code>; <code>journalctl -u -b -p -n -f</code></td></tr>
+<tr><td>Informações do sistema</td><td><code>uname</code>, <code>hostnamectl</code>, <code>localectl</code>, <code>timedatectl</code>, <code>lsblk</code>, <code>df</code>, <code>free</code>, <code>ip a</code>, <code>uptime</code>, <code>cat /etc/os-release</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Não funciona</th><th>Por quê / onde ver</th></tr>
+<tr><td>Instalar de verdade, rede (<code>curl</code>, <code>ping</code>, <code>ssh</code>)</td><td>Tudo roda dentro da página, sem internet. Os pacotes "instalados" mudam só o estado simulado.</td></tr>
+<tr><td>AUR: <code>yay</code>, <code>paru</code>, <code>makepkg</code></td><td>Compilam e baixam programas. As aulas do AUR mostram as saídas reais em blocos de terminal.</td></tr>
+<tr><td>Editores e telas cheias: <code>nano</code>, <code>vim</code>, <code>man</code>, <code>htop</code></td><td>Precisam de uma tela interativa. <code>less</code> mostra tudo de uma vez.</td></tr>
+<tr><td>Discos: <code>fdisk</code>, <code>mkfs</code>, <code>mount</code>; <code>reboot</code>; o ambiente live da instalação</td><td>Mexem em hardware. As aulas mostram as saídas reais da instalação da VM.</td></tr>
+</table>
+</div>
+
+<p>Quando você tenta algo que o simulador não sabe fazer, ele responde com uma linha que começa com <code>(simulador)</code>: é uma limitação dele, não um erro do Arch. Já um comando que realmente não existe responde como o Bash real: <code>bash: xyz: comando não encontrado</code>.</p>
+
+<h3>Diferenças que você pode notar</h3>
+<ul>
+  <li><strong>Relógio parado</strong>: <code>date</code> sempre mostra 16/10/2026, 14:30, para os exemplos ficarem iguais aos do guia; o <code>sleep</code> termina na hora.</li>
+  <li><strong>Números fictícios</strong>: os PIDs dos processos e alguns números do <code>df</code>, <code>free</code> e <code>ps</code> não são os da VM.</li>
+  <li><strong>Repositório parcial</strong>: <code>pacman -Ss</code> procura só nos pacotes que as aulas usam (e nas dependências deles), não nos 15 mil do repositório real.</li>
+  <li><strong>Pacotes sem arquivos</strong>: depois de um <code>sudo pacman -S</code> simulado, o pacote aparece no <code>pacman -Q</code>, mas o programa não fica disponível para rodar.</li>
+</ul>
+
+<hr>
+
+<h2>Trilha de missões</h2>
+<p>Cada caixa abaixo é uma máquina nova. Se travar, abra a solução.</p>
+
+<h3>Missão 1: ir até Downloads</h3>
+<div class="try" data-goal="cwd:~/Downloads" data-solucao="pwd;;ls;;cd Downloads">
+<p class="try-task"><strong>Missão:</strong> descubra onde você está com <code>pwd</code>, veja o que existe com <code>ls</code> e entre na pasta <code>Downloads</code> com <code>cd</code>. Repare que o prompt muda para <code>[ana@notebook Downloads]$</code>.</p>
+</div>
+
+<h3>Missão 2: ler as notas</h3>
+<div class="try" data-goal="out:Estudar Bash" data-solucao="cat Documentos/notas.txt">
+<p class="try-task"><strong>Missão:</strong> mostre o conteúdo do arquivo <code>notas.txt</code>, que está dentro de <code>Documentos</code>. Use <kbd>Tab</kbd> para completar os nomes.</p>
+</div>
+
+<h3>Missão 3: qual é o kernel?</h3>
+<div class="try" data-goal="out:linux 7.2.10" data-solucao="pacman -Q linux">
+<p class="try-task"><strong>Missão:</strong> pergunte ao <code>pacman</code> a versão do pacote <code>linux</code> (o kernel). Depois compare com <code>uname -r</code>.</p>
+</div>
+
+<h3>Missão 4: remover um pacote com sudo</h3>
+<div class="try" data-goal="nopkg:tree" data-solucao="sudo pacman -Rs tree" data-stdin="ana\nS">
+<p class="try-task"><strong>Missão:</strong> a Ana não usa mais o <code>tree</code>. Remova-o com <code>sudo pacman -Rs tree</code>: digite a senha <code>ana</code> quando o <code>sudo</code> pedir e confirme a remoção. Depois confira com <code>pacman -Q tree</code> (a resposta deve ser um erro).</p>
+</div>
+
+<h3>Missão 5: ligar um serviço</h3>
+<div class="try" data-goal="svc:nginx=active" data-solucao="systemctl is-active nginx;;sudo systemctl start nginx" data-stdin="ana">
+<p class="try-task"><strong>Missão:</strong> o servidor web <code>nginx</code> está desligado. Confira com <code>systemctl is-active nginx</code> e ligue-o com <code>sudo systemctl start nginx</code>. Veja o resultado com <code>systemctl status nginx</code>. (A aula <a href="systemd.html">systemctl e Serviços</a> explica cada parte.)</p>
+</div>
+
+<h3>Missão 6: um script que consulta o pacman</h3>
+<p>O script percorre uma lista de pacotes e pergunta a versão de cada um ao <code>pacman</code>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>for p in bash linux; do</code></td><td>Repete o bloco para cada nome da lista, guardando o nome na variável <code>p</code>.</td></tr>
+<tr><td><code>pacman -Q "$p"</code></td><td>Mostra o nome e a versão do pacote da vez.</td></tr>
+<tr><td><code>done</code></td><td>Fim do bloco.</td></tr>
+</table>
+</div>
+
+<div class="tryscript" data-file="versoes.sh" data-goal="out:pacman 7.1.0">
+<p class="try-task"><strong>Missão:</strong> acrescente o <code>pacman</code> à lista, para o script mostrar também a versão do próprio gerenciador de pacotes, e clique em <strong>Rodar</strong>.</p>
+<pre class="script">#!/usr/bin/env bash
+for p in bash linux; do
+  pacman -Q "$p"
+done
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+for p in bash linux pacman; do
+  pacman -Q "$p"
+done
+</pre>
+</div>
+
+<p>Na VM do guia, a mesma lista deu:</p>
+<pre class="term">$ for p in bash linux pacman; do pacman -Q "$p"; done
+bash 5.3.20-1
+linux 7.2.10.arch1-1
+pacman 7.1.0.r9.g54d9411-3</pre>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Digito e nada aparece</strong>
+<p><strong>O que aconteceu:</strong> o terminal não está selecionado; ou ele está pedindo uma senha (o <code>sudo</code> não mostra o que você digita).</p>
+<p><strong>Como resolver:</strong> clique dentro da janela escura. Se a última linha for <code>[sudo] senha para ana:</code>, digite <code>ana</code> e aperte <kbd>Enter</kbd>, mesmo sem ver nada.</p>
+</div>
+
+<div class="cenario">
+<strong>"Sinto muito, tente novamente."</strong>
+<p><strong>O que aconteceu:</strong> a senha do <code>sudo</code> estava errada. No simulador, a senha é <code>ana</code>; num Arch de verdade, é a senha da sua conta.</p>
+<p><strong>Como resolver:</strong> digite de novo. Depois de três erros, o <code>sudo</code> desiste (<code>sudo: 3 tentativas de senha incorreta</code>); é só rodar o comando de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Instalei um programa e ele "não existe"</strong>
+<p><strong>O que aconteceu:</strong> no simulador, a instalação muda a lista de pacotes, mas não traz o programa de verdade.</p>
+<p><strong>Como resolver:</strong> é uma limitação do simulador. Para usar o programa, instale num Arch de verdade (uma VM serve).</p>
+</div>
+
+<div class="cenario">
+<strong>Apaguei tudo e agora os exemplos não funcionam</strong>
+<p><strong>O que aconteceu:</strong> os exemplos esperam a máquina no estado inicial.</p>
+<p><strong>Como resolver:</strong> clique em <strong>Reiniciar</strong> naquela caixa.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Você rodou <code>sudo pacman -Rns linux</code> numa caixa do simulador. O que acontece com o seu computador?</p>
+<label><input type="radio" name="q1"> O kernel do seu computador é removido.</label>
+<label><input type="radio" name="q1"> O navegador fecha.</label>
+<label><input type="radio" name="q1"> Nada: o simulador só existe dentro da página; Reiniciar traz o pacote de volta.</label>
+<label><input type="radio" name="q1"> O pacote some de todas as caixas do guia.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Qual é a senha do <code>sudo</code> no simulador?</p>
+<label><input type="radio" name="q2"> <code>root</code></label>
+<label><input type="radio" name="q2"> <code>ana</code></label>
+<label><input type="radio" name="q2"> Não há senha.</label>
+<label><input type="radio" name="q2"> <code>1234</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Qual destes comandos o simulador <strong>não</strong> roda?</p>
+<label><input type="radio" name="q3"> <code>pacman -Qi bash</code></label>
+<label><input type="radio" name="q3"> <code>sudo systemctl start nginx</code></label>
+<label><input type="radio" name="q3"> <code>grep banana frutas.txt</code></label>
+<label><input type="radio" name="q3"> <code>yay -S google-chrome</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A que corresponde a máquina fictícia do simulador?</p>
+<label><input type="radio" name="q4"> À VM do guia: mesmos pacotes, serviços, usuária e arquivos.</label>
+<label><input type="radio" name="q4"> Ao seu computador.</label>
+<label><input type="radio" name="q4"> A um Ubuntu.</label>
+<label><input type="radio" name="q4"> A um servidor na internet.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O simulador roda na página: nada afeta o seu computador; <strong>Reiniciar</strong> volta ao começo.</li>
+  <li>No terminal: <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>Tab</kbd>, <kbd>Ctrl</kbd>+<kbd>L</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>R</kbd>.</li>
+  <li><code>sudo</code> pede a senha <code>ana</code> (sem mostrar nada); o <code>pacman</code> pergunta <code>[S/n]</code> antes de mudar algo.</li>
+  <li>A máquina é a VM do guia: <code>[ana@notebook ~]$</code>, grupo <code>wheel</code>, kernel 7.2.10, 408 pacotes, sem desktop.</li>
+  <li>Funciona: Bash, arquivos, <code>pacman</code>, <code>sudo</code>, <code>systemctl</code>, <code>journalctl</code>. Não funciona: rede, AUR, editores, discos, reboot.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> para montar o seu próprio laboratório, veja <a href="https://wiki.archlinux.org/title/VirtualBox/Install_Arch_Linux_as_a_guest">VirtualBox/Install Arch Linux as a guest</a> e <a href="https://wiki.archlinux.org/title/QEMU">QEMU</a> (<a href="https://wiki.archlinux.org/title/QEMU_(Portugu%C3%AAs)">em português</a>); o Bash está em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> (<a href="https://wiki.archlinux.org/title/Bash_(Portugu%C3%AAs)">em português</a>) e os comandos básicos, em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

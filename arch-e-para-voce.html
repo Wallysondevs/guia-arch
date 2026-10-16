@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch É para Você? — prós, contras e tempo de manutenção | Guia Arch</title>
+<meta name="description" content="O Arch Linux é para você? Prós e contras honestos, para quem ele é e para quem não é, quanto tempo a manutenção leva de verdade, Arch × derivados × Debian/Fedora/Ubuntu e como testar numa máquina virtual antes.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">É para Você?</span></h1>
+
+<p class="intro">O Arch tem fama de difícil e de "sistema para nerds". Parte disso é verdade, parte é exagero. Esta aula põe na mesa os prós e os contras, mostra quanto tempo a manutenção leva de verdade (com dados reais) e ajuda você a decidir com calma, de preferência depois de testar numa máquina virtual.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o Arch faz melhor que as outras distribuições, e o que faz pior.</li>
+  <li>Para quem ele é, e para quem ele não é (sem vergonha nenhuma).</li>
+  <li>Quanto tempo de manutenção esperar, por semana e por mês.</li>
+  <li>Como o Arch se compara às derivadas e ao Debian, Fedora e Ubuntu.</li>
+  <li>Por que testar numa VM antes, e o que a VM precisa ter.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A troca que o Arch propõe</h2>
+<p>Toda distribuição faz uma troca. O Ubuntu troca controle por conveniência: vem tudo pronto, mas foi alguém que escolheu. O Debian troca novidade por estabilidade: os programas mudam pouco, mas ficam velhos. O Arch troca <strong>conveniência por controle e novidade</strong>: você monta o sistema e cuida dele, e em troca ele tem exatamente o que você quer, nas versões mais novas.</p>
+<p>Uma imagem do dia a dia: o Ubuntu é um apartamento mobiliado; o Debian, uma casa sólida com móveis de alguns anos atrás; o Arch é um terreno com material de primeira e um manual excelente. Dá mais trabalho no começo, e você aprende onde passa cada cano.</p>
+
+<hr>
+
+<h2>Os prós</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Vantagem</th><th>Na prática</th></tr>
+<tr><td><strong>Programas novos</strong></td><td>As versões novas chegam dias depois de lançadas. Em outubro de 2026, a VM do guia tinha o kernel 7.2.10, o Bash 5.3.20 e o GNOME 51 disponível no repositório. Bom para hardware recente, que precisa de kernel e drivers novos.</td></tr>
+<tr><td><strong>Nunca mais "atualizar a versão"</strong></td><td>É rolling release: você instala uma vez e acompanha com <code>sudo pacman -Syu</code>. Não existe a migração tensa de "Ubuntu 24.04 para 26.04".</td></tr>
+<tr><td><strong>O AUR</strong></td><td>Mais de 114 mil receitas da comunidade (outubro de 2026). Se um programa existe para Linux, quase certamente está lá.</td></tr>
+<tr><td><strong>A Arch Wiki</strong></td><td>A melhor documentação do mundo Linux, escrita para o seu sistema.</td></tr>
+<tr><td><strong>Só o que você pediu</strong></td><td>Logo depois da instalação, a VM do guia tinha 193 pacotes e ocupava 2,3 GB. Nada de programa que você não usa ligando sozinho.</td></tr>
+<tr><td><strong>Você aprende Linux de verdade</strong></td><td>Instalando à mão, você entende partições, boot, rede, usuários e serviços. Esse conhecimento vale para qualquer distribuição.</td></tr>
+<tr><td><strong>pacman simples e rápido</strong></td><td>Uma ferramenta só (<code>pacman</code>) para instalar, remover, procurar e atualizar, com pacotes que seguem o original sem modificações.</td></tr>
+</table>
+</div>
+
+<h2>Os contras (sem maquiagem)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Desvantagem</th><th>Na prática</th></tr>
+<tr><td><strong>A instalação é manual</strong></td><td>Particionar, formatar, montar, instalar, configurar o boot: cerca de 30 comandos (veja a trilha <a href="preparar.html">Instalação</a>). O <a href="archinstall.html">archinstall</a> facilita, mas você ainda precisa saber o que está escolhendo.</td></tr>
+<tr><td><strong>Depois de instalar, só há o terminal</strong></td><td>Sem desktop, sem navegador, sem editor, sem <code>sudo</code>. Tudo isso é você que instala (<a href="desktop.html">Instalar um Desktop</a>).</td></tr>
+<tr><td><strong>Você é o administrador</strong></td><td>Ninguém escolhe o firewall, os backups ou os snapshots por você. Se você não configurar, não existe.</td></tr>
+<tr><td><strong>Mudanças toda semana</strong></td><td>Às vezes uma atualização pede uma ação manual (veja os números logo abaixo). Raramente algo quebra, e quando quebra é você que conserta, com a Wiki e o fórum.</td></tr>
+<tr><td><strong>Não gosta de ficar parado</strong></td><td>Um Arch esquecido por seis meses ainda atualiza, mas com mais chance de dar trabalho (chaves vencidas, várias intervenções manuais juntas).</td></tr>
+<tr><td><strong>Sem suporte comercial nem versão LTS</strong></td><td>Não há empresa para ligar, nem versão "congelada por 5 anos". Para servidores de empresa, isso pesa.</td></tr>
+<tr><td><strong>O AUR exige cuidado</strong></td><td>Ninguém revisa os pacotes do AUR antes. Ler a receita é obrigação sua (<a href="aur-seguranca.html">AUR com Segurança</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Para quem é, e para quem não é</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O Arch combina com você se…</th><th>Talvez não seja a hora se…</th></tr>
+<tr><td>você quer entender como o Linux funciona por dentro</td><td>você só quer um computador que funcione hoje, sem aprender nada novo</td></tr>
+<tr><td>gosta de escolher cada peça (desktop, editor, shell)</td><td>prefere que alguém escolha por você</td></tr>
+<tr><td>lê documentação antes de perguntar</td><td>não tem paciência para ler (sem julgamento: é só outro perfil)</td></tr>
+<tr><td>tem hardware novo que precisa de kernel e drivers recentes</td><td>é o computador de trabalho e não pode ficar uma tarde parado</td></tr>
+<tr><td>atualiza o sistema com frequência (toda semana ou a cada duas)</td><td>liga o computador uma vez por mês</td></tr>
+<tr><td>quer usar o AUR</td><td>vai administrar servidores de empresa que exigem suporte e versões congeladas</td></tr>
+<tr><td>tem uma VM ou um computador de testes para treinar</td><td>vai instalar direto no único notebook, com os únicos arquivos, sem backup</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Começar por uma derivada vale?</strong>
+<p>Vale, se você quer o ecossistema do Arch (pacman, AUR, Wiki) sem a instalação manual. O EndeavourOS é o mais próximo do Arch "puro"; o CachyOS foca em desempenho. Só lembre que derivadas têm repositórios e decisões próprios (veja <a href="introducao.html">Introdução</a>). Se a meta é <strong>aprender</strong>, a instalação manual numa VM ensina mais do que qualquer instalador.</p>
+</div>
+
+<hr>
+
+<h2>Quanto tempo de manutenção, de verdade?</h2>
+<p>A pergunta mais importante, e a menos respondida. A manutenção do Arch se divide em três ritmos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quando</th><th>O que fazer</th><th>Tempo típico</th><th>Aula</th></tr>
+<tr><td>Toda semana (ou a cada duas)</td><td>Olhar as notícias do Arch e rodar <code>sudo pacman -Syu</code>, lendo o que ele mostra</td><td>5 a 15 minutos, quase todo de espera pelo download</td><td><a href="atualizar.html">Atualizar o Sistema</a></td></tr>
+<tr><td>Todo mês</td><td>Limpar o cache de pacotes, remover órfãos, resolver arquivos <code>.pacnew</code></td><td>10 a 20 minutos</td><td><a href="cache-orfaos.html">Cache e Órfãos</a>, <a href="pacnew.html">.pacnew</a></td></tr>
+<tr><td>De vez em quando</td><td>Uma atualização com "intervenção manual" anunciada nas notícias</td><td>Varia: de 1 minuto a uma tarde</td><td><a href="problemas-update.html">Erros de Atualização</a></td></tr>
+</table>
+</div>
+
+<p>Para ter uma ideia do terceiro ritmo, a VM do guia baixou a lista das notícias mais recentes do site do Arch (o <code>yay</code> é um ajudante do AUR que também lê as notícias; ele é explicado em <a href="yay-paru.html">yay e paru</a>):</p>
+
+<pre class="term">$ yay -Pww | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2} '
+2025-11-05 waydroid >= 1.5.4-3 update may require manual intervention
+2025-12-11 .NET packages may require manual intervention
+2025-12-20 NVIDIA 590 driver drops Pascal and lower support; main packages switch to Open Kernel Modules
+2026-04-05 iptables now defaults to the nft backend
+2026-04-07 kea >= 1:3.0.3-6 update requires manual intervention
+2026-05-25 Breaking changes for all users of `varnish`, which is renamed to `vinyl-cache`
+2026-06-04 Arch Linux 2026 Leader Election Results      « notícia institucional, nada a fazer
+2026-06-12 Active AUR malicious packages incident       « alerta de segurança do AUR
+2026-07-21 virtualbox-ext-vnc >= 7.2.12-2 requires manual intervention
+2026-09-22 Mkinitcpio >=42 requires manual intervention for TPM2-based unlocking of LUKS devices</pre>
+
+<p>São 10 notícias em quase um ano, menos de uma por mês. E quase todas valem só para quem usa aquele programa específico: quem não usa Waydroid, .NET, Kea, Varnish ou desbloqueio de disco por TPM2 não precisou fazer nada. Para um desktop comum, a maior mudança do período foi a da NVIDIA (dezembro de 2025), que afetou quem tinha placas antigas. A aula <a href="rolling-release.html">Rolling Release</a> mostra como acompanhar essas notícias.</p>
+
+<div class="note">
+<strong>O que deixa a manutenção leve</strong>
+<p>Atualizar com frequência (pequenas mudanças de cada vez), ler as notícias antes, instalar só o que usa, preferir pacotes oficiais aos do AUR e ter snapshots ou backup (<a href="snapshots.html">Snapshots</a>). Quem segue isso passa meses sem surpresa.</p>
+</div>
+
+<hr>
+
+<h2>Arch × derivadas × Debian, Fedora e Ubuntu</h2>
+<p>Um resumo para situar. A comparação completa, com comandos lado a lado, está em <a href="arch-x-outras.html">Arch × Debian × Fedora</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Arch</th><th>Derivadas (EndeavourOS, Manjaro…)</th><th>Debian</th><th>Fedora</th><th>Ubuntu</th></tr>
+<tr><td>Modelo</td><td>Rolling</td><td>Rolling (o Manjaro, com atraso)</td><td>Versões a cada ~2 anos</td><td>Versões a cada ~6 meses</td><td>Versões a cada 6 meses; LTS a cada 2 anos</td></tr>
+<tr><td>Programas</td><td>Os mais novos</td><td>Novos</td><td>Estáveis, mais antigos</td><td>Novos</td><td>Intermediários</td></tr>
+<tr><td>Instalação</td><td>Manual ou <code>archinstall</code> (texto)</td><td>Gráfica</td><td>Gráfica ou texto</td><td>Gráfica</td><td>Gráfica</td></tr>
+<tr><td>Vem pronto</td><td>Nada além do mínimo</td><td>Desktop escolhido na instalação</td><td>Desktop escolhido na instalação</td><td>GNOME (ou outro "spin")</td><td>GNOME do Ubuntu</td></tr>
+<tr><td>Pacotes</td><td><code>pacman</code> + AUR</td><td><code>pacman</code> + AUR</td><td><code>apt</code></td><td><code>dnf</code></td><td><code>apt</code> + Snap</td></tr>
+<tr><td>Manutenção</td><td>Sua, semanal</td><td>Um pouco menor</td><td>Mínima</td><td>Baixa, mais troca de versão</td><td>Baixa</td></tr>
+<tr><td>Bom para</td><td>Aprender e controlar tudo</td><td>Arch sem instalar à mão</td><td>Servidores e quem quer sossego</td><td>Desktop moderno e estável</td><td>Quem quer que funcione já</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Teste numa VM primeiro</h2>
+<p>Antes de apagar qualquer disco, instale o Arch numa <strong>máquina virtual</strong>: um computador de mentira, dentro do seu. Se der errado, você apaga e começa de novo, sem perder nada. Foi o que o guia fez: todas as saídas que você vê nas aulas vieram de uma VM no VirtualBox.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>A VM do guia</th><th>Mínimo razoável</th></tr>
+<tr><td>Programa</td><td>VirtualBox</td><td>VirtualBox, GNOME Boxes, virt-manager (KVM) ou VMware</td></tr>
+<tr><td>Firmware</td><td>UEFI (ative "EFI" nas configurações da VM)</td><td>UEFI ou BIOS (as aulas usam UEFI)</td></tr>
+<tr><td>Processadores</td><td>2</td><td>2</td></tr>
+<tr><td>Memória</td><td>4 GB</td><td>2 GB sem desktop; 4 GB com desktop</td></tr>
+<tr><td>Disco</td><td>30 GB</td><td>20 GB</td></tr>
+<tr><td>ISO</td><td><code>archlinux-2026.06.01-x86_64.iso</code></td><td>A mais nova (em outubro de 2026, a <code>2026.10.01</code>)</td></tr>
+</table>
+</div>
+
+<ol class="passo">
+  <li>Baixe e verifique a ISO: <a href="preparar.html">Baixar e Verificar a ISO</a>.</li>
+  <li>Siga a trilha de instalação, aula por aula, ou o projeto <a href="projeto-instalacao.html">Instalação Completa do Zero</a>.</li>
+  <li>Use a VM por uma ou duas semanas: atualize, instale um desktop, quebre algo de propósito e conserte.</li>
+  <li>Se gostou, aí sim instale no computador de verdade, com backup feito.</li>
+</ol>
+
+<div class="tip">
+<strong>Tire um snapshot</strong>
+<p>Os programas de VM deixam salvar o estado da máquina (snapshot). Tire um logo depois da instalação. Antes de testar algo arriscado, tire outro. Voltar leva segundos.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Instalei e só aparece uma tela preta pedindo login</strong>
+<p><strong>Causa:</strong> não é defeito. O Arch não instala interface gráfica sozinho: o primeiro boot termina no login em modo texto (<code>notebook login:</code>).</p>
+<p><strong>Como resolver:</strong> entre com o seu usuário e siga <a href="desktop.html">Instalar um Desktop</a>. A aula <a href="terminal.html">O Terminal no Arch</a> explica essa tela.</p>
+</div>
+
+<div class="cenario">
+<strong>Fiquei meses sem atualizar e agora o pacman reclama</strong>
+<p><strong>Causa:</strong> muitas mudanças acumuladas: chaves de assinatura novas, pacotes renomeados, intervenções manuais em sequência.</p>
+<p><strong>Como resolver:</strong> leia as notícias do período, atualize primeiro o chaveiro (<code>archlinux-keyring</code>) e depois o resto. O passo a passo está em <a href="problemas-update.html">Erros de Atualização</a> e <a href="chaves.html">Chaves e Assinaturas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Não tenho tempo para cuidar do sistema toda semana</strong>
+<p><strong>Causa:</strong> o Arch pressupõe atualizações frequentes.</p>
+<p><strong>Como resolver:</strong> tudo bem: use o Arch numa máquina secundária e uma distribuição de versões (Debian, Fedora, Ubuntu LTS) na principal. Ou atualize a cada duas semanas, sempre lendo as notícias antes.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Qual destas situações é a <strong>pior</strong> para escolher o Arch?</p>
+<label><input type="radio" name="q1"> Um notebook novo com placa de vídeo lançada este ano.</label>
+<label><input type="radio" name="q1"> Uma pessoa que quer aprender como o Linux funciona.</label>
+<label><input type="radio" name="q1"> O único computador de trabalho, sem backup, de alguém que não pode ficar uma tarde sem ele.</label>
+<label><input type="radio" name="q1"> Uma VM para estudar.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Na lista real de notícias da aula, quantas pediam alguma ação de um usuário de desktop comum, sem NVIDIA antiga e sem os programas citados?</p>
+<label><input type="radio" name="q2"> Todas as dez.</label>
+<label><input type="radio" name="q2"> Praticamente nenhuma.</label>
+<label><input type="radio" name="q2"> Metade.</label>
+<label><input type="radio" name="q2"> Uma por semana.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Qual é a forma mais segura de experimentar o Arch pela primeira vez?</p>
+<label><input type="radio" name="q3"> Instalar por cima do Windows sem backup.</label>
+<label><input type="radio" name="q3"> Instalar uma derivada qualquer e pedir ajuda no fórum do Arch.</label>
+<label><input type="radio" name="q3"> Copiar comandos de um vídeo sem entender.</label>
+<label><input type="radio" name="q3"> Instalar numa máquina virtual, seguindo a Wiki, com snapshot depois de instalar.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que atualizar com frequência deixa a manutenção mais leve?</p>
+<label><input type="radio" name="q4"> Porque cada atualização traz poucas mudanças, e fica fácil ver o que causou um problema.</label>
+<label><input type="radio" name="q4"> Porque o Arch apaga o sistema se você não atualizar.</label>
+<label><input type="radio" name="q4"> Porque atualizações frequentes são menores em megabytes no total.</label>
+<label><input type="radio" name="q4"> Porque o <code>pacman</code> só funciona uma vez por semana.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete o comando da atualização semanal do Arch:</p>
+<div class="ex-code">sudo pacman <input data-answer="-Syu"></div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O Arch troca conveniência por controle e novidade.</li>
+  <li>Prós: programas novos, sem troca de versão, AUR, Wiki, sistema enxuto, aprendizado real.</li>
+  <li>Contras: instalação manual, sem desktop pronto, você é o administrador, mudanças semanais, sem suporte comercial, AUR exige cuidado.</li>
+  <li>Manutenção: 5 a 15 minutos por semana, uma limpeza mensal e, menos de uma vez por mês, uma notícia que pode pedir ação.</li>
+  <li>Derivadas dão o ecossistema sem a instalação manual; Debian, Fedora e Ubuntu dão mais sossego e menos controle.</li>
+  <li>Teste numa VM (2 CPUs, 4 GB, 20–30 GB, UEFI) antes do computador de verdade.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a própria Wiki discute a escolha em <a href="https://wiki.archlinux.org/title/Frequently_asked_questions">Frequently asked questions</a> (<a href="https://wiki.archlinux.org/title/Frequently_asked_questions_(Portugu%C3%AAs)">em português</a>) e em <a href="https://wiki.archlinux.org/title/Arch_compared_to_other_distributions">Arch compared to other distributions</a> (<a href="https://wiki.archlinux.org/title/Arch_compared_to_other_distributions_(Portugu%C3%AAs)">em português</a>); a manutenção, em <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a> (<a href="https://wiki.archlinux.org/title/System_maintenance_(Portugu%C3%AAs)">em português</a>); e a VM, em <a href="https://wiki.archlinux.org/title/VirtualBox/Install_Arch_Linux_as_a_guest">VirtualBox/Install Arch Linux as a guest</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
