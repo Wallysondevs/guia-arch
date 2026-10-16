@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch swap e zram — partição, swapfile, zram-generator e swappiness | Guia Arch</title>
+<meta name="description" content="Swap no Arch Linux: a partição de swap da instalação (swapon --show, free -h), criar e remover um swapfile com mkswap --file, zram com o zram-generator (zram-generator.conf, systemd-zram-setup@zram0, zramctl), swappiness com sysctl e a ideia da hibernação.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Swap e <span class="hl">zram</span></h1>
+
+<p class="intro">Quando a memória RAM enche, o Linux precisa de um lugar para guardar o que está parado. Esse lugar é a <strong>swap</strong> (do inglês "troca"): uma área no disco, ou, com o <strong>zram</strong>, um pedaço da própria RAM comprimida. Nesta aula você vê a swap que a ana criou na instalação, cria um <em>swapfile</em>, liga o zram e ajusta o quanto o kernel usa cada um.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é swap e por que o sistema fica lento quando ela é muito usada.</li>
+  <li>Ler <code>swapon --show</code> e <code>free -h</code>.</li>
+  <li>Criar, ligar e remover um arquivo de swap (<code>mkswap</code>, <code>swapon</code>, <code>swapoff</code>).</li>
+  <li>Ligar o zram com o <code>zram-generator</code> e conferir com <code>zramctl</code>.</li>
+  <li>O que é a <code>swappiness</code>, a ideia da hibernação e qual tipo de swap escolher.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que é swap</h2>
+<p>Pense na RAM como a <strong>mesa</strong> onde você trabalha e no disco como o <strong>armário</strong>. Quando a mesa enche, você guarda no armário os papéis que não está usando agora. Se precisar de um deles, vai buscar: funciona, mas demora. A swap é esse armário: o kernel move para ela pedaços de memória (as <strong>páginas</strong>) que ninguém usa há algum tempo, liberando a RAM para o que está ativo.</p>
+
+<ul>
+  <li><strong>Pouca swap em uso</strong> é normal e até bom: coisas esquecidas saem da RAM e sobra espaço para o cache de arquivos.</li>
+  <li><strong>Muita troca o tempo todo</strong> é o computador "afogado": tudo fica lento, o disco não para. Veja <a href="travamentos.html">Quando o Sistema Trava</a>.</li>
+  <li><strong>Sem swap nenhuma</strong>, quando a RAM acaba o kernel mata um programa à força (o <em>OOM killer</em>, de <em>out of memory</em>).</li>
+</ul>
+
+<hr>
+
+<h2>A swap da ana: uma partição</h2>
+<p>Na instalação, a ana reservou a <code>/dev/sda2</code> (4 GiB) para swap, formatou com <code>mkswap</code> e a ligou com <code>swapon</code> (veja <a href="formatar-montar.html">Formatar e Montar</a>). O <code>genfstab</code> escreveu a linha no <a href="fstab.html">fstab</a>, e por isso ela liga sozinha a cada boot:</p>
+
+<pre class="file" data-file="/etc/fstab (a linha da swap)"># /dev/sda2
+UUID=02576132-0458-4975-916f-94e08af9a31c	none      	swap      	defaults  	0 0
+</pre>
+
+<h3>swapon --show</h3>
+<dl class="anatomy">
+  <dt>swapon</dt><dd>Liga uma área de swap (<em>swap on</em>). Com <code>--show</code>, só mostra as que estão ligadas. Não precisa de root para mostrar.</dd>
+</dl>
+
+<pre class="term">$ swapon --show
+NAME      TYPE      SIZE USED PRIO
+/dev/sda2 partition   4G   0B   -1
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>NAME</code></td><td>A área: uma partição, um arquivo ou <code>/dev/zram0</code></td></tr>
+<tr><td><code>TYPE</code></td><td><code>partition</code> ou <code>file</code> (o zram aparece como <code>partition</code>)</td></tr>
+<tr><td><code>SIZE</code> / <code>USED</code></td><td>Tamanho e quanto está ocupado. A ana tem RAM sobrando: 0B usado</td></tr>
+<tr><td><code>PRIO</code></td><td>Prioridade: o kernel usa primeiro a de número <strong>maior</strong>. Sem prioridade definida, recebe um número negativo automático (<code>-1</code>, <code>-2</code>…)</td></tr>
+</table>
+</div>
+
+<p>O arquivo <code>/proc/swaps</code> traz a mesma informação, em KiB, como o kernel a vê:</p>
+<pre class="term">$ cat /proc/swaps
+Filename				Type		Size		Used		Priority
+/dev/sda2                               partition	4194300		0		-1
+</pre>
+
+<h3>free -h</h3>
+<pre class="term">$ free -h
+               total       usada       livre    compart.  buff/cache  disponível
+Mem.:          3,8Gi       495Mi       3,3Gi       668Ki       257Mi       3,3Gi
+Swap:          4,0Gi          0B       4,0Gi
+</pre>
+<p>A linha <code>Swap:</code> soma todas as áreas ligadas. Na linha <code>Mem.:</code>, a coluna que importa é <code>disponível</code>: quanto ainda cabe sem precisar de swap (inclui o cache, que o kernel devolve quando alguém pede). A máquina da ana tem 3,8 GiB de RAM.</p>
+
+<div class="try" data-goal="ran:^\s*free\b.*-h,out:Swap:" data-solucao="free -h">
+<p class="try-task"><strong>Missão:</strong> mostre o uso da memória e da swap com os tamanhos em Gi e Mi.</p>
+</div>
+
+<hr>
+
+<h2>Swapfile: swap num arquivo</h2>
+<p>Em vez de uma partição, a swap pode ser um <strong>arquivo comum</strong>. A vantagem: você cria, aumenta ou apaga sem mexer nas partições. É a escolha de quem não reservou partição na instalação. Os comandos abaixo são como root (<code>sudo -i</code>); o exemplo usa 256 MiB em <code>/var/tmp/a7</code> só para o teste (no seu computador, o lugar usual é <code>/swapfile</code>, com alguns GiB).</p>
+
+<h3>1. Criar com mkswap --file</h3>
+<dl class="anatomy">
+  <dt>mkswap</dt><dd><em>make swap</em>: prepara uma área de swap.</dd>
+  <dt>-U clear</dt><dd>UUID "zerado". Um arquivo não precisa de UUID (o fstab vai apontar o caminho).</dd>
+  <dt>--size 256M</dt><dd>Tamanho do arquivo.</dd>
+  <dt>--file /var/tmp/a7/swapfile</dt><dd>Cria o <strong>arquivo</strong> do jeito certo (contíguo e com permissão 600), em vez de esperar uma partição. Existe desde o util-linux 2.39; o Arch tem o 2.42.</dd>
+</dl>
+
+<pre class="term">#> mkswap -U clear --size 256M --file /var/tmp/a7/swapfile
+Configurando espaço de swap versão 1, tamanho = 256 MiB (268431360 bytes)
+nenhum rótulo, UUID=00000000-0000-0000-0000-000000000000
+#> ls -lh /var/tmp/a7/swapfile
+-rw------- 1 root root 256M 16 out 13:23 /var/tmp/a7/swapfile
+</pre>
+<p>Repare na permissão <code>-rw-------</code> (600): só o root lê. A swap guarda pedaços da memória de todos os programas, inclusive senhas; ninguém mais pode ler esse arquivo.</p>
+
+<h3>2. Ligar e conferir</h3>
+<pre class="term">#> swapon /var/tmp/a7/swapfile
+#> swapon --show
+NAME                 TYPE      SIZE USED PRIO
+/dev/sda2            partition   4G   0B   -1
+/var/tmp/a7/swapfile file      256M   0B   -1
+#> free -h
+               total       usada       livre    compart.  buff/cache  disponível
+Mem.:          3,8Gi       462Mi       3,2Gi       9,7Mi       395Mi       3,3Gi
+Swap:          4,2Gi          0B       4,2Gi                         « 4 GiB + 256 MiB
+</pre>
+
+<h3>3. Para ligar em todo boot</h3>
+<p>Uma linha no <a href="fstab.html">fstab</a>, com o <strong>caminho</strong> do arquivo na primeira coluna:</p>
+<pre class="file" data-file="/etc/fstab (exemplo)">/swapfile none swap defaults 0 0
+</pre>
+
+<h3>4. Desligar e apagar</h3>
+<pre class="term">#> swapoff /var/tmp/a7/swapfile
+#> swapon --show
+NAME      TYPE      SIZE USED PRIO
+/dev/sda2 partition   4G   0B   -1
+#> rm /var/tmp/a7/swapfile
+</pre>
+<p>Sempre <code>swapoff</code> antes do <code>rm</code>, e tire a linha do fstab, senão o próximo boot vai procurar o arquivo. O <code>swapoff</code> precisa trazer de volta para a RAM tudo o que estava na swap: se a RAM não comportar, ele falha (e pode demorar quando há muito em uso).</p>
+
+<div class="note">
+<strong>Em Btrfs é diferente</strong>
+<p>No <a href="btrfs.html">Btrfs</a>, o swapfile precisa ficar num subvolume sem cópia-na-escrita e sem snapshots. A ferramenta própria resolve: <code>btrfs filesystem mkswapfile --size 4g /swap/swapfile</code>.</p>
+</div>
+
+<hr>
+
+<h2>zram: swap dentro da RAM, comprimida</h2>
+<p>Parece contraditório: usar a RAM como "armário" da RAM. A mágica é a <strong>compressão</strong>. O zram cria um disco virtual (<code>/dev/zram0</code>) na memória; o que vai para ele é comprimido, em geral para um terço do tamanho ou menos. Guardar 3 GiB de páginas ocupando 1 GiB de RAM é muito mais rápido do que escrever no disco. Fedora e Ubuntu já ligam o zram por padrão; no Arch, como sempre, você liga se quiser.</p>
+
+<p>Quem cria o zram no boot é o <code>zram-generator</code>, do próprio projeto systemd. Na máquina da ana ele já está instalado, mas <strong>sem configuração</strong>, então não faz nada:</p>
+
+<pre class="term">$ pacman -Q zram-generator
+zram-generator 1.2.1-1
+$ ls -l /etc/systemd/zram-generator.conf
+ls: não foi possível acessar '/etc/systemd/zram-generator.conf': Arquivo ou diretório inexistente
+$ systemctl status systemd-zram-setup@zram0
+○ systemd-zram-setup@zram0.service - Create swap on /dev/zram0
+     Loaded: loaded (/usr/lib/systemd/system/systemd-zram-setup@.service; static)
+     Active: inactive (dead)
+       Docs: man:zram-generator(8)
+             man:zram-generator.conf(5)
+</pre>
+<p>No seu computador, se ainda não tiver: <code>sudo pacman -S zram-generator</code>. Um exemplo comentado de todas as opções fica em <code>/usr/share/doc/zram-generator/zram-generator.conf.example</code>.</p>
+
+<h3>1. A configuração</h3>
+<pre class="file" data-file="/etc/systemd/zram-generator.conf">[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+swap-priority = 100
+</pre>
+
+<dl class="anatomy">
+  <dt>[zram0]</dt><dd>A seção cria o dispositivo <code>/dev/zram0</code>.</dd>
+  <dt>zram-size = ram / 2</dt><dd>Tamanho <strong>máximo</strong> do disco zram: metade da RAM. É o tamanho dos dados antes de comprimir; a RAM gasta de verdade é bem menor. Sem esta linha, o padrão é <code>min(ram / 2, 4096)</code> (metade da RAM, no máximo 4 GiB).</dd>
+  <dt>compression-algorithm = zstd</dt><dd>O algoritmo de compressão: <code>zstd</code> comprime muito; <code>lz4</code> é mais rápido e comprime menos.</dd>
+  <dt>swap-priority = 100</dt><dd>Prioridade alta: o zram é usado <strong>antes</strong> da partição (que tem <code>-1</code>). Este já é o valor padrão; está aqui para ficar explícito.</dd>
+</dl>
+
+<h3>2. Ligar sem reiniciar</h3>
+<p>No próximo boot, tudo acontece sozinho. Para ligar agora:</p>
+<pre class="term">#> systemctl daemon-reload
+#> systemctl start systemd-zram-setup@zram0
+#> zramctl
+NAME       ALGORITHM DISKSIZE DATA COMPR TOTAL STREAMS MOUNTPOINT
+/dev/zram0 zstd          1,9G   4K   64B   20K
+#> swapon --show
+NAME      TYPE      SIZE USED PRIO
+/dev/sda2 partition   4G   0B   -1               « o zram ainda não está aqui!
+</pre>
+
+<p>O <code>daemon-reload</code> faz o systemd rodar os geradores de novo; o <code>zram-generator</code> lê o arquivo e cria as unidades. O serviço <code>systemd-zram-setup@zram0</code> criou o <code>/dev/zram0</code> e o formatou como swap, mas <strong>não</strong> o ligou: quem liga é outra unidade, do tipo <code>.swap</code>, que o gerador também criou:</p>
+
+<pre class="term">#> cat /run/systemd/generator/dev-zram0.swap
+# Automatically generated by /usr/lib/systemd/system-generators/zram-generator
+
+[Unit]
+Description=Compressed Swap on /dev/zram0
+Documentation=man:zram-generator(8) man:zram-generator.conf(5)
+
+DefaultDependencies=no
+
+Requires=systemd-zram-setup@zram0.service
+After=systemd-zram-setup@zram0.service
+Before=swap.target
+
+[Swap]
+What=/dev/zram0
+Priority=100
+Options=discard
+#> systemctl start dev-zram0.swap
+#> swapon --show
+NAME       TYPE      SIZE USED PRIO
+/dev/sda2  partition   4G   0B   -1
+/dev/zram0 partition 1,9G   0B  100          « usada primeiro (prioridade maior)
+#> free -h
+               total       usada       livre    compart.  buff/cache  disponível
+Mem.:          3,8Gi       673Mi       2,8Gi       9,9Mi       579Mi       3,1Gi
+Swap:          5,9Gi          0B       5,9Gi
+</pre>
+
+<p>No boot, a <code>dev-zram0.swap</code> é puxada pelo <code>swap.target</code> e liga tudo na ordem certa; o <code>start</code> à mão só é necessário nesta primeira vez.</p>
+
+<h3>3. zramctl: quanto está comprimindo</h3>
+<pre class="term">#> zramctl
+NAME       ALGORITHM DISKSIZE DATA COMPR TOTAL STREAMS MOUNTPOINT
+/dev/zram0 zstd          1,9G   4K   64B   20K         [SWAP]
+#> cat /sys/block/zram0/comp_algorithm
+lzo-rle lzo lz4 lz4hc [zstd] deflate 842
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>DISKSIZE</code></td><td>Tamanho máximo (metade dos 3,8 GiB)</td></tr>
+<tr><td><code>DATA</code></td><td>Quanto foi guardado, antes de comprimir</td></tr>
+<tr><td><code>COMPR</code></td><td>Quanto isso ocupa comprimido</td></tr>
+<tr><td><code>TOTAL</code></td><td>RAM gasta de verdade (comprimido + controle)</td></tr>
+<tr><td><code>MOUNTPOINT</code></td><td><code>[SWAP]</code> quando está ligado como swap</td></tr>
+</table>
+</div>
+<p>Com a máquina folgada, quase nada foi para o zram. Num computador apertado, você veria algo como <code>DATA 1,2G</code> e <code>TOTAL 350M</code>. O <code>comp_algorithm</code> lista os algoritmos do kernel; o que está entre colchetes é o escolhido.</p>
+
+<h3>4. Desligar (voltar como estava)</h3>
+<pre class="term">#> systemctl stop dev-zram0.swap
+#> systemctl stop systemd-zram-setup@zram0
+#> rm /etc/systemd/zram-generator.conf
+#> systemctl daemon-reload
+#> modprobe -r zram
+#> swapon --show
+NAME      TYPE      SIZE USED PRIO
+/dev/sda2 partition   4G   0B   -1
+</pre>
+<p>O <code>modprobe -r zram</code> descarrega o módulo do kernel (veja <a href="kernels.html">Kernels</a>). Sem o arquivo de configuração, o gerador não cria mais nada nos próximos boots.</p>
+
+<div class="note">
+<strong>zram e zswap</strong>
+<p>O kernel do Arch vem com o <strong>zswap</strong> ligado: um cache comprimido que fica <em>na frente</em> da swap de disco.</p>
+<pre class="term">$ cat /sys/module/zswap/parameters/enabled
+Y
+</pre>
+<p>Os dois fazem quase a mesma coisa. Se você usar zram como swap principal, a Arch Wiki recomenda desligar o zswap com o parâmetro de kernel <code>zswap.enabled=0</code> (no GRUB, em <code>GRUB_CMDLINE_LINUX_DEFAULT</code>, seguido de <code>grub-mkconfig</code>; veja <a href="bootloader.html">Bootloader</a>).</p>
+</div>
+
+<hr>
+
+<h2>swappiness: a vontade de usar swap</h2>
+<p>A <code>vm.swappiness</code> é um número de 0 a 200 que diz ao kernel o quanto ele prefere mandar páginas para a swap em vez de jogar fora o cache de arquivos. Valor alto = usa swap mais cedo; baixo = segura tudo na RAM até não dar mais.</p>
+
+<pre class="term">$ sysctl vm.swappiness
+vm.swappiness = 60
+$ cat /proc/sys/vm/swappiness
+60
+</pre>
+<p>60 é o padrão do kernel. O <code>sysctl</code> lê e muda parâmetros do kernel; o mesmo valor aparece como arquivo em <code>/proc/sys/vm/swappiness</code> (o ponto vira barra).</p>
+
+<h3>Mudar até o próximo boot</h3>
+<pre class="term">$ sudo sysctl -w vm.swappiness=10
+vm.swappiness = 10
+</pre>
+
+<h3>Mudar para sempre</h3>
+<p>Crie um arquivo em <code>/etc/sysctl.d/</code> (na ana, a pasta está vazia; os padrões do Arch ficam em <code>/usr/lib/sysctl.d/</code>). Exemplo ilustrativo:</p>
+<pre class="file" data-file="/etc/sysctl.d/99-swappiness.conf">vm.swappiness = 10
+</pre>
+<p>Ele vale a partir do próximo boot, ou na hora com <code>sudo sysctl --system</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>swappiness</th></tr>
+<tr><td>Padrão, swap em disco</td><td>60 (deixe assim, se não houver problema)</td></tr>
+<tr><td>Desktop com swap em HD lento, quer resposta rápida</td><td>10 a 30</td></tr>
+<tr><td>Swap só em zram</td><td>Alto: a Arch Wiki sugere 180, porque trocar com o zram é barato</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Hibernação (só a ideia)</h2>
+<p><strong>Suspender</strong> (<code>systemctl suspend</code>) deixa a RAM ligada e o resto dormindo. <strong>Hibernar</strong> (<code>systemctl hibernate</code>) grava <strong>toda a RAM na swap</strong> e desliga o computador; no próximo boot, a memória é lida de volta e você continua de onde parou. Por isso:</p>
+<ul>
+  <li>A swap precisa caber o que está na RAM (na prática, do tamanho da RAM ou perto disso).</li>
+  <li>Precisa ser swap em <strong>disco</strong> (partição ou arquivo). O zram está na RAM, que se apaga ao desligar: não serve.</li>
+  <li>O sistema precisa saber de onde "acordar". Com o initramfs baseado em systemd (o hook <code>systemd</code> que a ana usa; veja <a href="mkinitcpio.html">mkinitcpio</a>), em UEFI isso costuma funcionar sozinho; em outros casos, usa-se o parâmetro de kernel <code>resume=UUID=…</code>.</li>
+</ul>
+<p>O kernel da ana anuncia que sabe hibernar (<code>disk</code> na lista), mas a máquina de laboratório não é usada para isso, então nada aqui foi testado de verdade:</p>
+<pre class="term">$ cat /sys/power/state
+freeze mem disk
+</pre>
+<p>A configuração completa (e os cuidados com criptografia e Secure Boot) está na Wiki, no link do fim da página.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Partição</th><th>Arquivo (swapfile)</th><th>zram</th></tr>
+<tr><td>Onde fica</td><td>Disco, partição própria</td><td>Disco, arquivo comum</td><td>RAM, comprimida</td></tr>
+<tr><td>Velocidade</td><td>A do disco</td><td>A do disco</td><td>A da RAM (muito mais rápida)</td></tr>
+<tr><td>Mudar o tamanho</td><td>Difícil (reparticionar)</td><td>Fácil</td><td>Uma linha no <code>.conf</code></td></tr>
+<tr><td>Hibernação</td><td>Sim</td><td>Sim</td><td><strong>Não</strong></td></tr>
+<tr><td>Gasta disco</td><td>Sim</td><td>Sim</td><td>Não (gasta um pouco de RAM e de CPU)</td></tr>
+<tr><td>Como liga no boot</td><td>Linha no fstab</td><td>Linha no fstab</td><td><code>zram-generator.conf</code></td></tr>
+<tr><td>Bom para</td><td>Quem quer hibernar e já particionou</td><td>Quem não reservou partição</td><td>Notebooks e PCs com pouca RAM, SSD que você quer poupar</td></tr>
+</table>
+</div>
+<p>Dá para combinar: zram com prioridade 100 para o dia a dia e a partição (prioridade negativa) como reserva e para hibernar, exatamente o que a ana teve durante o teste acima.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"contém buracos" e "pulando - ele parece ter buracos"</strong>
+<pre class="term">#> truncate -s 256M /var/tmp/a7/ruim
+#> mkswap /var/tmp/a7/ruim
+mkswap: /var/tmp/a7/ruim: permissões inseguras 0644, corrija com: chmod 0600 /var/tmp/a7/ruim
+
+mkswap: /var/tmp/a7/ruim contém buracos ou outras extensões não suportadas.
+        Este arquivo swap pode ser rejeitado pelo kernel ao ativar o swap!
+        Use --verbose para mais detalhes.
+
+Configurando espaço de swap versão 1, tamanho = 256 MiB (268431360 bytes)
+nenhum rótulo, UUID=a629034a-f556-45f8-b293-6181bfd39a5b
+#> swapon /var/tmp/a7/ruim
+swapon: /var/tmp/a7/ruim: permissões inseguras 0644, sugere-se 0600.
+swapon: /var/tmp/a7/ruim: pulando - ele parece ter buracos.
+#> echo $?
+255</pre>
+<p><strong>O que aconteceu:</strong> o arquivo foi criado com <code>truncate</code>, que só anota o tamanho (um arquivo "esparso", cheio de buracos). O kernel exige que cada bloco da swap exista de verdade no disco. A permissão também ficou aberta demais (644).</p>
+<p><strong>Como resolver:</strong> apague e crie com <code>mkswap --size 4G --file /swapfile</code>, que faz tudo certo. Em versões antigas: <code>dd if=/dev/zero of=/swapfile bs=1M count=4096</code>, <code>chmod 600 /swapfile</code> e depois <code>mkswap /swapfile</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Iniciei o systemd-zram-setup@zram0, mas a swap não aumentou</strong>
+<p><strong>O que aconteceu:</strong> esse serviço só cria e formata o <code>/dev/zram0</code>. Quem liga é a unidade <code>dev-zram0.swap</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl start dev-zram0.swap</code> (ou reinicie). Confira com <code>swapon --show</code>. Se o <code>/dev/zram0</code> nem existe, confira o nome e o caminho do arquivo (<code>/etc/systemd/zram-generator.conf</code>) e rode <code>sudo systemctl daemon-reload</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apaguei o swapfile e o boot ficou 90 segundos esperando</strong>
+<p><strong>O que aconteceu:</strong> a linha do swapfile continua no fstab; o systemd espera o "dispositivo" aparecer.</p>
+<p><strong>Como resolver:</strong> remova ou comente a linha no <code>/etc/fstab</code> e rode <code>sudo systemctl daemon-reload</code>. Veja <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O sistema fica lentíssimo, o disco não para</strong>
+<p><strong>O que aconteceu:</strong> a RAM acabou e o kernel troca páginas com a swap o tempo todo.</p>
+<p><strong>Como confirmar:</strong> <code>free -h</code> (swap muito usada, <code>disponível</code> perto de zero) e <code>htop</code> para ver quem gasta memória.</p>
+<p><strong>Como resolver:</strong> feche o programa guloso (veja <a href="processos.html">Processos e kill</a>). Para o futuro: zram, mais RAM ou um serviço como o <code>systemd-oomd</code>, que age antes do afogamento.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>swapon --show</code> / <code>cat /proc/swaps</code></td><td>Áreas de swap ligadas</td></tr>
+<tr><td><code>free -h</code></td><td>RAM e swap</td></tr>
+<tr><td><code>sudo mkswap -U clear --size 4G --file /swapfile</code></td><td>Cria um swapfile</td></tr>
+<tr><td><code>sudo mkswap /dev/sdXN</code></td><td>Prepara uma partição como swap</td></tr>
+<tr><td><code>sudo swapon /swapfile</code> / <code>sudo swapoff /swapfile</code></td><td>Liga / desliga uma área</td></tr>
+<tr><td><code>sudo swapon -a</code></td><td>Liga todas as swaps do fstab</td></tr>
+<tr><td><code>/etc/systemd/zram-generator.conf</code></td><td>Configuração do zram</td></tr>
+<tr><td><code>sudo systemctl daemon-reload</code> + <code>start dev-zram0.swap</code></td><td>Liga o zram sem reiniciar</td></tr>
+<tr><td><code>zramctl</code></td><td>Uso e compressão do zram</td></tr>
+<tr><td><code>sysctl vm.swappiness</code> / <code>sudo sysctl -w vm.swappiness=10</code></td><td>Lê / muda até o boot</td></tr>
+<tr><td><code>/etc/sysctl.d/99-swappiness.conf</code></td><td>Muda para sempre</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Prioridade</h3>
+<p>Qual prioridade é usada primeiro: a <code>100</code> do zram ou a <code>-1</code> da partição? Escreva o número.</p>
+<div class="ex-code">Primeiro: <input data-answer="100" aria-label="prioridade"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Desligar antes de apagar</h3>
+<p>Complete a ordem certa para remover um swapfile:</p>
+<div class="ex-code">sudo <input data-answer="swapoff" aria-label="comando"> /swapfile &amp;&amp; sudo rm /swapfile</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Você quer hibernar o notebook. Qual swap <strong>não</strong> serve?</p>
+<label><input type="radio" name="q3"> Partição de swap do tamanho da RAM.</label>
+<label><input type="radio" name="q3"> Swapfile do tamanho da RAM.</label>
+<label><input type="radio" name="q3"> zram.</label>
+<label><input type="radio" name="q3"> Todas servem.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de criar o <code>zram-generator.conf</code> e iniciar o <code>systemd-zram-setup@zram0</code>, o <code>swapon --show</code> não mostra o zram. Por quê?</p>
+<label><input type="radio" name="q4"> O zram precisa de reboot obrigatoriamente.</label>
+<label><input type="radio" name="q4"> Quem liga a swap é a unidade <code>dev-zram0.swap</code>, que ainda não foi iniciada.</label>
+<label><input type="radio" name="q4"> Faltou formatar com <code>mkfs.ext4</code>.</label>
+<label><input type="radio" name="q4"> O kernel do Arch não tem zram.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Swap é para onde vão as páginas paradas quando a RAM enche. <code>swapon --show</code> e <code>free -h</code> mostram o que há.</li>
+  <li>A ana usa uma partição (<code>/dev/sda2</code>, 4 GiB), ligada pelo fstab.</li>
+  <li>Swapfile: <code>mkswap --size … --file</code>, <code>swapon</code>, linha no fstab; para tirar, <code>swapoff</code> antes do <code>rm</code>.</li>
+  <li>zram: <code>/etc/systemd/zram-generator.conf</code>; liga sozinho no boot; <code>zramctl</code> mostra a compressão. Não serve para hibernar.</li>
+  <li><code>vm.swappiness</code> (padrão 60) regula a vontade de usar swap; para sempre, um arquivo em <code>/etc/sysctl.d/</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> partição, swapfile e swappiness estão em <a href="https://wiki.archlinux.org/title/Swap">Swap</a> (<a href="https://wiki.archlinux.org/title/Swap_(Portugu%C3%AAs)">em português</a>); o zram e o <code>zram-generator</code>, em <a href="https://wiki.archlinux.org/title/Zram">zram</a>; o zswap, em <a href="https://wiki.archlinux.org/title/Zswap">zswap</a> (<a href="https://wiki.archlinux.org/title/Zswap_(Portugu%C3%AAs)">em português</a>); os parâmetros como <code>vm.swappiness</code>, em <a href="https://wiki.archlinux.org/title/Sysctl">sysctl</a>; e a hibernação, em <a href="https://wiki.archlinux.org/title/Power_management/Suspend_and_hibernate">Power management/Suspend and hibernate</a> (<a href="https://wiki.archlinux.org/title/Power_management/Suspend_and_hibernate_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

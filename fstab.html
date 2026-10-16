@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch mount e fstab — montar discos e montar no boot sem medo | Guia Arch</title>
+<meta name="description" content="O /etc/fstab real de um Arch instalado com genfstab -U, as 6 colunas, UUID × LABEL × PARTUUID, as opções defaults, noatime, nofail e x-systemd.automount, mount e umount na prática com um disco de teste, como testar o fstab antes de reiniciar e como sair do emergency mode.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>mount e <span class="hl">fstab</span></h1>
+
+<p class="intro"><strong>Montar</strong> é ligar um sistema de arquivos a uma pasta, para que o conteúdo do disco apareça ali. O comando <code>mount</code> faz isso na hora; o arquivo <code>/etc/fstab</code> (de <em>file systems table</em>, tabela de sistemas de arquivos) diz o que montar <strong>a cada boot</strong>. Um erro de digitação nesse arquivo pode impedir o sistema de iniciar, por isso esta aula ensina também a testar antes de reiniciar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler o <code>/etc/fstab</code> que o <code>genfstab -U</code> criou na instalação, coluna por coluna.</li>
+  <li>A diferença entre UUID, LABEL, PARTUUID e <code>/dev/sdX</code>, e qual usar.</li>
+  <li>As opções <code>defaults</code>, <code>noatime</code>, <code>nofail</code> e <code>x-systemd.automount</code>.</li>
+  <li>Montar e desmontar com <code>mount</code> e <code>umount</code>, usando um disco de teste.</li>
+  <li>Acrescentar um disco ao fstab, testar com <code>findmnt --verify</code> e <code>mount -a</code>, e sair do <em>emergency mode</em> se algo der errado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Quem lê o fstab</h2>
+<p>No boot, antes de tudo, o systemd lê o <code>/etc/fstab</code> e transforma cada linha numa <strong>unidade de montagem</strong> (<code>.mount</code>), o mesmo tipo de unidade que você conhece de <a href="systemd.html">systemctl e Serviços</a>. Quem faz essa tradução é um programa chamado <code>systemd-fstab-generator</code>. Depois, a unidade <code>local-fs.target</code> ("sistemas de arquivos locais prontos") espera essas montagens. Guarde essa ideia: ela explica por que uma linha errada trava o boot (mais abaixo).</p>
+
+<p>Na instalação, você não escreveu o fstab à mão: o <code>genfstab -U /mnt &gt;&gt; /mnt/etc/fstab</code> olhou o que estava montado em <code>/mnt</code> e gerou as linhas (veja <a href="configurar.html">Configurar o Sistema</a>). O <code>-U</code> mandou usar UUIDs.</p>
+
+<h2>O fstab real da ana</h2>
+<pre class="file" data-file="/etc/fstab"># Static information about the filesystems.
+# See fstab(5) for details.
+
+# &lt;file system&gt; &lt;dir&gt; &lt;type&gt; &lt;options&gt; &lt;dump&gt; &lt;pass&gt;
+# /dev/sda3
+UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9	/         	ext4      	rw,relatime	0 1
+
+# /dev/sda1
+UUID=C509-6CB1      	/boot     	vfat      	rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro	0 2
+
+# /dev/sda2
+UUID=02576132-0458-4975-916f-94e08af9a31c	none      	swap      	defaults  	0 0
+</pre>
+
+<p>Linhas que começam com <code>#</code> são comentários. Os comentários <code># /dev/sda3</code> foram postos pelo <code>genfstab</code> para você saber de onde veio cada UUID. Sobram três linhas de verdade, uma por partição. Os espaços entre as colunas podem ser tabulações ou espaços, em qualquer quantidade.</p>
+
+<h3>As 6 colunas</h3>
+<p>Tome a primeira linha: <code>UUID=75d167c8-… / ext4 rw,relatime 0 1</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>#</th><th>Coluna</th><th>Na linha da raiz</th><th>Significa</th></tr>
+<tr><td>1</td><td><code>&lt;file system&gt;</code> (o quê)</td><td><code>UUID=75d167c8-…</code></td><td>Qual sistema de arquivos montar</td></tr>
+<tr><td>2</td><td><code>&lt;dir&gt;</code> (onde)</td><td><code>/</code></td><td>O ponto de montagem. Para swap, <code>none</code></td></tr>
+<tr><td>3</td><td><code>&lt;type&gt;</code> (tipo)</td><td><code>ext4</code></td><td><code>ext4</code>, <code>vfat</code>, <code>btrfs</code>, <code>swap</code>, <code>ntfs3</code>…</td></tr>
+<tr><td>4</td><td><code>&lt;options&gt;</code> (como)</td><td><code>rw,relatime</code></td><td>Opções separadas por vírgula, <strong>sem espaço</strong></td></tr>
+<tr><td>5</td><td><code>&lt;dump&gt;</code></td><td><code>0</code></td><td>Backup pelo antigo programa <code>dump</code>. Ninguém usa: deixe <code>0</code></td></tr>
+<tr><td>6</td><td><code>&lt;pass&gt;</code></td><td><code>1</code></td><td>Ordem do <code>fsck</code> (verificação) no boot: <code>1</code> = a raiz, primeiro; <code>2</code> = os outros depois; <code>0</code> = não verificar</td></tr>
+</table>
+</div>
+
+<p>As outras duas linhas, lidas do mesmo jeito:</p>
+<ul>
+  <li><strong><code>/boot</code></strong>: a partição EFI (<code>vfat</code> = FAT32). As opções longas (<code>fmask=0022,dmask=0022</code> = permissões dos arquivos e pastas, já que a FAT não tem dono nem permissões; <code>codepage</code>, <code>iocharset</code>, <code>shortname</code>, <code>utf8</code> = como tratar os nomes; <code>errors=remount-ro</code> = se achar erro, passar a só leitura) foram copiadas pelo <code>genfstab</code> do que o kernel estava usando. Pass <code>2</code>: verificada depois da raiz.</li>
+  <li><strong>swap</strong>: ponto de montagem <code>none</code> (swap não aparece em pasta nenhuma), tipo <code>swap</code>, opções <code>defaults</code>, pass <code>0</code> (swap não tem o que verificar). Mais em <a href="swap-zram.html">Swap e zram</a>.</li>
+</ul>
+
+<div class="try" data-goal="ran:\bgrep\b.*fstab,out:UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9" data-solucao="grep -v '^#' /etc/fstab">
+<p class="try-task"><strong>Missão:</strong> mostre o <code>/etc/fstab</code> <strong>sem</strong> as linhas de comentário (as que começam com <code>#</code>). Dica: <code>grep -v</code> mostra as linhas que <strong>não</strong> casam.</p>
+</div>
+
+<hr>
+
+<h2>UUID, LABEL, PARTUUID ou /dev/sdX?</h2>
+<p>A primeira coluna pode apontar o disco de quatro jeitos. Os valores da ana (de <a href="discos.html">lsblk e blkid</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Muda quando…</th><th>Qual usar?</th></tr>
+<tr><td><code>UUID=</code></td><td><code>UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9</code></td><td>Você <strong>formata</strong> de novo</td><td><strong>O padrão</strong> (<code>genfstab -U</code>). Sempre único</td></tr>
+<tr><td><code>LABEL=</code></td><td><code>LABEL=dados</code></td><td>Você troca o rótulo</td><td>Legível, mas dois discos com o mesmo rótulo dão confusão</td></tr>
+<tr><td><code>PARTUUID=</code></td><td><code>PARTUUID=431c3f9d-d4b9-4e4d-b16a-d5399a4aee27</code></td><td>Você <strong>recria a partição</strong></td><td>Quando a partição ainda não tem sistema de arquivos, ou para o kernel (<code>root=PARTUUID=…</code>)</td></tr>
+<tr><td><code>/dev/sdX</code></td><td><code>/dev/sda3</code></td><td>A ordem dos discos muda (pendrive, outro cabo)</td><td><strong>Evite</strong>. Funciona até o dia em que o disco troca de letra</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Formatou? Atualize o fstab</strong>
+<p>Se você formatar uma partição que está no fstab (por exemplo, recriar o ext4 de um disco de dados), o UUID muda e a linha antiga passa a apontar para um disco que não existe. É o erro clássico da seção "Quando não funciona".</p>
+</div>
+
+<hr>
+
+<h2>As opções mais usadas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th></tr>
+<tr><td><code>defaults</code></td><td>O pacote padrão: <code>rw,suid,dev,exec,auto,nouser,async</code> (leitura e escrita, monta no boot, só o root monta). Use quando não precisa de nada especial</td></tr>
+<tr><td><code>rw</code> / <code>ro</code></td><td>Leitura e escrita / somente leitura</td></tr>
+<tr><td><code>relatime</code></td><td>Grava a data de último acesso só de vez em quando. É o padrão do kernel (por isso o <code>genfstab</code> o escreveu)</td></tr>
+<tr><td><code>noatime</code></td><td>Nunca grava a data de acesso: um pouco menos de escrita no disco. Popular em SSDs; quase nenhum programa precisa dessa data</td></tr>
+<tr><td><code>noauto</code></td><td>Não monta no boot (só quando você mandar)</td></tr>
+<tr><td><code>nofail</code></td><td>Se o disco não estiver lá, <strong>o boot continua</strong>. Essencial para discos externos e segundos discos</td></tr>
+<tr><td><code>x-systemd.automount</code></td><td>Monta no primeiro acesso à pasta, não no boot (boot mais rápido; ótimo para discos de dados e de rede)</td></tr>
+<tr><td><code>x-systemd.device-timeout=10s</code></td><td>Quanto tempo esperar o disco aparecer (o padrão é 90 segundos)</td></tr>
+<tr><td><code>user</code> / <code>users</code></td><td>Deixa usuários comuns montarem aquela linha</td></tr>
+<tr><td><code>discard</code></td><td>TRIM contínuo em SSD (o semanal, com <code>fstrim.timer</code>, costuma ser melhor: veja <a href="discos.html">lsblk, df, du</a>)</td></tr>
+</table>
+</div>
+
+<p>Opções do tipo <code>x-systemd.algo</code> são lidas pelo systemd e ignoradas pelo <code>mount</code>. Opções que só um tipo entende (como <code>fmask</code> da FAT ou <code>compress=zstd</code> do <a href="btrfs.html">Btrfs</a>) vão na mesma coluna.</p>
+
+<hr>
+
+<h2>mount e umount na prática</h2>
+<p>Para treinar sem risco, vamos usar um <strong>disco de teste</strong>: um arquivo comum transformado em disco com o <code>losetup</code> (<em>loop setup</em>). Para o Linux, ele se comporta como um pendrive. Todos os comandos abaixo são como root (<code>sudo -i</code>).</p>
+
+<h3>Preparar o disco de teste</h3>
+<ol class="passo">
+<li><strong>Criar um arquivo de 512 MiB</strong> (o <code>truncate</code> só anota o tamanho; o espaço é gasto aos poucos):
+<pre class="term">#> mkdir -p /var/tmp/a7
+#> truncate -s 512M /var/tmp/a7/disco.img
+#> ls -lh /var/tmp/a7/disco.img
+-rw-r--r-- 1 root root 512M 16 out 13:22 /var/tmp/a7/disco.img
+</pre></li>
+<li><strong>Ligar o arquivo a um dispositivo loop</strong> (<code>-f</code> = o primeiro livre; <code>--show</code> = mostra qual foi):
+<pre class="term">#> losetup -f --show /var/tmp/a7/disco.img
+/dev/loop0
+</pre></li>
+<li><strong>Formatar em ext4 com o rótulo <code>dados</code></strong>:
+<pre class="term">#> mkfs.ext4 -L dados /dev/loop0
+mke2fs 1.47.4 (6-Mar-2025)
+A descartar blocos de dispositivo:      0/131072             feito
+A criar sistema de ficheiros com 131072 4k blocos e 32768 inodes
+UUID do sistema de ficheiros: 6a25becf-3d26-4913-b036-c34a83bc387e     « anote: é o UUID novo
+Seguranças de super-blocos armazenadas em blocos:
+	32768, 98304
+
+A alocar tabelas de grupo: 0/4   feito
+A escrever tabelas de inodes: 0/4   feito
+A criar diário (4096 blocos): feito
+A escrever super-blocos e informação de contabilidade do sistema de ficheiros: 0/4   feito
+</pre>
+<p>Sim, o <code>mkfs.ext4</code> do Arch fala português <strong>de Portugal</strong> ("ficheiros", "A criar"): a tradução dele não tem versão brasileira, e o sistema usa a mais próxima. Na instalação, no ambiente live em inglês, a mesma saída veio em inglês.</p></li>
+<li><strong>Conferir</strong>:
+<pre class="term">#> lsblk -f /dev/loop0
+NAME  FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0 ext4   1.0   dados 6a25becf-3d26-4913-b036-c34a83bc387e
+</pre></li>
+</ol>
+
+<h3>mount: montar</h3>
+
+<dl class="anatomy">
+  <dt>mount</dt><dd>Monta.</dd>
+  <dt>/dev/loop0</dt><dd>O quê (o dispositivo).</dd>
+  <dt>/mnt/a7</dt><dd>Onde (o ponto de montagem: uma pasta que <strong>precisa existir</strong>).</dd>
+</dl>
+
+<pre class="term">#> mount /dev/loop0 /mnt/a7
+mount: /mnt/a7: o ponto de montagem não existe.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> echo $?
+32
+#> mkdir /mnt/a7
+#> mount /dev/loop0 /mnt/a7
+#> echo $?
+0
+#> findmnt /mnt/a7
+TARGET  SOURCE     FSTYPE OPTIONS
+/mnt/a7 /dev/loop0 ext4   rw,relatime
+#> df -h /mnt/a7
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/loop0      488M  152K  452M   1% /mnt/a7
+#> ls -l /mnt/a7
+total 16
+drwx------ 2 root root 16384 16 out 13:22 lost+found
+</pre>
+
+<p>O primeiro <code>mount</code> falhou porque a pasta não existia; o código <strong>32</strong> é o "falha de montagem" do <code>mount</code>. Depois do <code>mkdir</code>, nenhuma mensagem e código 0: deu certo. Ninguém precisou dizer que é ext4, porque o <code>mount</code> descobre o tipo sozinho (para forçar, existe <code>-t tipo</code>). A pasta <code>lost+found</code> é do ext4: é onde o <code>fsck</code> guarda pedaços de arquivos recuperados.</p>
+
+<h3>umount: desmontar</h3>
+<p>O comando é <code>umount</code>, <strong>sem o "n"</strong>. Ele aceita a pasta ou o dispositivo.</p>
+
+<pre class="term">#> echo "arquivo de teste" &gt; /mnt/a7/teste.txt
+#> cd /mnt/a7
+#> umount /mnt/a7
+umount: /mnt/a7: o alvo está ocupado.
+#> echo $?
+32
+#> cd
+#> umount /mnt/a7
+#> echo $?
+0
+#> ls /mnt/a7
+#>
+</pre>
+
+<p>O primeiro <code>umount</code> falhou porque o próprio shell estava <strong>dentro</strong> da pasta: um disco não pode ser desmontado enquanto algum programa usa algo nele (uma pasta aberta, um arquivo aberto). Depois de sair com <code>cd</code>, deu certo, e a pasta <code>/mnt/a7</code> voltou a ser uma pasta vazia comum: o arquivo <code>teste.txt</code> continua dentro do disco de teste, não na pasta.</p>
+
+<h3>Montar pelo rótulo, com opções</h3>
+<pre class="term">#> mount LABEL=dados /mnt/a7
+#> ls /mnt/a7
+lost+found
+teste.txt
+#> umount /dev/loop0
+#> mount -o ro,noatime /dev/loop0 /mnt/a7
+#> findmnt /mnt/a7
+TARGET  SOURCE     FSTYPE OPTIONS
+/mnt/a7 /dev/loop0 ext4   ro,noatime
+#> touch /mnt/a7/novo
+touch: não foi possível tocar '/mnt/a7/novo': Sistema de arquivos somente para leitura
+#> umount /mnt/a7
+</pre>
+
+<p>A primeira coluna do fstab funciona também no <code>mount</code>: <code>LABEL=</code>, <code>UUID=</code>. O <code>-o</code> (<em>options</em>) recebe as mesmas opções da quarta coluna do fstab; com <code>ro</code>, qualquer gravação é recusada.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma de montar</th><th>Quando usar</th></tr>
+<tr><td><code>sudo mount /dev/sdb1 /mnt/pasta</code></td><td>Uma vez, agora (some no próximo boot)</td></tr>
+<tr><td>Linha no <code>/etc/fstab</code></td><td>Todo boot, sempre no mesmo lugar (segundo disco, partição de dados)</td></tr>
+<tr><td>Gerenciador de arquivos (Dolphin, Nautilus)</td><td>Pendrives e HDs externos no desktop: um clique monta em <code>/run/media/ana/RÓTULO</code> (via <code>udisks2</code>), sem root</td></tr>
+<tr><td><code>udisksctl mount -b /dev/sdb1</code></td><td>O mesmo que o gerenciador, pelo terminal, sem <code>sudo</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Acrescentar um disco ao fstab (e testar antes)</h2>
+<p>Agora vamos fazer o disco de teste montar "sozinho". Para não arriscar o boot da ana, a linha vai para uma <strong>cópia</strong> do fstab em <code>/tmp/a7/fstab</code>. No seu computador, o roteiro é o mesmo, só que no arquivo real (veja o passo a passo logo depois).</p>
+
+<ol class="passo">
+<li><strong>Pegue o UUID</strong>:
+<pre class="term">#> blkid -s UUID -o value /dev/loop0
+6a25becf-3d26-4913-b036-c34a83bc387e
+</pre></li>
+<li><strong>Acrescente a linha</strong> (com <code>&gt;&gt;</code>, que <strong>acrescenta</strong>; um <code>&gt;</code> sozinho apagaria o arquivo inteiro):
+<pre class="term">#> cp /etc/fstab /tmp/a7/fstab
+#> printf "\n# disco extra de dados\nUUID=6a25becf-3d26-4913-b036-c34a83bc387e\t/mnt/a7\text4\tdefaults,noatime,nofail\t0 2\n" &gt;&gt; /tmp/a7/fstab
+#> tail -3 /tmp/a7/fstab
+
+# disco extra de dados
+UUID=6a25becf-3d26-4913-b036-c34a83bc387e	/mnt/a7	ext4	defaults,noatime,nofail	0 2
+</pre>
+<p>No dia a dia você vai usar um editor (<code>sudo nano /etc/fstab</code>); o <code>printf</code> só deixa o exemplo exato.</p></li>
+<li><strong>Verifique a sintaxe</strong> com o <code>findmnt --verify</code> (<code>--tab-file</code> aponta a cópia; sem ele, verifica o <code>/etc/fstab</code>):
+<pre class="term">#> findmnt --verify --tab-file /tmp/a7/fstab
+Sucesso, nenhum erro ou aviso detectado
+#> echo $?
+0
+</pre></li>
+<li><strong>Monte tudo o que está no arquivo</strong> com <code>mount -a</code> (<em>all</em>; <code>--fstab</code> aponta a cópia; <code>-v</code> conta o que fez):
+<pre class="term">#> mount -av --fstab /tmp/a7/fstab
+/                        : ignorado
+/boot                    : já montada
+none                     : ignorado
+/mnt/a7                  : successfully mounted
+#> findmnt /mnt/a7
+TARGET  SOURCE     FSTYPE OPTIONS
+/mnt/a7 /dev/loop0 ext4   rw,noatime
+</pre>
+<p>O <code>mount -a</code> pula o que já está montado (<code>/</code> e <code>/boot</code>), ignora a swap e monta o que falta. Se ele funcionou sem erro, o boot também vai funcionar. Com a linha no fstab, até o atalho <code>mount /mnt/a7</code> funciona: o <code>mount</code> completa o resto pelo arquivo.</p></li>
+</ol>
+
+<h3>No seu computador, com o fstab real</h3>
+<ol class="passo">
+<li>Faça uma cópia de segurança: <code>sudo cp /etc/fstab /etc/fstab.bak</code>.</li>
+<li>Crie o ponto de montagem (<code>sudo mkdir -p /mnt/dados</code>) e edite: <code>sudo nano /etc/fstab</code>.</li>
+<li>Verifique: <code>sudo findmnt --verify</code>.</li>
+<li>Avise o systemd que o fstab mudou: <code>sudo systemctl daemon-reload</code> (senão ele reclama que o fstab é mais novo que as unidades geradas).</li>
+<li>Teste: <code>sudo mount -a</code>. Sem mensagens = tudo certo. Só depois reinicie.</li>
+</ol>
+
+<div class="warning">
+<strong>findmnt --verify não pega tudo</strong>
+<p>Ele confere se o disco existe, se a pasta existe e se o tipo bate, mas <strong>não</strong> conhece as opções de cada sistema de arquivos. Teste real com a opção <code>noatime</code> escrita errado:</p>
+<pre class="term">#> cat /tmp/a7/fstab-opcao
+UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/a7 ext4 defaults,noatme 0 2
+#> findmnt --verify --tab-file /tmp/a7/fstab-opcao
+Sucesso, nenhum erro ou aviso detectado
+#> mount -a --fstab /tmp/a7/fstab-opcao
+mount: /mnt/a7: fsconfig() falhou: ext4: Unknown parameter 'noatme'.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> echo $?
+32
+</pre>
+<p>Por isso, sempre os dois: <code>findmnt --verify</code> <strong>e</strong> <code>mount -a</code>.</p>
+</div>
+
+<div class="tryscript" data-file="adiciona.sh" data-setup="printf '# /dev/sda3\nUUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9\t/\text4\trw,relatime\t0 1\n' &gt; fstab.teste" data-goal="contains:~/fstab.teste=/mnt/dados,contains:~/fstab.teste=nofail,contains:~/fstab.teste=UUID=75d167c8">
+<p class="try-task"><strong>Missão:</strong> o script deveria <strong>acrescentar</strong> a linha do disco de dados ao arquivo <code>fstab.teste</code> (uma cópia, na pasta da ana), com a opção <code>nofail</code>. Mas ele tem dois problemas: falta o <code>nofail</code> e o redirecionamento apaga a linha da raiz. Corrija e clique em Rodar; o <code>cat</code> no fim deve mostrar as duas linhas.</p>
+<pre class="script">#!/usr/bin/env bash
+linha="UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/dados ext4 defaults,noatime 0 2"
+echo "$linha" &gt; fstab.teste
+cat fstab.teste
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+linha="UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/dados ext4 defaults,noatime,nofail 0 2"
+echo "$linha" &gt;&gt; fstab.teste
+cat fstab.teste
+</pre>
+</div>
+
+<hr>
+
+<h2>A linha errada que trava o boot</h2>
+<p>Lembra do <code>systemd-fstab-generator</code>? Dá para rodá-lo à mão numa cópia e ver o que ele gera: a variável <code>SYSTEMD_FSTAB</code> aponta o arquivo a ler, <code>SYSTEMD_PROC_CMDLINE=""</code> finge uma linha de comando do kernel vazia, e as três pastas no fim são onde ele grava as unidades. Duas cópias, uma linha cada, a única diferença é o <code>nofail</code>:</p>
+
+<pre class="term">#> cat /tmp/a7/fstab-sem /tmp/a7/fstab-com
+UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/a7 ext4 defaults 0 2
+UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/a7 ext4 defaults,nofail 0 2
+#> SYSTEMD_FSTAB=/tmp/a7/fstab-sem SYSTEMD_PROC_CMDLINE="" /usr/lib/systemd/system-generators/systemd-fstab-generator /tmp/a7/gen1 /tmp/a7/gen1 /tmp/a7/gen1
+#> SYSTEMD_FSTAB=/tmp/a7/fstab-com SYSTEMD_PROC_CMDLINE="" /usr/lib/systemd/system-generators/systemd-fstab-generator /tmp/a7/gen2 /tmp/a7/gen2 /tmp/a7/gen2
+#> ls -R /tmp/a7/gen1 /tmp/a7/gen2
+/tmp/a7/gen1:
+local-fs.target.requires          « sem nofail: "requires" (exige)
+local-fs.target.wants
+mnt-a7.mount
+
+/tmp/a7/gen1/local-fs.target.requires:
+mnt-a7.mount
+
+/tmp/a7/gen1/local-fs.target.wants:
+systemd-remount-fs.service
+
+/tmp/a7/gen2:
+local-fs.target.wants             « com nofail: só "wants" (deseja)
+mnt-a7.mount
+
+/tmp/a7/gen2/local-fs.target.wants:
+mnt-a7.mount
+systemd-remount-fs.service
+</pre>
+
+<p>Sem <code>nofail</code>, a montagem vai para <code>local-fs.target.requires</code>: o alvo "sistemas de arquivos locais" <strong>exige</strong> esse disco. Se ele não montar (UUID errado, disco desligado, opção errada), o <code>local-fs.target</code> falha, e o systemd não tem como seguir: ele para no <strong>emergency mode</strong>. Com <code>nofail</code>, a montagem vai para <code>wants</code>: se falhar, fica registrado no log e o boot continua.</p>
+
+<h3>Como é o emergency mode (ilustrativo)</h3>
+<p>Não dá para quebrar o boot da máquina de laboratório, então a tela abaixo é ilustrativa. Depois de esperar até 90 segundos pelo disco, o systemd mostra algo assim:</p>
+<pre class="term" data-title="tela do boot (ilustrativo)">[ TIME ] Timed out waiting for device /dev/disk/by-uuid/6a25becf-….
+[DEPEND] Dependency failed for /mnt/dados.
+[DEPEND] Dependency failed for Local File Systems.
+You are in emergency mode. After logging in, type "journalctl -xb" to view
+system logs, "systemctl reboot" to reboot, or "exit" to continue bootup.
+Give root password for maintenance
+(or press Control-D to continue):
+</pre>
+
+<h3>Como sair dele</h3>
+<ol class="passo">
+<li>Digite a <strong>senha do root</strong> (a que você definiu com <code>passwd</code> na instalação). Você cai num shell de root, com a raiz já montada.</li>
+<li>Veja o que falhou: <code>journalctl -xb -p err</code> ou <code>systemctl --failed</code>.</li>
+<li>Se a raiz estiver somente leitura, libere a escrita: <code>mount -o remount,rw /</code>.</li>
+<li>Corrija a linha (<code>nano /etc/fstab</code>): conserte o UUID, acrescente <code>nofail</code> ou comente a linha com <code>#</code>. Se fez cópia: <code>cp /etc/fstab.bak /etc/fstab</code>.</li>
+<li><code>systemctl daemon-reload</code>, <code>mount -a</code> para conferir, e <code>systemctl reboot</code>.</li>
+</ol>
+<p>Se não aparecer o pedido de senha (root sem senha, ou a raiz nem montou), o caminho é o pendrive de instalação e o <code>arch-chroot</code>: veja <a href="chroot-resgate.html">Resgate com chroot</a>.</p>
+
+<div class="tip">
+<strong>Regra de ouro</strong>
+<p>Todo disco que <strong>não</strong> é necessário para o sistema ligar (segundo HD, partição de dados, disco externo, compartilhamento de rede) leva <code>nofail</code>. Se quiser que o boot não espere 90 segundos por ele quando estiver desligado, acrescente <code>x-systemd.device-timeout=10s</code>.</p>
+</div>
+
+<hr>
+
+<h2>x-systemd.automount: montar só quando usar</h2>
+<p>Com <code>noauto,x-systemd.automount</code>, o boot não monta o disco: o systemd deixa uma "armadilha" na pasta, e o disco é montado no primeiro acesso. O gerador cria uma unidade extra, <code>.automount</code>:</p>
+
+<pre class="term">#> cat /tmp/a7/fstab-auto
+UUID=6a25becf-3d26-4913-b036-c34a83bc387e /mnt/a7 ext4 defaults,nofail,noauto,x-systemd.automount 0 2
+#> SYSTEMD_FSTAB=/tmp/a7/fstab-auto SYSTEMD_PROC_CMDLINE="" /usr/lib/systemd/system-generators/systemd-fstab-generator /tmp/a7/gen3 /tmp/a7/gen3 /tmp/a7/gen3
+#> ls -R /tmp/a7/gen3
+/tmp/a7/gen3:
+local-fs.target.wants
+mnt-a7.automount
+mnt-a7.mount
+
+/tmp/a7/gen3/local-fs.target.wants:
+mnt-a7.automount                  « no boot, só a "armadilha" é ligada
+systemd-remount-fs.service
+</pre>
+
+<p>Para ver o efeito sem mexer no fstab, o <code>systemd-mount</code> cria a mesma dupla de unidades na hora:</p>
+
+<pre class="term">#> systemd-mount --automount=yes /dev/loop0 /mnt/a7
+Started unit mnt-a7.automount for mount point: /mnt/a7
+#> findmnt /mnt/a7
+TARGET  SOURCE    FSTYPE OPTIONS
+/mnt/a7 systemd-1 autofs rw,relatime,fd=73,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=40026
+#> ls /mnt/a7
+lost+found
+teste.txt
+#> findmnt /mnt/a7
+TARGET  SOURCE     FSTYPE OPTIONS
+/mnt/a7 systemd-1  autofs rw,relatime,fd=73,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=40026
+/mnt/a7 /dev/loop0 ext4   rw,relatime
+#> systemd-umount /mnt/a7
+Stopped unit mnt-a7.mount for mount point: /mnt/a7
+Stopped unit mnt-a7.automount for mount point: /mnt/a7
+</pre>
+
+<p>Antes do <code>ls</code>, a pasta tinha só a armadilha (<code>autofs</code>). O <code>ls</code> tocou na pasta, o systemd montou o disco de verdade (<code>ext4</code>) e entregou a lista, sem você perceber a diferença.</p>
+
+<hr>
+
+<h2>Desfazer o disco de teste</h2>
+<pre class="term">#> losetup -d /dev/loop0
+#> rm /var/tmp/a7/disco.img
+#> rmdir /mnt/a7 /var/tmp/a7
+</pre>
+<p>O disco já foi desmontado pelo <code>systemd-umount</code> (se não, comece com <code>umount /mnt/a7</code>). <code>losetup -d</code> (<em>detach</em>) solta o arquivo do <code>/dev/loop0</code>. Se o <code>rmdir</code> disser <code>Dispositivo ou recurso está ocupado</code>, ainda há algo montado ali: confira com <code>findmnt /mnt/a7</code> e desmonte de novo.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"o ponto de montagem não existe"</strong>
+<pre class="term">#> mount /dev/loop0 /mnt/a7
+mount: /mnt/a7: o ponto de montagem não existe.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.</pre>
+<p><strong>Como resolver:</strong> crie a pasta antes: <code>mkdir -p /mnt/a7</code> (ou use <code>mount --mkdir</code>, como na instalação). No fstab, o <code>findmnt --verify</code> acusa: <code>[E] alvo não alcançável na inicialização: Arquivo ou diretório inexistente</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"o alvo está ocupado"</strong>
+<pre class="term">#> umount /mnt/a7
+umount: /mnt/a7: o alvo está ocupado.</pre>
+<p><strong>O que aconteceu:</strong> algum programa está usando o disco: um terminal com <code>cd</code> lá dentro, um arquivo aberto num editor, o gerenciador de arquivos.</p>
+<p><strong>Como resolver:</strong> saia da pasta e feche os programas. Para descobrir quem é: <code>fuser -vm /mnt/a7</code> (pacote <code>psmisc</code>). Evite <code>umount -l</code> ("preguiçoso"): ele esconde o problema.</p>
+</div>
+
+<div class="cenario">
+<strong>"é necessário ser superusuário para montar"</strong>
+<pre class="term">$ mount /dev/loop0 /mnt/a7
+mount: /mnt/a7: é necessário ser superusuário para montar.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.</pre>
+<p><strong>Como resolver:</strong> <code>sudo mount …</code>, ou <code>udisksctl mount -b /dev/sdb1</code> para discos removíveis.</p>
+</div>
+
+<div class="cenario">
+<strong>"não montado"</strong>
+<pre class="term">#> umount /mnt/a7
+umount: /mnt/a7: não montado.
+#> echo $?
+32</pre>
+<p><strong>O que aconteceu:</strong> não havia nada montado ali (já foi desmontado, ou o nome está errado). Confira com <code>findmnt /mnt/a7</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível localizar UUID=…"</strong>
+<pre class="term">#> mount -a --fstab /tmp/a7/fstab-erro
+mount: /mnt/a7: não foi possível localizar UUID=6a25becf-3d26-4913-b036-c34a83bc3999.
+mount: /mnt/fotos: o ponto de montagem não existe.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> findmnt --verify --tab-file /tmp/a7/fstab-erro
+
+0 erro de análise, 2 erros, 0 aviso
+/mnt/a7
+   [E] fonte não alcançável na inicialização: UUID=6a25becf-3d26-4913-b036-c34a83bc3999
+/mnt/fotos
+   [E] alvo não alcançável na inicialização: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o UUID não bate com nenhum disco: erro de digitação, disco desligado ou partição formatada de novo (UUID novo). O <code>findmnt --verify</code> mostra cada problema com <code>[E]</code> e sai com código 1.</p>
+<p><strong>Como resolver:</strong> pegue o UUID atual com <code>lsblk -f</code> ou <code>sudo blkid</code> e copie-o (nunca redigite). Se o disco é opcional, acrescente <code>nofail</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Unknown parameter" ou "Can't open blockdev"</strong>
+<pre class="term">#> mount -a --fstab /tmp/a7/fstab-opcao
+mount: /mnt/a7: fsconfig() falhou: ext4: Unknown parameter 'noatme'.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> mount -t vfat /dev/loop0 /mnt/a7
+mount: /mnt/a7: fsconfig() falhou: /dev/loop0: Can't open blockdev.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.</pre>
+<p><strong>O que aconteceu:</strong> no primeiro, uma opção que o ext4 não conhece (erro de digitação). No segundo, o tipo está errado: o disco é ext4 e foi pedido <code>vfat</code>.</p>
+<p><strong>Como resolver:</strong> confira a grafia das opções e o tipo com <code>lsblk -f</code>. Em dúvida sobre o tipo, deixe o <code>mount</code> descobrir (sem <code>-t</code>) ou use <code>auto</code> na terceira coluna.</p>
+</div>
+
+<div class="cenario">
+<strong>O boot parou em "You are in emergency mode"</strong>
+<p><strong>O que aconteceu:</strong> uma linha do fstab sem <code>nofail</code> não montou.</p>
+<p><strong>Como resolver:</strong> senha do root → <code>journalctl -xb -p err</code> → corrija o fstab → <code>systemctl daemon-reload</code> → <code>mount -a</code> → <code>systemctl reboot</code> (detalhes acima).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>sudo mount /dev/X /pasta</code></td><td>Monta agora</td></tr>
+<tr><td><code>sudo mount -o ro,noatime /dev/X /pasta</code></td><td>Monta com opções</td></tr>
+<tr><td><code>sudo mount UUID=… /pasta</code> / <code>LABEL=…</code></td><td>Monta pelo identificador</td></tr>
+<tr><td><code>sudo mount --mkdir /dev/X /pasta</code></td><td>Cria a pasta se faltar</td></tr>
+<tr><td><code>sudo umount /pasta</code> (ou <code>/dev/X</code>)</td><td>Desmonta</td></tr>
+<tr><td><code>sudo findmnt --verify</code></td><td>Confere o <code>/etc/fstab</code> (<code>--tab-file arq</code> para outro arquivo)</td></tr>
+<tr><td><code>sudo mount -a</code> / <code>sudo mount -av</code></td><td>Monta tudo o que falta do fstab (teste antes de reiniciar)</td></tr>
+<tr><td><code>sudo systemctl daemon-reload</code></td><td>Depois de editar o fstab</td></tr>
+<tr><td><code>systemd-mount --automount=yes /dev/X /pasta</code></td><td>Automontagem na hora (sem fstab)</td></tr>
+<tr><td><code>sudo losetup -f --show arq.img</code> / <code>losetup -d /dev/loopN</code></td><td>Arquivo como disco / soltar</td></tr>
+<tr><th>Linha de fstab</th><th></th></tr>
+<tr><td colspan="2"><code>UUID=…  /mnt/dados  ext4  defaults,noatime,nofail  0 2</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A linha do disco de dados</h3>
+<p>Complete a linha para um disco ext4 de dados, montado em <code>/mnt/dados</code>, que <strong>não</strong> deve travar o boot se estiver desligado, verificado depois da raiz:</p>
+<div class="ex-code">UUID=6a25becf-…  /mnt/dados  ext4  defaults,<input data-answer="nofail" aria-label="opção">  0 <input data-answer="2" aria-label="pass" style="width:2.5em"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Testar antes de reiniciar</h3>
+<p>Depois de editar o fstab, qual comando monta tudo o que falta, para você ver os erros agora e não no boot?</p>
+<div class="ex-code">sudo mount <input data-answer="-a|-av|-va" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você reformatou a partição de dados e, no boot seguinte, caiu no emergency mode. Por quê?</p>
+<label><input type="radio" name="q3"> A formatação apagou o <code>/etc/fstab</code>.</label>
+<label><input type="radio" name="q3"> O UUID mudou, e a linha do fstab (sem <code>nofail</code>) aponta para um disco que não existe mais.</label>
+<label><input type="radio" name="q3"> O <code>fstrim.timer</code> estava desligado.</label>
+<label><input type="radio" name="q3"> Faltou rodar <code>mkinitcpio -P</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual identificador o <code>genfstab -U</code> usa, e por quê?</p>
+<label><input type="radio" name="q4"> <code>/dev/sda3</code>, porque é o mais curto.</label>
+<label><input type="radio" name="q4"> <code>LABEL</code>, porque é legível.</label>
+<label><input type="radio" name="q4"> <code>PARTUUID</code>, porque nunca muda.</label>
+<label><input type="radio" name="q4"> <code>UUID</code> do sistema de arquivos, porque não muda quando os discos trocam de letra.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. <code>umount /mnt/a7</code> responde "o alvo está ocupado". O que fazer primeiro?</p>
+<label><input type="radio" name="q5"> Sair da pasta (<code>cd</code>) e fechar os programas que usam arquivos dela.</label>
+<label><input type="radio" name="q5"> Reiniciar o computador.</label>
+<label><input type="radio" name="q5"> Apagar a pasta com <code>rm -r</code>.</label>
+<label><input type="radio" name="q5"> Rodar <code>mount -a</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>mount o-quê onde</code> monta agora; o <code>/etc/fstab</code> monta a cada boot. <code>umount</code> (sem "n") desmonta.</li>
+  <li>Seis colunas: o quê, onde, tipo, opções, dump (0), pass (1 raiz, 2 outros, 0 nunca).</li>
+  <li>Use <code>UUID=</code> (como o <code>genfstab -U</code>); copie o valor do <code>lsblk -f</code>, não redigite.</li>
+  <li>Discos que não são essenciais levam <code>nofail</code>; sem ele, um disco ausente leva ao emergency mode.</li>
+  <li>Depois de editar: <code>findmnt --verify</code>, <code>systemctl daemon-reload</code> e <code>mount -a</code>. Só então reinicie.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o arquivo e todas as opções estão em <a href="https://wiki.archlinux.org/title/Fstab">fstab</a> (<a href="https://wiki.archlinux.org/title/Fstab_(Portugu%C3%AAs)">em português</a>); os identificadores, em <a href="https://wiki.archlinux.org/title/Persistent_block_device_naming">Persistent block device naming</a> (<a href="https://wiki.archlinux.org/title/Persistent_block_device_naming_(Portugu%C3%AAs)">em português</a>); montar e verificar sistemas de arquivos, em <a href="https://wiki.archlinux.org/title/File_systems">File systems</a> (<a href="https://wiki.archlinux.org/title/File_systems_(Portugu%C3%AAs)">em português</a>) e <a href="https://wiki.archlinux.org/title/Fsck">fsck</a> (<a href="https://wiki.archlinux.org/title/Fsck_(Portugu%C3%AAs)">em português</a>); e as unidades de montagem do systemd, em <a href="https://wiki.archlinux.org/title/Systemd">systemd</a> (<a href="https://wiki.archlinux.org/title/Systemd_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

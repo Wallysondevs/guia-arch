@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch lsblk, df e du — ver discos, partições e espaço livre | Guia Arch</title>
+<meta name="description" content="Aprenda a enxergar os discos do Arch Linux: lsblk (-f, -o), blkid, fdisk -l, df -h, du -sh e findmnt, com as saídas reais de uma instalação, e como ligar o TRIM do SSD com o fstrim.timer (que no Arch vem desligado).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Discos: <span class="hl">lsblk, df e du</span></h1>
+
+<p class="intro">Antes de montar um disco novo, mexer no <code>fstab</code> ou descobrir por que o espaço acabou, você precisa <strong>enxergar</strong> os discos: quais existem, como estão divididos, que sistema de arquivos cada parte usa, onde ela aparece nas pastas e quanto espaço sobra. Esta aula mostra as ferramentas que respondem a cada uma dessas perguntas, todas com a saída real do Arch da ana.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são disco, partição, sistema de arquivos e ponto de montagem, e como o Linux dá nome a eles (<code>sda</code>, <code>nvme0n1p2</code>…).</li>
+  <li>Ler o <code>lsblk</code> (com <code>-f</code> e <code>-o</code>), o <code>blkid</code> e o <code>fdisk -l</code>.</li>
+  <li>Ver o espaço livre com <code>df -h</code> e o que ocupa espaço com <code>du -sh</code>.</li>
+  <li>Ver o que está montado onde com <code>findmnt</code>.</li>
+  <li>Saber se o seu SSD aceita TRIM e ligar o <code>fstrim.timer</code>, que no Arch vem <strong>desligado</strong>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Disco, partição, sistema de arquivos e montagem</h2>
+<p>Pense num armário:</p>
+<ul>
+  <li>O <strong>disco</strong> (SSD, HD, pendrive) é o armário inteiro.</li>
+  <li>As <strong>partições</strong> são as gavetas: pedaços do disco separados por uma tabela (no Arch moderno, a tabela <strong>GPT</strong>). Você criou as da ana em <a href="particionar.html">Particionar o Disco</a>.</li>
+  <li>O <strong>sistema de arquivos</strong> (ext4, FAT32, Btrfs…) é o jeito de organizar o que vai dentro de cada gaveta: pastas, nomes, permissões. Ele é criado ao <a href="formatar-montar.html">formatar</a>.</li>
+  <li>A <strong>montagem</strong> é pendurar a gaveta numa pasta. No Linux não existe "C:" nem "D:": tudo fica numa árvore só, que começa em <code>/</code>, e cada partição aparece numa pasta dela (o <strong>ponto de montagem</strong>).</li>
+</ul>
+
+<h3>Os nomes dos discos no Linux</h3>
+<p>Cada disco e cada partição vira um arquivo especial dentro de <code>/dev</code> (de <em>devices</em>, dispositivos). O nome conta que tipo de aparelho é:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>O que é</th><th>Partições</th></tr>
+<tr><td><code>/dev/sda</code>, <code>sdb</code>…</td><td>Disco SATA, SCSI ou USB (<strong>s</strong>csi <strong>d</strong>isk, <strong>a</strong> = o primeiro)</td><td><code>sda1</code>, <code>sda2</code>…</td></tr>
+<tr><td><code>/dev/nvme0n1</code></td><td>SSD NVMe (controladora 0, <em>namespace</em> 1)</td><td><code>nvme0n1p1</code>, <code>nvme0n1p2</code>… (com <strong>p</strong>)</td></tr>
+<tr><td><code>/dev/mmcblk0</code></td><td>Cartão SD ou memória eMMC</td><td><code>mmcblk0p1</code>…</td></tr>
+<tr><td><code>/dev/sr0</code></td><td>Leitor de CD/DVD (<em>SCSI ROM</em>)</td><td>—</td></tr>
+<tr><td><code>/dev/loop0</code></td><td>Um <strong>arquivo</strong> usado como se fosse um disco (a ISO no ambiente live, por exemplo)</td><td>—</td></tr>
+<tr><td><code>/dev/zram0</code></td><td>Um disco feito de memória RAM comprimida (veja <a href="swap-zram.html">Swap e zram</a>)</td><td>—</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>A letra pode mudar</strong>
+<p>O <code>sda</code> de hoje pode virar <code>sdb</code> amanhã, se você ligar um pendrive antes de ligar o computador ou trocar o cabo de porta. Por isso o <code>/etc/fstab</code> do Arch não usa esses nomes, e sim o <strong>UUID</strong> de cada partição (você vai ver logo abaixo e em <a href="fstab.html">mount e fstab</a>).</p>
+</div>
+
+<hr>
+
+<h2>lsblk: a árvore dos discos</h2>
+
+<dl class="anatomy">
+  <dt>lsblk</dt><dd><em>list block devices</em>: lista os "dispositivos de bloco", que são os discos, as partições e tudo o que funciona como um disco. Não precisa de root.</dd>
+</dl>
+
+<pre class="term">$ lsblk
+NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+sda      8:0    0   30G  0 disk                  « o disco inteiro: 30 GiB
+├─sda1   8:1    0    1G  0 part /boot            « partição EFI
+├─sda2   8:2    0    4G  0 part [SWAP]           « swap: não é montada numa pasta
+└─sda3   8:3    0   25G  0 part /                « a raiz do sistema
+sr0     11:0    1 1024M  1 rom                   « o leitor de CD da máquina virtual
+</pre>
+
+<p>Os traços <code>├─</code> e <code>└─</code> mostram quem está dentro de quem: as três partições estão dentro do disco <code>sda</code>. As colunas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th><th>Na ana</th></tr>
+<tr><td><code>NAME</code></td><td>Nome em <code>/dev</code></td><td><code>sda3</code> = <code>/dev/sda3</code></td></tr>
+<tr><td><code>MAJ:MIN</code></td><td>Números internos do kernel (tipo de driver : número do aparelho)</td><td>Raramente importa</td></tr>
+<tr><td><code>RM</code></td><td><em>Removable</em>: 1 se é removível</td><td>O CD (<code>sr0</code>) é 1</td></tr>
+<tr><td><code>SIZE</code></td><td>Tamanho (em GiB, MiB…)</td><td>30G, 1G, 4G, 25G</td></tr>
+<tr><td><code>RO</code></td><td><em>Read only</em>: 1 se é só leitura</td><td>O CD é 1</td></tr>
+<tr><td><code>TYPE</code></td><td><code>disk</code>, <code>part</code> (partição), <code>rom</code>, <code>loop</code>, <code>crypt</code>, <code>lvm</code>…</td><td>—</td></tr>
+<tr><td><code>MOUNTPOINTS</code></td><td>Onde está montado (vazio = não está montado)</td><td><code>/</code>, <code>/boot</code>, <code>[SWAP]</code></td></tr>
+</table>
+</div>
+
+<p>Compare com o que você montou à mão na instalação: <code>sda1</code> em <code>/boot</code>, <code>sda2</code> como swap e <code>sda3</code> em <code>/</code>. É o mesmo desenho, agora visto de dentro do sistema instalado.</p>
+
+<h3>lsblk -f: o sistema de arquivos de cada parte</h3>
+
+<dl class="anatomy">
+  <dt>lsblk</dt><dd>Lista os discos.</dd>
+  <dt>-f</dt><dd><em>filesystems</em>: troca as colunas por informações do sistema de arquivos.</dd>
+</dl>
+
+<pre class="term">$ lsblk -f
+NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+sda
+├─sda1 vfat   FAT32       C509-6CB1                             929,2M     9% /boot
+├─sda2 swap   1           02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+└─sda3 ext4   1.0         75d167c8-1dad-4d0a-a0ae-b063058a18e9   18,3G    20% /
+sr0
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>FSTYPE</code></td><td>Tipo do sistema de arquivos: <code>vfat</code> (FAT32, exigido pela partição EFI), <code>swap</code>, <code>ext4</code></td></tr>
+<tr><td><code>FSVER</code></td><td>Versão do formato</td></tr>
+<tr><td><code>LABEL</code></td><td>Rótulo (um apelido que você dá ao formatar, como <code>mkfs.ext4 -L dados</code>). Na ana, vazio: ninguém deu rótulo</td></tr>
+<tr><td><code>UUID</code></td><td>A "carteira de identidade" do sistema de arquivos, criada na formatação. Não muda quando o disco troca de letra</td></tr>
+<tr><td><code>FSAVAIL</code> / <code>FSUSE%</code></td><td>Espaço livre e porcentagem usada (só aparece para o que está montado)</td></tr>
+</table>
+</div>
+
+<p>O UUID da FAT32 é curto (<code>C509-6CB1</code>) porque esse formato antigo só guarda 8 dígitos. No ext4 e na swap ele tem 36 caracteres. Os mesmos UUIDs apareceram na tela quando você formatou (<code>mkswap</code> mostrou <code>UUID=02576132-…</code> e o <code>mkfs.ext4</code> mostrou <code>Filesystem UUID: 75d167c8-…</code>), e são eles que o <code>genfstab -U</code> escreveu no <code>/etc/fstab</code>.</p>
+
+<h3>lsblk -o: escolher as colunas</h3>
+
+<dl class="anatomy">
+  <dt>-o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS</dt><dd><em>output</em>: só estas colunas, nesta ordem, separadas por vírgula e sem espaço. A lista de todas as colunas aparece em <code>lsblk --help</code>.</dd>
+</dl>
+
+<pre class="term">$ lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS
+NAME    SIZE TYPE FSTYPE MOUNTPOINTS
+sda      30G disk
+├─sda1    1G part vfat   /boot
+├─sda2    4G part swap   [SWAP]
+└─sda3   25G part ext4   /
+sr0    1024M rom
+$ lsblk -o NAME,LABEL,UUID,PARTUUID,PARTLABEL /dev/sda
+NAME   LABEL UUID                                 PARTUUID                             PARTLABEL
+sda
+├─sda1       C509-6CB1                            42528876-2401-45ed-aa76-555fea61a03e
+├─sda2       02576132-0458-4975-916f-94e08af9a31c 70da2fa4-d42b-4f7b-916b-1385531205b8
+└─sda3       75d167c8-1dad-4d0a-a0ae-b063058a18e9 431c3f9d-d4b9-4e4d-b16a-d5399a4aee27
+</pre>
+
+<p>No segundo comando, o <code>/dev/sda</code> no fim limita a lista a um disco. Repare que há <strong>dois</strong> identificadores diferentes: o <code>UUID</code> é do <strong>sistema de arquivos</strong> (muda se você formatar de novo) e o <code>PARTUUID</code> é da <strong>partição</strong> na tabela GPT (muda se você apagar e recriar a partição). A diferença importa no <a href="fstab.html">fstab</a>.</p>
+
+<div class="try" data-goal="ran:^\s*lsblk\b.*-f,out:ext4" data-solucao="lsblk -f">
+<p class="try-task"><strong>Missão:</strong> descubra qual é o sistema de arquivos da partição montada em <code>/</code>. Use o <code>lsblk</code> com a opção que mostra os sistemas de arquivos.</p>
+</div>
+
+<hr>
+
+<h2>blkid: os identificadores, direto da fonte</h2>
+<p>O <code>blkid</code> (<em>block id</em>) lê o começo de cada partição e mostra o tipo e os identificadores. É o comando clássico para copiar um UUID.</p>
+
+<h3>A pegadinha: sem root, ele não mostra nada</h3>
+<pre class="term">$ blkid
+$ echo $?
+0
+</pre>
+<p>Nenhuma linha, nenhum erro e código 0. Como usuário comum, o <code>blkid</code> só consegue ler o próprio cache, que no Arch começa vazio; ele não tem permissão para abrir <code>/dev/sda3</code>. Não é que o disco não tenha UUID: falta o <code>sudo</code>.</p>
+
+<pre class="term">$ sudo blkid
+/dev/sda2: UUID="02576132-0458-4975-916f-94e08af9a31c" TYPE="swap" PARTUUID="70da2fa4-d42b-4f7b-916b-1385531205b8"
+/dev/sda3: UUID="75d167c8-1dad-4d0a-a0ae-b063058a18e9" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="431c3f9d-d4b9-4e4d-b16a-d5399a4aee27"
+/dev/sda1: UUID="C509-6CB1" BLOCK_SIZE="512" TYPE="vfat" PARTUUID="42528876-2401-45ed-aa76-555fea61a03e"
+</pre>
+
+<p>Para pegar só o valor (útil em scripts e para colar no fstab):</p>
+
+<dl class="anatomy">
+  <dt>-s UUID</dt><dd><em>show</em>: mostra só esta etiqueta.</dd>
+  <dt>-o value</dt><dd><em>output</em>: só o valor, sem <code>UUID="…"</code>.</dd>
+  <dt>/dev/sda3</dt><dd>A partição.</dd>
+</dl>
+
+<pre class="term">$ sudo blkid -s UUID -o value /dev/sda3
+75d167c8-1dad-4d0a-a0ae-b063058a18e9
+</pre>
+
+<div class="tip">
+<strong>Sem sudo: as pastas /dev/disk/by-*</strong>
+<p>O Linux também cria atalhos com esses nomes. Qualquer usuário pode listá-los, e é assim que o sistema acha a partição certa no boot:</p>
+<pre class="term">$ ls -l /dev/disk/by-uuid/
+total 0
+lrwxrwxrwx 1 root root 10 16 out 13:06 02576132-0458-4975-916f-94e08af9a31c -&gt; ../../sda2
+lrwxrwxrwx 1 root root 10 16 out 13:06 75d167c8-1dad-4d0a-a0ae-b063058a18e9 -&gt; ../../sda3
+lrwxrwxrwx 1 root root 10 16 out 13:06 C509-6CB1 -&gt; ../../sda1
+</pre>
+<p>Também existem <code>/dev/disk/by-partuuid/</code>, <code>by-label/</code> (só quando há rótulos) e <code>by-id/</code> (pelo modelo e número de série).</p>
+</div>
+
+<hr>
+
+<h2>fdisk -l: a tabela de partições</h2>
+<p>O <code>fdisk</code> é o programa que você usou para particionar. Com <code>-l</code> (<em>list</em>) ele <strong>só mostra</strong> a tabela, sem mudar nada. Precisa de root.</p>
+
+<pre class="term">$ sudo fdisk -l
+Disco /dev/sda: 30 GiB, 32212254720 bytes, 62914560 setores
+Modelo de disco: VBOX HARDDISK                       « o "modelo" do disco virtual do VirtualBox
+Unidades: setor de 1 * 512 = 512 bytes
+Tamanho de setor (lógico/físico): 512 bytes / 512 bytes
+Tamanho E/S (mínimo/ótimo): 512 bytes / 512 bytes
+Tipo de rótulo do disco: gpt                         « a tabela é GPT
+Identificador do disco: B4ACDE31-D734-4B75-BD81-9A429F7F3949
+
+Dispositivo   Início      Fim  Setores Tamanho Tipo
+/dev/sda1       2048  2099199  2097152      1G Sistema EFI
+/dev/sda2    2099200 10487807  8388608      4G Linux swap
+/dev/sda3   10487808 62912511 52424704     25G Linux sistema de arquivos
+</pre>
+
+<p><code>Início</code> e <code>Fim</code> são posições em setores de 512 bytes. A primeira partição começa no setor 2048 (1 MiB do começo do disco), o alinhamento padrão que deixa SSDs mais rápidos. A coluna <code>Tipo</code> é o tipo da <strong>partição</strong> na tabela GPT (que você escolheu no <code>fdisk</code> com o comando <code>t</code>), e não o sistema de arquivos que está dentro dela.</p>
+
+<div class="warning">
+<strong>fdisk sem -l edita o disco</strong>
+<p><code>fdisk /dev/sda</code> (sem <code>-l</code>) abre o editor de partições. Nada é gravado até você digitar <code>w</code>, mas não brinque com ele no disco em uso. Para só olhar, sempre <code>fdisk -l</code> ou <code>lsblk</code>.</p>
+</div>
+
+<hr>
+
+<h2>df: quanto espaço sobra</h2>
+
+<dl class="anatomy">
+  <dt>df</dt><dd><em>disk free</em>: espaço livre de cada sistema de arquivos <strong>montado</strong>.</dd>
+  <dt>-h</dt><dd><em>human-readable</em>: tamanhos em K, M, G em vez de blocos de 1 KiB.</dd>
+</dl>
+
+<pre class="term">$ df -h
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /                       « o que interessa: a raiz
+devtmpfs        1,9G     0  1,9G   0% /dev
+tmpfs           1,9G     0  1,9G   0% /dev/shm
+efivarfs        256K   12K  240K   5% /sys/firmware/efi/efivars
+tmpfs           778M  596K  778M   1% /run
+none            1,0M     0  1,0M   0% /run/credentials/systemd-journald.service
+tmpfs           1,9G  4,0K  1,9G   1% /tmp                    « /tmp fica na memória
+/dev/sda1      1022M   93M  930M  10% /boot                   « a partição EFI
+none            1,0M     0  1,0M   0% /run/credentials/getty@tty1.service
+tmpfs           389M  4,0K  389M   1% /run/user/1000
+tmpfs           389M  4,0K  389M   1% /run/user/0
+</pre>
+
+<p>Muita coisa ali não é disco. <code>tmpfs</code> e <code>devtmpfs</code> são sistemas de arquivos <strong>na memória RAM</strong> (somem ao desligar); <code>efivarfs</code> são as variáveis da placa-mãe UEFI. No Arch, o <code>/tmp</code> é um tmpfs: o que você grava lá vai para a RAM e desaparece no próximo boot. Os discos de verdade são as linhas que começam com <code>/dev/</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>Sist. Arq.</code></td><td>De onde vem (partição ou tipo virtual)</td></tr>
+<tr><td><code>Tam.</code> / <code>Usado</code> / <code>Disp.</code></td><td>Tamanho total, usado e <strong>disponível para você</strong></td></tr>
+<tr><td><code>Uso%</code></td><td>Porcentagem usada. Acima de 90% é hora de limpar</td></tr>
+<tr><td><code>Montado em</code></td><td>A pasta onde ele aparece</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Por que 4,9G + 19G não dá 25G?</strong>
+<p>O ext4 reserva 5% do espaço para o root, para que o sistema continue funcionando (logs, pacman) mesmo quando um usuário enche o disco. 5% de 25G são cerca de 1,2G: é a diferença que "sumiu". Essa reserva não aparece em <code>Disp.</code>.</p>
+</div>
+
+<h3>Formas mais úteis do df</h3>
+<pre class="term">$ df -h /
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /
+$ df -h /home/ana/Downloads
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /
+$ df -hT -x tmpfs -x devtmpfs -x efivarfs
+Sist. Arq.     Tipo  Tam. Usado Disp. Uso% Montado em
+/dev/sda3      ext4   25G  4,9G   19G  22% /
+/dev/sda1      vfat 1022M   93M  930M  10% /boot
+</pre>
+
+<ul>
+  <li><code>df -h /</code>: só o sistema de arquivos da raiz.</li>
+  <li><code>df -h /home/ana/Downloads</code>: o df aceita <strong>qualquer pasta</strong> e responde em que partição ela está. Na ana, tudo fica em <code>/dev/sda3</code>, porque não existe uma partição separada para <code>/home</code>.</li>
+  <li><code>-T</code> acrescenta a coluna <code>Tipo</code>; cada <code>-x tipo</code> esconde um tipo (<em>exclude</em>). Resultado: só os discos de verdade.</li>
+</ul>
+
+<h3>df -i: quando "acaba o espaço" com o disco vazio</h3>
+<pre class="term">$ df -i /
+Sist. Arq.        Inós IUsado  ILivre IUso% Montado em
+/dev/sda3      1638400 130554 1507846    8% /
+</pre>
+<p>Cada arquivo gasta um <strong>inode</strong> (a ficha que guarda dono, permissões e onde estão os dados). O ext4 cria um número fixo deles na formatação: na ana, 1.638.400 (o mesmo "1638400 inodes" que o <code>mkfs.ext4</code> mostrou). Milhões de arquivos minúsculos podem esgotar os inodes antes do espaço, e aí aparece <code>Não há espaço disponível no dispositivo</code> com o <code>df -h</code> mostrando espaço livre.</p>
+
+<div class="try" data-goal="ran:^\s*df\b.*-h,out:/dev/sda3" data-solucao="df -h /">
+<p class="try-task"><strong>Missão:</strong> mostre quanto espaço livre existe na raiz (<code>/</code>), com os tamanhos em G e M.</p>
+</div>
+
+<hr>
+
+<h2>du: o que está ocupando espaço</h2>
+<p>O <code>df</code> diz <strong>quanto</strong> está ocupado; o <code>du</code> diz <strong>quem</strong> ocupa.</p>
+
+<dl class="anatomy">
+  <dt>du</dt><dd><em>disk usage</em>: soma o espaço usado por pastas e arquivos.</dd>
+  <dt>-s</dt><dd><em>summarize</em>: um total por argumento, sem listar cada subpasta.</dd>
+  <dt>-h</dt><dd>Tamanhos legíveis.</dd>
+  <dt>~/aur</dt><dd>A pasta a medir.</dd>
+</dl>
+
+<pre class="term">$ du -sh ~/aur
+61M	/home/ana/aur
+$ du -sh ~/aur/*
+932K	/home/ana/aur/downgrade
+25M	/home/ana/aur/paru-bin
+35M	/home/ana/aur/yay-bin
+</pre>
+
+<p>O <code>~/aur/*</code> vira os nomes das três pastas, e o <code>du</code> soma cada uma. São as pastas onde a ana compilou programas do AUR (veja <a href="makepkg.html">makepkg</a>): os pacotes prontos que ficaram lá dentro ocupam a maior parte.</p>
+
+<h3>Ordenar do menor para o maior</h3>
+<pre class="term">$ du -h --max-depth=1 ~/aur | sort -h
+932K	/home/ana/aur/downgrade
+25M	/home/ana/aur/paru-bin
+35M	/home/ana/aur/yay-bin
+61M	/home/ana/aur
+</pre>
+<p><code>--max-depth=1</code> mostra um nível de subpastas mais o total; o <code>sort -h</code> entende os sufixos K, M e G (um <code>sort -n</code> comum colocaria <code>932K</code> depois de <code>61M</code>). Os maiores ficam no fim, perto do prompt, onde você vai ler.</p>
+
+<h3>Pastas do sistema: sudo, senão chovem erros</h3>
+<pre class="term">$ du -sh /etc
+du: não foi possível ler diretório '/etc/NetworkManager/system-connections': Permissão negada
+du: não foi possível ler diretório '/etc/credstore': Permissão negada
+du: não foi possível ler diretório '/etc/credstore.encrypted': Permissão negada
+du: não foi possível ler diretório '/etc/polkit-1/rules.d': Permissão negada
+du: não foi possível ler diretório '/etc/pacman.d/gnupg/private-keys-v1.d': Permissão negada
+du: não foi possível ler diretório '/etc/pacman.d/gnupg/openpgp-revocs.d': Permissão negada
+du: não foi possível ler diretório '/etc/ssl/private': Permissão negada
+du: não foi possível ler diretório '/etc/sudoers.d': Permissão negada
+du: não foi possível ler diretório '/etc/cryptsetup-keys.d': Permissão negada
+du: não foi possível ler diretório '/etc/audit/plugins.d': Permissão negada
+8,2M	/etc
+$ echo $?
+1
+$ sudo du -sh /etc
+8,2M	/etc
+$ sudo du -sh /var/cache/pacman/pkg
+1,3G	/var/cache/pacman/pkg
+</pre>
+
+<p>Sem <code>sudo</code>, o <code>du</code> ainda mostra um total, mas incompleto, e termina com código <strong>1</strong> (houve erro). Com <code>sudo</code> a soma é completa. Já <code>du -sh /etc 2&gt;/dev/null</code> só esconde as mensagens: o número continua incompleto.</p>
+<p>O <code>/var/cache/pacman/pkg</code> é o <strong>cache do pacman</strong>: cada pacote baixado fica guardado ali. Em poucas semanas de uso ele passa de gigabytes; como limpar está em <a href="cache-orfaos.html">Cache e Órfãos</a>, e por que vale guardar alguns está em <a href="downgrade.html">Voltar um Pacote</a>.</p>
+
+<div class="warning">
+<strong>Não rode du em / inteiro</strong>
+<p><code>du -sh /</code> percorre todos os arquivos do sistema, pode levar minutos e deixa o computador lento. Comece pelas suspeitas de sempre: <code>/var/cache/pacman/pkg</code>, <code>/var/log/journal</code>, <code>~/.cache</code>, <code>~/Downloads</code>. Se quiser explorar com setas, o pacote <code>ncdu</code> faz isso de forma interativa.</p>
+</div>
+
+<div class="tip">
+<strong>Curiosidade: ls e du discordam</strong>
+<p>O <code>ls -l</code> mostra o tamanho <strong>aparente</strong> de um arquivo; o <code>du</code>, o espaço <strong>realmente gasto</strong> no disco. Na máquina de laboratório da ana, os arquivos de <code>Downloads</code> foram criados "esparsos" (o tamanho está anotado, mas o conteúdo é vazio e não ocupa blocos), então a diferença salta aos olhos:</p>
+<pre class="term">$ ls -lh ~/Downloads
+total 0
+-rw-rw-r-- 1 ana ana 1,5G 10 out 21:14 archlinux-x86_64.iso
+-rw-rw-r-- 1 ana ana  48K 15 out 08:47 foto.jpg
+-rw-rw-r-- 1 ana ana 100M  1 out 19:30 fotos-viagem.zip
+-rw-rw-r-- 1 ana ana 2,3M 13 out 11:02 manual.pdf
+-rw-rw-r-- 1 ana ana 5,0M  9 out 20:10 musica.mp3
+$ du -sh ~/Downloads
+4,0K	/home/ana/Downloads
+$ du -sh --apparent-size ~/Downloads
+1,6G	/home/ana/Downloads
+</pre>
+<p>Num computador comum, com arquivos de verdade, os dois números ficam próximos. <code>--apparent-size</code> faz o <code>du</code> somar como o <code>ls</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*du\b.*-[a-z]*s,out:Documentos" data-solucao="du -sh Documentos">
+<p class="try-task"><strong>Missão:</strong> descubra quanto espaço a pasta <code>Documentos</code> ocupa, em uma linha só, com tamanho legível.</p>
+</div>
+
+<hr>
+
+<h2>findmnt: o que está montado onde</h2>
+<p>O <code>lsblk</code> parte dos discos; o <code>findmnt</code> (<em>find mount</em>) parte das <strong>montagens</strong>. Sem argumentos, ele mostra a árvore inteira, incluindo dezenas de sistemas de arquivos virtuais:</p>
+
+<pre class="term">$ findmnt
+TARGET                                        SOURCE     FSTYPE     OPTIONS
+/                                             /dev/sda3  ext4       rw,relatime
+├─/boot                                       /dev/sda1  vfat       rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+├─/dev                                        devtmpfs   devtmpfs   rw,nosuid,size=1957112k,nr_inodes=489278,mode=755,inode64,huge=advise
+│ ├─/dev/mqueue                               mqueue     mqueue     rw,nosuid,nodev,noexec,relatime
+│ ├─/dev/hugepages                            hugetlbfs  hugetlbfs  rw,nosuid,nodev,relatime,pagesize=2M
+│ ├─/dev/shm                                  tmpfs      tmpfs      rw,nosuid,nodev,inode64,huge=advise,usrquota
+│ └─/dev/pts                                  devpts     devpts     rw,nosuid,noexec,relatime,gid=5,mode=600,ptmxmode=000
+├─/sys                                        sysfs      sysfs      rw,nosuid,nodev,noexec,relatime
+…                                                                    « (mais 10 linhas de /sys)
+├─/proc                                       proc       proc       rw,nosuid,nodev,noexec,relatime
+│ └─/proc/sys/fs/binfmt_misc                  systemd-1  autofs     rw,relatime,fd=43,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=2703
+├─/run                                        tmpfs      tmpfs      rw,nosuid,nodev,size=796316k,nr_inodes=819200,mode=755,inode64,huge=advise
+…                                                                    « (mais 4 linhas de /run)
+└─/tmp                                        tmpfs      tmpfs      rw,nosuid,nodev,nr_inodes=1048576,inode64,huge=advise,usrquota
+</pre>
+
+<p>Na prática, você pergunta por uma pasta ou por um tipo:</p>
+
+<pre class="term">$ findmnt /boot
+TARGET SOURCE    FSTYPE OPTIONS
+/boot  /dev/sda1 vfat   rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+$ findmnt -t ext4,vfat
+TARGET  SOURCE    FSTYPE OPTIONS
+/       /dev/sda3 ext4   rw,relatime
+└─/boot /dev/sda1 vfat   rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+$ findmnt -no SOURCE,FSTYPE /
+/dev/sda3 ext4
+</pre>
+
+<dl class="anatomy">
+  <dt>-t ext4,vfat</dt><dd>Só estes tipos.</dd>
+  <dt>-n</dt><dd><em>noheadings</em>: sem a linha de títulos.</dd>
+  <dt>-o SOURCE,FSTYPE</dt><dd>Só estas colunas (como no <code>lsblk</code>). Ótimo em scripts: "de qual partição vem a raiz?"</dd>
+</dl>
+
+<p>A coluna <code>OPTIONS</code> mostra as <strong>opções de montagem</strong> em uso (<code>rw</code> = leitura e escrita, <code>relatime</code> = forma econômica de gravar a data de acesso). Elas vêm do <code>/etc/fstab</code>, assunto da próxima aula. O <code>findmnt</code> também confere o fstab com <code>findmnt --verify</code>: veja em <a href="fstab.html">mount e fstab</a>.</p>
+
+<hr>
+
+<h2>SSD e TRIM</h2>
+
+<h3>O que é o TRIM</h3>
+<p>Quando você apaga um arquivo, o sistema de arquivos só marca aqueles blocos como livres; o SSD não fica sabendo. Para gravar de novo num bloco já usado, o SSD precisa apagá-lo antes, e isso é lento. O <strong>TRIM</strong> (o comando de <em>discard</em>) é o aviso "estes blocos estão livres, pode limpá-los quando quiser". Com ele, o SSD mantém a velocidade e se desgasta de forma mais uniforme. HDs comuns (de disco giratório) não precisam disso.</p>
+
+<h3>O seu disco é SSD? Aceita TRIM?</h3>
+<pre class="term">$ lsblk -d -o NAME,ROTA,DISC-GRAN,DISC-MAX,MODEL
+NAME ROTA DISC-GRAN DISC-MAX MODEL
+sda     0      512B       2G VBOX HARDDISK
+sr0     0        0B       0B VBOX CD-ROM
+</pre>
+
+<dl class="anatomy">
+  <dt>-d</dt><dd><em>nodeps</em>: só os discos, sem as partições.</dd>
+  <dt>ROTA</dt><dd><em>rotational</em>: 1 = disco que gira (HD); 0 = não gira (SSD, NVMe, pendrive).</dd>
+  <dt>DISC-GRAN / DISC-MAX</dt><dd>Granularidade e tamanho máximo do <em>discard</em>. <strong>Diferente de 0 = o disco aceita TRIM.</strong></dd>
+</dl>
+
+<p>O disco virtual da ana se apresenta como não rotativo (<code>ROTA 0</code>) e aceita TRIM. Num notebook com NVMe, o normal é ver <code>ROTA 0</code> e valores em <code>DISC-GRAN</code>/<code>DISC-MAX</code>. <code>lsblk --discard</code> mostra as mesmas colunas para todas as partições.</p>
+
+<h3>No Arch, o fstrim.timer vem desligado</h3>
+<p>O pacote <code>util-linux</code> traz o <code>fstrim.timer</code>, um <a href="timers.html">timer do systemd</a> que roda o TRIM uma vez por semana. Ubuntu e Fedora o deixam ligado; o <strong>Arch não liga serviços por você</strong>. Confira:</p>
+
+<pre class="term">$ systemctl status fstrim.timer
+○ fstrim.timer - Discard unused filesystem blocks once a week
+     Loaded: loaded (/usr/lib/systemd/system/fstrim.timer; disabled; preset: disabled)   « desligado
+     Active: inactive (dead)
+    Trigger: n/a
+   Triggers: ● fstrim.service
+       Docs: man:fstrim
+</pre>
+
+<p><code>disabled</code> quer dizer que ele não sobe no boot; <code>inactive (dead)</code>, que não está rodando agora; <code>preset: disabled</code>, que a política padrão do Arch é deixá-lo assim. Para ligar (e já começar a contar):</p>
+
+<dl class="anatomy">
+  <dt>sudo systemctl enable</dt><dd>Liga no boot (cria um atalho em <code>timers.target.wants</code>).</dd>
+  <dt>--now</dt><dd>E também inicia agora, sem esperar o próximo boot.</dd>
+  <dt>fstrim.timer</dt><dd>O timer (o serviço que ele dispara é o <code>fstrim.service</code>).</dd>
+</dl>
+
+<pre class="term">$ sudo systemctl enable --now fstrim.timer
+Created symlink '/etc/systemd/system/timers.target.wants/fstrim.timer' → '/usr/lib/systemd/system/fstrim.timer'.
+$ systemctl list-timers fstrim.timer
+NEXT                          LEFT LAST PASSED UNIT         ACTIVATES
+Mon 2026-10-19 01:00:05 -03 2 days -         - fstrim.timer fstrim.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+</pre>
+
+<p>Pronto: na próxima segunda-feira de madrugada ele roda sozinho (<code>LAST</code> com <code>-</code> = nunca rodou). O serviço executa <code>fstrim --listed-in /etc/fstab:/proc/self/mountinfo</code>, ou seja, faz o TRIM em tudo o que está no fstab. Para desligar: <code>sudo systemctl disable --now fstrim.timer</code>.</p>
+
+<h3>Rodar o TRIM agora, à mão</h3>
+<pre class="term">$ sudo fstrim -av
+/boot: 929,2 MiB (974372864 bytes) descartado em /dev/sda1
+/: 19,6 GiB (21005733888 bytes) descartado em /dev/sda3
+</pre>
+<p><code>-a</code> = todos os sistemas de arquivos montados que aceitam TRIM; <code>-v</code> = <em>verbose</em>, mostra quanto foi avisado. Na primeira vez o número é quase todo o espaço livre; nas seguintes, só o que foi apagado desde a última. Sem <code>sudo</code>, o <code>fstrim -av</code> não mostra nada e sai com código 0, porque não consegue abrir nenhum disco: mais um comando que "falha em silêncio".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma de fazer TRIM</th><th>Como</th><th>Qual usar?</th></tr>
+<tr><td>Periódico</td><td><code>systemctl enable --now fstrim.timer</code></td><td><strong>Recomendado</strong> pela Arch Wiki para quase todos</td></tr>
+<tr><td>Contínuo</td><td>Opção <code>discard</code> no <a href="fstab.html">fstab</a></td><td>Avisa a cada arquivo apagado; em alguns SSDs deixa a gravação mais lenta</td></tr>
+<tr><td>Manual</td><td><code>sudo fstrim -av</code></td><td>Uma vez, depois de apagar muita coisa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Comando</th><th>Root?</th></tr>
+<tr><td>Quais discos e partições existem?</td><td><code>lsblk</code></td><td>Não</td></tr>
+<tr><td>Que sistema de arquivos e que UUID cada uma tem?</td><td><code>lsblk -f</code> (ou <code>sudo blkid</code>)</td><td>Não (o <code>blkid</code> sim)</td></tr>
+<tr><td>Como é a tabela de partições, setor por setor?</td><td><code>sudo fdisk -l</code></td><td>Sim</td></tr>
+<tr><td>Quanto espaço livre eu tenho?</td><td><code>df -h</code> (ou <code>df -h /</code>)</td><td>Não</td></tr>
+<tr><td>Quem está ocupando o espaço?</td><td><code>du -sh pasta</code>, <code>du -h --max-depth=1 pasta | sort -h</code></td><td>Para pastas do sistema</td></tr>
+<tr><td>O que está montado em tal pasta, com que opções?</td><td><code>findmnt /pasta</code></td><td>Não</td></tr>
+<tr><td>O disco aceita TRIM?</td><td><code>lsblk --discard</code></td><td>Não</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O blkid não mostra nada</strong>
+<pre class="term">$ blkid
+$ echo $?
+0</pre>
+<p><strong>O que aconteceu:</strong> sem root, o <code>blkid</code> só consulta o cache, vazio.</p>
+<p><strong>Como resolver:</strong> <code>sudo blkid</code>, ou use <code>lsblk -f</code>, que mostra os mesmos UUIDs sem precisar de root.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível abrir /dev/sda: Permissão negada"</strong>
+<pre class="term">$ fdisk -l
+fdisk: não foi possível abrir /dev/sda: Permissão negada
+fdisk: não foi possível abrir /dev/sr0: Permissão negada
+$ echo $?
+0</pre>
+<p><strong>O que aconteceu:</strong> só o root pode ler o disco "cru". Repare que o código de saída é 0 mesmo assim: num script, não confie nele para saber se deu certo.</p>
+<p><strong>Como resolver:</strong> <code>sudo fdisk -l</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"/dev/sdb: Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ lsblk /dev/sdb
+lsblk: /dev/sdb: Arquivo ou diretório inexistente
+$ echo $?
+32</pre>
+<p><strong>O que aconteceu:</strong> esse disco não existe (ou o pendrive não foi reconhecido).</p>
+<p><strong>Como confirmar:</strong> rode <code>lsblk</code> sem argumentos e veja os nomes que existem. Num notebook com NVMe não há <code>sda</code>: o disco é <code>nvme0n1</code>. Logo depois de ligar um pendrive, <code>journalctl -k -n 20</code> mostra se o kernel o detectou (veja <a href="journal.html">Logs</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Não há espaço disponível no dispositivo"</strong>
+<p><strong>O que aconteceu:</strong> o sistema de arquivos encheu (ou acabaram os inodes).</p>
+<p><strong>Como confirmar:</strong> <code>df -h /</code> (espaço) e <code>df -i /</code> (inodes).</p>
+<p><strong>Como resolver:</strong> procure os culpados com <code>sudo du -sh /var/cache/pacman/pkg /var/log/journal ~/.cache ~/Downloads</code>. O cache do pacman e o journal se limpam com segurança (veja <a href="cache-orfaos.html">Cache e Órfãos</a> e <a href="journal.html">Logs</a>). Se a <code>/boot</code> encheu, o pacman falha ao atualizar o kernel; veja <a href="kernels.html">Kernels</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>lsblk</code></td><td>Árvore de discos e partições</td></tr>
+<tr><td><code>lsblk -f</code></td><td>Com sistema de arquivos, rótulo, UUID e uso</td></tr>
+<tr><td><code>lsblk -o COL1,COL2</code></td><td>Escolhe as colunas (<code>lsblk --help</code> lista todas)</td></tr>
+<tr><td><code>lsblk -d -o NAME,ROTA,DISC-MAX</code></td><td>Só discos: é SSD? aceita TRIM?</td></tr>
+<tr><td><code>sudo blkid</code> / <code>sudo blkid -s UUID -o value /dev/X</code></td><td>Identificadores / só o UUID</td></tr>
+<tr><td><code>ls -l /dev/disk/by-uuid/</code></td><td>Atalhos por UUID (sem root)</td></tr>
+<tr><td><code>sudo fdisk -l</code></td><td>Tabela de partições (só leitura)</td></tr>
+<tr><td><code>df -h</code> / <code>df -hT -x tmpfs</code> / <code>df -i</code></td><td>Espaço livre / sem os da RAM / inodes</td></tr>
+<tr><td><code>du -sh pasta</code></td><td>Total de uma pasta</td></tr>
+<tr><td><code>du -h --max-depth=1 pasta | sort -h</code></td><td>Subpastas, da menor para a maior</td></tr>
+<tr><td><code>findmnt</code> / <code>findmnt /pasta</code> / <code>findmnt -t ext4</code></td><td>Montagens: todas / uma / de um tipo</td></tr>
+<tr><td><code>sudo systemctl enable --now fstrim.timer</code></td><td>Liga o TRIM semanal</td></tr>
+<tr><td><code>sudo fstrim -av</code></td><td>TRIM agora, em tudo o que estiver montado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só os discos de verdade</h3>
+<p>Complete para mostrar o espaço livre com o tipo de cada sistema de arquivos, escondendo os <code>tmpfs</code>:</p>
+<div class="ex-code">df -h<input data-answer="T" aria-label="letra do tipo" style="width:2.5em"> -x <input data-answer="tmpfs" aria-label="tipo escondido"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O maior por último</h3>
+<p>Complete para listar as subpastas de <code>~/aur</code> da menor para a maior:</p>
+<div class="ex-code">du -h --max-depth=1 ~/aur | sort <input data-answer="-h" aria-label="opção do sort"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Num notebook com SSD NVMe, qual é o nome da segunda partição do primeiro disco?</p>
+<label><input type="radio" name="q3"> <code>/dev/sda2</code></label>
+<label><input type="radio" name="q3"> <code>/dev/nvme0n1p2</code></label>
+<label><input type="radio" name="q3"> <code>/dev/nvme0n12</code></label>
+<label><input type="radio" name="q3"> <code>/dev/nvme2</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você roda <code>blkid</code> como ana e não aparece nada. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> Os discos não têm UUID.</label>
+<label><input type="radio" name="q4"> O disco está com defeito.</label>
+<label><input type="radio" name="q4"> Faltou root: use <code>sudo blkid</code> ou <code>lsblk -f</code>.</label>
+<label><input type="radio" name="q4"> O <code>blkid</code> não está instalado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. No Arch recém-instalado, com SSD, o TRIM semanal está…</p>
+<label><input type="radio" name="q5"> desligado: é preciso <code>systemctl enable --now fstrim.timer</code>.</label>
+<label><input type="radio" name="q5"> ligado pelo pacstrap.</label>
+<label><input type="radio" name="q5"> ligado pelo <code>genfstab</code>.</label>
+<label><input type="radio" name="q5"> desnecessário em SSD.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Disco → partições → sistema de arquivos → montado numa pasta. Os nomes ficam em <code>/dev</code> (<code>sda3</code>, <code>nvme0n1p2</code>) e podem mudar; o UUID não muda.</li>
+  <li><code>lsblk</code> (e <code>-f</code>, <code>-o</code>) mostra tudo sem root; <code>blkid</code> e <code>fdisk -l</code> precisam de <code>sudo</code>.</li>
+  <li><code>df -h</code> = espaço livre de cada montagem; <code>du -sh</code> = quanto uma pasta ocupa.</li>
+  <li><code>findmnt</code> mostra o que está montado onde e com quais opções.</li>
+  <li>SSD: confira com <code>lsblk --discard</code> e ligue o <code>fstrim.timer</code>, que no Arch vem desligado.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os nomes de dispositivos e o <code>lsblk</code> estão em <a href="https://wiki.archlinux.org/title/Device_file">Device file</a>; UUID, PARTUUID, rótulos e <code>/dev/disk/by-*</code>, em <a href="https://wiki.archlinux.org/title/Persistent_block_device_naming">Persistent block device naming</a> (<a href="https://wiki.archlinux.org/title/Persistent_block_device_naming_(Portugu%C3%AAs)">em português</a>); os tipos de sistema de arquivos, em <a href="https://wiki.archlinux.org/title/File_systems">File systems</a> (<a href="https://wiki.archlinux.org/title/File_systems_(Portugu%C3%AAs)">em português</a>); e o TRIM, em <a href="https://wiki.archlinux.org/title/Solid_state_drive#TRIM">Solid state drive</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
