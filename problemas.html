@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solução de problemas do Arch Linux — mensagem, causa, solução | Guia Arch</title>
+<meta name="description" content="As mensagens de erro reais do Arch Linux reunidas num só lugar: instalação, boot, pacman e atualizações, chaves, AUR, serviços, discos e fstab, rede, sudo, servidores e containers. Para cada uma: a causa, como confirmar, como resolver e a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Solução de <span class="hl">Problemas</span></h1>
+
+<p class="intro">Todas as mensagens desta página aconteceram de verdade, na VM do guia ou durante a instalação registrada em log. Para cada uma: o que ela quer dizer, como confirmar e como resolver, com o link para a aula que explica o assunto. Procure a sua mensagem com <kbd>Ctrl</kbd>+<kbd>F</kbd>: copie um pedaço do erro (sem os números que mudam, como PIDs e datas).</p>
+
+<div class="note">
+<strong>O método, para qualquer erro</strong>
+<ol>
+  <li><strong>Leia a mensagem inteira</strong>, principalmente a primeira linha de erro (as seguintes costumam ser consequência).</li>
+  <li><strong>Veja o código de saída</strong> (<code>echo $?</code>) e o log: <code>journalctl -b -p err</code>, <code>journalctl -u SERVIÇO</code>, <code>/var/log/pacman.log</code>.</li>
+  <li><strong>Pergunte "o que mudou?"</strong>: uma atualização, um arquivo editado, um pacote do AUR.</li>
+  <li><strong>Procure</strong> nesta página, nas <a href="https://archlinux.org/news/">notícias do Arch</a> e na <a href="arch-wiki.html">Arch Wiki</a>.</li>
+  <li><strong>Mude uma coisa por vez</strong> e confira de novo.</li>
+</ol>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Área</th><th>Pule para</th></tr>
+<tr><td>Instalação e ambiente live</td><td><a href="#instalacao">Instalação</a></td></tr>
+<tr><td>Boot (GRUB, initramfs, fstab, emergency mode)</td><td><a href="#boot">Boot</a></td></tr>
+<tr><td>pacman e atualizações</td><td><a href="#pacman">pacman</a> · <a href="#chaves">Chaves</a></td></tr>
+<tr><td>AUR e makepkg</td><td><a href="#aur">AUR</a></td></tr>
+<tr><td>sudo, usuários e permissões</td><td><a href="#sudo">sudo</a></td></tr>
+<tr><td>Serviços, timers e logs</td><td><a href="#servicos">Serviços</a></td></tr>
+<tr><td>Discos, montagem, Btrfs, LUKS, LVM</td><td><a href="#discos">Discos</a></td></tr>
+<tr><td>Rede</td><td><a href="#rede">Rede</a></td></tr>
+<tr><td>Servidores, containers e VMs</td><td><a href="#servidores">Servidores</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="instalacao">Instalação e ambiente live</h2>
+
+<div class="cenario">
+<strong>"loadkeys: Unable to open file"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> loadkeys br-abnt3
+loadkeys: Unable to open file: br-abnt3: No such file or directory
+#> echo $?
+1</pre>
+<p><strong>Causa:</strong> nome de mapa de teclado errado. <strong>Confirme:</strong> <code>localectl list-keymaps | grep br</code>. <strong>Resolva:</strong> <code>loadkeys br-abnt2</code>. Aula: <a href="ambiente-live.html">O Ambiente Live</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>reflector: "Download timed out after 5 second(s)"</strong>
+<pre class="term" data-host="archiso" data-user="root">[2026-10-16 15:02:03] WARNING: failed to rate http(s) download (https://archlinux.c3sl.ufpr.br/extra/os/x86_64/extra.db): Download timed out after 5 second(s).
+[2026-10-16 15:02:09] WARNING: failed to rate http(s) download (https://mirrors.ic.unicamp.br/archlinux/extra/os/x86_64/extra.db): Download timed out after 5 second(s).</pre>
+<p><strong>Causa:</strong> avisos (não erros) do <code>reflector</code> ao medir espelhos lentos ou fora do ar; ele segue com os outros. <strong>Resolva:</strong> nada, se a lista final ficou boa; senão, <code>--download-timeout 15</code>. Aula: <a href="espelhos.html">Espelhos</a>, <a href="pacstrap.html">pacstrap</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>pacstrap: "target not found"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux networkmanger
+…
+error: target not found: networkmanger
+==> ERROR: Failed to install packages to new root</pre>
+<p><strong>Causa:</strong> nome de pacote errado (aqui, faltou um "a"). Nada foi instalado. <strong>Resolva:</strong> corrija o nome (<code>pacman -Ss network</code>) e repita. Aula: <a href="pacstrap.html">pacstrap</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>pacstrap: "not enough free disk space"</strong>
+<pre class="term" data-host="archiso" data-user="root">checking available disk space...
+error: Partition / too full: 357700 blocks needed, 61200 blocks free
+error: not enough free disk space
+error: failed to commit transaction (not enough free disk space)</pre>
+<p><strong>Causa:</strong> a raiz não foi montada em <code>/mnt</code> (o pacstrap escreveu na RAM do live) ou a partição é pequena. <strong>Confirme:</strong> <code>findmnt /mnt</code>. <strong>Resolva:</strong> monte a raiz e repita. Aula: <a href="formatar-montar.html">Formatar e Montar</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>pacstrap: "signature … is unknown trust" / "is corrupted"</strong>
+<pre class="term" data-host="archiso" data-user="root">error: openssh: signature from "Fulano de Tal &lt;fulano@archlinux.org&gt;" is unknown trust</pre>
+<p><strong>Causa:</strong> chaveiro da ISO antigo (ISO de meses atrás). <strong>Resolva:</strong> <code>pacman -Sy archlinux-keyring</code> no live e repita o pacstrap; ou baixe uma ISO nova. Aula: <a href="chaves.html">Chaves e Assinaturas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>fdisk: "Value out of range."</strong>
+<pre class="term" data-host="archiso" data-user="root">Last sector, +/-sectors or +/-size{K,M,G,T,P} (2048-62914526, default 62912511): +40G
+Value out of range.</pre>
+<p><strong>Causa:</strong> o tamanho pedido não cabe no espaço livre. <strong>Resolva:</strong> um tamanho menor, ou Enter para usar o resto. Nada é gravado antes do <code>w</code>. Aula: <a href="particionar.html">Particionar</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>mkfs: "is mounted; will not make a filesystem here!"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.ext4 /dev/loop3p3
+mke2fs 1.47.4 (6-Mar-2025)
+/dev/loop3p3 is mounted; will not make a filesystem here!</pre>
+<p><strong>Causa:</strong> a partição está montada (proteção contra apagar um sistema em uso). <strong>Resolva:</strong> <code>umount</code> e confira se é mesmo a partição certa (<code>lsblk -f</code>). Aula: <a href="formatar-montar.html">Formatar e Montar</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"umount: … target is busy" / "o alvo está ocupado"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> cd /mnt
+#> umount /mnt
+umount: /mnt: target is busy.</pre>
+<p><strong>Causa:</strong> algum processo (o próprio shell, com <code>cd</code> lá dentro) usa a pasta. <strong>Resolva:</strong> <code>cd /</code> e repita; <code>fuser -vm /mnt</code> mostra quem usa. Aula: <a href="fstab.html">mount e fstab</a>, <a href="primeiro-boot.html">Primeiro Boot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"visudo: nenhum editor encontrado"</strong>
+<pre class="term">#> visudo
+visudo: nenhum editor encontrado (caminho do editor = /usr/bin/vi)</pre>
+<p><strong>Causa:</strong> a <code>base</code> não traz editor, e o <code>visudo</code> procura o <code>vi</code>. <strong>Resolva:</strong> <code>EDITOR=nano visudo</code> (com o <code>nano</code> instalado). Aula: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"WARNING: sd-vconsole: "/etc/vconsole.conf" not found"</strong>
+<pre class="term">==> WARNING: sd-vconsole: "/etc/vconsole.conf" not found, will use default values</pre>
+<p><strong>Causa:</strong> o <code>mkinitcpio</code> rodou antes de você criar o <code>/etc/vconsole.conf</code> (com <code>KEYMAP=br-abnt2</code>). É um aviso. <strong>Resolva:</strong> crie o arquivo e rode <code>mkinitcpio -P</code>. Aula: <a href="configurar.html">Configurar o Sistema</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="boot">Boot</h2>
+
+<div class="cenario">
+<strong>"grub-install: erro: … não parece ser uma partição EFI"</strong>
+<pre class="term">#> grub-install --target=x86_64-efi --efi-directory=/var/tmp/a8 --bootloader-id=TESTE --no-nvram
+Instalando para a plataforma x86_64-efi.
+grub-install: erro: /var/tmp/a8 não parece ser uma partição EFI.</pre>
+<p><strong>Causa:</strong> o <code>--efi-directory</code> não é a ESP montada (FAT32). <strong>Confirme:</strong> <code>findmnt /boot</code> (ou <code>/efi</code>). <strong>Resolva:</strong> monte a ESP e aponte para ela. Aula: <a href="bootloader.html">Bootloader</a>, <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Depois de instalar outro kernel, o sistema iniciou com ele</strong>
+<pre class="term">$ uname -r
+6.18.57-1-lts</pre>
+<p><strong>Causa:</strong> com dois kernels, o GRUB põe como padrão o primeiro da sua ordenação (o LTS). <strong>Resolva:</strong> <code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code> em <code>/etc/default/grub</code> e <code>grub-mkconfig -o /boot/grub/grub.cfg</code> (o pacman não roda o <code>grub-mkconfig</code> sozinho). Aula: <a href="kernels.html">Kernels</a>, <a href="bootloader.html">Bootloader</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>mkinitcpio: "ERROR: Hook '…' cannot be found"</strong>
+<pre class="term">==> ERROR: Hook 'filesytems' cannot be found
+…
+==> WARNING: errors were encountered during the build. The image may not be complete.</pre>
+<p><strong>Causa:</strong> nome errado em <code>HOOKS=()</code> do <code>/etc/mkinitcpio.conf</code> (aqui, "filesytems"), ou o pacote que fornece o hook (ex.: <code>lvm2</code>) não está instalado. <strong>Resolva:</strong> corrija e <code>mkinitcpio -P</code> <strong>antes</strong> de reiniciar. Aula: <a href="mkinitcpio.html">mkinitcpio</a>, <a href="lvm.html">LVM</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"WARNING: Possibly missing firmware for module"</strong>
+<p><strong>Causa:</strong> o mkinitcpio avisa de firmware para hardware que você provavelmente nem tem. <strong>Resolva:</strong> ignore, a não ser que aquele dispositivo não funcione. Aula: <a href="mkinitcpio.html">mkinitcpio</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"You are in emergency mode" no boot</strong>
+<p><strong>Causa comum:</strong> uma linha do <code>/etc/fstab</code> aponta para um disco ou UUID que não existe (ou opção com erro de digitação). <strong>Confirme:</strong> <code>journalctl -xb</code> e procure "Dependency failed" ou o UUID. <strong>Resolva:</strong> com a senha do root, corrija o fstab (ou acrescente <code>nofail</code> em discos externos) e teste com <code>mount -a</code>. Aula: <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível localizar UUID=…" no mount -a</strong>
+<pre class="term">#> mount -a --fstab /tmp/a7/fstab-erro
+mount: /mnt/a7: não foi possível localizar UUID=6a25becf-3d26-4913-b036-c34a83bc3999.</pre>
+<p><strong>Causa:</strong> UUID errado ou de um disco ausente. <strong>Resolva:</strong> copie o UUID certo de <code>blkid</code>/<code>lsblk -f</code>. Teste o fstab sempre com <code>mount -a</code> antes de reiniciar. Aula: <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>fsck.fat: "There are differences between boot sector and its backup."</strong>
+<pre class="term">#> umount /boot &amp;&amp; fsck.fat -a -w /dev/sda1; mount /boot; echo montado
+fsck.fat 4.2 (2021-01-31)
+There are differences between boot sector and its backup.
+This is mostly harmless. Differences: (offset:original/backup)
+  65:01/00</pre>
+<p><strong>Causa:</strong> a ESP foi desmontada sem cuidado (desligamento forçado). "Mostly harmless". <strong>Resolva:</strong> <code>fsck.fat</code> (pacote <code>dosfstools</code>, que não vem na <code>base</code>) com a partição desmontada. Aula: <a href="manutencao.html">Manutenção Periódica</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="pacman">pacman e atualizações</h2>
+
+<div class="cenario">
+<strong>"você não pode realizar esta operação a menos que seja root"</strong>
+<pre class="term">$ pacman -S fastfetch
+erro: você não pode realizar esta operação a menos que seja root.</pre>
+<p><strong>Resolva:</strong> <code>sudo pacman -S fastfetch</code>. Consultas (<code>-Q</code>, <code>-Ss</code>, <code>-Si</code>) não precisam de root. Aula: <a href="pacman.html">pacman</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"alvo não encontrado"</strong>
+<pre class="term">$ sudo pacman -S yay
+erro: alvo não encontrado: yay</pre>
+<p><strong>Causa:</strong> nome errado, lista desatualizada, ou o pacote é do <strong>AUR</strong> (o pacman só vê os repositórios oficiais). <strong>Resolva:</strong> <code>pacman -Ss parte-do-nome</code>; se for do AUR, veja <a href="aur.html">O que é o AUR</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível travar a base de dados"</strong>
+<pre class="term">#> pacman -Syu
+:: Sincronizando a base de dados de pacotes...
+erro: falha ao sincronizar todas as bases de dados (não foi possível travar a base de dados)
+#> pgrep -a pacman; ls -l /var/lib/pacman/db.lck
+---------- 1 root root 0 16 out 12:40 /var/lib/pacman/db.lck
+#> rm /var/lib/pacman/db.lck</pre>
+<p><strong>Causa:</strong> outro pacman rodando, ou uma trava que sobrou de um pacman interrompido (na VM, um desligamento forçado). <strong>Confirme:</strong> <code>pgrep -a pacman</code> sem nada = trava velha. <strong>Resolva:</strong> só então apague <code>/var/lib/pacman/db.lck</code>. Nunca apague com outro pacman rodando. Aula: <a href="atualizar.html">Atualizar</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível satisfazer as dependências" ao remover</strong>
+<pre class="term">$ sudo pacman -R jq
+verificando dependências...
+erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+:: a remoção de jq quebra a dependência "jq" necessária por devtools</pre>
+<p><strong>Causa:</strong> outro pacote precisa dele. <strong>Resolva:</strong> deixe-o, ou remova os dois (<code>pacman -Rs jq devtools</code>). Não use <code>-Rdd</code>. Aula: <a href="pacman.html">pacman</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"quebra a dependência … necessária por …" num downgrade</strong>
+<pre class="term">erro: falha ao preparar a transação (não foi possível satisfazer as dependências)
+:: a instalação de systemd-libs (261.3-1) quebra a dependência "systemd-libs=262" necessária por systemd</pre>
+<p><strong>Causa:</strong> pacotes que andam juntos (mesma versão) precisam voltar juntos. <strong>Resolva:</strong> volte o conjunto inteiro (<code>systemd</code> e <code>systemd-libs</code>). Aula: <a href="downgrade.html">Voltar um Pacote</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"nenhum alvo definido" ao limpar órfãos</strong>
+<pre class="term">$ sudo pacman -Rns $(pacman -Qdtq)
+erro: nenhum alvo definido (use -h para obter ajuda)</pre>
+<p><strong>Causa:</strong> não há órfãos: a lista veio vazia. Não é problema. Aula: <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"grupo de pacotes … não foi encontrado"</strong>
+<pre class="term">$ pacman -Sg base-devel
+erro: grupo de pacotes "base-devel" não foi encontrado</pre>
+<p><strong>Causa:</strong> <code>base-devel</code> virou meta-pacote. <strong>Resolva:</strong> <code>sudo pacman -S --needed base-devel</code>. Aula: <a href="pacman-avancado.html">pacman Avançado</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>pacman -F: "database file … does not exist"</strong>
+<pre class="term">$ pacman -F hostname
+atenção: database file for 'core' does not exist (use '-Fy' to download)</pre>
+<p><strong>Resolva:</strong> <code>sudo pacman -Fy</code> uma vez. Aula: <a href="pacman-avancado.html">pacman Avançado</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"conflitos de arquivos" / "existe no sistema de arquivos"</strong>
+<p><strong>Causa:</strong> um arquivo do pacote já existe e não pertence a nenhum pacote (instalado à mão, por <code>pip</code>, <code>make install</code>…). <strong>Confirme:</strong> <code>pacman -Qo /caminho</code> ("nenhum pacote"). <strong>Resolva:</strong> leia as notícias do Arch; se o arquivo é lixo seu, mova-o; <code>--overwrite</code> só com o caminho exato e sabendo o porquê. Aula: <a href="problemas-update.html">Erros de Atualização</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operation too slow" / "falha ao obter o arquivo"</strong>
+<pre class="term">error: failed retrieving file 'linux-firmware-broadcom-20260916-1-any.pkg.tar.zst' from mirror.ufscar.br : Operation too slow. Less than 1 bytes/sec transferred the last 10 seconds</pre>
+<p><strong>Causa:</strong> espelho lento ou fora do ar (o pacman tenta o próximo da lista). <strong>Resolva:</strong> se falhar no fim, atualize a lista com o <code>reflector</code>. Aula: <a href="espelhos.html">Espelhos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>reflector: "error: no mirrors found"</strong>
+<pre class="term">$ reflector --country Brasil --latest 5
+error: no mirrors found</pre>
+<p><strong>Causa:</strong> o país vai em inglês (<code>Brazil</code>) ou código (<code>BR</code>). Aula: <a href="espelhos.html">Espelhos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"error while loading shared libraries" depois de atualizar</strong>
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory</pre>
+<p><strong>Causa:</strong> um programa do AUR foi compilado contra uma biblioteca que a atualização trocou (aqui, a <code>libalpm</code> do pacman 16). <strong>Resolva:</strong> recompile/reinstale o pacote do AUR (para <code>-bin</code>, espere a versão nova ou use o <code>makepkg</code> do pacote sem <code>-bin</code>). Aula: <a href="yay-paru.html">yay e paru</a>, <a href="rolling-release.html">Rolling Release</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>checkupdates não mostra nada</strong>
+<pre class="term">$ checkupdates
+$ echo $?
+2</pre>
+<p><strong>Causa:</strong> código 2 = não há atualizações (0 = há; 1 = erro). Aula: <a href="rolling-release.html">Rolling Release</a>.</p>
+</div>
+
+<h3 id="chaves">Chaves e assinaturas</h3>
+
+<div class="cenario">
+<strong>"a assinatura de … tem confiança desconhecida"</strong>
+<pre class="term">erro: htop: a assinatura de "Christian Hesse &lt;eworm@archlinux.org&gt;" tem confiança desconhecida</pre>
+<p><strong>Causa:</strong> o <code>archlinux-keyring</code> está velho (sistema muito tempo sem atualizar). <strong>Resolva:</strong> <code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code>. Aula: <a href="chaves.html">Chaves e Assinaturas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"faltando chave necessária no chaveiro" num pacman -U</strong>
+<pre class="term">#> pacman -U htop-3.5.3-1-x86_64.pkg.tar.zst
+carregando pacotes...
+:: Importar a chave PGP 6D42BDD116E0068F? [S/n] n
+erro: faltando chave necessária no chaveiro</pre>
+<p><strong>Causa:</strong> você recusou importar a chave. <strong>Resolva:</strong> confira de quem é a chave e responda <code>S</code>, ou use <code>pacman-key --recv-keys</code>. Aula: <a href="chaves.html">Chaves</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="aur">AUR e makepkg</h2>
+
+<div class="cenario">
+<strong>"Dependências faltando: … Não foi possível resolver todas as dependências."</strong>
+<pre class="term">$ makepkg -s --noconfirm
+==> Dependências faltando:
+  -> fzf
+==> ERRO: Não foi possível resolver todas as dependências.</pre>
+<p><strong>Causa:</strong> a dependência não está nos repositórios configurados, ou o <code>makepkg</code> foi rodado sem <code>-s</code>. <strong>Resolva:</strong> <code>makepkg -s</code> instala as dos repositórios; se a dependência é do AUR, construa-a antes (ou use um ajudante). Aula: <a href="makepkg.html">makepkg</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"FALHOU" na validação das somas</strong>
+<pre class="term">==> Validando source arquivos com sha256sums...
+    ola.in ... FALHOU
+==> ERRO: Um ou mais arquivos não passaram na verificação de validade!</pre>
+<p><strong>Causa:</strong> o arquivo baixado não é o que o PKGBUILD espera (atualização do autor ou adulteração). <strong>Resolva:</strong> num pacote seu, <code>updpkgsums</code>; num do AUR, <strong>não</strong> force: verifique e avise o mantenedor. Aula: <a href="pkgbuild.html">PKGBUILD</a>, <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Executar makepkg como root não é permitido"</strong>
+<p><strong>Resolva:</strong> rode como usuário comum; o <code>makepkg -si</code> pede o <code>sudo</code> só na hora de instalar. Aula: <a href="makepkg.html">makepkg</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>yay: "Evite executar o yay como root/sudo."</strong>
+<p><strong>Resolva:</strong> <code>yay -S pacote</code> sem <code>sudo</code>. Aula: <a href="yay-paru.html">yay e paru</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="sudo">sudo, usuários e permissões</h2>
+
+<div class="cenario">
+<strong>A senha certa é recusada: "Sinto muito, tente novamente."</strong>
+<pre class="term">Info: The account is locked due to 3 failed logins.
+Info: (3 minutes left to unlock)
+Password: </pre>
+<p><strong>Causa:</strong> o <code>pam_faillock</code>: 3 senhas erradas em 15 minutos travam a conta por 10 (no <code>sudo</code>, sem aviso; no polkit, com a mensagem acima). <strong>Confirme:</strong> <code>faillock --user ana</code> como root. <strong>Resolva:</strong> espere ou <code>faillock --user ana --reset</code>. Aula: <a href="seguranca.html">Segurança</a>, <a href="usuarios.html">Usuários e Grupos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"… não está no arquivo sudoers."</strong>
+<pre class="term" data-user="bruno">$ sudo pacman -Q bash
+[sudo] senha para bruno:
+bruno não está no arquivo sudoers.</pre>
+<p><strong>Resolva:</strong> como root, <code>usermod -aG wheel bruno</code>, confira a linha <code>%wheel ALL=(ALL:ALL) ALL</code> descomentada (<code>EDITOR=nano visudo</code>), e faça logout/login. Aula: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" mesmo com sudo</strong>
+<pre class="term">$ sudo echo teste &gt; /etc/a1-teste.conf
+bash: /etc/a1-teste.conf: Permissão negada</pre>
+<p><strong>Causa:</strong> o <code>&gt;</code> é feito pelo seu shell (sem root), não pelo <code>sudo</code>. <strong>Resolva:</strong> <code>echo teste | sudo tee /etc/arquivo</code>. Aula: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"visudo … syntax error"</strong>
+<pre class="term">#> visudo -c
+/etc/sudoers:125:21: syntax error
+%wheel ALL=(ALL:ALL ALL
+                    ^~~</pre>
+<p><strong>Resolva:</strong> corrija a linha indicada (aqui, falta o <code>)</code>). Sempre edite com <code>visudo</code>, que não salva arquivo quebrado. Aula: <a href="configurar.html">Configurar o Sistema</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"usermod: grupo 'x' não existe"</strong>
+<pre class="term">$ sudo usermod -aG grupoinexistente teste-a6
+usermod: grupo 'grupoinexistente' não existe
+$ echo $?
+6</pre>
+<p><strong>Causa:</strong> o grupo é criado pelo pacote que o usa (<code>docker</code>, <code>libvirt</code>); instale-o antes. Aula: <a href="usuarios.html">Usuários e Grupos</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"chmod: modo inválido"</strong>
+<pre class="term">$ chmod 999 notas.txt
+chmod: modo inválido: “999”</pre>
+<p><strong>Causa:</strong> cada dígito vai de 0 a 7. Aula: <a href="permissoes.html">Permissões</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="servicos">Serviços, timers e logs</h2>
+
+<div class="cenario">
+<strong>"Unit … not found"</strong>
+<pre class="term">$ sudo systemctl start nginx-teste
+Failed to start nginx-teste.service: Unit nginx-teste.service not found.
+$ echo $?
+5</pre>
+<p><strong>Causa:</strong> nome errado ou pacote não instalado. <strong>Confirme:</strong> <code>systemctl list-unit-files | grep parte</code>. Aula: <a href="systemd.html">systemctl e Serviços</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Access denied as the requested operation requires interactive authentication"</strong>
+<pre class="term">$ systemctl start nginx
+Failed to start nginx.service: Access denied as the requested operation requires interactive authentication. However, interactive authentication has not been enabled by the calling program.</pre>
+<p><strong>Resolva:</strong> faltou o <code>sudo</code>. Aula: <a href="systemd.html">systemctl</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Liguei, mas depois do reboot estava desligado"</strong>
+<p><strong>Causa:</strong> <code>start</code> liga só agora; no Arch, nenhum serviço liga sozinho no boot. <strong>Resolva:</strong> <code>sudo systemctl enable --now SERVIÇO</code>. Aula: <a href="systemd.html">systemctl</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Failed to parse calendar specification"</strong>
+<pre class="term">$ systemd-analyze calendar 'segunda 08:00'
+Failed to parse calendar specification 'segunda 08:00': Argumento inválido</pre>
+<p><strong>Causa:</strong> os dias vão em inglês: <code>Mon 08:00</code>. Teste sempre com <code>systemd-analyze calendar</code>. Aula: <a href="timers.html">Timers</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O timer do usuário não rodou à noite</strong>
+<p><strong>Causa:</strong> sem <em>lingering</em>, o systemd do usuário só existe com sessão aberta. <strong>Resolva:</strong> <code>sudo loginctl enable-linger ana</code>. Aula: <a href="timers.html">Timers</a>, <a href="projeto-servidor.html">Servidor Caseiro</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>journalctl: "-- No entries --" / "No journal boot entry found"</strong>
+<pre class="term">$ journalctl -u nada
+-- No entries --
+$ journalctl -b -10
+No journal boot entry found for the specified boot (-10).</pre>
+<p><strong>Causa:</strong> nome de unit errado, ou o journal não guarda tantos boots. Aula: <a href="journal.html">Logs</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="discos">Discos, montagem, Btrfs, LUKS e LVM</h2>
+
+<div class="cenario">
+<strong>"é necessário ser superusuário para montar"</strong>
+<pre class="term">$ mount /dev/loop0 /mnt/a7
+mount: /mnt/a7: é necessário ser superusuário para montar.</pre>
+<p><strong>Resolva:</strong> <code>sudo mount …</code>. Aula: <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Unknown parameter" numa opção do fstab</strong>
+<pre class="term">#> mount -a --fstab /tmp/a7/fstab-opcao
+mount: /mnt/a7: fsconfig() falhou: ext4: Unknown parameter 'noatme'.</pre>
+<p><strong>Causa:</strong> opção com erro de digitação (<code>noatime</code>). Aula: <a href="fstab.html">mount e fstab</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"wrong fs type, bad option, bad superblock"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/loop1p3 /mnt
+mount: /mnt: wrong fs type, bad option, bad superblock on /dev/loop1p3, missing codepage or helper program, or other error.</pre>
+<p><strong>Causa:</strong> partição sem sistema de arquivos (esqueceu o <code>mkfs</code>), partição errada, ou opção inválida. <strong>Confirme:</strong> <code>lsblk -f</code>. Aula: <a href="formatar-montar.html">Formatar e Montar</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>fdisk: "Permissão negada"</strong>
+<pre class="term">$ fdisk -l
+fdisk: não foi possível abrir /dev/sda: Permissão negada</pre>
+<p><strong>Resolva:</strong> <code>sudo fdisk -l</code>, ou use <code>lsblk</code>, que não precisa de root. Aula: <a href="discos.html">lsblk, df, du</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Btrfs: "No space left on device" com espaço sobrando no df</strong>
+<pre class="term">#> btrfs balance start -dusage=50 /var/tmp/a8/m
+Done, had to relocate 1 out of 3 chunks</pre>
+<p><strong>Causa:</strong> blocos de dados meio vazios ocupando o espaço de metadados (ou snapshots antigos). <strong>Resolva:</strong> <code>btrfs filesystem usage</code>, apague snapshots velhos, <code>balance</code> com filtro. Aula: <a href="btrfs.html">Btrfs</a>, <a href="snapshots.html">Snapshots</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>snapper: "Sem permissões." / "A configuração "root" não existe."</strong>
+<pre class="term">$ snapper list
+A configuração "root" não existe. Provavelmente, o snapper não está configurado.</pre>
+<p><strong>Resolva:</strong> <code>sudo snapper -c root create-config /</code> (raiz em Btrfs) e use <code>sudo</code>. Aula: <a href="snapshots.html">Snapshots (snapper)</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>LUKS: "Nenhuma chave disponível com esta senha."</strong>
+<pre class="term">#> printf '%s' 'senha-errada' | cryptsetup open /dev/loop1 a8cripto -
+Nenhuma chave disponível com esta senha.
+#> echo $?
+2</pre>
+<p><strong>Causa:</strong> senha errada (no boot, confira o teclado: o initramfs precisa do hook <code>sd-vconsole</code>/<code>keymap</code> para o ABNT2). Aula: <a href="luks.html">LUKS</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>LVM: "Insufficient free space"</strong>
+<pre class="term">#> lvextend -L +5G vg_a8/dados
+  Insufficient free space: 1280 extents needed, but only 105 available</pre>
+<p><strong>Resolva:</strong> <code>vgs</code> mostra o espaço livre do grupo; adicione um disco (<code>vgextend</code>) ou peça menos. Aula: <a href="lvm.html">LVM</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>mkswap: "permissões inseguras" / swapon: "parece ter buracos"</strong>
+<pre class="term">#> truncate -s 256M /var/tmp/a7/ruim
+#> mkswap /var/tmp/a7/ruim
+mkswap: /var/tmp/a7/ruim: permissões inseguras 0644, corrija com: chmod 0600 /var/tmp/a7/ruim</pre>
+<p><strong>Causa:</strong> arquivo de swap criado com <code>truncate</code> (esparso) e permissão aberta. <strong>Resolva:</strong> crie com <code>mkswap --file -s 4G /swapfile</code> (ou <code>dd</code>) e <code>chmod 600</code>. Aula: <a href="swap-zram.html">Swap e zram</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="rede">Rede</h2>
+
+<div class="cenario">
+<strong>"Temporary failure in name resolution" / "Nome ou serviço desconhecido"</strong>
+<pre class="term">$ ping -c 1 nao-existe.invalid
+ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
+<p><strong>Causa:</strong> nome inexistente, ou sem DNS/sem rede. <strong>Confirme:</strong> <code>ping -c 3 1.1.1.1</code> (se o IP responde e o nome não, é DNS). Aula: <a href="rede.html">NetworkManager</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Depois da instalação, nada de rede</strong>
+<p><strong>Causa:</strong> o NetworkManager (ou outro gerenciador) não foi instalado no <code>pacstrap</code>, ou não foi habilitado. <strong>Resolva:</strong> do live, <code>arch-chroot</code>, <code>pacman -S networkmanager</code>, <code>systemctl enable NetworkManager</code>. Aula: <a href="primeiro-boot.html">Primeiro Boot e Rede</a>, <a href="chroot-resgate.html">Resgate com chroot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Address already in use"</strong>
+<pre class="term">$ python -m http.server 8080
+Traceback (most recent call last):
+…
+OSError: [Errno 98] Address already in use</pre>
+<p><strong>Causa:</strong> outra coisa já escuta na porta. <strong>Confirme:</strong> <code>sudo ss -tlnp | grep :8080</code>. Aula: <a href="repositorio-local.html">Seu Próprio Repositório</a>, <a href="servidor-web.html">Servidor Web</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="servidores">Servidores, containers e VMs</h2>
+
+<div class="cenario">
+<strong>nginx: "bind() to 0.0.0.0:80 failed (98: Address already in use)"</strong>
+<p><strong>Causa:</strong> outro servidor (ou um <code>nginx</code> rodado à mão) já usa a porta 80. <strong>Resolva:</strong> <code>sudo ss -tlnp | grep ':80 '</code>, pare o outro, use só <code>systemctl</code>. Aula: <a href="servidor-web.html">Servidor Web</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>nginx -t: "[emerg] invalid parameter"</strong>
+<pre class="term">$ sudo nginx -t
+2026/10/16 13:21:48 [emerg] 2123#2123: invalid parameter "server_name" in /etc/nginx/sites-enabled/meusite.conf:3
+nginx: configuration file /etc/nginx/nginx.conf test failed</pre>
+<p><strong>Causa:</strong> faltou o <code>;</code> na linha <strong>anterior</strong> à indicada. Aula: <a href="servidor-web.html">Servidor Web</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>nginx 403 com "(13: Permission denied)" no journal</strong>
+<p><strong>Causa:</strong> o usuário <code>http</code> não lê o arquivo ou não entra na pasta (sites em <code>/home</code>, que no Arch é 700). <strong>Resolva:</strong> use <code>/srv/http</code>, <code>chmod 644</code>/<code>755</code>. Aula: <a href="servidor-web.html">Servidor Web</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Podman: "short-name … did not resolve to an alias"</strong>
+<pre class="term">$ podman pull meuapp
+Error: short-name "meuapp" did not resolve to an alias and no containers-registries.conf(5) was found</pre>
+<p><strong>Resolva:</strong> use o nome completo (<code>docker.io/usuario/meuapp</code>). Aula: <a href="containers.html">Docker e Podman</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Podman: "Listen failed for HOST TCP port */80: Permission denied"</strong>
+<p><strong>Causa:</strong> sem root, portas abaixo de 1024 são proibidas. <strong>Resolva:</strong> <code>-p 8080:80</code>. Aula: <a href="containers.html">Docker e Podman</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Podman: "executable file `httpd` not found in $PATH" / container some do ps</strong>
+<pre class="term">$ podman logs casa-web
+httpd: applet not found</pre>
+<p><strong>Causa:</strong> o comando não existe naquela imagem. <strong>Confirme:</strong> <code>podman ps -a</code> e <code>podman logs NOME</code>. Aula: <a href="projeto-servidor.html">Servidor Caseiro</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>KVM: "could not insert 'kvm_intel': Operation not supported"</strong>
+<pre class="term">#> modprobe kvm_intel
+modprobe: ERROR: could not insert 'kvm_intel': Operation not supported
+#> dmesg | grep kvm_intel
+[ 1474.053519] kvm_intel: VMX not supported by CPU 1</pre>
+<p><strong>Causa:</strong> virtualização desligada no firmware, ou o Arch é ele mesmo uma VM sem virtualização aninhada. Aula: <a href="kvm.html">Máquinas Virtuais</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Flatpak: "Nenhuma ref de remoto localizada para “flathub”"</strong>
+<pre class="term">$ flatpak install --user flathub org.gnome.Calculator
+Procurando por correspondências…
+erro: Nenhuma ref de remoto localizada para “flathub”</pre>
+<p><strong>Causa:</strong> o Flatpak do Arch vem sem o Flathub (e o <code>--user</code> tem a sua própria lista de remotos). <strong>Resolva:</strong> <code>flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo</code> (com <code>--user</code>, se for o caso). Aula: <a href="flatpak.html">Flatpak</a>.</p>
+</div>
+
+<hr>
+
+<h2>Não achou o seu erro?</h2>
+<ul>
+  <li>Procure a mensagem exata, entre aspas, na <a href="https://wiki.archlinux.org/">Arch Wiki</a> e nos <a href="https://bbs.archlinux.org/">fóruns</a>.</li>
+  <li>Veja as <a href="https://archlinux.org/news/">notícias do Arch</a>: muitos "erros" de atualização são mudanças anunciadas.</li>
+  <li>Problemas de atualização: <a href="problemas-update.html">Erros de Atualização</a>. Sistema que não liga: <a href="recuperar-boot.html">Recuperar o Boot</a> e <a href="chroot-resgate.html">Resgate com chroot</a>. Tela congelada: <a href="travamentos.html">Quando o Sistema Trava</a>.</li>
+  <li>Ao pedir ajuda, mande o comando, a saída completa (texto, não foto) e o que mudou desde a última vez que funcionou.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> é o roteiro geral (em pt-BR: <a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">Solução de problemas geral</a>); <a href="https://wiki.archlinux.org/title/Pacman#Troubleshooting">pacman: Troubleshooting</a> cobre os erros do pacman, e <a href="https://wiki.archlinux.org/title/Code_of_conduct">Code of conduct</a> explica como pedir ajuda nos fóruns.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
