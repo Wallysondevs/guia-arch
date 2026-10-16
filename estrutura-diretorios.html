@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Estrutura de Diretórios — onde fica cada coisa | Guia Arch</title>
+<meta name="description" content="A árvore de pastas do Arch Linux explicada: /, /usr (com /bin, /sbin e /lib como atalhos), /etc, /home, /root, /boot na partição EFI (FAT32), /var com o cache e a base do pacman e o journal, /tmp em tmpfs, /run, /dev, /proc, /sys, /opt e /srv, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Estrutura de Diretórios</span></h1>
+
+<p class="intro">No Windows existem o <code>C:</code>, o <code>D:</code>, e cada disco tem a sua árvore. No Linux existe <strong>uma árvore só</strong>, que começa numa pasta chamada <code>/</code> (a "raiz"). Tudo fica pendurado nela: seus arquivos, os programas, as configurações, o kernel, os pacotes baixados pelo <code>pacman</code> e até os pendrives. Nesta aula você conhece cada galho dessa árvore num Arch real.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é a raiz <code>/</code> e como ver o que existe nela.</li>
+  <li>Para que serve cada pasta principal, com uma tabela completa.</li>
+  <li>Por que no Arch <code>/bin</code>, <code>/sbin</code> e <code>/lib</code> são só atalhos para dentro de <code>/usr</code>.</li>
+  <li>O que fica em <code>/boot</code> (uma partição FAT32 à parte) e em <code>/var</code> (o cache e a base do <code>pacman</code>, os logs).</li>
+  <li>Por que o <code>/tmp</code> some ao reiniciar e por que ninguém além de você abre a sua pasta pessoal.</li>
+</ul>
+</div>
+
+<p>Os exemplos acontecem na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>, instalada à mão seguindo a Arch Wiki. As saídas foram copiadas dessa máquina.</p>
+
+<hr>
+
+<h2>A raiz: <code>/</code></h2>
+<p>A barra sozinha, <code>/</code>, é a pasta de cima de todas. Para ver o que há nela, liste-a com <code>ls</code>:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>O programa que lista o conteúdo de uma pasta (de <em>list</em>).</dd>
+  <dt>/</dt><dd>O argumento: a pasta a listar. Aqui, a raiz.</dd>
+</dl>
+
+<pre class="term">$ ls /
+bin   dev  home  lib64       mnt  proc  run   srv  tmp  var
+boot  etc  lib   lost+found  opt  root  sbin  sys  usr</pre>
+
+<p>São 19 itens, menos que em outras distribuições: o Arch não cria <code>/media</code> nem os atalhos <code>vmlinuz</code> na raiz que o Debian cria. Você não precisa decorar todos: no dia a dia você vai usar <code>/home</code>, <code>/etc</code>, <code>/var</code> e <code>/tmp</code>. Os outros aparecem quando você for administrar a máquina.</p>
+
+<p>O <code>tree</code> (pacote <code>tree</code>, instalado na máquina do guia) desenha a mesma coisa como árvore, e já mostra quais itens são atalhos:</p>
+
+<pre class="term">$ tree -L 1 /
+/
+├── bin -&gt; usr/bin
+├── boot
+├── dev
+├── etc
+├── home
+├── lib -&gt; usr/lib
+├── lib64 -&gt; usr/lib
+├── lost+found
+├── mnt
+├── opt
+├── proc
+├── root
+├── run
+├── sbin -&gt; usr/bin
+├── srv
+├── sys
+├── tmp
+├── usr
+└── var
+
+20 directories, 0 files</pre>
+
+<p>O <code>-L 1</code> limita a um nível (<em>level</em>): sem ele, o <code>tree</code> desceria por todas as pastas do sistema, o que leva muito tempo. O "20 directories" conta a própria raiz.</p>
+
+<div class="tip">
+<strong>Árvore de cabeça para baixo</strong>
+<p>Pense numa árvore genealógica: a raiz <code>/</code> fica em cima e as pastas se ramificam para baixo. <code>/home/ana/Documentos</code> se lê "a pasta Documentos, dentro de ana, dentro de home, dentro da raiz". A aula <a href="caminhos.html">Caminhos</a> ensina a escrever esses endereços.</p>
+</div>
+
+<hr>
+
+<h2>O mapa das pastas</h2>
+<p>Essa organização segue um padrão chamado FHS (<em>Filesystem Hierarchy Standard</em>, "padrão da hierarquia do sistema de arquivos"), por isso é quase igual em qualquer Linux. No Arch, o próprio padrão tem página de manual: <code>man file-hierarchy</code> (veja <a href="ajuda.html">Obtendo Ajuda</a>). As pastas vêm do pacote <code>filesystem</code>, o primeiro que o <code>pacstrap</code> instala.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>O que guarda</th><th>Exemplo real no Arch</th></tr>
+<tr><td><code>/</code></td><td>A raiz: o começo de tudo. No guia, é a partição <code>/dev/sda3</code> (ext4)</td><td>—</td></tr>
+<tr><td><code>/usr</code></td><td>Os programas, as bibliotecas e os dados que vêm nos pacotes</td><td><code>/usr/bin/pacman</code>, <code>/usr/share/man</code></td></tr>
+<tr><td><code>/usr/bin</code></td><td><strong>Todos</strong> os programas, de usuário e de administrador (1806 na máquina do guia)</td><td><code>/usr/bin/ls</code>, <code>/usr/bin/fdisk</code></td></tr>
+<tr><td><code>/usr/lib</code></td><td>Bibliotecas, módulos do kernel, unidades do systemd</td><td><code>/usr/lib/systemd/system</code></td></tr>
+<tr><td><code>/usr/share</code></td><td>Dados que não dependem do processador: manuais, ícones, traduções</td><td><code>/usr/share/nginx/html</code></td></tr>
+<tr><td><code>/usr/local</code></td><td>O que você instala à mão, fora do <code>pacman</code></td><td><code>/usr/local/bin</code> (vazia)</td></tr>
+<tr><td><code>/bin</code>, <code>/sbin</code>, <code>/lib</code>, <code>/lib64</code></td><td>Atalhos para <code>/usr/bin</code> e <code>/usr/lib</code></td><td><code>/bin -&gt; usr/bin</code></td></tr>
+<tr><td><code>/etc</code></td><td>Configurações do sistema, em arquivos de texto</td><td><code>/etc/pacman.conf</code>, <code>/etc/hostname</code>, <code>/etc/fstab</code></td></tr>
+<tr><td><code>/home</code></td><td>As pastas pessoais de cada usuário</td><td><code>/home/ana</code></td></tr>
+<tr><td><code>/root</code></td><td>A pasta pessoal do administrador (root)</td><td>Só o root entra</td></tr>
+<tr><td><code>/boot</code></td><td>O kernel, o initramfs e o carregador de boot. No Arch do guia, é a <strong>partição EFI</strong> (FAT32)</td><td><code>vmlinuz-linux</code>, <code>grub/</code>, <code>EFI/</code></td></tr>
+<tr><td><code>/var</code></td><td>Dados que mudam (<em>variable</em>): logs, caches, bases de dados</td><td><code>/var/log</code>, <code>/var/cache/pacman/pkg</code></td></tr>
+<tr><td><code>/var/cache/pacman/pkg</code></td><td>Os pacotes que o <code>pacman</code> baixou</td><td><code>bash-5.3.20-1-x86_64.pkg.tar.zst</code></td></tr>
+<tr><td><code>/var/lib/pacman</code></td><td>A base de dados do <code>pacman</code>: o que está instalado e o que existe nos repositórios</td><td><code>local/</code>, <code>sync/core.db</code></td></tr>
+<tr><td><code>/var/log</code></td><td>Registros: o journal do systemd e o <code>pacman.log</code></td><td><code>/var/log/journal</code></td></tr>
+<tr><td><code>/var/tmp</code></td><td>Temporários que sobrevivem a um reinício (fica no disco)</td><td>—</td></tr>
+<tr><td><code>/tmp</code></td><td>Temporários de qualquer usuário, <strong>na memória RAM</strong> (tmpfs)</td><td>Esvaziada ao reiniciar</td></tr>
+<tr><td><code>/run</code></td><td>Dados da sessão atual (na RAM): PIDs, sockets, sessões de usuário</td><td><code>/run/user/1000</code>, <code>/run/sshd.pid</code></td></tr>
+<tr><td><code>/dev</code></td><td>Dispositivos (discos, terminais) vistos como arquivos</td><td><code>/dev/sda</code>, <code>/dev/null</code></td></tr>
+<tr><td><code>/proc</code></td><td>Informações do kernel e dos processos em tempo real (não ocupa disco)</td><td><code>/proc/cpuinfo</code>, <code>/proc/version</code></td></tr>
+<tr><td><code>/sys</code></td><td>O hardware visto pelo kernel (não ocupa disco)</td><td><code>/sys/class/net</code></td></tr>
+<tr><td><code>/opt</code></td><td>Programas grandes de terceiros, cada um na sua pasta</td><td>Vazia no guia</td></tr>
+<tr><td><code>/srv</code></td><td>Dados servidos por servidores</td><td><code>/srv/http</code> e <code>/srv/ftp</code> (vazias)</td></tr>
+<tr><td><code>/mnt</code></td><td>Ponto livre para montar discos à mão</td><td>Vazia (na instalação, o novo sistema foi montado aqui)</td></tr>
+<tr><td><code>/run/media/ana</code></td><td>Onde os pendrives aparecem num desktop (o Arch não tem <code>/media</code>)</td><td>Criada ao montar o primeiro pendrive</td></tr>
+<tr><td><code>/lost+found</code></td><td>Pedaços recuperados por uma verificação do ext4</td><td>Só o root vê</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="cwd:/etc/pacman.d,ran:cat .*mirrorlist" data-solucao="cd /etc/pacman.d; cat mirrorlist">
+<p class="try-task"><strong>Missão:</strong> vá até a pasta onde o Arch guarda a lista de espelhos do <code>pacman</code> (<code>/etc/pacman.d</code>) e mostre o arquivo <code>mirrorlist</code> com <code>cat</code>. Use <code>cd</code> para entrar e <code>ls</code> para olhar em volta.</p>
+</div>
+
+<hr>
+
+<h2>/usr: tudo mora aqui (e /bin é só um atalho)</h2>
+<p>Na listagem da raiz aparecem <code>bin</code>, <code>sbin</code>, <code>lib</code> e <code>lib64</code>. No Arch, nenhum deles é pasta de verdade: são <strong>links simbólicos</strong>, atalhos para pastas dentro de <code>/usr</code>. O <code>-l</code> do <code>ls</code> mostra para onde cada um aponta, e o <code>-d</code> mostra o próprio item, não o conteúdo dele:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>Lista.</dd>
+  <dt>-l</dt><dd>Formato longo: a primeira letra <code>l</code> indica um link, e a seta <code>-&gt;</code> mostra o destino.</dd>
+  <dt>-d</dt><dd>Mostra o item em si (de <em>directory</em>), sem entrar nele.</dd>
+  <dt>/bin /sbin /lib /lib64 /usr/sbin /usr/lib64</dt><dd>Seis argumentos: os seis atalhos.</dd>
+</dl>
+
+<pre class="term">$ ls -ld /bin /sbin /lib /lib64 /usr/sbin /usr/lib64
+lrwxrwxrwx 1 root root 7 12 out  2025 /bin -&gt; usr/bin        « l = link; a seta mostra o destino
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib -&gt; usr/lib
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib64 -&gt; usr/lib       « no Arch, lib64 e lib são a mesma pasta
+lrwxrwxrwx 1 root root 7 12 out  2025 /sbin -&gt; usr/bin       « sbin também vai para usr/bin!
+lrwxrwxrwx 1 root root 3 12 out  2025 /usr/lib64 -&gt; lib
+lrwxrwxrwx 1 root root 3 12 out  2025 /usr/sbin -&gt; bin</pre>
+
+<p>A data <code>12 out 2025</code> é a do pacote <code>filesystem</code>, que criou esses atalhos. Antigamente, os programas básicos ficavam em <code>/bin</code>, os de administrador em <code>/sbin</code> e o resto em <code>/usr/bin</code>. O Arch juntou tudo num lugar só, <strong><code>/usr/bin</code></strong>, e foi mais longe que o Debian: até o <code>/sbin</code> e o <code>/usr/sbin</code> apontam para <code>/usr/bin</code>. Os atalhos só existem para que scripts antigos, que chamam <code>/bin/bash</code> ou <code>/sbin/fdisk</code>, sigam funcionando.</p>
+
+<p>Você pode confirmar com o <code>pwd</code>: o <code>-P</code> mostra o caminho físico, já resolvido.</p>
+
+<pre class="term">$ cd /bin
+$ pwd
+/bin
+$ pwd -P
+/usr/bin                       « o lugar de verdade</pre>
+
+<h3>Consequência: os comandos de administrador estão no seu PATH</h3>
+<p>O <code>PATH</code> é a lista de pastas onde o shell procura os comandos. No Arch, a da Ana já inclui <code>/usr/bin</code>, e portanto tudo:</p>
+
+<pre class="term">$ echo $PATH
+/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl
+$ type fdisk
+fdisk é /usr/bin/fdisk
+$ fdisk -l
+fdisk: não foi possível abrir /dev/sda: Permissão negada
+fdisk: não foi possível abrir /dev/sr0: Permissão negada</pre>
+
+<p>Diferente do Debian, onde um usuário comum recebe "comando não encontrado" para <code>fdisk</code>, no Arch o comando é encontrado, mas o <strong>disco</strong> recusa: ler discos é coisa de administrador. Com <code>sudo fdisk -l</code> funciona (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+
+<div class="try" data-setup="cd /bin" data-goal="ran:pwd\s+-P" data-solucao="pwd -P">
+<p class="try-task"><strong>Missão:</strong> você está em <code>/bin</code>. Descubra em que pasta você está <strong>de verdade</strong>, resolvendo o atalho.</p>
+</div>
+
+<hr>
+
+<h2>/etc: as configurações</h2>
+<p>Quase toda configuração do sistema é um arquivo de texto em <code>/etc</code> (na máquina do guia, 147 itens). Como são textos, dá para descobrir muita coisa só lendo:</p>
+
+<pre class="term">$ cat /etc/hostname
+notebook
+$ ls -l /etc/localtime
+lrwxrwxrwx 1 root root 37 16 out 12:09 /etc/localtime -&gt; /usr/share/zoneinfo/America/Sao_Paulo
+$ grep -v '^#' /etc/pacman.conf | grep -v '^$' | head -12
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+CheckSpace
+ParallelDownloads = 5
+DownloadUser = alpm
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+[core]
+Include = /etc/pacman.d/mirrorlist
+[extra]
+Include = /etc/pacman.d/mirrorlist</pre>
+
+<p>O <code>/etc/pacman.conf</code> configura o <code>pacman</code> e lista os repositórios (<code>[core]</code>, <code>[extra]</code>); cada repositório usa os servidores de <code>/etc/pacman.d/mirrorlist</code>. Os dois <code>grep</code> só escondem os comentários e as linhas vazias (veja <a href="grep.html">grep</a>). Você vai editar arquivos de <code>/etc</code> muitas vezes, sempre com <code>sudo</code>, e o <code>pacman</code> tem um cuidado especial com eles (veja <a href="pacnew.html">.pacnew e .pacsave</a>).</p>
+
+<hr>
+
+<h2>/home e /root: as casas, trancadas</h2>
+<p>Cada usuário tem uma pasta dentro de <code>/home</code>. A da Ana é <code>/home/ana</code>, e o til (<code>~</code>) é um apelido para ela. Veja as permissões:</p>
+
+<pre class="term">$ ls /home
+ana
+$ ls -ld /home/ana
+drwx------ 15 ana ana 4096 15 out 08:47 /home/ana</pre>
+
+<p>O <code>drwx------</code> quer dizer que só a dona (ana) pode ler, escrever e entrar. Outros usuários da mesma máquina não conseguem nem listar o que há lá dentro. No Arch, o <code>useradd -m</code> cria a pasta pessoal com permissão <strong>700</strong>. Você vai ler essas letras com calma em <a href="permissoes.html">Entendendo Permissões</a>.</p>
+
+<p>A pasta do administrador, <code>/root</code>, fica fora de <code>/home</code> (para continuar acessível mesmo se <code>/home</code> estiver em outro disco que não montou) e também é fechada:</p>
+
+<pre class="term">$ ls -ld /root
+drwxr-x--- 3 root root 4096 16 out 13:05 /root
+$ ls /root
+ls: não foi possível abrir o diretório '/root': Permissão negada
+$ cd /root
+bash: cd: /root: Permissão negada
+$ echo $?
+1</pre>
+
+<div class="try" data-goal="ran:ls -l?d.*(~|/home/ana)" data-solucao="ls -ld ~">
+<p class="try-task"><strong>Missão:</strong> confira as permissões da sua própria pasta pessoal com <code>ls -ld ~</code> e depois tente entrar em <code>/root</code> com <code>cd /root</code> para ver a resposta.</p>
+</div>
+
+<hr>
+
+<h2>/boot: a partição EFI, em FAT32</h2>
+<p>Em <code>/boot</code> fica o que o computador precisa para ligar: o kernel, o initramfs e o carregador de boot. Num Arch instalado como manda a Wiki em UEFI, <code>/boot</code> não é uma pasta comum: é uma <strong>partição separada</strong>, a partição de sistema EFI (ESP), formatada em <strong>FAT32</strong>, porque é o único formato que o firmware do computador sabe ler. O <code>findmnt</code> mostra de onde vem cada pasta montada:</p>
+
+<pre class="term">$ findmnt /boot
+TARGET SOURCE    FSTYPE OPTIONS
+/boot  /dev/sda1 vfat   rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro
+$ findmnt /
+TARGET SOURCE    FSTYPE OPTIONS
+/      /dev/sda3 ext4   rw,relatime</pre>
+
+<p><code>vfat</code> é o nome que o Linux dá à família FAT. Agora veja o conteúdo:</p>
+
+<pre class="term">$ ls -la /boot
+total 78268
+drwxr-xr-x  4 root root     4096 31 dez  1969 .                         « FAT não guarda data da raiz
+dr-xr-xr-x 17 root root     4096 16 out 12:08 ..
+drwxr-xr-x  3 root root     4096 16 out 12:10 EFI                       « o GRUB para o firmware UEFI
+drwxr-xr-x  6 root root     4096 16 out 13:03 grub                      « configuração do GRUB
+-rwxr-xr-x  1 root root 15555951 16 out 12:58 initramfs-linux.img
+-rwxr-xr-x  1 root root 15554295 16 out 12:58 initramfs-linux-lts.img
+-rwxr-xr-x  1 root root 15265792 25 set 19:53 intel-ucode.img             « microcódigo do processador
+-rwxr-xr-x  1 root root 17240576 16 out 12:09 vmlinuz-linux               « o kernel linux
+-rwxr-xr-x  1 root root 16503296 16 out 12:58 vmlinuz-linux-lts           « o kernel linux-lts</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>O que é</th></tr>
+<tr><td><code>vmlinuz-linux</code></td><td>O kernel do pacote <code>linux</code>. No Arch o nome não tem a versão; o arquivo é substituído a cada atualização.</td></tr>
+<tr><td><code>initramfs-linux.img</code></td><td>Um mini-sistema que o kernel usa para achar e montar a raiz, gerado pelo <code>mkinitcpio</code>.</td></tr>
+<tr><td><code>*-lts</code></td><td>O segundo kernel instalado na máquina do guia (<code>linux-lts</code>), de reserva.</td></tr>
+<tr><td><code>intel-ucode.img</code></td><td>Correções do processador Intel, carregadas antes do kernel.</td></tr>
+<tr><td><code>grub/</code>, <code>EFI/</code></td><td>O carregador de boot GRUB (veja <a href="bootloader.html">Bootloader</a>).</td></tr>
+</table>
+</div>
+
+<p>Dois detalhes vêm do FAT32, que não conhece dono nem permissões do Linux: todos os arquivos aparecem como <code>root</code> com <code>-rwxr-xr-x</code> (quem decide isso são as opções <code>fmask=0022,dmask=0022</code> da montagem), e a pasta raiz da partição não tem data, por isso aparece o "dia zero" do Unix (1º de janeiro de 1970 em UTC, que no fuso de Brasília vira <code>31 dez 1969</code>).</p>
+
+<div class="warning">
+<strong>Não mexa em /boot à mão</strong>
+<p>Apagar ou renomear algo aqui pode deixar o computador sem ligar. Quem cuida desses arquivos são o <code>pacman</code> (ao atualizar o kernel), o <code>mkinitcpio</code> e o <code>grub-mkconfig</code>. Se a partição encher ou não montar, o próximo <code>pacman -Syu</code> falha ao copiar o kernel; veja <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<hr>
+
+<h2>/var: o que muda (pacman e logs)</h2>
+<p>Em <code>/var</code> (de <em>variable</em>) fica tudo o que cresce e muda enquanto o sistema roda:</p>
+
+<pre class="term">$ ls /var
+cache  db  empty  games  lib  local  lock  log  mail  opt  run  spool  tmp</pre>
+
+<h3>/var/cache/pacman/pkg: os pacotes baixados</h3>
+<p>Todo pacote que o <code>pacman</code> instala é baixado primeiro para cá, e <strong>fica aqui</strong> depois de instalado:</p>
+
+<pre class="term">$ ls /var/cache/pacman/pkg | head -5
+aardvark-dns-2.1.0-3-x86_64.pkg.tar.zst
+aardvark-dns-2.1.0-3-x86_64.pkg.tar.zst.sig            « a assinatura digital do pacote
+abseil-cpp-20260817.0-2-x86_64.pkg.tar.zst
+abseil-cpp-20260817.0-2-x86_64.pkg.tar.zst.sig
+accountsservice-26.27.3-1-x86_64.pkg.tar.zst
+$ ls /var/cache/pacman/pkg/*.pkg.tar.zst | wc -l
+404
+$ du -sh /var/cache/pacman/pkg 2&gt;/dev/null
+1,3G	/var/cache/pacman/pkg</pre>
+
+<p>404 pacotes ocupam 1,3 GB. Guardá-los permite voltar a uma versão anterior sem internet, mas o cache cresce a cada atualização e é o motivo número 1 de disco cheio no Arch. O <code>2&gt;/dev/null</code> esconde avisos de "Permissão negada" de subpastas temporárias do <code>pacman</code>. A limpeza é assunto de <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+
+<h3>/var/lib/pacman: a base de dados</h3>
+<pre class="term">$ ls /var/lib/pacman
+local  sync
+$ ls /var/lib/pacman/sync
+core.db  core.files  download-la4D31  extra.db  extra.files
+$ ls /var/lib/pacman/local | head -5
+aardvark-dns-2.1.0-3
+abseil-cpp-20260817.0-2
+accountsservice-26.27.3-1
+acl-2.4.0-1
+ALPM_DB_VERSION</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>O que guarda</th><th>Quem consulta</th></tr>
+<tr><td><code>local/</code></td><td>Uma pasta por pacote <strong>instalado</strong> (408 na máquina do guia), com a lista de arquivos e a descrição</td><td><code>pacman -Q</code></td></tr>
+<tr><td><code>sync/</code></td><td>A lista de pacotes que <strong>existem</strong> em cada repositório (<code>core.db</code>, <code>extra.db</code>), baixada pelo <code>-Sy</code></td><td><code>pacman -S</code>, <code>-Ss</code>, <code>-Si</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Nunca apague /var/lib/pacman/local</strong>
+<p>Sem ela, o <code>pacman</code> acha que nada está instalado. Os arquivos continuam no disco, mas o sistema fica impossível de atualizar. O único arquivo que às vezes se apaga à mão aqui é o <code>db.lck</code>, quando uma atualização foi interrompida (veja <a href="travamentos.html">Quando o Sistema Trava</a>).</p>
+</div>
+
+<h3>/var/log: o journal e o pacman.log</h3>
+<pre class="term">$ ls /var/log
+audit  btmp  journal  lastlog  nginx  old  pacman.log  private  wtmp
+$ ls /var/log/journal
+42634ff99dd3440394e6cd711c974f65              « o "machine ID" desta máquina
+$ head -2 /var/log/pacman.log
+[2026-10-16T15:02:24+0000] [PACMAN] Running 'pacman -b /mnt//var/lib/pacman/ -r /mnt -Sy --config=/tmp/pacman.conf.2ZHS --disable-sandbox --noconfirm --cachedir=/mnt//var/cache/pacman/pkg/ base linux linux-firmware intel-ucode networkmanager sudo nano vim man-db man-pages texinfo grub efibootmgr openssh'
+[2026-10-16T15:02:24+0000] [PACMAN] synchronizing package lists</pre>
+
+<p>O Arch não tem o arquivo <code>/var/log/syslog</code> dos tutoriais antigos: os registros do sistema ficam no <strong>journal</strong> do systemd, em formato binário, e se leem com <code>journalctl</code> (veja <a href="journal.html">journalctl</a>). Já o <code>pacman.log</code> é texto puro e conta toda a história dos pacotes: a primeira linha é o próprio <code>pacstrap</code> da instalação (com a hora em UTC, <code>+0000</code>, porque o pendrive de instalação não sabia o fuso).</p>
+
+<div class="try" data-goal="ran:(tail|head|cat|less|grep).*pacman\.log" data-solucao="tail -3 /var/log/pacman.log">
+<p class="try-task"><strong>Missão:</strong> mostre as 3 últimas linhas do registro do <code>pacman</code>, em <code>/var/log</code>. Dica: <code>tail -3</code> mostra o fim de um arquivo.</p>
+</div>
+
+<hr>
+
+<h2>/tmp: o que está lá some ao reiniciar</h2>
+<p>No Arch, a pasta <code>/tmp</code> fica na <strong>memória RAM</strong>, não no disco:</p>
+
+<pre class="term">$ findmnt /tmp
+TARGET SOURCE FSTYPE OPTIONS
+/tmp   tmpfs  tmpfs  rw,nosuid,nodev,nr_inodes=1048576,inode64,huge=advise,usrquota      « tmpfs = na memória
+$ findmnt /var/tmp
+$ echo $?
+1                                « nada: /var/tmp não é montagem própria, fica no disco da raiz</pre>
+
+<p>Isso deixa o <code>/tmp</code> rápido, mas tem uma consequência: <strong>tudo o que estiver lá desaparece quando o computador reinicia</strong>. O tamanho máximo é metade da RAM (no <code>df -h</code>, <code>tmpfs 1,9G … /tmp</code> numa máquina de 4 GB).</p>
+
+<div class="warning">
+<strong>Atenção</strong>
+<p>Nunca guarde em <code>/tmp</code> nada que você queira manter. Baixou um arquivo para lá? Mova para a sua pasta pessoal antes de desligar. Temporários que precisam sobreviver a um reinício vão em <code>/var/tmp</code>.</p>
+</div>
+
+<hr>
+
+<h2>/run, /dev, /proc e /sys: pastas que não estão no disco</h2>
+<p>Quatro pastas da raiz são criadas pelo kernel e pelo systemd a cada boot e não ocupam disco. Repare no tamanho <code>0</code> do <code>/proc</code> e do <code>/sys</code> no <code>ls -l /</code>:</p>
+
+<pre class="term">$ ls -l / | grep -E ' (dev|proc|run|sys)$'
+drwxr-xr-x  18 root root  3760 16 out 14:51 dev
+dr-xr-xr-x 121 root root     0 16 out 14:50 proc
+drwxr-xr-x  25 root root   600 16 out 14:51 run
+dr-xr-xr-x  13 root root     0 16 out 14:50 sys</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>O que é</th><th>Para espiar</th></tr>
+<tr><td><code>/dev</code></td><td>Cada dispositivo vira um arquivo: <code>/dev/sda</code> é o disco inteiro, <code>/dev/sda1</code> a primeira partição, <code>/dev/null</code> um "buraco negro" que descarta o que recebe</td><td><code>ls -l /dev/sda*</code>, <code>lsblk</code></td></tr>
+<tr><td><code>/proc</code></td><td>Uma janela para dentro do kernel: uma pasta numerada por processo e arquivos com o estado do sistema</td><td><code>cat /proc/version</code>, <code>head -5 /proc/cpuinfo</code></td></tr>
+<tr><td><code>/sys</code></td><td>O hardware visto pelo kernel, organizado por tipo</td><td><code>ls /sys/class/net</code></td></tr>
+<tr><td><code>/run</code></td><td>Arquivos da sessão atual, na RAM: PIDs de serviços, sockets, a pasta <code>/run/user/1000</code> da Ana</td><td><code>ls /run</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ ls -l /dev/sda /dev/sda1 /dev/null
+crw-rw-rw- 1 root root 1, 3 16 out 14:51 /dev/null       « c = dispositivo de caractere
+brw-rw---- 1 root disk 8, 0 16 out 14:51 /dev/sda        « b = dispositivo de bloco (disco)
+brw-rw---- 1 root disk 8, 1 16 out 14:51 /dev/sda1
+$ cat /proc/version
+Linux version 7.2.10-arch1-1 (linux@archlinux) (gcc (GCC) 16.2.1 20260810, GNU ld (GNU Binutils) 2.47) #1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026 06:58:10 +0000
+$ head -5 /proc/cpuinfo
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 79
+model name	: Intel(R) Xeon(R) CPU E5-2630 v4 @ 2.20GHz</pre>
+
+<p>Repare nas permissões do <code>/dev/sda</code>: só o root e o grupo <code>disk</code> podem ler o disco. Era isso que fazia o <code>fdisk -l</code> da Ana dar "Permissão negada".</p>
+
+<hr>
+
+<h2>/opt, /srv e /mnt: as pastas vazias</h2>
+<pre class="term">$ ls /opt /mnt
+/mnt:
+
+/opt:
+$ ls /srv
+ftp  http</pre>
+
+<p>As três começam vazias (o <code>/srv</code> só com duas subpastas vazias criadas pelo pacote <code>filesystem</code>). O <code>/opt</code> recebe programas grandes que vêm "inteiros" de fora, como alguns pacotes do AUR (veja <a href="aur.html">O que é o AUR</a>). O <code>/mnt</code> serviu, durante a instalação, para montar o sistema novo antes do <code>arch-chroot</code>.</p>
+
+<p>O <code>/srv/http</code> existe, mas o servidor web <code>nginx</code> do Arch não usa essa pasta: a página padrão dele fica dentro do próprio pacote, em <code>/usr/share/nginx/html</code>:</p>
+
+<pre class="term">$ ls /usr/share/nginx/html
+50x.html  index.html
+$ pacman -Qo /usr/share/nginx/html/index.html
+/usr/share/nginx/html/index.html pertence a nginx 1.30.5-1</pre>
+
+<p>Quando você publicar um site de verdade, a recomendação é colocá-lo em <code>/srv/http</code> e apontar o <code>nginx</code> para lá (veja <a href="servidor-web.html">Servidor Web</a>).</p>
+
+<hr>
+
+<h2>Formas diferentes de explorar a árvore</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>ls</code> na pasta</td><td><code>ls /etc</code></td><td>Ver o que há em uma pasta</td></tr>
+<tr><td><code>cd</code> e <code>ls</code></td><td><code>cd /var/log</code> e <code>ls</code></td><td>Explorar com calma, pasta por pasta (veja <a href="navegar.html">pwd e cd</a>)</td></tr>
+<tr><td><code>tree</code></td><td><code>tree -L 1 /</code></td><td>Desenhar a árvore; sempre com <code>-L</code> em pastas grandes</td></tr>
+<tr><td><code>findmnt</code></td><td><code>findmnt /boot</code></td><td>Saber em que partição (ou memória) uma pasta está</td></tr>
+<tr><td><code>df -h</code></td><td><code>df -h /boot</code></td><td>Ver o espaço livre de cada partição (veja <a href="primeiros-comandos.html">Primeiros Comandos</a>)</td></tr>
+<tr><td><code>pacman -Qo</code></td><td><code>pacman -Qo /usr/bin/fdisk</code></td><td>Descobrir qual pacote colocou um arquivo ali</td></tr>
+<tr><td><code>man file-hierarchy</code></td><td></td><td>A explicação oficial de cada pasta</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Permissão negada" ao entrar numa pasta</strong>
+<pre class="term">$ cd /root
+bash: cd: /root: Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> a pasta pertence a outro usuário e está fechada para você.</p>
+<p><strong>Como resolver:</strong> se for mesmo necessário, use <code>sudo</code> (por exemplo, <code>sudo ls /root</code>). Para a pasta pessoal de outra pessoa, peça a ela que compartilhe o arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>Salvei um arquivo em /tmp e ele sumiu</strong>
+<p><strong>O que aconteceu:</strong> no Arch o <code>/tmp</code> fica na memória (tmpfs) e é esvaziado a cada reinício.</p>
+<p><strong>Como resolver:</strong> guarde arquivos que importam em <code>~/</code>. Para temporários que precisam sobreviver a um reinício, use <code>/var/tmp</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" no /var/log/syslog ou no /media</strong>
+<pre class="term">$ ls /media
+ls: não foi possível acessar '/media': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o tutorial era de outra distribuição. O Arch não tem <code>/var/log/syslog</code> (os logs estão no journal) nem <code>/media</code> (os pendrives aparecem em <code>/run/media/SEU_USUÁRIO</code>).</p>
+<p><strong>Como resolver:</strong> use <code>journalctl</code> para os logs e <code>lsblk</code> ou <code>findmnt</code> para achar onde o pendrive foi montado.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" num comando de administrador que foi encontrado</strong>
+<pre class="term">$ fdisk -l
+fdisk: não foi possível abrir /dev/sda: Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> no Arch, <code>/usr/sbin</code> é o mesmo que <code>/usr/bin</code>, então o comando existe para você, mas o dispositivo (<code>/dev/sda</code>) só abre para o root.</p>
+<p><strong>Como resolver:</strong> <code>sudo fdisk -l</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O disco encheu e eu não sei onde</strong>
+<p><strong>O que aconteceu:</strong> no Arch, o suspeito número 1 é o cache do <code>pacman</code>; o segundo, o journal.</p>
+<p><strong>Como confirmar:</strong> <code>du -sh /var/cache/pacman/pkg</code> e <code>journalctl --disk-usage</code>. Use <code>du</code> sempre numa pasta específica, nunca em <code>/</code> inteiro: ler o disco todo é muito lento.</p>
+<p><strong>Como resolver:</strong> veja <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Onde ficam as configurações?</h3>
+<p>Complete com a pasta onde o Arch guarda as configurações do sistema:</p>
+<div class="ex-code">ls <input data-answer="/etc|/etc/" aria-label="pasta"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Para onde aponta?</h3>
+<p>Complete para ver para onde o atalho <code>/sbin</code> aponta, sem listar o conteúdo dele:</p>
+<div class="ex-code">ls <input data-answer="-ld|-dl|-l -d|-d -l" aria-label="opções"> /sbin</div>
+</div>
+
+<div class="exercise">
+<h3>3. Os pacotes baixados</h3>
+<p>Complete o caminho da pasta onde o <code>pacman</code> guarda os pacotes que baixou:</p>
+<div class="ex-code">ls /var/cache/<input data-answer="pacman/pkg|pacman/pkg/" aria-label="caminho"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você baixou <code>relatorio.pdf</code> para <code>/tmp</code> e reiniciou o Arch. O que acontece com o arquivo?</p>
+<label><input type="radio" name="q4"> Continua lá, como qualquer arquivo.</label>
+<label><input type="radio" name="q4"> Vai para a lixeira.</label>
+<label><input type="radio" name="q4"> Some, porque o <code>/tmp</code> fica na memória (tmpfs).</label>
+<label><input type="radio" name="q4"> É movido para <code>/var/tmp</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que o <code>ls -l /boot</code> mostra todos os arquivos com <code>-rwxr-xr-x</code> e dono <code>root</code>?</p>
+<label><input type="radio" name="q5"> Porque o kernel precisa ser executável.</label>
+<label><input type="radio" name="q5"> Porque <code>/boot</code> é a partição EFI em FAT32, que não guarda permissões; o Linux mostra as definidas na montagem.</label>
+<label><input type="radio" name="q5"> Porque o GRUB mudou as permissões.</label>
+<label><input type="radio" name="q5"> Porque a pasta está corrompida.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. No Arch, onde está de verdade o programa <code>/sbin/fdisk</code>?</p>
+<label><input type="radio" name="q6"> Em <code>/usr/bin/fdisk</code>, porque <code>/sbin</code> aponta para <code>usr/bin</code>.</label>
+<label><input type="radio" name="q6"> Em <code>/usr/sbin/fdisk</code>, uma pasta separada.</label>
+<label><input type="radio" name="q6"> Em <code>/sbin/fdisk</code>, uma pasta de verdade.</label>
+<label><input type="radio" name="q6"> Em <code>/boot</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Há uma árvore só, que começa em <code>/</code>; o padrão se chama FHS (<code>man file-hierarchy</code>).</li>
+  <li>Programas em <code>/usr/bin</code>; <code>/bin</code>, <code>/sbin</code>, <code>/usr/sbin</code>, <code>/lib</code> e <code>/lib64</code> são atalhos para dentro de <code>/usr</code>.</li>
+  <li>Configurações em <code>/etc</code>; seus arquivos em <code>/home/ana</code> (o <code>~</code>, modo 700); o root em <code>/root</code>.</li>
+  <li><code>/boot</code> é a partição EFI em FAT32, com <code>vmlinuz-linux</code> e o <code>initramfs</code>.</li>
+  <li><code>/var/cache/pacman/pkg</code> guarda os pacotes baixados; <code>/var/lib/pacman</code>, a base do <code>pacman</code>; os logs estão no journal e no <code>pacman.log</code>.</li>
+  <li><code>/tmp</code> fica na memória e é esvaziado ao reiniciar; <code>/run</code>, <code>/dev</code>, <code>/proc</code> e <code>/sys</code> também não estão no disco.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a árvore do Arch está em <a href="https://wiki.archlinux.org/title/Arch_filesystem_hierarchy">Arch filesystem hierarchy</a>; a partição de <code>/boot</code>, em <a href="https://wiki.archlinux.org/title/EFI_system_partition">EFI system partition</a> (<a href="https://wiki.archlinux.org/title/EFI_system_partition_(Portugu%C3%AAs)">em português</a>); o <code>/tmp</code> na memória, em <a href="https://wiki.archlinux.org/title/Tmpfs">tmpfs</a>; o cache e a base do <code>pacman</code>, em <a href="https://wiki.archlinux.org/title/Pacman#Cleaning_the_package_cache">pacman — Cleaning the package cache</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">pacman em português</a>); e as montagens, em <a href="https://wiki.archlinux.org/title/Fstab">fstab</a> (<a href="https://wiki.archlinux.org/title/Fstab_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

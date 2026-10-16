@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Caminhos — absoluto, relativo, ~, ., .. e - | Guia Arch</title>
+<meta name="description" content="Caminhos no Arch Linux: absoluto e relativo, a pasta atual (e por que o prompt do Arch só mostra o nome dela), os atalhos ~, ~ana, ., .. e cd -, nomes com espaço como 'Área de trabalho', o Tab para completar, com saídas reais e exercícios.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Caminhos</span></h1>
+
+<p class="intro">Um <strong>caminho</strong> é o endereço de um arquivo ou de uma pasta na árvore que começa em <code>/</code>. Todo comando que mexe em arquivos recebe caminhos: <code>ls</code>, <code>cd</code>, <code>cp</code>, <code>nano</code>, até o <code>pacman -Qo</code>. Saber escrevê-los é a diferença entre "funcionou" e "Arquivo ou diretório inexistente".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre caminho <strong>absoluto</strong> e <strong>relativo</strong>, e o que é a pasta atual.</li>
+  <li>Por que, no Arch, o <code>pwd</code> é mais importante que o prompt.</li>
+  <li>Os atalhos <code>~</code>, <code>~ana</code>, <code>.</code>, <code>..</code> e <code>-</code>.</li>
+  <li>Como escrever nomes com espaço, como "Área de trabalho".</li>
+  <li>Como o <kbd>Tab</kbd> escreve caminhos por você.</li>
+</ul>
+</div>
+
+<p>Esta aula usa a árvore que você conheceu em <a href="estrutura-diretorios.html">Estrutura de Diretórios</a>. Uma parte da pasta pessoal da Ana, desenhada pelo <code>tree</code> (o <code>-F</code> marca as pastas com <code>/</code> e os executáveis com <code>*</code>; o <code>-I</code> esconde as pastas que não interessam aqui):</p>
+
+<pre class="term">$ tree -F --noreport -I "aur|Downloads|Modelos|Música|Público|Vídeos" ~
+/home/ana/
+├── Área de trabalho/
+├── Documentos/
+│   ├── acesso.log
+│   ├── alunos.csv
+│   ├── notas.txt
+│   ├── projetos/
+│   │   ├── backup.sh*
+│   │   └── site/
+│   │       ├── index.html
+│   │       └── style.css
+│   └── relatorio.odt
+├── frutas.txt
+└── Imagens/
+    ├── ferias.jpg
+    └── perfil.png</pre>
+
+<hr>
+
+<h2>A ideia: endereço completo ou "a partir daqui"</h2>
+<p>Pense num endereço de entrega. Você pode dizer o endereço completo ("Rua das Flores, 10, Recife") ou dar uma direção a partir de onde a pessoa está ("a segunda casa à direita"). No terminal é igual:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Começa com</th><th>Exemplo</th><th>Funciona de qualquer pasta?</th></tr>
+<tr><td>Absoluto</td><td><code>/</code></td><td><code>/home/ana/Documentos/notas.txt</code></td><td>Sim</td></tr>
+<tr><td>Relativo</td><td>Qualquer outra coisa</td><td><code>Documentos/notas.txt</code></td><td>Não: depende de onde você está</td></tr>
+</table>
+</div>
+
+<h3>A pasta atual</h3>
+<p>O "onde você está" se chama <strong>pasta atual</strong> (ou diretório de trabalho, <em>working directory</em>). Todo terminal está sempre "dentro" de alguma pasta; ao abrir, é a sua pasta pessoal. O <code>pwd</code> (de <em>print working directory</em>) mostra qual é, com o caminho absoluto:</p>
+
+<pre class="term">$ pwd
+/home/ana</pre>
+
+<div class="note">
+<strong>O prompt do Arch só mostra o último nome</strong>
+<p>O prompt padrão do Arch (<code>PS1='[\u@\h \W]\$ '</code>) mostra só o <strong>nome</strong> da pasta atual, não o caminho. Estando em <code>/home/ana/Documentos/projetos/site</code>, você vê <code>[ana@notebook site]$</code>; estando em <code>/srv/http</code>, <code>[ana@notebook http]$</code>. Se houver duas pastas <code>site</code> em lugares diferentes, o prompt fica igual. Na dúvida, rode <code>pwd</code>. (A pasta pessoal aparece como <code>~</code>; veja <a href="terminal.html">O Terminal no Arch</a>.)</p>
+</div>
+
+<pre class="term" data-cwd="~/Documentos/projetos/site">$ pwd
+/home/ana/Documentos/projetos/site</pre>
+
+<hr>
+
+<h2>Caminho absoluto</h2>
+<p>Um caminho absoluto começa na raiz <code>/</code> e desce pasta por pasta até o alvo. Cada <code>/</code> separa uma pasta da próxima.</p>
+
+<dl class="anatomy">
+  <dt>/</dt><dd>A raiz: o começo de tudo.</dd>
+  <dt>home/</dt><dd>Dentro da raiz, a pasta <code>home</code>.</dd>
+  <dt>ana/</dt><dd>Dentro de <code>home</code>, a pasta da Ana.</dd>
+  <dt>Documentos/notas.txt</dt><dd>Dentro dela, a pasta Documentos e o arquivo.</dd>
+</dl>
+
+<p>Como ele não depende da pasta atual, funciona de qualquer lugar. Aqui a Ana está em <code>/etc/pacman.d</code> e mesmo assim acha o arquivo. O <code>wc -l</code> conta as linhas (de <em>word count</em>, <em>lines</em>):</p>
+
+<pre class="term" data-cwd="/etc/pacman.d">$ wc -l /home/ana/Documentos/notas.txt
+4 /home/ana/Documentos/notas.txt</pre>
+
+<p>Os caminhos que você vê nas aulas de administração são quase todos absolutos: <code>/etc/pacman.conf</code>, <code>/var/log/pacman.log</code>, <code>/boot/grub/grub.cfg</code>. Assim eles valem não importa onde você esteja.</p>
+
+<div class="try" data-setup="cd /etc/pacman.d" data-goal="out:4 /home/ana/Documentos/notas.txt" data-solucao="wc -l /home/ana/Documentos/notas.txt">
+<p class="try-task"><strong>Missão:</strong> você está em <code>/etc/pacman.d</code>. Sem sair daí, conte as linhas do arquivo <code>notas.txt</code> da pasta Documentos da Ana usando um caminho <strong>absoluto</strong>.</p>
+</div>
+
+<hr>
+
+<h2>Caminho relativo</h2>
+<p>Um caminho relativo <strong>não</strong> começa com <code>/</code>. O sistema junta a pasta atual com o que você escreveu. Estando em <code>/home/ana</code>, o caminho <code>Documentos/notas.txt</code> vira <code>/home/ana/Documentos/notas.txt</code>:</p>
+
+<pre class="term">$ wc -l Documentos/notas.txt
+4 Documentos/notas.txt</pre>
+
+<p>O mesmo caminho relativo, digitado em outra pasta, aponta para outro lugar e falha:</p>
+
+<pre class="term" data-cwd="/etc/pacman.d">$ wc -l Documentos/notas.txt
+wc: Documentos/notas.txt: Arquivo ou diretório inexistente      « procurou /etc/pacman.d/Documentos/notas.txt</pre>
+
+<div class="tip">
+<strong>Quando usar cada um</strong>
+<p>Relativo é mais curto e prático quando você está perto do arquivo. Absoluto é mais seguro em scripts, em serviços do systemd e em tarefas agendadas, porque não depende de onde o comando foi chamado.</p>
+</div>
+
+<div class="tryscript" data-file="contar.sh" data-goal="outre:^4$">
+<p class="try-task"><strong>Missão:</strong> este script entra em <code>/tmp</code> e depois tenta contar as linhas das notas da Ana com um caminho relativo, que lá não existe. Corrija o caminho para que funcione de qualquer pasta e clique em <strong>Rodar</strong>; a última linha deve ser <code>4</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+cd /tmp
+echo "Linhas das notas:"
+wc -l &lt; Documentos/notas.txt
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+cd /tmp
+echo "Linhas das notas:"
+wc -l &lt; ~/Documentos/notas.txt
+</pre>
+</div>
+
+<hr>
+
+<h2>Os atalhos: ~ . .. e -</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho</th><th>Significa</th><th>Exemplo</th></tr>
+<tr><td><code>~</code></td><td>Sua pasta pessoal (<code>/home/ana</code>)</td><td><code>ls ~/Documentos</code></td></tr>
+<tr><td><code>~ana</code>, <code>~root</code></td><td>A pasta pessoal de um usuário pelo nome</td><td><code>echo ~root</code> → <code>/root</code></td></tr>
+<tr><td><code>.</code></td><td>A pasta atual</td><td><code>./backup.sh</code></td></tr>
+<tr><td><code>..</code></td><td>A pasta de cima (a "mãe")</td><td><code>cd ..</code></td></tr>
+<tr><td><code>-</code></td><td>Só no <code>cd</code>: a pasta anterior</td><td><code>cd -</code></td></tr>
+</table>
+</div>
+
+<h3>O til: ~ e ~usuário</h3>
+<p>Quem troca o <code>~</code> pelo caminho é o <strong>shell</strong>, antes de o comando rodar. O <code>echo</code> mostra o resultado da troca:</p>
+
+<pre class="term">$ echo ~
+/home/ana
+$ echo ~ana
+/home/ana
+$ echo ~root
+/root                                « a casa do root não fica em /home
+$ ls ~root
+ls: não foi possível abrir o diretório '/root': Permissão negada
+$ echo ~naoexiste
+~naoexiste                           « usuário inexistente: o til fica como está</pre>
+
+<p>Repare que o <code>ls ~root</code> mostrou o erro com <code>/root</code>: o <code>ls</code> nem viu o til, recebeu o caminho já trocado.</p>
+
+<h3>O ponto: . e ..</h3>
+<p>Toda pasta tem duas entradas escondidas: <code>.</code> (ela mesma) e <code>..</code> (a mãe). Elas aparecem no <code>ls -a</code>. O <code>.</code> é usado principalmente para rodar um programa da pasta atual (<code>./backup.sh</code>), porque o shell não procura programas na pasta atual por conta própria.</p>
+
+<h3>Subindo com ..</h3>
+<p>Cada <code>..</code> sobe um nível. Dá para encadear:</p>
+
+<dl class="anatomy">
+  <dt>cd</dt><dd>Muda de pasta (de <em>change directory</em>; veja <a href="navegar.html">pwd e cd</a>).</dd>
+  <dt>../..</dt><dd>Sobe dois níveis: da pasta atual para a mãe, e da mãe para a avó.</dd>
+</dl>
+
+<pre class="term">$ cd Documentos/projetos
+$ pwd
+/home/ana/Documentos/projetos
+$ cd ../..
+$ pwd
+/home/ana</pre>
+
+<p>Na raiz não há para onde subir: <code>cd ..</code> em <code>/</code> continua em <code>/</code>, sem erro.</p>
+
+<pre class="term" data-cwd="/">$ cd ..
+$ pwd
+/</pre>
+
+<div class="try" data-setup="cd Documentos/projetos/site" data-goal="cwd:~/Documentos" data-solucao="cd ../..">
+<p class="try-task"><strong>Missão:</strong> você está em <code>~/Documentos/projetos/site</code> (o prompt mostra só <code>site</code>). Suba até <code>~/Documentos</code> usando um caminho <strong>relativo</strong>, com <code>..</code>. Confira com <code>pwd</code>.</p>
+</div>
+
+<h3>Voltando com -</h3>
+<p>O <code>cd -</code> volta para a pasta em que você estava antes, e mostra para onde foi. É ótimo para alternar entre duas pastas, como a sua e a de configuração:</p>
+
+<pre class="term">$ cd /etc/pacman.d
+$ cd -
+/home/ana
+$ cd -
+/etc/pacman.d</pre>
+
+<p>A pasta anterior fica guardada na variável <code>$OLDPWD</code>.</p>
+
+<div class="try" data-setup="cd /etc/pacman.d;cd" data-goal="cwd:/etc/pacman.d,ran:^\s*cd\s+-\s*$" data-solucao="cd -">
+<p class="try-task"><strong>Missão:</strong> você acabou de sair de <code>/etc/pacman.d</code> e voltou para a sua pasta. Volte para lá sem digitar o caminho.</p>
+</div>
+
+<h3>Combinando</h3>
+<p>Os atalhos podem aparecer no meio do caminho. Estando em <code>~/Documentos/projetos/site</code>, estes dois caminhos apontam para o mesmo arquivo:</p>
+
+<pre class="term" data-cwd="~/Documentos/projetos/site">$ ls ~/frutas.txt ../../../frutas.txt
+../../../frutas.txt  /home/ana/frutas.txt</pre>
+
+<p>O <code>ls</code> mostra os dois nomes como recebeu: um já com o <code>~</code> trocado, o outro relativo. Para ver o caminho absoluto "limpo" de qualquer caminho, use <code>realpath</code>:</p>
+
+<pre class="term">$ realpath Documentos/../Imagens/./ferias.jpg
+/home/ana/Imagens/ferias.jpg</pre>
+
+<hr>
+
+<h2>Nomes com espaço</h2>
+<p>O espaço separa as partes de um comando. Por isso um nome como "Área de trabalho" vira <strong>três</strong> argumentos se for digitado sem cuidado:</p>
+
+<pre class="term">$ cd Área de trabalho
+bash: cd: número excessivo de argumentos</pre>
+
+<p>Há duas formas de dizer ao shell que é um nome só:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Observação</th></tr>
+<tr><td>Aspas</td><td><code>cd 'Área de trabalho'</code></td><td>A mais legível; simples ou duplas</td></tr>
+<tr><td>Barra invertida</td><td><code>cd Área\ de\ trabalho</code></td><td>É o que o <kbd>Tab</kbd> escreve para você</td></tr>
+</table>
+</div>
+
+<pre class="term">$ cd 'Área de trabalho'
+$ pwd
+/home/ana/Área de trabalho</pre>
+
+<p>O prompt, nesse momento, fica <code>[ana@notebook Área de trabalho]$</code>. A explicação completa das aspas está em <a href="sintaxe.html">Sintaxe dos Comandos</a>.</p>
+
+<div class="try" data-goal="cwd:~/Área de trabalho" data-solucao="cd 'Área de trabalho'">
+<p class="try-task"><strong>Missão:</strong> entre na pasta <code>Área de trabalho</code>. Tente primeiro sem aspas para ver o erro, depois do jeito certo.</p>
+</div>
+
+<hr>
+
+<h2>Maiúsculas importam</h2>
+<p>Para o Linux, <code>Documentos</code> e <code>documentos</code> são nomes diferentes:</p>
+
+<pre class="term">$ ls documentos
+ls: não foi possível acessar 'documentos': Arquivo ou diretório inexistente</pre>
+
+<p>As pastas pessoais em português (<code>Documentos</code>, <code>Imagens</code>, <code>Música</code>…) começam com maiúscula e têm acentos. As pastas do sistema (<code>/etc</code>, <code>/usr</code>, <code>/var</code>) são todas minúsculas.</p>
+
+<hr>
+
+<h2>Deixe o Tab escrever</h2>
+<p>Digite o começo de um nome e aperte <kbd>Tab</kbd>. Se só houver uma possibilidade, o shell completa sozinho. Se houver várias, aperte <kbd>Tab</kbd> duas vezes para ver a lista. O <kbd>Tab</kbd> evita erros de digitação e já põe as barras invertidas nos nomes com espaço.</p>
+
+<pre class="term">$ cd Do        « aqui você aperta Tab duas vezes
+Documentos/  Downloads/
+$ cd Doc       « mais uma letra e Tab: vira "cd Documentos/"</pre>
+
+<p>(O <kbd>Tab</kbd> é uma tecla, não uma saída de comando; a lista acima mostra o que aparece na máquina do guia, cujos nomes que começam com <code>Do</code> são <code>Documentos</code> e <code>Downloads</code>.)</p>
+
+<div class="tip">
+<strong>No Arch, o Tab "esperto" é um pacote à parte</strong>
+<p>Sem nada instalado, o <kbd>Tab</kbd> do Bash completa nomes de comandos e de arquivos. O pacote <code>bash-completion</code> o ensina a completar também opções e argumentos: <code>pacman -S fire</code><kbd>Tab</kbd> vira <code>firefox</code>, <code>systemctl status ngi</code><kbd>Tab</kbd> vira <code>nginx.service</code>. Ele <strong>não vem no <code>base</code></strong>; na máquina do guia foi instalado junto com os pacotes das aulas, e o <code>/etc/bash.bashrc</code> do Arch o carrega sozinho quando existe:</p>
+<pre class="term">$ pacman -Q bash-completion
+bash-completion 2.18.0-1
+$ grep -n bash_completion /etc/bash.bashrc
+23:if [[ -r /usr/share/bash-completion/bash_completion ]]; then
+24:  . /usr/share/bash-completion/bash_completion</pre>
+<p>Para ter o mesmo: <code>sudo pacman -S bash-completion</code> e abra um terminal novo.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de chegar ao mesmo lugar</h2>
+<p>Estando em <code>~/Documentos/projetos</code>, todos estes comandos levam à pasta <code>Imagens</code> da Ana:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Tipo</th><th>Qual usar</th></tr>
+<tr><td><code>cd /home/ana/Imagens</code></td><td>Absoluto</td><td>Em scripts e quando quiser deixar explícito.</td></tr>
+<tr><td><code>cd ~/Imagens</code></td><td>A partir do til</td><td><strong>O mais prático</strong> para o que fica na sua pasta.</td></tr>
+<tr><td><code>cd "$HOME/Imagens"</code></td><td>A partir da variável</td><td>Em scripts, dentro de aspas (onde o <code>~</code> não funciona).</td></tr>
+<tr><td><code>cd ../../Imagens</code></td><td>Relativo</td><td>Quando o destino é "vizinho" de onde você está.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" com um caminho que existe</strong>
+<p><strong>O que aconteceu:</strong> quase sempre é um caminho relativo digitado na pasta errada (lembre: o prompt do Arch só mostra o último nome), ou uma maiúscula trocada.</p>
+<p><strong>Como resolver:</strong> rode <code>pwd</code> para ver onde você está e <code>ls</code> para ver os nomes exatos. Na dúvida, use o caminho absoluto, o <code>~</code> ou o <kbd>Tab</kbd>.</p>
+</div>
+
+<div class="cenario">
+<strong>"número excessivo de argumentos" no cd</strong>
+<pre class="term">$ cd Área de trabalho
+bash: cd: número excessivo de argumentos</pre>
+<p><strong>O que aconteceu:</strong> o nome tem espaço e o shell o dividiu em três.</p>
+<p><strong>Como resolver:</strong> use aspas: <code>cd "Área de trabalho"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Não é um diretório"</strong>
+<pre class="term">$ cd Documentos/notas.txt
+bash: cd: Documentos/notas.txt: Não é um diretório</pre>
+<p><strong>O que aconteceu:</strong> o <code>cd</code> só entra em pastas, e <code>notas.txt</code> é um arquivo.</p>
+<p><strong>Como resolver:</strong> para ler o arquivo, use <code>cat</code> ou <code>less</code> (veja <a href="ver-arquivos.html">cat, less, head, tail</a>); para entrar na pasta dele, <code>cd Documentos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O ~ não funcionou dentro de aspas</strong>
+<pre class="term">$ ls "~/Documentos"
+ls: não foi possível acessar '~/Documentos': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> dentro de aspas o <code>~</code> perde o significado especial e vira um til comum.</p>
+<p><strong>Como resolver:</strong> deixe o til fora das aspas, <code>ls ~/"Documentos"</code>, ou use a variável <code>"$HOME/Documentos"</code>, que funciona dentro de aspas duplas.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" ao seguir um caminho</strong>
+<pre class="term">$ ls ~root
+ls: não foi possível abrir o diretório '/root': Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> o caminho está certo, mas a pasta é fechada para você.</p>
+<p><strong>Como resolver:</strong> se precisar mesmo, <code>sudo ls /root</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significa</th></tr>
+<tr><td><code>/a/b/c</code></td><td>Caminho absoluto: a partir da raiz</td></tr>
+<tr><td><code>a/b/c</code></td><td>Caminho relativo: a partir da pasta atual</td></tr>
+<tr><td><code>~</code>, <code>$HOME</code></td><td>Sua pasta pessoal</td></tr>
+<tr><td><code>~usuário</code></td><td>A pasta pessoal de outro usuário</td></tr>
+<tr><td><code>.</code> / <code>..</code></td><td>A pasta atual / a de cima</td></tr>
+<tr><td><code>cd -</code>, <code>$OLDPWD</code></td><td>A pasta anterior</td></tr>
+<tr><td><code>pwd</code></td><td>Mostra a pasta atual (caminho absoluto)</td></tr>
+<tr><td><code>realpath caminho</code></td><td>Converte qualquer caminho em absoluto</td></tr>
+<tr><td><code>"nome com espaço"</code>, <code>nome\ com\ espaço</code></td><td>Um nome só, com espaços</td></tr>
+<tr><td><kbd>Tab</kbd>, <kbd>Tab</kbd> <kbd>Tab</kbd></td><td>Completa / lista as possibilidades</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Absoluto</h3>
+<p>Escreva o caminho absoluto da pasta Downloads da Ana:</p>
+<div class="ex-code">cd <input data-answer="/home/ana/Downloads|/home/ana/Downloads/" aria-label="caminho"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Subir dois níveis</h3>
+<p>Complete para subir dois níveis de uma vez:</p>
+<div class="ex-code">cd <input data-answer="../..|../../" aria-label="caminho"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Nome com espaço</h3>
+<p>Complete, com barras invertidas (sem aspas), para entrar na Área de trabalho:</p>
+<div class="ex-code">cd <input data-answer="Área\ de\ trabalho|Área\ de\ trabalho/|~/Área\ de\ trabalho" aria-label="caminho"></div>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A Ana está em <code>/etc</code> e digita <code>ls pacman.d</code>. Que pasta é listada?</p>
+<label><input type="radio" name="q4"> <code>/etc/pacman.d</code></label>
+<label><input type="radio" name="q4"> <code>/pacman.d</code></label>
+<label><input type="radio" name="q4"> <code>/home/ana/pacman.d</code></label>
+<label><input type="radio" name="q4"> <code>/usr/bin/pacman</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual destes caminhos é absoluto?</p>
+<label><input type="radio" name="q5"> <code>Documentos/notas.txt</code></label>
+<label><input type="radio" name="q5"> <code>./notas.txt</code></label>
+<label><input type="radio" name="q5"> <code>../notas.txt</code></label>
+<label><input type="radio" name="q5"> <code>/home/ana/notas.txt</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. O prompt mostra <code>[ana@notebook site]$</code>. Qual é a forma segura de saber em que pasta você está?</p>
+<label><input type="radio" name="q6"> Ela é sempre <code>/site</code>.</label>
+<label><input type="radio" name="q6"> Rodar <code>pwd</code>, porque o prompt do Arch só mostra o último nome do caminho.</label>
+<label><input type="radio" name="q6"> Rodar <code>cd -</code>.</label>
+<label><input type="radio" name="q6"> Rodar <code>echo ~</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Absoluto começa com <code>/</code> e funciona de qualquer lugar; relativo parte da pasta atual.</li>
+  <li>O prompt do Arch só mostra o nome da pasta; o caminho completo vem do <code>pwd</code>.</li>
+  <li><code>~</code> é sua pasta pessoal (<code>~root</code> é <code>/root</code>), <code>.</code> é a atual, <code>..</code> é a de cima e <code>cd -</code> volta para a anterior.</li>
+  <li>Nomes com espaço vão entre aspas ou com <code>\</code>; o <code>~</code> não funciona dentro de aspas (use <code>$HOME</code>).</li>
+  <li>Maiúsculas importam. Use o <kbd>Tab</kbd>; com o pacote <code>bash-completion</code>, ele completa até pacotes e serviços.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a árvore em que os caminhos andam está em <a href="https://wiki.archlinux.org/title/Arch_filesystem_hierarchy">Arch filesystem hierarchy</a>; o Tab e o <code>bash-completion</code>, em <a href="https://wiki.archlinux.org/title/Bash#Tab_completion">Bash — Tab completion</a>; o prompt que mostra só o nome da pasta, em <a href="https://wiki.archlinux.org/title/Bash/Prompt_customization">Bash/Prompt customization</a>; e os comandos de navegação, em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

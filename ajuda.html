@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Obtendo Ajuda — man, --help, help, info, apropos e tldr | Guia Arch</title>
+<meta name="description" content="Como pedir ajuda no Arch Linux: o manual (man, que precisa dos pacotes man-db e man-pages), seções, busca dentro do man, --help, help para os comandos internos do Bash, info, whatis e apropos (e por que dizem 'nada apropriado' até o mandb rodar), tldr e a Arch Wiki, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Obtendo Ajuda</span></h1>
+
+<p class="intro">Ninguém decora as opções de todos os comandos. Quem usa Linux há anos consulta a ajuda o tempo todo. No Arch isso é ainda mais verdade: a distribuição espera que você leia. Nesta aula você aprende onde procurar dentro da própria máquina (o <code>--help</code>, o manual <code>man</code>, o <code>help</code>, o <code>info</code>, a busca por assunto) e fora dela (o <code>tldr</code> e a Arch Wiki). Todas as saídas vêm de um Arch real.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Usar <code>--help</code> para um resumo rápido e ler a linha "Uso".</li>
+  <li>Abrir, navegar e pesquisar no manual com <code>man</code>, e por que no Arch ele precisa dos pacotes <code>man-db</code> e <code>man-pages</code>.</li>
+  <li>Entender as seções do manual (<code>man 5 passwd</code>).</li>
+  <li>Usar <code>help</code> para os comandos internos do Bash e <code>info</code> para os manuais GNU.</li>
+  <li>Achar um comando pelo assunto com <code>whatis</code> e <code>apropos</code>, e consertar o "nada apropriado" com <code>mandb</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Qual ajuda usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Mostra</th><th>Vem no Arch?</th><th>Use quando…</th></tr>
+<tr><td><code>comando --help</code></td><td>Resumo das opções</td><td>Sim, em quase todo comando (e em português)</td><td>Você lembra do comando, mas não da opção.</td></tr>
+<tr><td><code>man comando</code></td><td>O manual completo</td><td><strong>Não no <code>base</code></strong>: pacotes <code>man-db</code> e <code>man-pages</code></td><td>Quer entender tudo o que o comando faz.</td></tr>
+<tr><td><code>help comando</code></td><td>Ajuda dos comandos internos do Bash</td><td>Sim (faz parte do Bash)</td><td>O comando é do shell (<code>cd</code>, <code>pwd</code>, <code>history</code>).</td></tr>
+<tr><td><code>info comando</code></td><td>Manuais longos dos programas GNU</td><td>Pacote <code>texinfo</code></td><td>Quer o manual completo de <code>coreutils</code>, <code>bash</code>, <code>grep</code>…</td></tr>
+<tr><td><code>whatis</code> / <code>apropos</code></td><td>Descrição de uma linha / busca por assunto</td><td>Vêm com o <code>man-db</code></td><td>Não sabe o nome do comando.</td></tr>
+<tr><td><code>tldr comando</code></td><td>Exemplos prontos e curtos</td><td>Não (pacote <code>tldr</code> ou <code>tealdeer</code>)</td><td>Quer o exemplo mais comum, rápido.</td></tr>
+<tr><td><a href="arch-wiki.html">Arch Wiki</a></td><td>Tutoriais e explicações</td><td>Na internet (ou o pacote <code>arch-wiki-docs</code>)</td><td>Quer instalar, configurar ou consertar algo no Arch.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>--help: o resumo rápido</h2>
+<p>Quase todo comando aceita a opção <code>--help</code>, que mostra a forma de usar e as opções. Com o Arch em português, os programas GNU respondem traduzidos:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>O comando sobre o qual você quer ajuda.</dd>
+  <dt>--help</dt><dd>A opção que pede o resumo de uso.</dd>
+  <dt>| head -12</dt><dd>Corta nas 12 primeiras linhas: o texto completo do <code>ls</code> tem 184.</dd>
+</dl>
+
+<pre class="term">$ ls --help | head -12
+Uso: ls [OPÇÃO]... [ARQUIVO]...
+Lista informações sobre os ARQUIVOs (no diretório atual por padrão).
+Lista as entradas em ordem alfabética se não for usada nenhuma opção -cftuvSUX
+nem --sort.
+
+Argumentos obrigatórios para opções longas também o são para opções curtas.
+  -a, --all
+         não ignora entradas começando com .
+  -A, --almost-all
+         não lista as entradas implícitas . e ..
+      --author
+         com -l, exibe o autor de cada arquivo</pre>
+
+<p>Para ler tudo com rolagem, use <code>ls --help | less</code> (setas para rolar, <kbd>q</kbd> para sair).</p>
+
+<h3>Como ler a linha "Uso"</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na ajuda</th><th>Significa</th></tr>
+<tr><td><code>[OPÇÃO]</code></td><td>Entre colchetes: opcional.</td></tr>
+<tr><td><code>&lt;pacote(s)&gt;</code></td><td>Entre sinais de menor/maior: obrigatório (estilo do <code>pacman</code>).</td></tr>
+<tr><td><code>...</code></td><td>Pode repetir: várias opções, vários arquivos.</td></tr>
+<tr><td><code>ARQUIVO</code> em maiúsculas</td><td>Troque pelo seu valor.</td></tr>
+<tr><td><code>{-h --help}</code> ou <code>a|b</code></td><td>Escolha um ou outro.</td></tr>
+<tr><td><code>-a, --all</code></td><td>Duas formas da mesma opção: curta e longa.</td></tr>
+</table>
+</div>
+
+<h3>A ajuda do pacman, em camadas</h3>
+<p>O <code>pacman</code> organiza a ajuda por operação. O <code>pacman -h</code> sozinho lista as operações:</p>
+
+<pre class="term">$ pacman -h
+uso:  pacman &lt;operação&gt; [...]
+operações:
+    pacman {-h --help}
+    pacman {-V --version}
+    pacman {-D --database} &lt;opções&gt; &lt;pacote(s)&gt;
+    pacman {-F --files}    [opções] [arquivo(s)]
+    pacman {-Q --query}    [opções] [pacote(s)]
+    pacman {-R --remove}   [opções] &lt;pacote(s)&gt;
+    pacman {-S --sync}     [opções] [pacote(s)]
+    pacman {-T --deptest}  [opções] [pacote(s)]
+    pacman {-U --upgrade}  [opções] &lt;arquivo(s)&gt;
+
+use "pacman {-h --help}" com uma operação para ver as opções disponíveis</pre>
+
+<p>A última linha ensina o próximo passo: junte o <code>-h</code> a uma operação para ver só as opções dela.</p>
+
+<dl class="anatomy">
+  <dt>pacman</dt><dd>O gerenciador de pacotes.</dd>
+  <dt>-Q</dt><dd>A operação <em>query</em> (consultar os pacotes instalados).</dd>
+  <dt>--help</dt><dd>Pede as opções dessa operação (o mesmo que <code>-h</code>).</dd>
+</dl>
+
+<pre class="term">$ pacman -Q --help | head -12
+uso:  pacman {-Q --query} [opções] [pacote(s)]
+opções:
+  -b, --dbpath &lt;caminho&gt; define um local alternativo para a base de dados
+  -c, --changelog        visualiza o changelog de um pacote
+  -d, --deps             lista os pacotes instalados como dependências [filtro]
+  -e, --explicit         lista os pacotes instalados explicitamente [filtro]
+  -g, --groups           exibe todos os membros de um grupo de pacotes
+  -i, --info             exibe informações do pacote (-ii para arquivos
+                         backup)
+  -k, --check            verifica se os arquivos de pacote existem (-kk para
+                         propriedades dos arquivos)
+  -l, --list             lista dos arquivos fornecidos do pacote consultado</pre>
+
+<div class="try" data-goal="out:pacman {-Q --query}" data-solucao="pacman -h">
+<p class="try-task"><strong>Missão:</strong> peça ao <code>pacman</code> a lista das suas operações. Qual letra é a operação de <em>remover</em>?</p>
+</div>
+
+<hr>
+
+<h2>man: o manual</h2>
+<p>O <code>man</code> (de <em>manual</em>) abre a página de manual de um comando. No Arch, ele <strong>não faz parte do sistema mínimo</strong>: o pacote <code>base</code> não traz nem o programa <code>man</code> nem as páginas. São dois pacotes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>O que traz</th></tr>
+<tr><td><code>man-db</code></td><td>O programa <code>man</code> e seus companheiros (<code>whatis</code>, <code>apropos</code>, <code>mandb</code>).</td></tr>
+<tr><td><code>man-pages</code></td><td>As páginas do projeto Linux man-pages: chamadas do kernel, bibliotecas, arquivos (<code>man 5 …</code>), convenções (<code>man 7 …</code>) e as páginas POSIX (<code>1p</code>, <code>3p</code>).</td></tr>
+</table>
+</div>
+
+<p>Na máquina deste guia os dois já estão instalados, porque foram incluídos no <code>pacstrap</code> durante a instalação, como a Arch Wiki recomenda (veja <a href="pacstrap.html">Espelhos e pacstrap</a>):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux linux-firmware intel-ucode networkmanager sudo nano vim man-db man-pages texinfo grub efibootmgr openssh</pre>
+
+<pre class="term">$ pacman -Q man-db man-pages
+man-db 2.13.1-2
+man-pages 6.19-1
+$ pacman -Qo /usr/bin/man
+/usr/bin/man pertence a man-db 2.13.1-2</pre>
+
+<p>Se você instalou sem eles, o <code>man</code> responde <code>bash: man: comando não encontrado</code>. Resolve-se com <code>sudo pacman -S man-db man-pages</code> (veja <a href="pacman.html">pacman: o Básico</a>).</p>
+
+<h3>Abrindo uma página</h3>
+<pre class="term">$ man ls
+LS(1)                            User Commands                            LS(1)
+
+NAME
+     ls - list directory contents
+
+SYNOPSIS
+     ls [OPTION]... [FILE]...
+
+DESCRIPTION
+     List information about the FILEs (the current directory by default).  Sort
+     entries alphabetically if none of -cftuvSUX nor --sort is specified.
+
+     Mandatory arguments to long options are mandatory for short options too.
+
+     -a, --all
+            do not ignore entries starting with .
+
+     -A, --almost-all
+            do not list implied . and ..
+…</pre>
+
+<p>Repare: o <code>--help</code> do <code>ls</code> vem em português, mas o <code>man ls</code> vem em <strong>inglês</strong>. São fontes diferentes: o <code>--help</code> é traduzido junto com o programa; as páginas de manual em português ficam num pacote à parte, <code>man-pages-pt_br</code>, que não está instalado. A maioria das páginas do Arch é em inglês, e isso é normal.</p>
+
+<h3>As partes de uma página</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Título</th><th>O que contém</th></tr>
+<tr><td><code>NAME</code></td><td>O nome e uma frase do que faz (é o que o <code>whatis</code> mostra).</td></tr>
+<tr><td><code>SYNOPSIS</code></td><td>A forma de usar, com a mesma notação de colchetes do <code>--help</code>.</td></tr>
+<tr><td><code>DESCRIPTION</code></td><td>A explicação e, em muitos comandos, as opções.</td></tr>
+<tr><td><code>OPTIONS</code></td><td>As opções, uma a uma (quando não estão na DESCRIPTION).</td></tr>
+<tr><td><code>EXIT STATUS</code></td><td>Os códigos de saída e o que significam.</td></tr>
+<tr><td><code>FILES</code></td><td>Os arquivos de configuração que o programa lê.</td></tr>
+<tr><td><code>EXAMPLES</code></td><td>Exemplos (nem toda página tem).</td></tr>
+<tr><td><code>SEE ALSO</code></td><td>Páginas relacionadas, com a seção entre parênteses: <code>dir(1)</code>.</td></tr>
+</table>
+</div>
+
+<h3>Navegando dentro do man</h3>
+<p>O manual abre no leitor <code>less</code>, que ocupa a tela toda. As teclas principais:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla</th><th>O que faz</th></tr>
+<tr><td><kbd>Espaço</kbd> / <kbd>b</kbd></td><td>Desce / sobe uma página</td></tr>
+<tr><td><kbd>↓</kbd> / <kbd>↑</kbd> (ou <kbd>j</kbd> / <kbd>k</kbd>)</td><td>Desce / sobe uma linha</td></tr>
+<tr><td><kbd>/</kbd>texto <kbd>Enter</kbd></td><td>Procura "texto" para baixo</td></tr>
+<tr><td><kbd>?</kbd>texto <kbd>Enter</kbd></td><td>Procura "texto" para cima</td></tr>
+<tr><td><kbd>n</kbd> / <kbd>N</kbd></td><td>Próxima / anterior ocorrência da busca</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>G</kbd></td><td>Vai para o começo / fim</td></tr>
+<tr><td><kbd>h</kbd></td><td>Ajuda do leitor (todas as teclas)</td></tr>
+<tr><td><kbd>q</kbd></td><td>Sai do manual</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Dica: buscar uma opção</strong>
+<p>Para achar a explicação do <code>-h</code> do <code>ls</code>, abra <code>man ls</code>, digite <code>/-h</code> e aperte <kbd>Enter</kbd>. Repita com <kbd>n</kbd> até chegar na linha certa. Para cair direto na definição, procure com os espaços do começo da linha: <code>/^ *-h</code>.</p>
+</div>
+
+<h3>As seções do manual</h3>
+<p>O manual é dividido em seções numeradas. A tabela abaixo vem do próprio <code>man man</code>, que no Arch está traduzido (a tradução vem dentro do <code>man-db</code>):</p>
+<pre class="term">$ man man
+…
+     A  tabela  abaixo mostra os números seção do manual seguido pelos tipos de
+     páginas que eles contêm.
+
+     1   Comandos shell ou programas executáveis
+     2   Chamadas de sistema (funções fornecidas pelo kernel)
+     3   Chamadas de biblioteca (funções dentro de bibliotecas de programa)
+     4   Arquivos especiais (geralmente localizados em /dev)
+     5   Formatos de arquivo e convenções, ex.: /etc/passwd
+     6   Jogos
+     7   Miscelânea (incluindo convenções e  pacotes  macro),  (ex.:    man(7),
+         groff(7), man-pages(7))
+…</pre>
+
+<p>No Arch você vai usar muito três delas: a <strong>1</strong> (comandos), a <strong>5</strong> (arquivos de configuração, como <code>pacman.conf(5)</code>) e a <strong>8</strong> (comandos de administração, como <code>pacman(8)</code>). Repare que o próprio <code>pacman</code> está na seção 8:</p>
+
+<pre class="term">$ man pacman
+PACMAN(8)                        Pacman Manual                        PACMAN(8)
+
+NAME
+     pacman - package manager utility
+
+SYNOPSIS
+     pacman &lt;operation&gt; [options] [targets]
+…</pre>
+
+<p>O mesmo nome pode existir em várias seções. <code>passwd</code>, por exemplo, é um comando (seção 1) e também um arquivo (seção 5). Sem número, o <code>man</code> abre a primeira que encontrar; com número, você escolhe:</p>
+
+<dl class="anatomy">
+  <dt>man</dt><dd>O manual.</dd>
+  <dt>5</dt><dd>A seção: formatos de arquivo.</dd>
+  <dt>passwd</dt><dd>O nome procurado: aqui, o arquivo <code>/etc/passwd</code>.</dd>
+</dl>
+
+<pre class="term">$ man 5 passwd
+PASSWD(5)                     Formatos de Arquivo                     PASSWD(5)
+
+NOME
+     passwd - arquivo de senhas
+
+DESCRIÇÃO
+     Passwd  é  um  arquivo  texto,  que  contém  a lista de contas do sistema,
+     fornecendo para cada conta qualquer  informação  útil  como  identificação
+     numérica  do  usuário,  identificação  numérica  do  grupo,  diretório  do
+     usuário, interpretador de comandos, etc.   Freqüentemente  ele  contém  as
+…</pre>
+
+<p>Essa veio em português porque o pacote <code>shadow</code> traz a tradução. Para saber <strong>onde</strong> está o arquivo de cada página, use <code>man -w</code> (de <em>where</em>); com <code>-a</code>, todas as que existem:</p>
+
+<pre class="term">$ man -a -w passwd
+/usr/share/man/man1/passwd.1.gz
+/usr/share/man/man1/openssl-cmds.1ssl.gz
+/usr/share/man/pt_BR/man5/passwd.5.gz          « a tradução em português
+/usr/share/man/man5/passwd.5.gz                « a original em inglês
+$ pacman -Qo /usr/share/man/pt_BR/man5/passwd.5.gz
+/usr/share/man/pt_BR/man5/passwd.5.gz pertence a shadow 4.20.0.arch1-1</pre>
+
+<p>Quando há tradução e original, o <code>man</code> escolhe pelo idioma do sistema (<code>LANG=pt_BR.UTF-8</code>). Para forçar o inglês (às vezes a tradução está desatualizada), use <code>man -L C 5 passwd</code>.</p>
+
+<hr>
+
+<h2>help: comandos internos do Bash</h2>
+<p>Alguns comandos não são programas separados: fazem parte do próprio Bash. São os <strong>comandos internos</strong> (<em>builtins</em>), como <code>cd</code>, <code>pwd</code>, <code>echo</code> e <code>history</code>. Eles não têm página de manual própria; a ajuda deles é o <code>help</code>. Você descobre o que é cada comando com <code>type</code>:</p>
+
+<pre class="term">$ type cd ls echo pacman man help
+cd é um comando interno do shell
+ls está apelidada para `ls --color=auto'      « um alias do ~/.bashrc do Arch
+echo é um comando interno do shell
+pacman é /usr/bin/pacman                      « um programa: tem man e --help
+man é /usr/bin/man
+help é um comando interno do shell</pre>
+
+<dl class="anatomy">
+  <dt>help</dt><dd>O comando interno que mostra a ajuda dos outros comandos internos.</dd>
+  <dt>pwd</dt><dd>O comando sobre o qual você quer saber.</dd>
+</dl>
+
+<pre class="term">$ help pwd
+pwd: pwd [-LP]
+    Mostra o nome do diretório de trabalho atual.
+
+    Opções:
+      -L	mostra o valor de $PWD se ele tiver o nome do diretório de
+      		trabalho atual
+      -P	mostra o diretório físico, sem quaisquer links simbólicos
+
+    Por padrão, `pwd' se comporta como se a opção `-L' foi especificada.
+
+    Status de saída:
+    Retorna 0, a menos que uma opção inválida seja fornecida ou o diretório
+    atual não possa ser lido.</pre>
+
+<p>O Bash 5.3 do Arch traz a ajuda interna traduzida. O <code>help</code> sozinho lista todos os comandos internos. Nos comandos internos, <code>cd --help</code> também funciona e mostra o mesmo texto.</p>
+
+<div class="try" data-goal="ran:^\s*type\s" data-solucao="type cd ls echo">
+<p class="try-task"><strong>Missão:</strong> descubra se <code>cd</code>, <code>ls</code> e <code>echo</code> são comandos internos do shell, aliases ou programas, usando <code>type</code>. Dica: <code>type</code> aceita vários nomes de uma vez.</p>
+</div>
+
+<div class="try" data-goal="out:Mostra o nome do diretório de trabalho atual" data-solucao="help pwd">
+<p class="try-task"><strong>Missão:</strong> o <code>pwd</code> é interno do Bash. Mostre a ajuda dele com o comando certo para comandos internos.</p>
+</div>
+
+<hr>
+
+<h2>info: os manuais GNU completos</h2>
+<p>Os programas do projeto GNU (<code>coreutils</code>, <code>bash</code>, <code>grep</code>, <code>sed</code>, <code>tar</code>…) têm um manual mais longo que a página <code>man</code>, no formato <strong>info</strong>. O leitor <code>info</code> vem no pacote <code>texinfo</code>, que também foi incluído no <code>pacstrap</code> da máquina do guia:</p>
+
+<pre class="term">$ info ls
+File: coreutils.info,  Node: ls invocation,  Next: dir invocation,  Up: Directory listing
+
+10.1 ‘ls’: List directory contents
+==================================
+
+The ‘ls’ program lists information about files (of any type, including
+directories).  Options and file arguments can be intermixed arbitrarily,
+as usual.  Later options override earlier options that are incompatible.
+…</pre>
+
+<p>A primeira linha mostra onde você está: o capítulo (<em>node</em>) "ls invocation" do manual do <code>coreutils</code>, com o próximo (<code>Next</code>) e o de cima (<code>Up</code>). Dentro do <code>info</code>: <kbd>Espaço</kbd> rola, <kbd>n</kbd> vai ao próximo capítulo, <kbd>p</kbd> ao anterior, <kbd>u</kbd> sobe, <kbd>Enter</kbd> segue um link (linhas com <code>*</code>) e <kbd>q</kbd> sai. Para o dia a dia, o <code>man</code> basta; o <code>info</code> é para quando você quer o livro inteiro.</p>
+
+<hr>
+
+<h2>whatis e apropos: procurar por assunto</h2>
+<p>O <code>whatis</code> mostra a descrição de uma linha (a parte NAME) de uma página. O <code>apropos</code> faz o contrário: procura uma palavra em <strong>todas</strong> as descrições. Os dois consultam um <strong>índice</strong> que o <code>man-db</code> mantém em <code>/var/cache/man</code>.</p>
+
+<h3>"nada apropriado" num Arch recém-instalado</h3>
+<p>Logo depois da instalação, eles parecem quebrados:</p>
+
+<pre class="term">$ whatis ls
+ls: nada apropriado.
+$ apropos "list directory"
+list directory: nada apropriado.
+$ ls /var/cache/man                « vazio: o índice ainda não existe</pre>
+
+<p>O motivo: no Arch, quem monta esse índice é um <strong>timer</strong> do systemd, o <code>man-db.timer</code>, que roda <strong>uma vez por dia</strong>, num horário sorteado (até 12 horas de atraso). Numa máquina recém-instalada ele ainda não rodou:</p>
+
+<pre class="term">$ systemctl list-timers man-db.timer --all
+NEXT                        LEFT LAST                        PASSED UNIT         ACTIVATES
+Sat 2026-10-17 02:40:14 -03  11h Fri 2026-10-16 12:12:00 -03      - man-db.timer man-db.service
+
+1 timers listed.
+$ journalctl -u man-db.service
+-- No entries --                   « o serviço nunca rodou</pre>
+
+<p>Você não precisa esperar: o comando que monta o índice é o <code>mandb</code>, e como ele escreve em <code>/var/cache/man</code>, precisa de <code>sudo</code>:</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda como administrador (o índice é do sistema).</dd>
+  <dt>mandb</dt><dd>Lê todas as páginas de manual e monta o índice que <code>whatis</code> e <code>apropos</code> consultam.</dd>
+</dl>
+
+<pre class="term">$ sudo mandb
+[sudo] senha para ana:
+Atualizando o cache de índice para o caminho "/usr/share/man/man2type". Aguarde...
+Atualizando o cache de índice para o caminho "/usr/share/man/man6". Aguarde...
+…
+Processando as páginas de manual sob /usr/share/man...
+mandb: aviso: /usr/share/man/man5/fapi-profile.5.gz: análise por whatis para fapi-profile(5) falhou
+…
+117 subdiretórios man continham páginas de manual novas.
+27855 páginas de manual foram adicionadas.
+0 cat errante foi adicionado.
+0 entrada antiga no banco de dados foi descartada.</pre>
+
+<p>Na máquina do guia, a execução levou de um a alguns minutos (o disco faz diferença) e mostrou mais de mil linhas <code>mandb: aviso: …</code>. Esses avisos são inofensivos: são páginas (de bibliotecas como a <code>xcb</code>) sem a parte NAME no formato esperado, que só ficam de fora do índice. O que importa é o resumo final. Depois disso, a busca funciona:</p>
+
+<pre class="term">$ whatis ls
+ls (1)               - list directory contents
+ls (1p)              - list directory contents        « a versão POSIX, do man-pages
+$ whatis passwd
+passwd (5)           - arquivo de senhas
+passwd (1)           - change user password
+passwd (1ssl)        - OpenSSL application commands
+$ apropos "list directory"
+dir (1)              - list directory contents
+ls (1)               - list directory contents
+ls (1p)              - list directory contents
+vdir (1)             - list directory contents</pre>
+
+<p>O <code>man -f</code> é o mesmo que <code>whatis</code>, e o <code>man -k</code> é o mesmo que <code>apropos</code>. O <code>apropos</code> é ótimo para descobrir as ferramentas em volta do <code>pacman</code>:</p>
+
+<pre class="term">$ apropos pacman
+paccache (8)         - flexible pacman cache cleaning utility
+pacignore (8)        - manage pacman IgnorePkg values
+paclog-pkglist (8)   - list currently installed packages based on pacman's log
+pacman (8)           - package manager utility
+pacman-conf (8)      - query pacman's configuration file
+pacman-db-upgrade (8) - upgrade the local pacman database to a newer format
+pacman-hooks (5)     - alpm hook file format
+pacman-key (8)       - manage pacman's list of trusted keys
+pacman.conf (5)      - pacman package manager configuration file
+paru (8)             - AUR helper and pacman wrapper
+pkgctl-db (1)        - Pacman database modification utility for package updat...
+rankmirrors (8)      - rank pacman mirrors by their connection and opening sp...
+reflector (1)        - retrieve and filter the latest Pacman mirrorlist
+testpkg (8)          - test a pacman package for validity
+$ apropos copiar
+copiar: nada apropriado.          « procure em inglês: quase todas as descrições são em inglês</pre>
+
+<p>Com <code>-s</code> você limita a uma seção: <code>apropos -s 8 pacman</code> mostra só os comandos de administração. Para achar páginas sobre um assunto, pense na palavra em inglês: <code>apropos partition</code> encontra <code>fdisk</code>, <code>cfdisk</code>, <code>partx</code>…</p>
+
+<div class="note">
+<strong>E depois?</strong>
+<p>Você só precisa rodar <code>sudo mandb</code> uma vez. A partir daí o <code>man-db.timer</code> atualiza o índice sozinho, todo dia, incluindo as páginas dos pacotes que você instalar.</p>
+</div>
+
+<hr>
+
+<h2>tldr: exemplos prontos</h2>
+<p>O <code>tldr</code> (de <em>too long; didn't read</em>, "longo demais, não li") mostra só os exemplos mais usados de cada comando, sem a teoria. É uma ótima companhia para o <code>man</code>. Ele não vem instalado:</p>
+
+<pre class="term">$ tldr tar
+bash: tldr: comando não encontrado
+$ echo $?
+127</pre>
+
+<p>No repositório <code>extra</code> há dois programas que leem as mesmas páginas da comunidade tldr. Veja o que cada um instalaria (o resumo é real; aqui a resposta foi <kbd>n</kbd>, então nada foi instalado):</p>
+
+<pre class="term">$ sudo pacman -S tldr
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (4) python-colorama-0.4.6-6  python-shtab-1.12.1-1
+            python-termcolor-3.3.0-1  tldr-3.4.4-1
+
+Tamanho total download:   0,14 MiB
+Tamanho total instalado:  0,68 MiB
+
+:: Continuar a instalação? [S/n] n
+$ sudo pacman -S tealdeer
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) tealdeer-1.9.0-1
+
+Tamanho total download:   1,34 MiB
+Tamanho total instalado:  3,17 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Escrito em</th><th>Traz junto</th><th>Qual usar</th></tr>
+<tr><td><code>tldr</code></td><td>Python</td><td>3 bibliotecas Python</td><td>O cliente "oficial" do projeto.</td></tr>
+<tr><td><code>tealdeer</code></td><td>Rust</td><td>Nada (um só programa)</td><td>Mais rápido; o comando também se chama <code>tldr</code>. Não instale os dois.</td></tr>
+</table>
+</div>
+
+<p>Depois de instalar, o primeiro uso baixa as páginas da internet (<code>tldr --update</code>), e <code>tldr tar</code> passa a mostrar uma lista curta de exemplos comentados. A máquina do guia não tem nenhum dos dois instalado, por isso a saída do <code>tldr</code> não aparece aqui.</p>
+
+<hr>
+
+<h2>A Arch Wiki</h2>
+<p>O <code>man</code> explica <strong>o programa</strong>; a <a href="arch-wiki.html">Arch Wiki</a> explica <strong>como usá-lo no Arch</strong>: que pacote instalar, que serviço ligar, que arquivo editar, que erro costuma aparecer. Ela é tão boa que usuários de outras distribuições também a leem. Toda aula deste guia termina com os links da Wiki sobre o tema.</p>
+
+<p>A própria Wiki ensina a ler as suas páginas: o prompt <code>$</code> indica um comando de usuário comum, e <code>#</code> indica um comando para root (no Arch, você o roda com <code>sudo</code>). A aula <a href="arch-wiki.html">A Arch Wiki</a> mostra como pesquisar, ler a página em português e usá-la sem internet.</p>
+
+<hr>
+
+<h2>Formas diferentes de achar a mesma resposta</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero saber…</th><th>Caminhos</th><th>Qual usar</th></tr>
+<tr><td>Qual opção do <code>ls</code> mostra tamanhos legíveis</td><td><code>ls --help | grep human</code>, <code>man ls</code> + <kbd>/</kbd><code>human</code></td><td><code>--help</code> é o mais rápido.</td></tr>
+<tr><td>Que comando divide um disco em partições</td><td><code>apropos partition</code>, Arch Wiki "Partitioning"</td><td><code>apropos</code> para o nome; a Wiki para o passo a passo.</td></tr>
+<tr><td>Como é o formato do <code>/etc/pacman.conf</code></td><td><code>man 5 pacman.conf</code>, Arch Wiki "pacman"</td><td>O <code>man 5</code> é a referência exata.</td></tr>
+<tr><td>Como usar o <code>cd -</code></td><td><code>help cd</code> (<code>man cd</code> não existe)</td><td><code>help</code>, porque <code>cd</code> é interno.</td></tr>
+<tr><td>Um exemplo rápido de <code>tar</code></td><td><code>tldr tar</code>, <code>man tar</code> (seção EXAMPLES), <code>info tar</code></td><td><code>tldr</code>, se instalado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"whatis: nada apropriado" para um comando que existe</strong>
+<pre class="term">$ whatis ls
+ls: nada apropriado.</pre>
+<p><strong>O que aconteceu:</strong> o índice do <code>man-db</code> ainda não foi montado (instalação nova; o <code>man-db.timer</code> roda uma vez por dia).</p>
+<p><strong>Como confirmar:</strong> <code>ls /var/cache/man</code> vazio, ou <code>journalctl -u man-db.service</code> sem nenhuma entrada.</p>
+<p><strong>Como resolver:</strong> <code>sudo mandb</code>, uma vez.</p>
+</div>
+
+<div class="cenario">
+<strong>"Nenhuma entrada de manual para…"</strong>
+<pre class="term">$ man nadaexiste
+Nenhuma entrada de manual para nadaexiste
+$ echo $?
+16
+$ man 9 ls
+Nenhuma entrada de manual para ls na seção 9</pre>
+<p><strong>O que aconteceu:</strong> não há página com esse nome (ou não naquela seção). Pode ser erro de digitação, um comando interno do shell (use <code>help</code>), um programa sem manual ou um pacote cujas páginas não foram instaladas. O código <code>16</code> é o do <code>man</code> para "página não encontrada".</p>
+<p><strong>Como resolver:</strong> tente <code>comando --help</code>, <code>help comando</code> ou <code>apropos palavra</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"bash: man: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o Arch foi instalado sem o <code>man-db</code>. O pacote <code>base</code> não o inclui.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S man-db man-pages</code>. Se quiser as páginas em português que existirem, acrescente <code>man-pages-pt_br</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"bash: tldr: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>tldr</code> não vem instalado.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S tealdeer</code> (ou <code>tldr</code>) e depois <code>tldr --update</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro: opção inválida" ao pedir ajuda ao pacman</strong>
+<pre class="term">$ pacman -s bash
+erro: opção inválida "-s"</pre>
+<p><strong>O que aconteceu:</strong> faltou a operação em maiúscula (veja <a href="sintaxe.html">Sintaxe dos Comandos</a>).</p>
+<p><strong>Como resolver:</strong> <code>pacman -h</code> lista as operações; <code>pacman -S -h</code> lista as opções de <code>-S</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Fiquei preso dentro do man (ou do info)</strong>
+<p><strong>O que aconteceu:</strong> o manual abre num leitor que ocupa a tela toda.</p>
+<p><strong>Como resolver:</strong> aperte <kbd>q</kbd>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>comando --help</code></td><td>Resumo das opções</td></tr>
+<tr><td><code>pacman -h</code> / <code>pacman -S -h</code></td><td>Operações do pacman / opções de uma operação</td></tr>
+<tr><td><code>man comando</code></td><td>Abre o manual</td></tr>
+<tr><td><code>man 5 arquivo</code></td><td>Abre o manual de uma seção específica</td></tr>
+<tr><td><code>man -w nome</code> / <code>man -a -w nome</code></td><td>Onde está o arquivo da página (todas)</td></tr>
+<tr><td><code>man -L C nome</code></td><td>Força a página original em inglês</td></tr>
+<tr><td><code>whatis nome</code> (<code>man -f</code>)</td><td>Descrição de uma linha</td></tr>
+<tr><td><code>apropos palavra</code> (<code>man -k</code>)</td><td>Procura nas descrições</td></tr>
+<tr><td><code>sudo mandb</code></td><td>Monta/atualiza o índice do <code>whatis</code>/<code>apropos</code></td></tr>
+<tr><td><code>help comando</code></td><td>Ajuda de um comando interno do Bash</td></tr>
+<tr><td><code>type comando</code></td><td>Diz se é interno, alias ou programa</td></tr>
+<tr><td><code>info comando</code></td><td>Manual GNU completo (pacote <code>texinfo</code>)</td></tr>
+<tr><td><code>tldr comando</code></td><td>Exemplos curtos (pacote <code>tldr</code> ou <code>tealdeer</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Resumo rápido</h3>
+<p>Complete para ver o resumo de opções do <code>cp</code>:</p>
+<div class="ex-code">cp <input data-answer="--help" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O arquivo, não o comando</h3>
+<p>Complete para abrir o manual do <strong>arquivo</strong> de configuração do pacman (seção 5):</p>
+<div class="ex-code">man <input data-answer="5" aria-label="seção"> pacman.conf</div>
+</div>
+
+<div class="exercise">
+<h3>3. Consertar a busca</h3>
+<p>O <code>apropos</code> responde "nada apropriado" para tudo num Arch recém-instalado. Complete o comando que monta o índice:</p>
+<div class="ex-code">sudo <input data-answer="mandb" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Num Arch instalado só com <code>pacstrap /mnt base linux linux-firmware</code>, o <code>man ls</code> responde "comando não encontrado". Por quê?</p>
+<label><input type="radio" name="q4"> Porque o <code>ls</code> não tem manual.</label>
+<label><input type="radio" name="q4"> Porque falta o <code>sudo</code>.</label>
+<label><input type="radio" name="q4"> Porque o pacote <code>base</code> não traz o <code>man-db</code>; é preciso instalar <code>man-db</code> e <code>man-pages</code>.</label>
+<label><input type="radio" name="q4"> Porque o sistema está em português.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual é a forma certa de ver a ajuda do <code>cd</code>?</p>
+<label><input type="radio" name="q5"> <code>man cd</code></label>
+<label><input type="radio" name="q5"> <code>help cd</code></label>
+<label><input type="radio" name="q5"> <code>info cd</code></label>
+<label><input type="radio" name="q5"> <code>tldr cd</code>, que já vem instalado</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual tecla sai do manual?</p>
+<label><input type="radio" name="q6"> <kbd>q</kbd></label>
+<label><input type="radio" name="q6"> <kbd>Esc</kbd></label>
+<label><input type="radio" name="q6"> <kbd>Ctrl</kbd>+<kbd>Z</kbd></label>
+<label><input type="radio" name="q6"> <kbd>x</kbd></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>comando --help</code>: resumo rápido, em português; no <code>pacman</code>, <code>-h</code> por operação.</li>
+  <li><code>man comando</code>: manual completo (no Arch, pacotes <code>man-db</code> e <code>man-pages</code>, quase tudo em inglês).</li>
+  <li>No man, <kbd>/</kbd> procura, <kbd>n</kbd> repete e <kbd>q</kbd> sai; <code>man 5 passwd</code> escolhe a seção.</li>
+  <li><code>help</code> para comandos internos (<code>cd</code>, <code>pwd</code>); <code>type</code> diz o que é cada comando; <code>info</code> para os manuais GNU.</li>
+  <li><code>whatis</code>/<code>apropos</code> dizem "nada apropriado" até o índice existir: <code>sudo mandb</code>.</li>
+  <li><code>tldr</code> (pacote <code>tldr</code> ou <code>tealdeer</code>) mostra exemplos; a Arch Wiki ensina a usar tudo no Arch.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o manual está em <a href="https://wiki.archlinux.org/title/Man_page">Man page</a> (<a href="https://wiki.archlinux.org/title/Man_page_(Portugu%C3%AAs)">em português</a>), que explica o <code>man-db</code>, o <code>mandb</code>, as páginas traduzidas e os leitores alternativos; o formato info, em <a href="https://wiki.archlinux.org/title/Info">Info</a>; e como ler as convenções da própria Wiki (<code>$</code>, <code>#</code>, "instale o pacote…"), em <a href="https://wiki.archlinux.org/title/Help:Reading">Help:Reading</a> (<a href="https://wiki.archlinux.org/title/Help:Reading_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

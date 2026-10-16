@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Sintaxe dos Comandos — opções, argumentos e aspas | Guia Arch</title>
+<meta name="description" content="A gramática dos comandos no Arch Linux: comando, opções curtas, longas e combinadas, opções com valor, argumentos, o separador --, maiúsculas que importam (pacman -S × -s), espaços em nomes, aspas e ; && ||, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Sintaxe dos Comandos</span></h1>
+
+<p class="intro">Quase todo comando do terminal segue a mesma gramática: o nome do programa, depois opções que mudam o comportamento e, por fim, argumentos que dizem sobre o que agir. Aprenda essa gramática uma vez e você lê centenas de comandos, inclusive o <code>pacman</code>, que é o comando que você mais vai digitar no Arch. Todas as saídas desta aula vêm de um Arch Linux real.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As três partes de um comando e como reconhecer cada uma.</li>
+  <li>Opções curtas (<code>-a</code>), longas (<code>--all</code>), combinadas (<code>-lah</code>, <code>-Syu</code>) e com valor (<code>-n 3</code>).</li>
+  <li>Por que <code>pacman -S</code> e <code>pacman -s</code> são coisas diferentes: maiúsculas importam.</li>
+  <li>O separador <code>--</code>, os espaços em nomes e as aspas.</li>
+  <li>Encadear comandos com <code>;</code>, <code>&amp;&amp;</code> e <code>||</code> e ler as mensagens de erro de sintaxe.</li>
+</ul>
+</div>
+
+<p>Os exemplos acontecem na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>. O prompt <code>[ana@notebook ~]$</code> não se digita: você digita só o que vem depois dele (veja <a href="terminal.html">O Terminal no Arch</a>).</p>
+
+<hr>
+
+<h2>A forma geral</h2>
+<pre class="syntax">comando [opções] [argumentos]</pre>
+<p>Os colchetes <code>[ ]</code> indicam que a parte é opcional. Você não digita os colchetes. Veja as três partes num comando real:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd><strong>Comando</strong>: o programa a executar. Aqui, o que lista arquivos (de <em>list</em>).</dd>
+  <dt>-l</dt><dd><strong>Opção</strong> (ou <em>flag</em>, "bandeira"): muda o comportamento. <code>-l</code> pede o formato longo (<em>long</em>), com detalhes.</dd>
+  <dt>/etc/pacman.d</dt><dd><strong>Argumento</strong>: aquilo sobre o que o comando age. Aqui, a pasta a listar (onde o Arch guarda a lista de espelhos do <code>pacman</code>).</dd>
+</dl>
+
+<pre class="term">$ ls -l /etc/pacman.d
+total 8
+drwxr-xr-x 4 root root 4096 16 out 14:51 gnupg
+-rw-r--r-- 1 root root  769 16 out 12:02 mirrorlist       « a lista de espelhos (servidores de pacotes)</pre>
+
+<p>Tire a opção e o resultado muda de <strong>forma</strong>; tire o argumento e muda de <strong>lugar</strong>. Sem <code>-l</code>, só os nomes. Sem <code>/etc/pacman.d</code>, o <code>ls</code> usa a pasta onde você está (a sua pasta pessoal, <code>~</code>):</p>
+
+<pre class="term">$ ls /etc/pacman.d
+gnupg  mirrorlist
+$ ls
+'Área de trabalho'   Documentos   frutas.txt   Modelos   Público
+ aur                 Downloads    Imagens      Música    Vídeos</pre>
+
+<p>As aspas em <code>'Área de trabalho'</code> não fazem parte do nome: o <code>ls</code> as mostra para avisar que o nome tem espaços. O espaço à esquerda de <code>aur</code> só alinha a coluna. Você vai entender os espaços mais abaixo.</p>
+
+<div class="tip">
+<strong>E se o comando não tiver nem opção nem argumento?</strong>
+<p>Vale do mesmo jeito. <code>ls</code>, <code>pwd</code>, <code>whoami</code> e <code>date</code> funcionam sozinhos, com o comportamento padrão. Opções e argumentos só mudam esse padrão.</p>
+</div>
+
+<hr>
+
+<h2>Opções curtas e longas</h2>
+<p>Muitas opções existem em duas formas que fazem a mesma coisa:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como é</th><th>Exemplo</th><th>Vantagem</th></tr>
+<tr><td>Curta</td><td>Um hífen e uma letra</td><td><code>-a</code></td><td>Rápida de digitar</td></tr>
+<tr><td>Longa</td><td>Dois hífens e uma palavra em inglês</td><td><code>--all</code></td><td>Fácil de lembrar e de entender em scripts</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="~/Documentos">$ ls -a
+.  ..  acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt
+$ ls --all
+.  ..  acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt     « o mesmo resultado</pre>
+
+<p>O <code>-a</code> (de <em>all</em>, "todos") mostra também os itens que começam com ponto, que o <code>ls</code> normalmente esconde. Aqui são só o <code>.</code> (a própria pasta) e o <code>..</code> (a pasta de cima); a aula <a href="caminhos.html">Caminhos</a> explica os dois.</p>
+
+<p>O <code>pacman</code> segue a mesma regra. <code>-Q</code> é a forma curta de <code>--query</code> ("consultar") e <code>-i</code> é a de <code>--info</code>:</p>
+
+<pre class="term">$ pacman -Qi bash | head -2
+Nome                 : bash
+Versão               : 5.3.20-1
+$ pacman --query --info bash | head -2
+Nome                 : bash
+Versão               : 5.3.20-1                « o mesmo resultado, por extenso</pre>
+
+<p>O <code>| head -2</code> só corta a saída nas 2 primeiras linhas, para caber aqui (o <code>|</code> é um <em>pipe</em>, explicado em <a href="pipes.html">Pipes e xargs</a>).</p>
+
+<h3>Juntando opções curtas</h3>
+<p>Opções curtas podem dividir um único hífen. A ordem das letras não importa:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>O programa.</dd>
+  <dt>-lah</dt><dd>Três opções juntas: <code>-l</code> (detalhes), <code>-a</code> (ocultos) e <code>-h</code> (tamanhos legíveis, de <em>human-readable</em>: 4,0K em vez de 4096).</dd>
+</dl>
+
+<pre class="term" data-cwd="~/Documentos">$ ls -l -a -h
+total 24K
+drwxrwxr-x  3 ana ana 4,0K 15 out 09:07 .
+drwx------ 15 ana ana 4,0K 15 out 08:47 ..
+-rw-rw-r--  1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r--  1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r--  1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x  3 ana ana 4,0K 15 out 09:15 projetos
+-rw-rw-r--  1 ana ana 8,2K 14 out 17:40 relatorio.odt
+$ ls -lah
+total 24K                                       « idêntico ao anterior
+drwxrwxr-x  3 ana ana 4,0K 15 out 09:07 .
+…</pre>
+
+<p>As colunas do <code>ls -l</code> (permissões, dono, tamanho, data no formato <code>15 out 09:07</code>…) são explicadas uma a uma na aula <a href="ls.html">ls</a>.</p>
+
+<h3>O exemplo mais famoso do Arch: <code>-Syu</code></h3>
+<p>O comando que atualiza o Arch inteiro é uma junção de três opções curtas do <code>pacman</code>:</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda o comando seguinte como administrador (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). Repare: o "argumento" do <code>sudo</code> é outro comando inteiro.</dd>
+  <dt>pacman</dt><dd>O gerenciador de pacotes (<em>package manager</em>).</dd>
+  <dt>-S</dt><dd>A <strong>operação</strong> <em>sync</em> ("sincronizar" com os repositórios).</dd>
+  <dt>y</dt><dd>A opção <code>-y</code>, <em>refresh</em>: baixa a lista de pacotes atualizada.</dd>
+  <dt>u</dt><dd>A opção <code>-u</code>, <em>sysupgrade</em>: atualiza o que estiver desatualizado.</dd>
+</dl>
+
+<pre class="term">$ sudo pacman -Syu          « o mesmo que: sudo pacman -S -y -u
+                            « ou, por extenso: sudo pacman --sync --refresh --sysupgrade</pre>
+
+<p>A aula <a href="atualizar.html">Atualizar o Sistema</a> mostra a saída completa e o que fazer em cada pergunta.</p>
+
+<div class="note">
+<strong>Opções longas não se juntam</strong>
+<p><code>--all--human-readable</code> não funciona: o <code>ls</code> entende uma opção só, com esse nome estranho, e reclama. Cada opção longa vai separada por espaço:</p>
+<pre class="term">$ ls --all--human-readable
+ls: opção não reconhecida “--all--human-readable”
+Tente "ls --help" para mais informações.
+$ ls --all --human-readable -l Imagens
+total 8,0K
+drwxrwxr-x  2 ana ana 4,0K 12 out 08:03 .
+drwx------ 15 ana ana 4,0K 15 out 08:47 ..
+-rw-rw-r--  1 ana ana 2,0M  2 ago 14:00 ferias.jpg
+-rw-rw-r--  1 ana ana 100K 20 set 10:00 perfil.png</pre>
+<p>Repare que dá para misturar as duas formas no mesmo comando (<code>--all --human-readable -l</code>).</p>
+</div>
+
+<div class="try" data-setup="cd Documentos" data-goal="ran:ls\s+-[a-zA-Z]*l[a-zA-Z]*h|ls\s+-[a-zA-Z]*h[a-zA-Z]*l" data-solucao="ls -lh">
+<p class="try-task"><strong>Missão:</strong> você está em <code>Documentos</code>. Liste os arquivos com detalhes (<code>-l</code>) e tamanhos legíveis (<code>-h</code>), juntando as duas opções num único hífen.</p>
+</div>
+
+<hr>
+
+<h2>Opções que recebem um valor</h2>
+<p>Algumas opções precisam de um valor logo depois. O <code>head</code>, que mostra o começo de um arquivo, recebe o número de linhas na opção <code>-n</code>:</p>
+
+<dl class="anatomy">
+  <dt>head</dt><dd>Mostra o começo de um arquivo (veja <a href="ver-arquivos.html">cat, less, head, tail</a>).</dd>
+  <dt>-n</dt><dd>A opção <em>number of lines</em>, "número de linhas".</dd>
+  <dt>3</dt><dd>O valor da opção. Pertence ao <code>-n</code>; não é um argumento.</dd>
+  <dt>/etc/passwd</dt><dd>O argumento: o arquivo a ler (a lista de usuários do sistema).</dd>
+</dl>
+
+<pre class="term">$ head -n 3 /etc/passwd
+root:x:0:0::/root:/usr/bin/bash
+bin:x:1:1::/:/usr/bin/nologin
+daemon:x:2:2::/:/usr/bin/nologin</pre>
+
+<p>Repare num detalhe do Arch: o shell dos usuários aparece como <code>/usr/bin/bash</code>, e não <code>/bin/bash</code>. No Arch tudo mora em <code>/usr/bin</code> (veja <a href="estrutura-diretorios.html">Estrutura de Diretórios</a>).</p>
+
+<p>Há quatro formas de escrever a mesma coisa. Todas foram testadas e dão a mesma saída:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th></tr>
+<tr><td>Curta com espaço</td><td><code>head -n 3 /etc/passwd</code></td></tr>
+<tr><td>Curta grudada</td><td><code>head -n3 /etc/passwd</code></td></tr>
+<tr><td>Longa com <code>=</code></td><td><code>head --lines=3 /etc/passwd</code></td></tr>
+<tr><td>Longa com espaço</td><td><code>head --lines 3 /etc/passwd</code></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Nem todo comando segue as regras à risca</strong>
+<p>O <code>find</code> usa palavras inteiras com um hífen só (<code>-name</code>, <code>-type</code>). O <code>dd</code> usa <code>chave=valor</code> (<code>if=</code>, <code>of=</code>), como você vai ver ao gravar a ISO do Arch num pendrive. Na dúvida, consulte a ajuda do comando (veja <a href="ajuda.html">Obtendo Ajuda</a>).</p>
+</div>
+
+<hr>
+
+<h2>A ordem importa?</h2>
+<p>Nos comandos GNU do Arch (o <code>coreutils</code>: <code>ls</code>, <code>cp</code>, <code>head</code>…), as opções podem vir antes ou depois dos argumentos:</p>
+
+<pre class="term">$ ls -l /etc/hostname
+-rw-r--r-- 1 root root 9 16 out 12:10 /etc/hostname
+$ ls /etc/hostname -l
+-rw-r--r-- 1 root root 9 16 out 12:10 /etc/hostname           « funciona igual</pre>
+
+<p>No <code>pacman</code>, até a ordem das letras juntas é livre: <code>pacman -iQ bash</code> funciona como <code>pacman -Qi bash</code>. Mesmo assim, o costume (e o mais seguro) é: <strong>operação primeiro, opções logo depois, argumentos no fim</strong>. Em scripts e em outros sistemas (macOS, FreeBSD), a ordem pode importar.</p>
+
+<hr>
+
+<h2>Argumentos</h2>
+<p>Um comando pode receber nenhum, um ou vários argumentos, separados por espaço:</p>
+
+<pre class="term">$ ls Documentos/projetos
+backup.sh  site
+$ ls Documentos/projetos Imagens
+Documentos/projetos:
+backup.sh  site
+
+Imagens:
+ferias.jpg  perfil.png</pre>
+
+<p>Com dois argumentos, o <code>ls</code> mostra um título com o nome de cada pasta antes do conteúdo. O <code>pacman</code> também aceita vários: <code>pacman -Q bash pacman linux</code> mostra a versão dos três de uma vez.</p>
+
+<h3>Operações e subcomandos</h3>
+<p>Alguns programas fazem muitas coisas diferentes e precisam primeiro saber <strong>qual ação</strong> você quer. Há dois estilos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estilo</th><th>Como escolhe a ação</th><th>Exemplos no Arch</th></tr>
+<tr><td>Operação (letra maiúscula)</td><td>Uma opção especial, obrigatória, vem primeiro</td><td><code>pacman -S</code>, <code>pacman -Q</code>, <code>pacman -R</code></td></tr>
+<tr><td>Subcomando (palavra)</td><td>Uma palavra logo depois do nome do programa</td><td><code>systemctl status</code>, <code>git commit</code>, <code>hostnamectl set-hostname</code></td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>systemctl</dt><dd>O programa que controla os serviços do systemd.</dd>
+  <dt>is-active</dt><dd>O subcomando: a ação "está ativo?".</dd>
+  <dt>sshd</dt><dd>O argumento: o serviço consultado.</dd>
+</dl>
+
+<pre class="term">$ systemctl is-active sshd
+active</pre>
+
+<p>Sem a operação, o <code>pacman</code> não sabe o que fazer:</p>
+<pre class="term">$ pacman bash
+erro: nenhuma operação especificada (use -h para obter ajuda)
+$ echo $?
+1                       « 1 = deu errado</pre>
+
+<hr>
+
+<h2>Maiúsculas e minúsculas</h2>
+<p>O Linux diferencia maiúsculas de minúsculas em tudo: comandos, opções, arquivos e pastas. No Arch, o exemplo clássico é o <code>pacman</code>: as <strong>operações</strong> são letras maiúsculas e as <strong>opções</strong> de cada operação, minúsculas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Isto</th><th>é diferente disto</th></tr>
+<tr><td><code>ls</code></td><td><code>LS</code> (não existe)</td></tr>
+<tr><td><code>ls -a</code> (todos, com <code>.</code> e <code>..</code>)</td><td><code>ls -A</code> (todos, sem <code>.</code> e <code>..</code>)</td></tr>
+<tr><td><code>pacman -S</code> (operação <em>sync</em>: instalar)</td><td><code>pacman -s</code> (sozinho, é inválido; <code>-Ss</code> = procurar)</td></tr>
+<tr><td><code>pacman -Q</code> (consultar instalados)</td><td><code>pacman -q</code> (sozinho, é inválido; <code>-Qq</code> = consulta "quieta", só nomes)</td></tr>
+<tr><td><code>Documentos</code></td><td><code>documentos</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ LS
+bash: LS: comando não encontrado
+$ echo $?
+127                     « 127 = comando não encontrado
+$ pacman -s bash
+erro: opção inválida "-s"
+$ ls documentos
+ls: não foi possível acessar 'documentos': Arquivo ou diretório inexistente
+$ echo $?
+2</pre>
+
+<p>O <code>echo $?</code> mostra o <strong>código de saída</strong> do comando anterior: <code>0</code> é sucesso; qualquer outro número é algum tipo de erro. Cada programa escolhe os seus números (o <code>ls</code> usa <code>2</code> para "não achei", o <code>pacman</code> usa <code>1</code>, o Bash usa <code>127</code> para "esse comando não existe").</p>
+
+<div class="try" data-goal="out:The GNU Bourne Again shell" data-solucao="pacman -Qi bash">
+<p class="try-task"><strong>Missão:</strong> mostre as informações do pacote <code>bash</code> instalado, usando a operação de <strong>consulta</strong> do <code>pacman</code> com a opção de <strong>informação</strong>. Experimente antes a versão com a letra errada (<code>-qi</code>) para ver o erro.</p>
+</div>
+
+<hr>
+
+<h2>O separador --</h2>
+<p>Dois hífens sozinhos avisam: "acabaram as opções, o que vem depois é argumento". Servem para arquivos cujo nome começa com hífen, que o comando confundiria com uma opção:</p>
+
+<pre class="term" data-cwd="/tmp/b1">$ ls
+-arquivo
+$ rm -arquivo
+rm: opção inválida -- “a”
+Tente "rm ./-arquivo" para remover o arquivo '-arquivo'.
+Tente "rm --help" para mais informações.
+$ rm -- -arquivo
+$ echo $?
+0                       « apagou, sem mensagem</pre>
+
+<dl class="anatomy">
+  <dt>rm</dt><dd>Remove arquivos (veja <a href="remover.html">rm e rmdir</a>).</dd>
+  <dt>--</dt><dd>Fim das opções. Tudo depois disto é nome de arquivo, mesmo começando com <code>-</code>.</dd>
+  <dt>-arquivo</dt><dd>O argumento: o arquivo de nome estranho.</dd>
+</dl>
+
+<p>O próprio <code>rm</code> sugere a outra forma: <code>rm ./-arquivo</code>, que também funciona porque o nome passa a começar com <code>.</code> (a pasta atual).</p>
+
+<div class="warning">
+<strong>Aspas não resolvem esse caso</strong>
+<p>Aspas protegem espaços, mas não escondem o hífen do programa: <code>touch "-v"</code> continua sendo lido como opção:</p>
+<pre class="term" data-cwd="/tmp">$ touch "-v"
+touch: opção inválida -- “v”
+Tente "touch --help" para mais informações.</pre>
+<p>O certo é <code>touch -- -v</code> ou <code>touch ./-v</code>.</p>
+</div>
+
+<div class="try" data-setup="touch -- -arquivo" data-goal="absent:~/-arquivo" data-solucao="rm -- -arquivo">
+<p class="try-task"><strong>Missão:</strong> há um arquivo chamado <code>-arquivo</code> na sua pasta pessoal. Apague-o. Tente primeiro <code>rm -arquivo</code> e leia o erro.</p>
+</div>
+
+<hr>
+
+<h2>Espaços em nomes</h2>
+<p>O espaço separa argumentos. Um nome com espaço vira vários argumentos, a não ser que você avise o shell. A pasta <code>Área de trabalho</code>, que todo desktop cria em português, é o exemplo perfeito:</p>
+
+<pre class="term">$ ls Área de trabalho
+ls: não foi possível acessar 'Área': Arquivo ou diretório inexistente
+ls: não foi possível acessar 'de': Arquivo ou diretório inexistente
+ls: não foi possível acessar 'trabalho': Arquivo ou diretório inexistente</pre>
+
+<p>O <code>ls</code> recebeu <strong>três</strong> argumentos e procurou três pastas. Há três formas de corrigir:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Aspas</td><td><code>ls "Área de trabalho"</code></td><td>A mais legível. Use sempre em scripts.</td></tr>
+<tr><td>Barra invertida</td><td><code>ls Área\ de\ trabalho</code></td><td>A <code>\</code> "protege" o caractere seguinte, que deixa de separar.</td></tr>
+<tr><td>Tab</td><td><code>ls Ár</code> + <kbd>Tab</kbd></td><td>O shell completa e coloca as <code>\</code> para você.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ ls "Área de trabalho"
+$ echo $?
+0                       « a pasta existe e está vazia: nada a mostrar, sem erro</pre>
+
+<p>Nada apareceu porque a pasta está vazia, e o código <code>0</code> confirma que deu certo. Silêncio, no terminal, quase sempre quer dizer sucesso.</p>
+
+<hr>
+
+<h2>Aspas simples, duplas ou nenhuma</h2>
+<p>As aspas não só juntam palavras com espaço: elas também decidem se o shell vai trocar coisas especiais, como variáveis. Uma <strong>variável</strong> é um nome que guarda um valor; <code>$USER</code> guarda o nome do usuário.</p>
+
+<pre class="term">$ echo Olá $USER
+Olá ana                                         « sem aspas: $USER foi trocado
+$ echo "Olá $USER"
+Olá ana                                         « aspas duplas: $USER foi trocado
+$ echo 'Olá $USER'
+Olá $USER                                       « aspas simples: nada foi trocado</pre>
+
+<p>A diferença entre "sem aspas" e "aspas duplas" aparece com espaços repetidos:</p>
+
+<pre class="term">$ echo muitos     espaços
+muitos espaços                                  « sem aspas: viraram dois argumentos
+$ echo "muitos     espaços"
+muitos     espaços                              « com aspas: um argumento, espaços mantidos</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th><code>$VAR</code> e <code>$(comando)</code></th><th>Espaços</th><th>Use quando…</th></tr>
+<tr><td>sem aspas</td><td>trocados</td><td>separam argumentos</td><td>A palavra é simples, sem espaços.</td></tr>
+<tr><td><code>"duplas"</code></td><td>trocados</td><td>mantidos</td><td>Quer o valor das variáveis e proteger espaços. É o padrão mais seguro.</td></tr>
+<tr><td><code>'simples'</code></td><td>mantidos como estão</td><td>mantidos</td><td>Quer o texto exatamente como digitou.</td></tr>
+</table>
+</div>
+
+<p>O mesmo vale para a substituição de comando, <code>$(comando)</code>, que roda o comando e coloca o resultado no lugar:</p>
+
+<pre class="term">$ echo "Hoje é $(date +%A)"
+Hoje é sexta</pre>
+
+<div class="tip">
+<strong>Aspas no pacman: entregue o texto intacto</strong>
+<p>A busca do <code>pacman -Ss</code> aceita padrões como <code>'^man-pages'</code> ("começa com man-pages"). As aspas simples garantem que o shell entregue o texto exatamente assim ao <code>pacman</code>, sem tentar interpretar nenhum caractere especial. Os caracteres que o shell interpreta sozinho (<code>*</code>, <code>?</code>…) estão em <a href="curingas.html">Curingas</a>.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*echo\s+'[^']*\$USER" data-solucao="echo 'Meu usuário é $USER'">
+<p class="try-task"><strong>Missão:</strong> faça o <code>echo</code> mostrar literalmente o texto <code>Meu usuário é $USER</code>, sem trocar a variável. Depois compare com a versão em aspas duplas.</p>
+</div>
+
+<hr>
+
+<h2>Encadear comandos: ; &amp;&amp; ||</h2>
+<p>Todo comando, ao terminar, devolve um <strong>código de saída</strong>: <code>0</code> quando deu certo, outro número quando deu errado. Os separadores usam esse código:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Separador</th><th>Lê-se</th><th>O segundo comando roda…</th></tr>
+<tr><td><code>a ; b</code></td><td>"e depois"</td><td>Sempre</td></tr>
+<tr><td><code>a &amp;&amp; b</code></td><td>"e, se deu certo,"</td><td>Só se <code>a</code> deu certo (código 0)</td></tr>
+<tr><td><code>a || b</code></td><td>"ou então"</td><td>Só se <code>a</code> deu errado</td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="/tmp">$ mkdir teste &amp;&amp; echo criou
+criou
+$ mkdir teste || echo "não deu"
+mkdir: não foi possível criar o diretório “teste”: Arquivo existe   « o mkdir falhou…
+não deu                                                             « …então o || rodou o echo
+$ ls nada; echo "rodou mesmo assim"
+ls: não foi possível acessar 'nada': Arquivo ou diretório inexistente
+rodou mesmo assim</pre>
+
+<p>Repare que a mensagem do <code>mkdir</code> sai inteira em português: o <code>coreutils</code> 9.12 do Arch tem a tradução completa.</p>
+
+<div class="try" data-goal="dir:~/backup,cwd:~/backup,ran:mkdir.*&amp;&amp;" data-solucao="mkdir backup &amp;&amp; cd backup">
+<p class="try-task"><strong>Missão:</strong> numa só linha, crie a pasta <code>backup</code> e, <strong>só se deu certo</strong>, entre nela.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever o mesmo comando</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Formas equivalentes</th><th>Qual usar</th></tr>
+<tr><td>Listar com detalhes e ocultos</td><td><code>ls -l -a</code>, <code>ls -la</code>, <code>ls -al</code>, <code>ls --all -l</code></td><td><code>ls -la</code> no terminal; a longa em scripts.</td></tr>
+<tr><td>Ver 3 linhas</td><td><code>head -n 3</code>, <code>head -n3</code>, <code>head --lines=3</code></td><td><code>head -n 3</code>, a mais comum nos tutoriais.</td></tr>
+<tr><td>Atualizar o Arch</td><td><code>pacman -Syu</code>, <code>pacman -S -y -u</code>, <code>pacman --sync --refresh --sysupgrade</code></td><td><code>-Syu</code>, a forma que toda a comunidade usa.</td></tr>
+<tr><td>Nome com espaço</td><td><code>"Área de trabalho"</code>, <code>'Área de trabalho'</code>, <code>Área\ de\ trabalho</code></td><td>Aspas no texto; o <kbd>Tab</kbd> escreve a de barra.</td></tr>
+<tr><td>Arquivo começando com hífen</td><td><code>rm -- -arquivo</code>, <code>rm ./-arquivo</code></td><td>Qualquer uma; o <code>--</code> vale para quase todo comando.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"opção inválida"</strong>
+<pre class="term">$ ls -j
+ls: opção inválida -- “j”
+Tente "ls --help" para mais informações.
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> o comando não tem a opção <code>-j</code>. Quase sempre é erro de digitação.</p>
+<p><strong>Como resolver:</strong> confira a opção com <code>ls --help</code> ou <code>man ls</code> (veja <a href="ajuda.html">Obtendo Ajuda</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"erro: opção inválida "-s"" no pacman</strong>
+<pre class="term">$ pacman -s bash
+erro: opção inválida "-s"</pre>
+<p><strong>O que aconteceu:</strong> faltou a <strong>operação</strong> em maiúscula. Sozinho, <code>-s</code> não significa nada para o <code>pacman</code>.</p>
+<p><strong>Como resolver:</strong> para procurar, é <code>pacman -Ss bash</code>; para instalar, <code>sudo pacman -S bash</code>. A lista de operações aparece em <code>pacman -h</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"opção não reconhecida"</strong>
+<pre class="term">$ ls --versao
+ls: opção não reconhecida “--versao”
+Tente "ls --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> opções longas são em inglês, mesmo com o sistema em português: o certo é <code>--version</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"falta o operando"</strong>
+<pre class="term">$ cp /etc/hostname
+cp: falta o operando arquivo de destino após '/etc/hostname'
+Tente "cp --help" para mais informações.
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> "operando" é o nome técnico de argumento. O <code>cp</code> precisa de dois: de onde e para onde.</p>
+<p><strong>Como resolver:</strong> informe o destino: <code>cp /etc/hostname ~/</code> (veja <a href="copiar.html">Copiar (cp)</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>O comando "parou" e não volta o prompt</strong>
+<pre class="term">$ cat
+</pre>
+<p><strong>O que aconteceu:</strong> sem argumento, alguns comandos (como <code>cat</code>) leem do teclado e ficam esperando você digitar.</p>
+<p><strong>Como resolver:</strong> aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> para cancelar.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma linha começando com <code>&gt;</code> apareceu e nada acontece</strong>
+<pre class="term">$ echo 'Olá
+&gt; </pre>
+<p><strong>O que aconteceu:</strong> você abriu aspas e não fechou. O <code>&gt;</code> é o prompt de continuação: o shell espera o resto do comando.</p>
+<p><strong>Como resolver:</strong> feche as aspas (digite <code>'</code> e <kbd>Enter</kbd>) ou desista com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Elemento</th><th>Exemplo</th><th>Significa</th></tr>
+<tr><td>Opção curta</td><td><code>-l</code></td><td>Um hífen, uma letra</td></tr>
+<tr><td>Opções juntas</td><td><code>-lah</code>, <code>-Syu</code></td><td>Várias curtas num só hífen</td></tr>
+<tr><td>Opção longa</td><td><code>--all</code></td><td>Dois hífens, uma palavra; não se juntam</td></tr>
+<tr><td>Opção com valor</td><td><code>-n 3</code>, <code>--lines=3</code></td><td>O valor pertence à opção</td></tr>
+<tr><td>Operação do pacman</td><td><code>-S</code>, <code>-Q</code>, <code>-R</code></td><td>Maiúscula, obrigatória, vem primeiro</td></tr>
+<tr><td>Subcomando</td><td><code>systemctl status</code></td><td>Palavra que escolhe a ação</td></tr>
+<tr><td>Fim das opções</td><td><code>--</code></td><td>Daqui em diante, só argumentos</td></tr>
+<tr><td>Aspas duplas</td><td><code>"Olá $USER"</code></td><td>Junta palavras, troca variáveis</td></tr>
+<tr><td>Aspas simples</td><td><code>'Olá $USER'</code></td><td>Junta palavras, texto literal</td></tr>
+<tr><td><code>;</code> <code>&amp;&amp;</code> <code>||</code></td><td><code>a &amp;&amp; b</code></td><td>Sempre / se deu certo / se deu errado</td></tr>
+<tr><td><code>echo $?</code></td><td></td><td>Código de saída do último comando</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Juntar opções</h3>
+<p>Escreva <code>ls -l -a -h</code> com um único hífen:</p>
+<div class="ex-code">ls <input data-answer="-lah|-lha|-alh|-ahl|-hla|-hal" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Opção longa com valor</h3>
+<p>Complete para mostrar as 5 primeiras linhas usando a forma longa com <code>=</code>:</p>
+<div class="ex-code">head <input data-answer="--lines=5" aria-label="opção"> /etc/passwd</div>
+</div>
+
+<div class="exercise">
+<h3>3. Separar as opções do -Syu</h3>
+<p>Escreva <code>pacman -Syu</code> com cada opção no seu próprio hífen, na mesma ordem:</p>
+<div class="ex-code">sudo pacman <input data-answer="-S -y -u" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que o comando <code>echo 'Casa de $USER'</code> mostra?</p>
+<label><input type="radio" name="q4"> <code>Casa de ana</code></label>
+<label><input type="radio" name="q4"> <code>Casa de $USER</code></label>
+<label><input type="radio" name="q4"> Um erro</label>
+<label><input type="radio" name="q4"> Nada</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>pacman -s firefox</code> dá "opção inválida"?</p>
+<label><input type="radio" name="q5"> Porque faltou <code>sudo</code>.</label>
+<label><input type="radio" name="q5"> Porque o pacote não existe.</label>
+<label><input type="radio" name="q5"> Porque a operação do pacman é em maiúscula (<code>-S</code>); <code>-s</code> sozinho não é operação.</label>
+<label><input type="radio" name="q5"> Porque opções curtas não podem ter argumento.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Em <code>sudo pacman -Sy &amp;&amp; echo ok</code>, quando o <code>echo ok</code> roda?</p>
+<label><input type="radio" name="q6"> Sempre.</label>
+<label><input type="radio" name="q6"> Só se o <code>pacman</code> falhar.</label>
+<label><input type="radio" name="q6"> Antes do <code>pacman</code>.</label>
+<label><input type="radio" name="q6"> Só se o <code>pacman</code> der certo (código 0).</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Forma geral: <code>comando [opções] [argumentos]</code>.</li>
+  <li>Opções curtas (<code>-a</code>) podem se juntar (<code>-lah</code>, <code>-Syu</code>); longas (<code>--all</code>) vão separadas.</li>
+  <li>Maiúsculas importam: no <code>pacman</code>, a operação é maiúscula (<code>-S</code>, <code>-Q</code>, <code>-R</code>) e as opções, minúsculas.</li>
+  <li><code>--</code> encerra as opções; nomes com espaço vão entre aspas ou com <code>\</code>.</li>
+  <li>Aspas duplas protegem espaços e mantêm variáveis; simples deixam tudo literal.</li>
+  <li><code>;</code> roda sempre, <code>&amp;&amp;</code> só se deu certo, <code>||</code> só se deu errado; <code>echo $?</code> mostra o código.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a gramática do shell está em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> e em <a href="https://wiki.archlinux.org/title/Command-line_shell">Command-line shell</a> (<a href="https://wiki.archlinux.org/title/Command-line_shell_(Portugu%C3%AAs)">em português</a>); as operações e opções do <code>pacman</code>, em <a href="https://wiki.archlinux.org/title/Pacman">pacman</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>); e a convenção que a própria Wiki usa para mostrar comandos (<code>$</code> para usuário comum, <code>#</code> para root), em <a href="https://wiki.archlinux.org/title/Help:Reading">Help:Reading</a> (<a href="https://wiki.archlinux.org/title/Help:Reading_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

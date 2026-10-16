@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Primeiros Comandos — whoami, date, cal, uptime, free, df, uname | Guia Arch</title>
+<meta name="description" content="Os primeiros comandos para conhecer o seu Arch Linux: whoami, id, hostname (pacote inetutils), date, cal, uptime, free -h, df -h, uname -r, /etc/os-release, echo, clear, history e exit, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Primeiros Comandos</span></h1>
+
+<p class="intro">Antes de mexer em arquivos, vale conhecer a máquina: quem você é, como ela se chama, que horas ela acha que são, há quanto tempo está ligada, quanta memória e disco sobram e qual kernel roda nela. São comandos curtos, que <strong>não alteram nada</strong> e servem para ganhar confiança no terminal. Todas as saídas abaixo vêm de um Arch Linux de verdade.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Descobrir o usuário (<code>whoami</code>, <code>id</code>) e o nome da máquina (<code>hostname</code>, que no Arch é um pacote à parte).</li>
+  <li>Ver e formatar a data com <code>date</code>, e o calendário com <code>cal</code>.</li>
+  <li>Saber há quanto tempo o sistema está ligado (<code>uptime</code>), quanta memória (<code>free -h</code>) e quanto disco (<code>df -h</code>) há livres.</li>
+  <li>Identificar o kernel (<code>uname -r</code>) e entender por que o Arch não tem "versão".</li>
+  <li>Usar <code>echo</code>, <code>clear</code>, <code>history</code> e <code>exit</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos acontecem na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>. Os números (hora, memória, tempo ligado) serão diferentes na sua máquina; o formato é o mesmo.</p>
+
+<hr>
+
+<h2>Quem sou eu? whoami e id</h2>
+<p>O <code>whoami</code> (de <em>who am I</em>, "quem sou eu") mostra o usuário que está usando o terminal. Parece óbvio, mas depois de um <code>sudo -i</code> a resposta muda, e é fácil esquecer em qual usuário você está.</p>
+
+<pre class="term">$ whoami
+ana</pre>
+
+<p>O <code>id</code> mostra mais: o número do usuário (UID), o grupo principal e todos os grupos dos quais você faz parte.</p>
+
+<pre class="term">$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)</pre>
+
+<dl class="anatomy">
+  <dt>uid=1000(ana)</dt><dd>O número do usuário. O primeiro usuário criado com <code>useradd</code> recebe o 1000.</dd>
+  <dt>gid=1000(ana)</dt><dd>O grupo principal, com o mesmo nome do usuário.</dd>
+  <dt>grupos=…,998(wheel)</dt><dd>Todos os grupos. O <code>wheel</code> é o grupo dos administradores: quem está nele pode usar o <code>sudo</code>.</dd>
+</dl>
+
+<p>Repare como a lista é curta. No Arch, ninguém coloca você em grupos automaticamente: a Ana só está no <code>wheel</code> porque isso foi feito à mão na instalação, com <code>useradd -m -G wheel -s /bin/bash ana</code> (por isso o <code>$SHELL</code> dela é <code>/bin/bash</code>) (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+
+<hr>
+
+<h2>Como a máquina se chama? hostname</h2>
+<p>O <code>hostname</code> mostra o nome da máquina na rede, escolhido na instalação. É o mesmo que aparece no prompt, depois do <code>@</code>.</p>
+
+<pre class="term">$ hostname
+notebook
+$ hostname -i
+10.0.2.15                « -i mostra o endereço IP ligado a esse nome</pre>
+
+<div class="warning">
+<strong>No Arch, o <code>hostname</code> não vem no sistema mínimo</strong>
+<p>O comando <code>hostname</code> é do pacote <code>inetutils</code>, que o <code>base</code> não instala. Num Arch recém-instalado sem ele, a resposta é <code>bash: hostname: comando não encontrado</code>. A máquina do guia tem o pacote:</p>
+<pre class="term">$ pacman -Qo /usr/bin/hostname
+/usr/bin/hostname pertence a inetutils 2.8-1</pre>
+<p>Sem o <code>inetutils</code>, há três outros jeitos de ver o nome, todos já instalados: <code>cat /etc/hostname</code>, <code>uname -n</code> e <code>hostnamectl hostname</code>.</p>
+</div>
+
+<p>Outra diferença: este <code>hostname</code> é o do projeto GNU, que <strong>não</strong> tem a opção <code>-I</code> (maiúscula) que muitos tutoriais de Debian e Ubuntu usam. E, como o <code>inetutils</code> não tem tradução, as mensagens dele são em inglês:</p>
+
+<pre class="term">$ hostname -I
+hostname: invalid option -- 'I'
+Try 'hostname --help' or 'hostname --usage' for more information.</pre>
+
+<p>Para ver os endereços de rede, o certo no Arch é <code>ip -br a</code> (veja <a href="rede.html">Rede</a>).</p>
+
+<hr>
+
+<h2>Que dia é hoje? date</h2>
+<p>O <code>date</code> mostra a data e a hora, no formato do idioma do sistema (aqui, <code>pt_BR</code>):</p>
+
+<pre class="term">$ date
+sex 16 out 2026 15:08:08 -03          « dia da semana, dia, mês, ano, hora e fuso (-03 = Brasília)</pre>
+
+<p>Com um <code>+</code> seguido de códigos, você monta o formato que quiser. Isso é muito usado para dar nome a arquivos de backup:</p>
+
+<dl class="anatomy">
+  <dt>date</dt><dd>O comando.</dd>
+  <dt>+%F</dt><dd>O formato: <code>+</code> avisa que vem um formato; <code>%F</code> é a data no padrão ano-mês-dia.</dd>
+</dl>
+
+<pre class="term">$ date +%F
+2026-10-16
+$ date "+%d/%m/%Y %H:%M"
+16/10/2026 15:08
+$ date "+%A, %d de %B de %Y"
+sexta, 16 de outubro de 2026</pre>
+
+<p>As aspas são necessárias quando o formato tem espaços (veja <a href="sintaxe.html">Sintaxe dos Comandos</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Significa</th><th>Exemplo</th></tr>
+<tr><td><code>%d</code> / <code>%m</code> / <code>%Y</code></td><td>Dia / mês / ano</td><td>16 / 10 / 2026</td></tr>
+<tr><td><code>%H</code> / <code>%M</code> / <code>%S</code></td><td>Hora / minuto / segundo</td><td>15 / 08 / 08</td></tr>
+<tr><td><code>%F</code></td><td>Data completa ISO (ano-mês-dia)</td><td>2026-10-16</td></tr>
+<tr><td><code>%A</code> / <code>%a</code></td><td>Dia da semana por extenso / abreviado</td><td>sexta / sex</td></tr>
+<tr><td><code>%B</code> / <code>%b</code></td><td>Mês por extenso / abreviado</td><td>outubro / out</td></tr>
+</table>
+</div>
+
+<p>O <code>date</code> também calcula datas com <code>-d</code> (de <em>date</em>, "esta data em vez de agora"):</p>
+<pre class="term">$ date -d tomorrow
+sáb 17 out 2026 15:08:08 -03
+$ date -d "+30 days" +%F
+2026-11-15</pre>
+
+<div class="tip">
+<strong>Por que o formato ano-mês-dia?</strong>
+<p>Arquivos chamados <code>backup-2026-10-16.tar.gz</code> ficam em ordem cronológica quando o <code>ls</code> os ordena por nome. Com <code>16-10-2026</code>, não.</p>
+</div>
+
+<div class="try" data-goal="contains:~/hoje.txt=2026-10-16" data-solucao="date +%F &gt; hoje.txt">
+<p class="try-task"><strong>Missão:</strong> crie o arquivo <code>hoje.txt</code> com a data de hoje no formato ano-mês-dia. Use <code>date</code> com o formato certo e um <code>&gt;</code> (que manda a saída para um arquivo; veja <a href="redirecionamento.html">Redirecionamento</a>). Confira com <code>cat hoje.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>Calendário: cal</h2>
+<p>O <code>cal</code> (de <em>calendar</em>) mostra o calendário do mês. No Arch ele <strong>já vem instalado</strong>: é do pacote <code>util-linux</code>, que faz parte do <code>base</code>.</p>
+
+<pre class="term">$ cal
+    outubro 2026
+do se te qu qu se sá
+             1  2  3
+ 4  5  6  7  8  9 10
+11 12 13 14 15 16 17           « no terminal, o dia de hoje (16) aparece destacado
+18 19 20 21 22 23 24
+25 26 27 28 29 30 31
+$ pacman -Qo /usr/bin/cal
+/usr/bin/cal pertence a util-linux 2.42.4-1</pre>
+
+<p>Os nomes do mês e dos dias vêm em português porque o sistema está em <code>pt_BR</code>. Variações úteis:</p>
+
+<pre class="term">$ cal -3
+    setembro 2026         outubro 2026          novembro 2026
+do se te qu qu se sá  do se te qu qu se sá  do se te qu qu se sá
+       1  2  3  4  5               1  2  3   1  2  3  4  5  6  7
+ 6  7  8  9 10 11 12   4  5  6  7  8  9 10   8  9 10 11 12 13 14
+13 14 15 16 17 18 19  11 12 13 14 15 16 17  15 16 17 18 19 20 21
+20 21 22 23 24 25 26  18 19 20 21 22 23 24  22 23 24 25 26 27 28
+27 28 29 30           25 26 27 28 29 30 31  29 30
+$ cal 12 2026
+    dezembro 2026
+do se te qu qu se sá
+       1  2  3  4  5
+ 6  7  8  9 10 11 12
+13 14 15 16 17 18 19
+20 21 22 23 24 25 26
+27 28 29 30 31</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Mostra</th></tr>
+<tr><td><code>cal</code></td><td>O mês atual</td></tr>
+<tr><td><code>cal -3</code></td><td>O mês anterior, o atual e o próximo</td></tr>
+<tr><td><code>cal 12 2026</code></td><td>Dezembro de 2026 (mês e ano)</td></tr>
+<tr><td><code>cal 2026</code></td><td>O ano inteiro</td></tr>
+<tr><td><code>cal -m</code></td><td>Semana começando na segunda (<em>monday</em>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Há quanto tempo está ligado? uptime</h2>
+<p>O <code>uptime</code> (de <em>up time</em>, "tempo de pé") mostra a hora, há quanto tempo o sistema está ligado, quantos usuários estão conectados e a <strong>carga</strong> (<em>load average</em>):</p>
+
+<pre class="term">$ uptime
+ 15:08:08 up 17 min,  1 user,  load average: 0,55, 1,04, 0,87
+$ uptime -p
+up 17 minutes                          « só o tempo ligado, por extenso
+$ uptime -s
+2026-10-16 14:50:55                    « quando foi ligado (s = since, "desde")</pre>
+
+<dl class="anatomy">
+  <dt>15:08:08</dt><dd>A hora agora.</dd>
+  <dt>up 17 min</dt><dd>Ligado há 17 minutos. Depois de um dia, aparece <code>up 1 day, 2:15</code>.</dd>
+  <dt>1 user</dt><dd>Sessões abertas (cada terminal de login conta).</dd>
+  <dt>load average: 0,55, 1,04, 0,87</dt><dd>A carga média no último minuto, nos últimos 5 e nos últimos 15 minutos.</dd>
+</dl>
+
+<p>A saída do <code>uptime</code> não é traduzida (só a vírgula decimal segue o português). A carga é, grosso modo, quantos processos estão usando ou esperando o processador. Com números menores que a quantidade de núcleos, a máquina está folgada. A aula <a href="processos.html">ps, pgrep, top, htop</a> volta a esse assunto.</p>
+
+<hr>
+
+<h2>Quanta memória sobra? free -h</h2>
+<p>O <code>free</code> mostra a memória RAM e a área de troca (swap). Sem opções, os números saem em kibibytes, difíceis de ler; com <code>-h</code> (<em>human-readable</em>) vêm em Mi e Gi:</p>
+
+<pre class="term">$ free -h
+               total       usada       livre    compart.  buff/cache  disponível
+Mem.:          3,8Gi       502Mi       3,0Gi        33Mi       605Mi       3,3Gi
+Swap:          4,0Gi          0B       4,0Gi</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>total</code></td><td>A memória total (a VM do guia tem 4 GB; o kernel reserva um pouco).</td></tr>
+<tr><td><code>usada</code></td><td>O que os programas estão usando agora.</td></tr>
+<tr><td><code>livre</code></td><td>Memória sem nenhum uso.</td></tr>
+<tr><td><code>compart.</code></td><td>Memória compartilhada (boa parte é o <code>/tmp</code>, que no Arch fica na RAM).</td></tr>
+<tr><td><code>buff/cache</code></td><td>Cópia de arquivos do disco guardada na RAM para acelerar. O sistema devolve quando um programa precisa.</td></tr>
+<tr><td><code>disponível</code></td><td><strong>A coluna que importa</strong>: quanto um programa novo ainda pode usar (livre + o cache que pode ser devolvido).</td></tr>
+</table>
+</div>
+
+<p>A linha <code>Swap</code> é a partição de troca de 4 GiB criada na instalação (veja <a href="particionar.html">Particionar o Disco</a>). <code>0B</code> usados quer dizer que a RAM está dando conta.</p>
+
+<div class="tip">
+<strong>"Minha RAM está quase toda usada!"</strong>
+<p>Linux usa memória sobrando como cache de disco, de propósito: memória livre é memória desperdiçada. Olhe a coluna <code>disponível</code>, não a <code>livre</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quanto disco sobra? df -h</h2>
+<p>O <code>df</code> (de <em>disk free</em>, "disco livre") mostra o espaço de cada sistema de arquivos montado. De novo, o <code>-h</code> deixa os números legíveis:</p>
+
+<pre class="term">$ df -h
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /                « a partição raiz: o sistema todo
+devtmpfs        1,9G     0  1,9G   0% /dev
+tmpfs           1,9G     0  1,9G   0% /dev/shm
+efivarfs        256K   12K  240K   5% /sys/firmware/efi/efivars
+tmpfs           778M  576K  778M   1% /run
+none            1,0M     0  1,0M   0% /run/credentials/systemd-journald.service
+tmpfs           1,9G   33M  1,9G   2% /tmp                « na memória, não no disco
+/dev/sda1      1022M   93M  930M  10% /boot             « a partição EFI (FAT32)
+none            1,0M     0  1,0M   0% /run/credentials/getty@tty1.service
+tmpfs           389M  4,0K  389M   1% /run/user/1000</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significa</th></tr>
+<tr><td><code>Sist. Arq.</code></td><td>De onde vem: uma partição (<code>/dev/sda3</code>) ou algo virtual (<code>tmpfs</code>, na memória).</td></tr>
+<tr><td><code>Tam.</code> / <code>Usado</code> / <code>Disp.</code></td><td>Tamanho, usado e disponível.</td></tr>
+<tr><td><code>Uso%</code></td><td>A porcentagem ocupada. Acima de 90%, hora de limpar (o cache do pacman é o suspeito número 1).</td></tr>
+<tr><td><code>Montado em</code></td><td>Em qual pasta aquele espaço aparece.</td></tr>
+</table>
+</div>
+
+<p>Só duas linhas são disco de verdade: <code>/dev/sda3</code> (a raiz) e <code>/dev/sda1</code> (o <code>/boot</code>). O resto é virtual. Para olhar uma pasta só, passe-a como argumento:</p>
+
+<pre class="term">$ df -h /
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/sda3        25G  4,9G   19G  22% /</pre>
+
+<div class="try" data-goal="ran:df\s+(-h\s+/|-h$|-h\s*$|--human-readable)" data-solucao="df -h /">
+<p class="try-task"><strong>Missão:</strong> descubra quanto espaço sobra na partição raiz (<code>/</code>), com os tamanhos em G e M.</p>
+</div>
+
+<hr>
+
+<h2>Que sistema é este? uname e /etc/os-release</h2>
+<p>O <code>uname</code> (de <em>Unix name</em>) fala do <strong>kernel</strong>, o núcleo do sistema:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Resposta no Arch do guia</th></tr>
+<tr><td><code>uname</code></td><td><code>Linux</code></td></tr>
+<tr><td><code>uname -r</code></td><td><code>7.2.10-arch1-1</code> (a versão do kernel, de <em>release</em>)</td></tr>
+<tr><td><code>uname -m</code></td><td><code>x86_64</code> (a arquitetura do processador, de <em>machine</em>)</td></tr>
+<tr><td><code>uname -n</code></td><td><code>notebook</code> (o nome da máquina)</td></tr>
+<tr><td><code>uname -a</code></td><td>Tudo junto (veja abaixo)</td></tr>
+</table>
+</div>
+
+<pre class="term">$ uname -r
+7.2.10-arch1-1
+$ uname -a
+Linux notebook 7.2.10-arch1-1 #1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026 06:58:10 +0000 x86_64 GNU/Linux</pre>
+
+<dl class="anatomy">
+  <dt>Linux</dt><dd>O sistema (kernel).</dd>
+  <dt>notebook</dt><dd>O nome da máquina.</dd>
+  <dt>7.2.10-arch1-1</dt><dd>A versão do kernel: 7.2.10, com o primeiro ajuste do Arch (<code>arch1</code>), primeiro empacotamento (<code>-1</code>).</dd>
+  <dt>#1 SMP PREEMPT_DYNAMIC Mon, 12 Oct 2026…</dt><dd>Detalhes da compilação: suporte a vários núcleos (SMP) e a data em que foi gerado.</dd>
+  <dt>x86_64</dt><dd>A arquitetura.</dd>
+  <dt>GNU/Linux</dt><dd>O sistema operacional.</dd>
+</dl>
+
+<p>O <code>uname -r</code> é útil logo depois de uma atualização: se o pacote <code>linux</code> foi atualizado, o kernel em uso continua o antigo até você reiniciar. Na máquina do guia há dois kernels instalados; só um está rodando:</p>
+
+<pre class="term">$ pacman -Q linux linux-lts
+linux 7.2.10.arch1-1
+linux-lts 6.18.57-1</pre>
+
+<h3>E a versão do Arch?</h3>
+<p>No Debian se pergunta "qual versão?" (12, 13…). No Arch essa pergunta não existe: ele é <strong>rolling release</strong>, atualizado continuamente (veja <a href="rolling-release.html">Rolling Release</a>). O arquivo que descreve a distribuição diz isso com todas as letras:</p>
+
+<pre class="term">$ cat /etc/os-release
+NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch
+BUILD_ID=rolling                                          « sem número de versão
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
+PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
+LOGO=archlinux-logo
+$ lsb_release -a
+bash: lsb_release: comando não encontrado</pre>
+
+<p>O <code>lsb_release</code>, comum em tutoriais de Ubuntu, não vem no Arch. A "versão" de um Arch é, na prática, a data da última atualização e as versões dos pacotes (<code>uname -r</code>, <code>pacman -Q</code>). Para um resumo da máquina inteira há também o <code>hostnamectl</code>:</p>
+
+<pre class="term">$ hostnamectl
+ Static hostname: notebook
+       Icon name: computer-vm
+         Chassis: vm 💽
+      Machine ID: 42634ff99dd3440394e6cd711c974f65
+         Boot ID: 6d142ff96397464bb18ee6e1cecdf251
+  Virtualization: oracle                               « é uma VM do VirtualBox
+Operating System: Arch Linux
+          Kernel: Linux 7.2.10-arch1-1
+    Architecture: x86-64
+ Hardware Vendor: innotek GmbH
+  Hardware Model: VirtualBox
+…</pre>
+
+<div class="try" data-goal="ran:whoami,ran:hostname|uname -n|cat /etc/hostname,ran:uname -r" data-solucao="whoami; hostname; uname -r">
+<p class="try-task"><strong>Missão:</strong> faça um "raio-X" da máquina simulada: descubra o usuário, o nome da máquina e a versão do kernel.</p>
+</div>
+
+<hr>
+
+<h2>echo: escrever na tela</h2>
+<p>O <code>echo</code> repete o que recebe. Parece inútil, mas serve para mostrar variáveis, testar comandos e, com <code>&gt;</code>, escrever em arquivos.</p>
+
+<pre class="term">$ echo Olá, mundo
+Olá, mundo
+$ echo "Olá, $USER"
+Olá, ana
+$ echo $HOME
+/home/ana
+$ echo $SHELL
+/bin/bash</pre>
+
+<p><code>$USER</code>, <code>$HOME</code> e <code>$SHELL</code> são <strong>variáveis de ambiente</strong>: valores que o sistema guarda para você e para os programas.</p>
+
+<div class="tryscript" data-file="raio-x.sh" data-goal="out:Kernel: 7.2.10-arch1-1">
+<p class="try-task"><strong>Missão:</strong> este script mostra o usuário e a máquina. Acrescente uma linha que mostre <code>Kernel: </code> seguido da versão do kernel (use <code>$(uname -r)</code>, como nas outras linhas) e clique em <strong>Rodar</strong>.</p>
+<pre class="script">#!/usr/bin/env bash
+echo "Usuário: $(whoami)"
+echo "Máquina: $(uname -n)"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+echo "Usuário: $(whoami)"
+echo "Máquina: $(uname -n)"
+echo "Kernel: $(uname -r)"
+</pre>
+</div>
+
+<hr>
+
+<h2>clear, history e exit</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Atalho equivalente</th></tr>
+<tr><td><code>clear</code></td><td>Limpa a tela (o que estava lá continua acessível rolando para cima em muitos terminais)</td><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td></tr>
+<tr><td><code>history</code></td><td>Lista os comandos já digitados, numerados</td><td><kbd>↑</kbd> para navegar; <kbd>Ctrl</kbd>+<kbd>R</kbd> para procurar</td></tr>
+<tr><td><code>exit</code></td><td>Fecha o terminal, ou sai do root depois de um <code>sudo -i</code></td><td><kbd>Ctrl</kbd>+<kbd>D</kbd> numa linha vazia</td></tr>
+</table>
+</div>
+
+<h3>history</h3>
+<pre class="term">$ history 3
+  505  echo $HISTSIZE
+  506  wc -l &lt; ~/.bash_history
+  507  history 3</pre>
+
+<p>O número da esquerda é a posição do comando no histórico (o seu será outro). O <code>history 3</code> mostra só os 3 últimos. O Bash do Arch guarda os comandos em <code>~/.bash_history</code> ao fechar o terminal e, como o <code>.bashrc</code> do Arch não muda nada, vale o padrão do Bash: <strong>500</strong> comandos (<code>echo $HISTSIZE</code>). Para repetir o comando número 505, digite <code>!505</code>.</p>
+
+<div class="warning">
+<strong>O histórico guarda tudo o que você digita</strong>
+<p>Se você digitar uma senha como comando por engano (por exemplo, no lugar errado), ela fica no <code>~/.bash_history</code>. Apague a linha com <code>history -d NÚMERO</code>.</p>
+</div>
+
+<h3>clear e o tipo de cada um</h3>
+<pre class="term">$ type clear history exit
+clear é /usr/bin/clear
+history é um comando interno do shell
+exit é um comando interno do shell</pre>
+
+<p>O <code>clear</code> é um programa (do pacote <code>ncurses</code>); <code>history</code> e <code>exit</code> são internos do Bash, por isso a ajuda deles é <code>help history</code> e <code>help exit</code> (veja <a href="ajuda.html">Obtendo Ajuda</a>).</p>
+
+<h3>exit: sair do root</h3>
+<p>O <code>sudo -i</code> abre um shell como root (o prompt troca o <code>$</code> por <code>#</code>). O <code>exit</code> volta para a Ana:</p>
+
+<pre class="term">$ sudo -i
+[sudo] senha para ana:</pre>
+<pre class="term" data-user="root" data-cwd="~">#> whoami
+root
+#> exit
+sair                                 « o Bash avisa que saiu da sessão de login do root</pre>
+<pre class="term">$ whoami
+ana</pre>
+
+<hr>
+
+<h2>Formas diferentes de descobrir a mesma coisa</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero saber…</th><th>Comandos</th><th>Qual usar</th></tr>
+<tr><td>Meu usuário</td><td><code>whoami</code>, <code>id -un</code>, <code>echo $USER</code></td><td><code>whoami</code> é o mais claro.</td></tr>
+<tr><td>O nome da máquina</td><td><code>hostname</code>, <code>uname -n</code>, <code>cat /etc/hostname</code>, <code>hostnamectl hostname</code></td><td><code>hostname</code> se o <code>inetutils</code> estiver instalado; senão, <code>uname -n</code>.</td></tr>
+<tr><td>O kernel</td><td><code>uname -r</code>, <code>hostnamectl</code></td><td><code>uname -r</code> é o mais curto.</td></tr>
+<tr><td>A distribuição</td><td><code>cat /etc/os-release</code>, <code>hostnamectl</code></td><td><code>/etc/os-release</code>; no Arch não há número de versão.</td></tr>
+<tr><td>A data</td><td><code>date</code>, <code>cal</code>, <code>timedatectl</code></td><td><code>date</code> para scripts; <code>cal</code> para olhar.</td></tr>
+<tr><td>Memória e disco</td><td><code>free -h</code>, <code>df -h</code>, <code>htop</code></td><td><code>free -h</code> e <code>df -h</code> para uma olhada rápida.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"bash: hostname: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o <code>hostname</code> é do pacote <code>inetutils</code>, que não faz parte do <code>base</code>.</p>
+<p><strong>Como resolver:</strong> use <code>uname -n</code> ou <code>cat /etc/hostname</code>, ou instale o pacote: <code>sudo pacman -S inetutils</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"hostname: invalid option -- 'I'"</strong>
+<p><strong>O que aconteceu:</strong> o <code>hostname -I</code> é do Debian/Ubuntu; o <code>hostname</code> do Arch (GNU inetutils) não tem essa opção.</p>
+<p><strong>Como resolver:</strong> veja os endereços com <code>ip -br a</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"date: data inválida"</strong>
+<pre class="term">$ date -d amanha
+date: data inválida “amanha”</pre>
+<p><strong>O que aconteceu:</strong> o <code>-d</code> entende datas em inglês: <code>tomorrow</code>, <code>yesterday</code>, <code>next monday</code>, <code>+3 days</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A hora está errada</strong>
+<p><strong>O que aconteceu:</strong> o fuso horário configurado não é o seu, ou o relógio não sincroniza. No Arch, a sincronização pela internet vem <strong>desligada</strong> depois da instalação.</p>
+<p><strong>Como confirmar:</strong> <code>timedatectl</code> mostra <code>System clock synchronized: no</code> e <code>NTP service: inactive</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo timedatectl set-ntp true</code> liga o <code>systemd-timesyncd</code>; <code>sudo timedatectl set-timezone America/Sao_Paulo</code> ajusta o fuso. Veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"bash: lsb_release: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> o tutorial era de Ubuntu. O Arch não instala o <code>lsb_release</code>.</p>
+<p><strong>Como resolver:</strong> use <code>cat /etc/os-release</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Mostra</th><th>Pacote</th></tr>
+<tr><td><code>whoami</code></td><td>O usuário atual</td><td><code>coreutils</code></td></tr>
+<tr><td><code>id</code></td><td>UID, grupo e grupos</td><td><code>coreutils</code></td></tr>
+<tr><td><code>hostname</code></td><td>O nome da máquina</td><td><code>inetutils</code> (fora do <code>base</code>)</td></tr>
+<tr><td><code>date</code>, <code>date +%F</code></td><td>Data e hora; data formatada</td><td><code>coreutils</code></td></tr>
+<tr><td><code>cal</code>, <code>cal -3</code></td><td>Calendário</td><td><code>util-linux</code></td></tr>
+<tr><td><code>uptime</code>, <code>uptime -p</code></td><td>Tempo ligado e carga</td><td><code>procps-ng</code></td></tr>
+<tr><td><code>free -h</code></td><td>Memória e swap</td><td><code>procps-ng</code></td></tr>
+<tr><td><code>df -h</code></td><td>Espaço em disco</td><td><code>coreutils</code></td></tr>
+<tr><td><code>uname -r</code>, <code>uname -a</code></td><td>Kernel</td><td><code>coreutils</code></td></tr>
+<tr><td><code>cat /etc/os-release</code></td><td>A distribuição (atalho para <code>/usr/lib/os-release</code>)</td><td><code>filesystem</code></td></tr>
+<tr><td><code>clear</code></td><td>Limpa a tela</td><td><code>ncurses</code></td></tr>
+<tr><td><code>history</code>, <code>exit</code></td><td>Histórico; sair</td><td>internos do Bash</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Data para nome de arquivo</h3>
+<p>Complete para mostrar a data como <code>2026-10-16</code>:</p>
+<div class="ex-code">date <input data-answer="+%F|+%Y-%m-%d|&quot;+%F&quot;|'+%F'" aria-label="formato"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Versão do kernel</h3>
+<p>Complete para mostrar só a versão do kernel:</p>
+<div class="ex-code">uname <input data-answer="-r|--kernel-release" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Memória legível</h3>
+<p>Complete para ver a memória em Mi e Gi:</p>
+<div class="ex-code">free <input data-answer="-h|--human" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Em <code>load average: 0,55, 1,04, 0,87</code>, o que é o <code>0,87</code>?</p>
+<label><input type="radio" name="q4"> O uso de memória.</label>
+<label><input type="radio" name="q4"> A carga média dos últimos 15 minutos.</label>
+<label><input type="radio" name="q4"> A temperatura do processador.</label>
+<label><input type="radio" name="q4"> O tempo ligado, em horas.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Num Arch recém-instalado, <code>hostname</code> responde "comando não encontrado". Por quê?</p>
+<label><input type="radio" name="q5"> A máquina ficou sem nome.</label>
+<label><input type="radio" name="q5"> Falta usar <code>sudo</code>.</label>
+<label><input type="radio" name="q5"> O comando foi removido do Linux.</label>
+<label><input type="radio" name="q5"> Ele vem no pacote <code>inetutils</code>, que não faz parte do <code>base</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. No <code>free -h</code>, qual coluna diz quanto um programa novo ainda pode usar?</p>
+<label><input type="radio" name="q6"> <code>livre</code></label>
+<label><input type="radio" name="q6"> <code>buff/cache</code></label>
+<label><input type="radio" name="q6"> <code>disponível</code></label>
+<label><input type="radio" name="q6"> <code>total</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>whoami</code> e <code>id</code>: quem você é e seus grupos (<code>wheel</code> = pode usar <code>sudo</code>).</li>
+  <li><code>hostname</code> é do pacote <code>inetutils</code>; sem ele, <code>uname -n</code> ou <code>cat /etc/hostname</code>.</li>
+  <li><code>date</code> mostra e formata datas (<code>+%F</code>); <code>cal</code> já vem (util-linux).</li>
+  <li><code>uptime</code>: tempo ligado e carga; <code>free -h</code>: memória (olhe a <code>disponível</code>); <code>df -h</code>: disco.</li>
+  <li><code>uname -r</code>: o kernel; <code>/etc/os-release</code>: <code>BUILD_ID=rolling</code>, o Arch não tem número de versão.</li>
+  <li><code>echo</code>, <code>clear</code>, <code>history</code> e <code>exit</code> completam o kit básico.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os comandos básicos do dia a dia estão em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>); o nome da máquina, em <a href="https://wiki.archlinux.org/title/Network_configuration#Set_the_hostname">Network configuration — Set the hostname</a>; a data, o fuso e o NTP, em <a href="https://wiki.archlinux.org/title/System_time">System time</a>; o histórico do Bash, em <a href="https://wiki.archlinux.org/title/Bash#History">Bash — History</a>; e o próximo passo depois de instalar, em <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a> (<a href="https://wiki.archlinux.org/title/General_recommendations_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
