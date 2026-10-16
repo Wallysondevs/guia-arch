@@ -21,6 +21,7 @@ var NIVEIS = [
     { grupo: "Instalação", itens: [
       ["preparar.html", "Baixar e Verificar a ISO"],
       ["ambiente-live.html", "O Ambiente Live"],
+      ["internet-live.html", "Internet no Live (Wi-Fi, cabo, celular)"],
       ["particionar.html", "Particionar o Disco"],
       ["formatar-montar.html", "Formatar e Montar"],
       ["pacstrap.html", "Espelhos e pacstrap"],
