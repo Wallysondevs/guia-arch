@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Terminal — o prompt, o Bash, os TTYs e os emuladores de terminal | Guia Arch</title>
+<meta name="description" content="O terminal no Arch Linux: o prompt [ana@notebook ~]$ parte por parte, o prompt root@archiso do live (zsh), o Bash como shell padrão, .bashrc e .bash_profile, os consoles TTY (Ctrl+Alt+F2), o login em modo texto e os terminais gráficos mais usados.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Terminal</span></h1>
+
+<p class="intro">No Arch, o terminal não é um recurso avançado: é a porta de entrada. A instalação é feita nele, o primeiro boot termina nele e, até você instalar um desktop, é tudo o que existe. Esta aula ensina a ler o prompt do Arch, mostra qual shell você está usando, o que são os consoles de texto (TTYs) e quais programas de terminal existem quando há interface gráfica.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre terminal, console, TTY e shell.</li>
+  <li>Ler o prompt <code>[ana@notebook ~]$</code> parte por parte, e o <code>root@archiso ~ #</code> do pendrive de instalação.</li>
+  <li>Por que o Bash é o shell padrão, e o que fazem o <code>.bashrc</code> e o <code>.bash_profile</code>.</li>
+  <li>Como trocar de console com <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> e entrar em modo texto.</li>
+  <li>Os emuladores de terminal mais comuns (Konsole, GNOME Console, Alacritty, kitty…).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Terminal, console, TTY e shell</h2>
+<p>Quatro palavras que todo mundo mistura. Pense num balcão de atendimento:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>Na analogia</th><th>No computador</th></tr>
+<tr><td><strong>Shell</strong></td><td>O atendente que entende o seu pedido</td><td>O programa que lê o comando, interpreta e executa. No Arch, o <strong>Bash</strong>.</td></tr>
+<tr><td><strong>Terminal</strong></td><td>O balcão onde você fala com o atendente</td><td>A janela (ou a tela) onde você digita e lê as respostas.</td></tr>
+<tr><td><strong>Console / TTY</strong></td><td>O balcão fixo, que existe mesmo sem energia na loja</td><td>A tela de texto do próprio sistema, sem interface gráfica. O nome vem dos antigos <em>teletypewriters</em> (TTY). O Linux oferece vários: <code>tty1</code>, <code>tty2</code>…</td></tr>
+<tr><td><strong>Emulador de terminal</strong></td><td>Um balcão portátil, montado dentro da loja decorada</td><td>Um programa gráfico que "imita" um terminal numa janela: Konsole, GNOME Console, Alacritty…</td></tr>
+</table>
+</div>
+<p>Em qualquer um deles, quem trabalha é o mesmo shell. Os comandos que você aprende no console servem igualzinho numa janela do Konsole.</p>
+
+<hr>
+
+<h2>O prompt do Arch, parte por parte</h2>
+<p>Quando o shell está pronto para receber um comando, ele mostra o <strong>prompt</strong>. O do Arch é este:</p>
+
+<dl class="anatomy">
+  <dt>[</dt><dd>Abre o colchete: só enfeite, para separar o prompt do comando.</dd>
+  <dt>ana</dt><dd>O usuário que está usando o shell (no <code>PS1</code>, <code>\u</code>, de <em>user</em>).</dd>
+  <dt>@notebook</dt><dd>"Em" (<em>at</em>) qual máquina: o nome do computador (<code>\h</code>, de <em>host</em>), o mesmo do arquivo <code>/etc/hostname</code>.</dd>
+  <dt>~</dt><dd>A pasta atual (<code>\W</code>). O <code>~</code> quer dizer "a sua pasta pessoal", <code>/home/ana</code>. Fora dela, aparece <strong>só o nome</strong> da pasta, não o caminho inteiro.</dd>
+  <dt>]$</dt><dd>Fecha o colchete. O <code>$</code> diz "usuário comum"; para o root ele vira <code>#</code> (<code>\$</code>).</dd>
+</dl>
+
+<p>De onde vem esse desenho? Do arquivo <code>~/.bashrc</code>, que o Arch coloca na pasta de cada usuário novo:</p>
+
+<pre class="term">$ cat ~/.bashrc
+#
+# ~/.bashrc
+#
+
+# If not running interactively, don't do anything
+[[ $- != *i* ]] && return
+
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+PS1='[\u@\h \W]\$ '            « o desenho do prompt: [usuário@máquina pasta]$</pre>
+
+<p>Veja o prompt acompanhando a Ana pelas pastas (sessão real na VM):</p>
+
+<pre class="term">$ cd Documentos
+$ cd projetos                  « dentro de /home/ana/Documentos/projetos: aparece só "projetos"
+$ cd /etc
+$ cd                           « cd sozinho volta para a pasta pessoal (~)</pre>
+
+<div class="tip">
+<strong>Só o nome da pasta: onde eu estou, afinal?</strong>
+<p>O <code>\W</code> mostra só o último pedaço do caminho. Em <code>[ana@notebook projetos]$</code>, você pode estar em <code>~/Documentos/projetos</code> ou em <code>/srv/projetos</code>. Na dúvida, pergunte com <code>pwd</code> (<em>print working directory</em>). O Debian e o Ubuntu usam <code>\w</code> minúsculo, que mostra o caminho inteiro (<code>ana@notebook:~/Documentos/projetos$</code>); se preferir assim, troque <code>\W</code> por <code>\w</code> no seu <code>.bashrc</code>. Personalizar o prompt é assunto do <a href="https://wallysondevs.github.io/guia-bash/ps1.html">Guia Bash: Personalizar o Prompt (PS1)</a>.</p>
+</div>
+
+<h3>Os três prompts que você vai ver neste guia</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Prompt</th><th>Quem / onde</th><th>Quando aparece</th></tr>
+<tr><td><code>[ana@notebook ~]$</code></td><td>A Ana, no sistema instalado</td><td>Quase sempre</td></tr>
+<tr><td><code>[root@notebook ~]#</code></td><td>O root, no sistema instalado</td><td>Depois de <code>sudo -i</code> ou <code>su -</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>)</td></tr>
+<tr><td><code>root@archiso ~ #</code></td><td>O root, no ambiente live do pendrive</td><td>Só durante a instalação</td></tr>
+</table>
+</div>
+
+<h3>O prompt do ambiente live: <code>root@archiso ~ #</code></h3>
+<p>Quando você dá boot pelo pendrive de instalação, o desenho é outro, e não é por acaso: o ambiente live usa outro shell, o <strong>zsh</strong>, com uma configuração colorida própria (a do projeto grml). <code>archiso</code> é o nome da máquina no live, e o <code>#</code> no fim indica root: lá você já entra como administrador, sem senha.</p>
+
+<figure>
+<img src="img/live-boot.png" alt="Tela do ambiente live do Arch: 'Arch Linux 7.0.10-arch1-1 (tty1)', login automático como root, instruções em inglês sobre o Installation guide, iwctl e mmcli, uma faixa de quadrados coloridos e o prompt root@archiso ~ #" loading="lazy">
+<figcaption>O ambiente live da ISO 2026.06.01, na VM do guia: login automático como <code>root</code> no <code>tty1</code> e o prompt do zsh, <code>root@archiso ~ #</code>.</figcaption>
+</figure>
+
+<p>Tudo o que você digita no live usa o zsh, mas os comandos da instalação funcionam igual no Bash. Depois do primeiro boot do sistema instalado, o prompt volta a ser o do Bash. A aula <a href="ambiente-live.html">O Ambiente Live</a> explica essa tela linha por linha.</p>
+
+<hr>
+
+<h2>O Bash é o shell padrão</h2>
+<p>O shell de cada usuário fica anotado no arquivo <code>/etc/passwd</code>, no último campo. O <code>getent</code> mostra a linha da Ana:</p>
+
+<pre class="term">$ echo $SHELL
+/bin/bash                      « o shell de login da Ana
+$ getent passwd ana
+ana:x:1000:1000::/home/ana:/bin/bash     « último campo: o shell
+$ bash --version | head -2
+GNU bash, versão 5.3.20(1)-release (x86_64-pc-linux-gnu)
+Copyright (C) 2025 Free Software Foundation, Inc.
+$ pacman -Qo /usr/bin/bash /usr/bin/sh
+/usr/bin/bash pertence a bash 5.3.20-1
+/usr/bin/sh pertence a bash 5.3.20-1     « no Arch, o sh também é o Bash
+$ ls -l /usr/bin/sh
+lrwxrwxrwx 1 root root 4 15 set 16:47 /usr/bin/sh -&gt; bash</pre>
+
+<p>Repare na última linha: no Arch, <code>/usr/bin/sh</code> é só um atalho (link simbólico) para o <code>bash</code>. No Debian e no Ubuntu, o <code>sh</code> é outro programa (o <code>dash</code>). Por isso um script que começa com <code>#!/bin/sh</code> e usa recursos do Bash funciona no Arch e pode falhar no Ubuntu.</p>
+
+<p>A lista de shells permitidos para login fica em <code>/etc/shells</code>:</p>
+
+<pre class="term">$ cat /etc/shells
+# Pathnames of valid login shells.
+# See shells(5) for details.
+
+/bin/sh
+/bin/bash
+/bin/rbash
+/usr/bin/sh
+/usr/bin/bash
+/usr/bin/rbash
+/usr/bin/systemd-home-fallback-shell
+/usr/bin/git-shell</pre>
+
+<h3>E o zsh e o fish?</h3>
+<p>Estão nos repositórios oficiais, mas não vêm instalados:</p>
+
+<pre class="term">$ pacman -Q zsh fish
+erro: o pacote "zsh" não foi encontrado
+erro: o pacote "fish" não foi encontrado
+$ pacman -Si zsh fish | grep -E "^(Nome|Versão|Descrição)"
+Nome                 : zsh
+Versão               : 5.9.2-1
+Descrição            : A very advanced and programmable command interpreter (shell) for UNIX
+Nome                 : fish
+Versão               : 4.9.3-1
+Descrição            : Smart and user friendly shell intended mostly for interactive use</pre>
+
+<p>Para trocar de shell, você instalaria o pacote (<code>sudo pacman -S zsh</code>) e mudaria o shell de login com <code>chsh -s /usr/bin/zsh</code>, que pede a sua senha e vale a partir do próximo login (<strong>ilustrativo</strong>: a VM continua no Bash). Este guia usa o Bash em tudo; os scripts de sistema também.</p>
+
+<h3>.bashrc e .bash_profile</h3>
+<p>O <code>useradd -m</code> copia três arquivos para a pasta de cada usuário novo. Dois deles importam aqui:</p>
+
+<pre class="term">$ cat ~/.bash_profile
+#
+# ~/.bash_profile
+#
+
+[[ -f ~/.bashrc ]] &amp;&amp; . ~/.bashrc      « se o .bashrc existe, leia-o também</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Lido quando</th><th>Use para</th></tr>
+<tr><td><code>~/.bash_profile</code></td><td>Num <strong>login</strong> (no TTY, por SSH, com <code>su -</code>)</td><td>Variáveis de ambiente (<code>export EDITOR=nano</code>)</td></tr>
+<tr><td><code>~/.bashrc</code></td><td>Em todo shell <strong>interativo</strong> (cada janela de terminal nova) e, via <code>.bash_profile</code>, no login</td><td>Aliases, prompt, funções</td></tr>
+<tr><td><code>~/.bash_logout</code></td><td>Ao sair de um shell de login</td><td>Limpezas (quase ninguém mexe)</td></tr>
+</table>
+</div>
+<p>A ordem completa em que o Bash lê esses arquivos está no <a href="https://wallysondevs.github.io/guia-bash/inicializacao.html">Guia Bash: Arquivos de Inicialização</a>.</p>
+
+<div class="note">
+<strong>O Arch não traz o <code>ll</code></strong>
+<p>O <code>.bashrc</code> do Arch tem só dois aliases: <code>ls</code> e <code>grep</code> com cores. Quem vem do Ubuntu sente falta do <code>ll</code>:</p>
+<pre class="term">$ type ls ll
+ls está apelidada para `ls --color=auto'
+bash: type: ll: não encontrado</pre>
+<p>Se quiser, acrescente <code>alias ll='ls -l'</code> ao seu <code>~/.bashrc</code>. O <a href="https://wallysondevs.github.io/guia-bash/alias.html">Guia Bash: alias</a> explica como.</p>
+</div>
+
+<div class="try" data-goal="cwd:~/Documentos/projetos" data-solucao="cd Documentos;;cd projetos;;pwd">
+<p class="try-task"><strong>Missão:</strong> entre em <code>Documentos</code> e depois em <code>projetos</code>, olhando o prompt mudar a cada <code>cd</code>. Quando estiver lá, confirme o caminho inteiro com <code>pwd</code>. Experimente também <code>echo $SHELL</code> e <code>type ls ll</code>.</p>
+</div>
+
+<hr>
+
+<h2>Os consoles de texto (TTY)</h2>
+<p>Mesmo com interface gráfica, o Linux mantém vários consoles de texto prontos, cada um com o seu login. Você troca entre eles pelo teclado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho</th><th>Vai para</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F1</kbd></td><td><code>tty1</code>: onde o Arch mostra o login no primeiro boot (e onde, depois, costuma rodar o login gráfico)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> … <kbd>F6</kbd></td><td><code>tty2</code> a <code>tty6</code>: consoles de texto extras</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>O console anterior / o próximo (quando você já está num console de texto)</td></tr>
+</table>
+</div>
+
+<p>Para que serve? Para quando a interface gráfica travou ou não sobe: num console de texto você entra, vê o que aconteceu e conserta. A aula <a href="travamentos.html">Quando o Sistema Trava</a> usa isso.</p>
+
+<div class="tip">
+<strong>Numa máquina virtual</strong>
+<p>O VirtualBox "segura" o <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> para o seu computador. Dentro da VM, use a <em>tecla hospedeira</em> (normalmente o <kbd>Ctrl</kbd> da direita) + <kbd>F2</kbd>.</p>
+</div>
+
+<h3>O login em modo texto</h3>
+<p>A VM do guia não tem interface gráfica, como todo Arch recém-instalado. No primeiro boot, depois das mensagens de inicialização, a tela fica assim:</p>
+
+<figure>
+<img src="img/primeiro-boot-login.png" alt="Tela preta com o texto 'Arch Linux 7.2.10-arch1-1 (tty1)' e, abaixo, 'notebook login:'" loading="lazy">
+<figcaption>O primeiro boot da VM do guia: sem interface gráfica, só o login em modo texto no <code>tty1</code>.</figcaption>
+</figure>
+
+<p>A primeira linha não é inventada pelo login: ela vem do arquivo <code>/etc/issue</code>, cujos códigos são trocados na hora:</p>
+
+<pre class="term">$ cat /etc/issue
+\S{PRETTY_NAME} \r (\l)</pre>
+
+<dl class="anatomy">
+  <dt>\S{PRETTY_NAME}</dt><dd>O nome do sistema, tirado do <code>/etc/os-release</code>: <code>Arch Linux</code>.</dd>
+  <dt>\r</dt><dd>A versão do kernel: <code>7.2.10-arch1-1</code> (a mesma do <code>uname -r</code>).</dd>
+  <dt>(\l)</dt><dd>O console em que você está: <code>(tty1)</code>.</dd>
+</dl>
+
+<ol class="passo">
+  <li>Em <code>notebook login:</code>, digite o nome do usuário (<code>ana</code>) e aperte <kbd>Enter</kbd>.</li>
+  <li>Em <code>Senha:</code>, digite a senha e aperte <kbd>Enter</kbd>. <strong>Nada aparece enquanto você digita</strong>, nem asteriscos: é proteção, não defeito.</li>
+  <li>Aparece o prompt <code>[ana@notebook ~]$</code>. Pronto: é o mesmo Bash de sempre.</li>
+  <li>Para sair, digite <code>exit</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd> numa linha vazia). O login volta a aparecer.</li>
+</ol>
+
+<p>O comando <code>tty</code> diz em que terminal você está. Por SSH (como nesta sessão na VM), a resposta é um pseudoterminal; num console de texto, seria <code>/dev/tty1</code>, <code>/dev/tty2</code>…</p>
+
+<pre class="term">$ tty
+/dev/pts/1                     « pts = pseudoterminal: uma janela, uma sessão SSH</pre>
+
+<hr>
+
+<h2>Terminais gráficos</h2>
+<p>Depois de instalar um desktop (<a href="desktop.html">Instalar um Desktop</a>), você abre o terminal numa janela. Cada ambiente traz o seu, e há outros independentes. Todos estão nos repositórios oficiais; as versões abaixo são as de outubro de 2026, consultadas com <code>pacman -Si</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Versão</th><th>Vem com / para quem</th></tr>
+<tr><td><code>konsole</code></td><td>26.08.2</td><td>KDE Plasma. Abas, perfis, divisão da janela.</td></tr>
+<tr><td><code>gnome-console</code></td><td>51.0</td><td>GNOME (o "Console", simples). Faz parte do grupo <code>gnome</code>.</td></tr>
+<tr><td><code>gnome-terminal</code></td><td>3.60.0</td><td>O terminal clássico do GNOME, com mais opções.</td></tr>
+<tr><td><code>xfce4-terminal</code></td><td>1.2.0</td><td>Xfce. Leve e completo.</td></tr>
+<tr><td><code>foot</code></td><td>1.28.0</td><td>Wayland, minimalista; comum com Sway.</td></tr>
+<tr><td><code>alacritty</code></td><td>0.17.0</td><td>Rápido (usa a placa de vídeo), configurado por arquivo.</td></tr>
+<tr><td><code>kitty</code></td><td>0.49.2</td><td>Rápido, com abas, divisões e imagens no terminal.</td></tr>
+<tr><td><code>ghostty</code></td><td>1.3.1</td><td>Moderno, rápido, com visual nativo.</td></tr>
+<tr><td><code>wezterm</code></td><td>20240203 (+ git)</td><td>Rápido, com multiplexador embutido, configurado em Lua.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Copiar e colar no terminal gráfico</strong>
+<p>No terminal, <kbd>Ctrl</kbd>+<kbd>C</kbd> não copia: ele <strong>interrompe</strong> o comando que está rodando. Para copiar e colar, use <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> e <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> (na maioria dos emuladores), ou selecione o texto com o mouse e cole com o botão do meio.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"comando não encontrado"</strong>
+<pre class="term">$ sl
+bash: sl: comando não encontrado
+$ echo $?
+127</pre>
+<p><strong>Causa:</strong> o nome está errado (aqui, <code>ls</code> digitado ao contrário) ou o programa não está instalado. No Arch, muita coisa não vem no sistema mínimo.</p>
+<p><strong>Como resolver:</strong> confira a grafia. Se estiver certa, descubra qual pacote tem o comando com <code>pacman -F nome</code> e instale-o (veja <a href="pacman.html">pacman: o Básico</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Digito a senha e nada aparece</strong>
+<p><strong>Causa:</strong> é de propósito: nem o login, nem o <code>sudo</code>, nem o <code>passwd</code> mostram o que você digita.</p>
+<p><strong>Como resolver:</strong> digite com calma e aperte <kbd>Enter</kbd>. Se errou, apague tudo com <kbd>Ctrl</kbd>+<kbd>U</kbd> e comece de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Liguei o computador e só tem uma tela preta com "login:"</strong>
+<p><strong>Causa:</strong> não há interface gráfica instalada (ou ela não subiu).</p>
+<p><strong>Como resolver:</strong> entre com o seu usuário. Se você nunca instalou um desktop, veja <a href="desktop.html">Instalar um Desktop</a>; se ele existia e parou de aparecer, veja <a href="travamentos.html">Quando o Sistema Trava</a> e os erros do boot com <code>journalctl -b -p 3</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> não faz nada na VM</strong>
+<p><strong>Causa:</strong> o programa de VM entrega o atalho ao seu computador, não à VM.</p>
+<p><strong>Como resolver:</strong> no VirtualBox, use a tecla hospedeira (<kbd>Ctrl</kbd> direito) + <kbd>F2</kbd>; no GNOME Boxes e no virt-manager, use o menu "Enviar tecla".</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / arquivo</th><th>Para quê</th></tr>
+<tr><td><code>echo $SHELL</code></td><td>Mostra o seu shell de login</td></tr>
+<tr><td><code>pwd</code></td><td>Mostra o caminho completo da pasta atual</td></tr>
+<tr><td><code>tty</code></td><td>Mostra em que terminal você está</td></tr>
+<tr><td><code>cat /etc/shells</code></td><td>Lista os shells de login permitidos</td></tr>
+<tr><td><code>chsh -s /usr/bin/zsh</code></td><td>Troca o shell de login (depois de instalar o pacote)</td></tr>
+<tr><td><code>~/.bashrc</code></td><td>Prompt (<code>PS1</code>), aliases, funções</td></tr>
+<tr><td><code>~/.bash_profile</code></td><td>Variáveis de ambiente do login; lê o <code>.bashrc</code></td></tr>
+<tr><td><code>/etc/issue</code></td><td>O texto acima do <code>login:</code> nos consoles</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F1</kbd>…<kbd>F6</kbd></td><td>Troca de console (TTY)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> / <kbd>V</kbd></td><td>Copiar / colar no terminal gráfico</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. A Ana está em <code>/home/ana/Documentos/projetos</code>. Como fica o prompt padrão do Arch?</p>
+<label><input type="radio" name="q1"> <code>ana@notebook:~/Documentos/projetos$</code></label>
+<label><input type="radio" name="q1"> <code>[ana@notebook projetos]$</code></label>
+<label><input type="radio" name="q1"> <code>[ana@notebook ~/Documentos/projetos]$</code></label>
+<label><input type="radio" name="q1"> <code>root@archiso projetos #</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. Por que o prompt do pendrive de instalação (<code>root@archiso ~ #</code>) é diferente?</p>
+<label><input type="radio" name="q2"> Porque é outro sistema, que não é Linux.</label>
+<label><input type="radio" name="q2"> Porque a Ana ainda não tem senha.</label>
+<label><input type="radio" name="q2"> Porque o teclado está em inglês.</label>
+<label><input type="radio" name="q2"> Porque o live usa o zsh como root, na máquina chamada <code>archiso</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. No Arch, o que é o <code>/usr/bin/sh</code>?</p>
+<label><input type="radio" name="q3"> Um link para o <code>bash</code>.</label>
+<label><input type="radio" name="q3"> O <code>dash</code>, como no Debian.</label>
+<label><input type="radio" name="q3"> O <code>zsh</code>.</label>
+<label><input type="radio" name="q3"> Um arquivo vazio.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Num terminal gráfico, você apertou <kbd>Ctrl</kbd>+<kbd>C</kbd> para copiar um texto, mas o comando que estava rodando parou. Por quê?</p>
+<label><input type="radio" name="q4"> O terminal travou.</label>
+<label><input type="radio" name="q4"> Faltou <code>sudo</code>.</label>
+<label><input type="radio" name="q4"> No terminal, <kbd>Ctrl</kbd>+<kbd>C</kbd> interrompe o comando; para copiar, use <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>.</label>
+<label><input type="radio" name="q4"> O Bash não aceita copiar.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete a linha do <code>~/.bashrc</code> que desenha o prompt padrão do Arch:</p>
+<div class="ex-code">PS1='[\u@\h <input data-answer="\W">]\$ '</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete o comando que mostra o caminho completo da pasta atual:</p>
+<div class="ex-code"><input data-answer="pwd"></div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Shell (o Bash) interpreta os comandos; terminal, console (TTY) e emulador de terminal são onde você digita.</li>
+  <li>Prompt do Arch: <code>[usuário@máquina pasta]$</code>, com só o nome da pasta (<code>\W</code>); <code>#</code> para o root.</li>
+  <li>No live da instalação, o prompt é <code>root@archiso ~ #</code>, do zsh.</li>
+  <li>O Bash é o shell padrão (e o <code>sh</code> do Arch é o próprio Bash); zsh e fish são opcionais.</li>
+  <li><code>.bashrc</code> para aliases e prompt; <code>.bash_profile</code> para o login. O Arch não traz o <code>ll</code>.</li>
+  <li><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> abre um console de texto; o login em modo texto não mostra a senha.</li>
+</ul>
+
+<div class="tip">
+<strong>Quer dominar o Bash?</strong>
+<p>Este guia ensina o Arch e usa o Bash como ferramenta. Para aprender o Bash a fundo (variáveis, aspas, pipes, scripts, o prompt, o histórico), siga o <a href="https://wallysondevs.github.io/guia-bash/">Guia Bash</a>, com o mesmo estilo e um terminal simulado próprio.</p>
+</div>
+
+<p><strong>Na Arch Wiki:</strong> o shell está em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> e em <a href="https://wiki.archlinux.org/title/Command-line_shell">Command-line shell</a> (<a href="https://wiki.archlinux.org/title/Command-line_shell_(Portugu%C3%AAs)">em português</a>); o prompt, em <a href="https://wiki.archlinux.org/title/Bash/Prompt_customization">Bash/Prompt customization</a>; os consoles de texto, em <a href="https://wiki.archlinux.org/title/Linux_console">Linux console</a> e <a href="https://wiki.archlinux.org/title/Getty">Getty</a> (<a href="https://wiki.archlinux.org/title/Getty_(Portugu%C3%AAs)">em português</a>); o zsh, em <a href="https://wiki.archlinux.org/title/Zsh">Zsh</a>; e a lista de terminais gráficos, em <a href="https://wiki.archlinux.org/title/List_of_applications/Utilities#Terminal_emulators">List of applications/Utilities — Terminal emulators</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

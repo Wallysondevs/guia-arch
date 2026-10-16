@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Comandos Essenciais — ls, cd, cp, mv, rm, cat, less, nano, grep, find e man | Guia Arch</title>
+<meta name="description" content="Os comandos de arquivos e de sistema que o resto do Guia Arch usa, com as saídas reais de um Arch Linux em português: ls, cd, cp, mv, rm, mkdir, cat, less, nano, grep, find e man, e o que é diferente no Arch (data do ls -l, man-db, nano fora do base).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Comandos Essenciais</span></h1>
+
+<p class="intro">Antes de mergulhar no <code>pacman</code> e no systemd, você precisa andar pelas pastas, ler arquivos, copiar, mover, apagar e procurar. Esta aula é um resumo prático desses comandos, os mesmos de qualquer Linux, com as saídas reais do Arch em português e as poucas diferenças que pegam quem vem de outra distribuição. Para estudar cada um a fundo, siga os links para o <a href="https://wallysondevs.github.io/guia-bash/">Guia Bash</a>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Navegar e listar: <code>pwd</code>, <code>cd</code>, <code>ls</code>, <code>ls -l</code> (e a data no formato do Arch).</li>
+  <li>Criar, copiar, mover e apagar: <code>mkdir</code>, <code>cp</code>, <code>mv</code>, <code>rm</code>.</li>
+  <li>Ler e editar: <code>cat</code>, <code>less</code>, <code>nano</code> (que não vem no <code>base</code>).</li>
+  <li>Procurar: <code>grep</code> dentro dos arquivos e <code>find</code> nas pastas.</li>
+  <li>Pedir ajuda: <code>man</code>, e por que o <code>man -f</code> pode dizer "nada apropriado".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Onde estou e o que tem aqui: <code>pwd</code>, <code>ls</code>, <code>cd</code></h2>
+
+<pre class="term">$ pwd
+/home/ana                      « print working directory: a pasta atual
+$ ls
+'Área de trabalho'   Documentos   frutas.txt   Modelos   Público
+ aur                 Downloads    Imagens      Música    Vídeos</pre>
+
+<p>O <code>ls</code> (<em>list</em>) lista a pasta atual em colunas. Nomes com espaço aparecem entre aspas (<code>'Área de trabalho'</code>), para você saber que é um nome só. As cores (pastas em azul, por exemplo) vêm do alias <code>ls='ls --color=auto'</code> do <code>.bashrc</code> do Arch.</p>
+
+<h3>A lista longa: <code>ls -l</code></h3>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>Lista arquivos e pastas.</dd>
+  <dt>-l</dt><dd><em>Long</em>: um item por linha, com permissões, dono, tamanho e data.</dd>
+</dl>
+
+<pre class="term">$ ls -l
+total 40
+drwxrwxr-x 2 ana ana 4096 12 out 08:03 'Área de trabalho'
+drwxr-xr-x 5 ana ana 4096 16 out 13:00  aur
+drwxrwxr-x 3 ana ana 4096 15 out 09:07  Documentos
+drwxrwxr-x 2 ana ana 4096 16 out 13:05  Downloads
+-rw-rw-r-- 1 ana ana   47 14 out 16:05  frutas.txt      « 47 bytes, mudado em 14 de outubro às 16:05
+drwxrwxr-x 2 ana ana 4096 12 out 08:03  Imagens
+drwxrwxr-x 2 ana ana 4096 12 out 08:03  Modelos
+drwxrwxr-x 2 ana ana 4096 12 out 08:03  Música
+drwxrwxr-x 2 ana ana 4096 12 out 08:03  Público
+drwxrwxr-x 2 ana ana 4096 12 out 08:03  Vídeos</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Exemplo</th><th>Significado</th></tr>
+<tr><td>Tipo e permissões</td><td><code>-rw-rw-r--</code></td><td>Primeiro caractere: <code>d</code> = pasta, <code>-</code> = arquivo. O resto: quem pode ler, gravar e executar (<a href="permissoes.html">Permissões</a>).</td></tr>
+<tr><td>Links</td><td><code>1</code></td><td>Quantos nomes apontam para ele (para pastas, conta as subpastas).</td></tr>
+<tr><td>Dono e grupo</td><td><code>ana ana</code></td><td>Usuário e grupo donos do arquivo.</td></tr>
+<tr><td>Tamanho</td><td><code>47</code></td><td>Em bytes. <code>ls -lh</code> mostra em K, M, G.</td></tr>
+<tr><td>Data</td><td><code>14 out 16:05</code></td><td>Última modificação: <strong>dia, mês, hora</strong>.</td></tr>
+<tr><td>Nome</td><td><code>frutas.txt</code></td><td>O nome. O espaço extra antes dos nomes é para alinhar com o nome entre aspas.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>A data é "dia mês", não "mês dia"</strong>
+<p>Com o sistema em <code>pt_BR.UTF-8</code>, o <code>ls -l</code> do Arch mostra <code>14 out 16:05</code>: dia antes do mês, mês abreviado em português. Em tutoriais em inglês você verá <code>Oct 14 16:05</code>. Arquivos de outro ano mostram o ano no lugar da hora, como o <code>/etc/arch-release</code>: <code>12 out  2025</code>.</p>
+</div>
+
+<h3>Mudar de pasta: <code>cd</code></h3>
+
+<pre class="term">$ cd Documentos                « entra em Documentos (caminho relativo)
+$ ls -l
+total 16
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos
+-rw-rw-r-- 1 ana ana 8394 14 out 17:40 relatorio.odt
+$ cd ..                        « volta uma pasta (.. = a pasta de cima)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Vai para</th></tr>
+<tr><td><code>cd pasta</code></td><td>Uma pasta dentro da atual</td></tr>
+<tr><td><code>cd /etc</code></td><td>Um caminho absoluto (começa com <code>/</code>)</td></tr>
+<tr><td><code>cd ..</code></td><td>A pasta de cima</td></tr>
+<tr><td><code>cd</code> ou <code>cd ~</code></td><td>A sua pasta pessoal</td></tr>
+<tr><td><code>cd -</code></td><td>A pasta onde você estava antes</td></tr>
+<tr><td><code>cd 'Área de trabalho'</code></td><td>Nomes com espaço: entre aspas (ou use <kbd>Tab</kbd> para completar)</td></tr>
+</table>
+</div>
+
+<p>Lembre que o prompt do Arch mostra só o nome da pasta atual (<code>[ana@notebook Documentos]$</code>); veja <a href="terminal.html">O Terminal no Arch</a>. A fundo: <a href="https://wallysondevs.github.io/guia-bash/navegar.html">Guia Bash: pwd e cd</a> e <a href="https://wallysondevs.github.io/guia-bash/ls.html">Guia Bash: ls</a>.</p>
+
+<div class="try" data-goal="cwd:~/Documentos/projetos" data-solucao="cd Documentos;;ls -l;;cd projetos">
+<p class="try-task"><strong>Missão:</strong> entre em <code>Documentos</code>, veja os detalhes com <code>ls -l</code> e entre na pasta <code>projetos</code>. Repare nas datas no formato "dia mês".</p>
+</div>
+
+<hr>
+
+<h2>Criar, copiar, mover e apagar</h2>
+<p>Para não bagunçar a pasta da Ana, os exemplos usam uma pasta de treino, <code>a1</code>.</p>
+
+<h3><code>mkdir</code>: criar pasta</h3>
+<pre class="term">$ mkdir a1
+$ mkdir a1
+mkdir: não foi possível criar o diretório “a1”: Arquivo existe
+$ echo $?
+1</pre>
+<p>Na primeira vez, silêncio (deu certo). Na segunda, a pasta já existia. Para não reclamar nesse caso (e criar pastas intermediárias), use <code>mkdir -p</code>.</p>
+
+<h3><code>cp</code>: copiar</h3>
+<pre class="term">$ cp frutas.txt a1/                    « copia para dentro de a1, com o mesmo nome
+$ cp frutas.txt a1/feira.txt           « copia com outro nome
+$ cp Documentos a1/
+cp: -r não especificado; omitindo o diretório 'Documentos'
+$ cp -r Documentos/projetos a1/        « -r (recursivo): pastas com tudo dentro
+$ ls a1
+feira.txt  frutas.txt  projetos</pre>
+
+<h3><code>mv</code>: mover ou renomear</h3>
+<pre class="term">$ mv a1/feira.txt a1/compras.txt       « mesmo lugar, nome novo = renomear
+$ ls a1
+compras.txt  frutas.txt  projetos</pre>
+<p>O <code>mv</code> não precisa de <code>-r</code> para pastas. Cuidado: se o destino já existir, ele é substituído sem perguntar (use <code>mv -i</code> para perguntar).</p>
+
+<h3><code>rm</code>: apagar</h3>
+<pre class="term">$ rm a1/compras.txt
+$ rm a1/projetos
+rm: não foi possível remover 'a1/projetos': É um diretório
+$ rm a1/nada.txt
+rm: não foi possível remover 'a1/nada.txt': Arquivo ou diretório inexistente
+$ rm -r a1                             « -r apaga a pasta e tudo dentro
+$ ls -d a1
+ls: não foi possível acessar 'a1': Arquivo ou diretório inexistente</pre>
+
+<div class="warning">
+<strong>No terminal não há lixeira</strong>
+<p>O <code>rm</code> apaga de verdade: não vai para a lixeira e não tem "desfazer". Com <code>sudo</code>, ele apaga até arquivos do sistema. Antes de um <code>rm -r</code>, rode <code>ls</code> com o mesmo caminho e leia o que vai sumir. Nunca rode <code>sudo rm -r</code> com curingas (<code>*</code>) sem conferir. A fundo: <a href="https://wallysondevs.github.io/guia-bash/remover.html">Guia Bash: Apagar com Segurança</a>.</p>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Comando</th><th>Opções úteis</th></tr>
+<tr><td>Criar pasta</td><td><code>mkdir nome</code></td><td><code>-p</code> cria as intermediárias e não reclama se existir</td></tr>
+<tr><td>Criar arquivo vazio</td><td><code>touch nome</code></td><td>Num arquivo que existe, só atualiza a data</td></tr>
+<tr><td>Copiar</td><td><code>cp origem destino</code></td><td><code>-r</code> pastas, <code>-i</code> pergunta antes de substituir, <code>-a</code> preserva datas e permissões</td></tr>
+<tr><td>Mover / renomear</td><td><code>mv origem destino</code></td><td><code>-i</code> pergunta antes de substituir</td></tr>
+<tr><td>Apagar arquivo</td><td><code>rm nome</code></td><td><code>-i</code> pergunta um a um</td></tr>
+<tr><td>Apagar pasta</td><td><code>rm -r pasta</code> (ou <code>rmdir</code> se vazia)</td><td><code>-I</code> pergunta uma vez antes de apagar muitos</td></tr>
+</table>
+</div>
+
+<p>A fundo: <a href="https://wallysondevs.github.io/guia-bash/criar-copiar.html">Guia Bash: Criar, Copiar e Mover</a> e <a href="https://wallysondevs.github.io/guia-bash/curingas.html">Curingas</a>.</p>
+
+<div class="try" data-goal="file:~/treino/feira.txt,absent:~/treino/frutas.txt" data-solucao="mkdir treino;;cp frutas.txt treino/;;mv treino/frutas.txt treino/feira.txt;;ls treino">
+<p class="try-task"><strong>Missão:</strong> crie a pasta <code>treino</code>, copie o <code>frutas.txt</code> para dentro dela e, lá dentro, renomeie a cópia para <code>feira.txt</code>. Confira com <code>ls treino</code>. O <code>frutas.txt</code> original deve continuar na pasta pessoal.</p>
+</div>
+
+<hr>
+
+<h2>Ler arquivos: <code>cat</code> e <code>less</code></h2>
+
+<pre class="term">$ cat frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana
+$ cat Documentos/notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos</pre>
+
+<p>O <code>cat</code> (de <em>concatenate</em>) despeja o arquivo inteiro na tela: ótimo para arquivos curtos. Para arquivos longos (um log, o <code>/etc/pacman.conf</code>), use o <code>less</code>, que mostra uma tela por vez:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tecla no <code>less</code></th><th>Faz</th></tr>
+<tr><td><kbd>Espaço</kbd> / <kbd>b</kbd></td><td>Próxima / tela anterior</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Uma linha</td></tr>
+<tr><td><kbd>/</kbd>texto <kbd>Enter</kbd></td><td>Procura; <kbd>n</kbd> vai para a próxima ocorrência</td></tr>
+<tr><td><kbd>g</kbd> / <kbd>G</kbd></td><td>Começo / fim do arquivo</td></tr>
+<tr><td><kbd>q</kbd></td><td>Sai</td></tr>
+</table>
+</div>
+
+<pre class="term">$ less --version | head -1
+less 710 (PCRE2 regular expressions)
+$ pacman -Qi less | grep -E "^(Necessário|Motivo)"
+Necessário para      : man-db                « o less veio junto com o man-db
+Motivo da instalação : Instalado como dependência de outro pacote</pre>
+
+<p>Nem o <code>less</code> faz parte do <code>base</code>: ele chegou à VM como dependência do <code>man-db</code> (o pacote do <code>man</code>). Num Arch sem o <code>man-db</code>, instale-o com <code>sudo pacman -S less</code>.</p>
+
+<p>A fundo: <a href="https://wallysondevs.github.io/guia-bash/ver-arquivos.html">Guia Bash: Ver Arquivos</a>.</p>
+
+<hr>
+
+<h2>Editar: <code>nano</code> (que você instala)</h2>
+<p>Aqui está a primeira grande diferença do Arch: <strong>o <code>base</code> não traz editor de texto</strong>. Releia a lista de dependências do <code>base</code> na <a href="introducao.html">Introdução</a>: nada de <code>nano</code>, <code>vim</code> ou <code>vi</code>. Na VM, o <code>nano</code> e o <code>vim</code> existem porque foram pedidos de propósito no <a href="pacstrap.html">pacstrap</a>:</p>
+
+<pre class="term">$ type nano vim vi
+nano é /usr/bin/nano
+vim é /usr/bin/vim
+bash: type: vi: não encontrado         « nem o vim cria o comando vi
+$ pacman -Qi nano | grep -E '^(Nome|Versão|Motivo)'
+Nome                 : nano
+Versão               : 9.2-1
+Motivo da instalação : Instalado explicitamente   « alguém pediu: não veio com o base</pre>
+
+<p>Se o seu Arch não tem editor, instale um: <code>sudo pacman -S nano</code> (simples) ou <code>sudo pacman -S vim</code> (poderoso, mas com curva de aprendizado). Para quem começa, o <code>nano</code>:</p>
+
+<dl class="anatomy">
+  <dt>nano</dt><dd>O editor.</dd>
+  <dt>notas.txt</dt><dd>O arquivo a abrir (se não existir, ele é criado ao salvar).</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atalho no <code>nano</code></th><th>Faz</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd>, <kbd>Enter</kbd></td><td>Salva (<em>write Out</em>)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Sai (pergunta se quer salvar, quando há mudanças)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td><td>Procura (<em>Where is</em>)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>U</kbd></td><td>Recorta a linha / cola</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>U</kbd></td><td>Desfaz</td></tr>
+</table>
+</div>
+
+<p>Para arquivos do sistema, use <code>sudoedit /etc/arquivo</code> (ou <code>sudo nano /etc/arquivo</code>). O <code>sudoedit</code> é mais seguro: o editor roda como você, numa cópia, e só a gravação final é feita como root. Ele usa a variável <code>EDITOR</code>; ponha <code>export EDITOR=nano</code> no <code>~/.bash_profile</code> (veja também o caso do <code>visudo</code> em <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+
+<hr>
+
+<h2>Procurar dentro dos arquivos: <code>grep</code></h2>
+
+<dl class="anatomy">
+  <dt>grep</dt><dd>Mostra as linhas que contêm um texto (o nome vem de <em>global regular expression print</em>).</dd>
+  <dt>banana</dt><dd>O texto (ou padrão) a procurar.</dd>
+  <dt>frutas.txt</dt><dd>Onde procurar: um ou mais arquivos.</dd>
+</dl>
+
+<pre class="term">$ grep banana frutas.txt
+banana
+banana
+banana
+$ grep -c banana frutas.txt
+3                              « -c = count: quantas linhas
+$ grep -n maçã frutas.txt
+2:maçã                         « -n = número da linha
+6:maçã
+$ grep -i BANANA frutas.txt
+banana                         « -i = ignora maiúsculas/minúsculas
+banana
+banana
+$ grep kiwi frutas.txt
+$ echo $?
+1                              « 1 = não achou (não é erro de comando)</pre>
+
+<p>Repare no último caso: nada aparece e o código de saída é <code>1</code>. O <code>grep</code> devolve <code>0</code> quando acha, <code>1</code> quando não acha e <code>2</code> quando há um erro de verdade (arquivo inexistente, por exemplo). No Arch, o alias <code>grep='grep --color=auto'</code> pinta o trecho encontrado.</p>
+
+<p>No resto do guia, o <code>grep</code> aparece filtrando a saída de outros comandos, com um <code>|</code>: <code>pacman -Qi linux | grep Versão</code>. A fundo: <a href="https://wallysondevs.github.io/guia-bash/ferramentas-texto.html">Guia Bash: grep, sed, awk e cia.</a></p>
+
+<div class="try" data-goal="outre:^\s*3\s*$" data-solucao="grep -c banana frutas.txt">
+<p class="try-task"><strong>Missão:</strong> conte quantas linhas do <code>frutas.txt</code> têm <code>banana</code>, usando uma opção do <code>grep</code> (a resposta é só o número). Depois descubra em que linhas está a <code>maçã</code>.</p>
+</div>
+
+<hr>
+
+<h2>Procurar arquivos: <code>find</code></h2>
+
+<dl class="anatomy">
+  <dt>find</dt><dd>Percorre pastas e lista o que bate com os testes.</dd>
+  <dt>a1</dt><dd>Onde começar (e tudo abaixo dela).</dd>
+  <dt>-name '*.txt'</dt><dd>O teste: nome terminado em <code>.txt</code>. As aspas impedem o shell de expandir o <code>*</code> antes da hora.</dd>
+</dl>
+
+<pre class="term">$ find a1 -name '*.txt'
+a1/frutas.txt
+$ find a1 -type d                      « -type d = só pastas
+a1
+a1/projetos
+a1/projetos/site</pre>
+
+<div class="warning">
+<strong>Sempre diga onde procurar</strong>
+<p>Um <code>find /</code> varre o disco inteiro: demora, enche a tela de "Permissão negada" e pesa no computador. Procure numa pasta específica (<code>find ~/Documentos …</code>). Para saber de qual pacote é um arquivo do sistema, o Arch tem um jeito melhor que o <code>find</code>: <code>pacman -Qo /caminho/do/arquivo</code> (veja <a href="pacman.html">pacman: o Básico</a>).</p>
+</div>
+
+<hr>
+
+<h2>Pedir ajuda: <code>man</code></h2>
+<p>Quase todo comando tem um manual: <code>man ls</code>, <code>man pacman</code>, <code>man 5 pacman.conf</code> (a seção 5 é a dos arquivos de configuração). Ele abre dentro do <code>less</code>: as mesmas teclas valem, e <kbd>q</kbd> sai.</p>
+
+<pre class="term">$ man ls | head -12
+LS(1)                            User Commands                            LS(1)
+
+NAME
+     ls - list directory contents
+
+SYNOPSIS
+     ls [OPTION]... [FILE]...
+
+DESCRIPTION
+     List information about the FILEs (the current directory by default).  Sort
+     entries alphabetically if none of -cftuvSUX nor --sort is specified.
+</pre>
+
+<div class="note">
+<strong>O <code>man</code> também não vem no <code>base</code></strong>
+<p>O comando <code>man</code> vem do pacote <code>man-db</code>, e os manuais básicos do Linux (das funções do sistema, dos arquivos de <code>/etc</code>) do <code>man-pages</code>. Na VM, os dois foram pedidos no <code>pacstrap</code>; num Arch sem eles, <code>man ls</code> responde <code>bash: man: comando não encontrado</code>. Os manuais vêm em inglês; o pacote <code>man-pages-pt_br</code> traduz parte deles.</p>
+</div>
+
+<pre class="term">$ man nao-existe
+Nenhuma entrada de manual para nao-existe
+$ man -f ls
+ls: nada apropriado.           « o índice dos manuais ainda não foi gerado
+$ systemctl list-timers man-db.timer --no-pager
+NEXT                        LEFT LAST                        PASSED UNIT         ACTIVATES
+Sat 2026-10-17 11:17:27 -03  21h Fri 2026-10-16 12:12:00 -03      - man-db.timer man-db.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.</pre>
+
+<p>O <code>man -f</code> (e o <code>apropos</code>, que busca pela descrição) usam um <strong>índice</strong> dos manuais. Esse índice é montado por um timer do systemd, o <code>man-db.timer</code>, uma vez por dia. Num sistema recém-instalado, ele ainda está vazio, e a resposta é "nada apropriado", mesmo para o <code>ls</code>. Para montar o índice na hora, rode <code>sudo mandb</code> (<strong>ilustrativo</strong>: na VM, o índice foi deixado como estava, para você ver a mensagem).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>man comando</code></td><td>O manual completo</td></tr>
+<tr><td><code>comando --help</code></td><td>Um resumo rápido das opções (quase todo programa tem)</td></tr>
+<tr><td><code>man -f comando</code> / <code>apropos palavra</code></td><td>"Que manual é esse?" / "Que comando faz isso?" (precisam do índice: <code>sudo mandb</code>)</td></tr>
+<tr><td><code>help comando</code></td><td>Comandos internos do Bash (<code>cd</code>, <code>type</code>…), que não têm <code>man</code> próprio</td></tr>
+<tr><td>Arch Wiki</td><td>Explicações, exemplos e problemas comuns (<a href="arch-wiki.html">A Arch Wiki</a>)</td></tr>
+</table>
+</div>
+
+<p>A fundo: <a href="https://wallysondevs.github.io/guia-bash/ajuda.html">Guia Bash: Obtendo Ajuda</a>.</p>
+
+<hr>
+
+<h2>O que é diferente no Arch</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ponto</th><th>No Arch</th><th>Em Debian/Ubuntu</th></tr>
+<tr><td>Data do <code>ls -l</code></td><td><code>14 out 16:05</code> (dia, mês)</td><td>Igual em pt_BR; em inglês, <code>Oct 14 16:05</code></td></tr>
+<tr><td>Prompt</td><td>Só o nome da pasta: <code>[ana@notebook Documentos]$</code></td><td>Caminho inteiro: <code>ana@notebook:~/Documentos$</code></td></tr>
+<tr><td>Aliases prontos</td><td>Só <code>ls</code> e <code>grep</code> com cor; sem <code>ll</code></td><td><code>ll</code>, <code>la</code>, <code>l</code></td></tr>
+<tr><td>Editor</td><td>Nenhum no <code>base</code>; instale <code>nano</code> ou <code>vim</code>; não há <code>vi</code></td><td><code>nano</code> e <code>vi</code> já vêm</td></tr>
+<tr><td><code>man</code></td><td>Pacotes <code>man-db</code> e <code>man-pages</code>, à parte</td><td>Já vem</td></tr>
+<tr><td>Pasta pessoal</td><td>Modo 700 (ninguém mais entra)</td><td>750 ou 755</td></tr>
+<tr><td>De que pacote é?</td><td><code>pacman -Qo arquivo</code></td><td><code>dpkg -S arquivo</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"bash: nano: comando não encontrado"</strong>
+<p><strong>Causa:</strong> o <code>nano</code> não foi instalado (o <code>base</code> não traz editor). A mensagem segue o mesmo formato de qualquer comando ausente (<code>bash: sl: comando não encontrado</code>, código 127).</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S nano</code>. Sem rede ainda? Configure a rede primeiro (<a href="primeiro-boot.html">Primeiro Boot e Rede</a>); para editar um arquivo curto sem editor, dá para usar <code>echo 'linha' | sudo tee -a arquivo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"cp: -r não especificado; omitindo o diretório"</strong>
+<p><strong>Causa:</strong> você tentou copiar uma pasta sem <code>-r</code>.</p>
+<p><strong>Como resolver:</strong> <code>cp -r pasta destino/</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"rm: não foi possível remover '…': É um diretório"</strong>
+<p><strong>Causa:</strong> o <code>rm</code> sem opções só apaga arquivos.</p>
+<p><strong>Como resolver:</strong> <code>rmdir pasta</code> se ela estiver vazia, ou <code>rm -r pasta</code> depois de conferir o conteúdo com <code>ls</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"man -f ls" responde "nada apropriado."</strong>
+<p><strong>Causa:</strong> o índice dos manuais ainda não foi gerado (sistema novo).</p>
+<p><strong>Como resolver:</strong> <code>sudo mandb</code>, ou espere o <code>man-db.timer</code> rodar. O <code>man ls</code> funciona mesmo sem o índice.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>grep</code> não mostrou nada</strong>
+<p><strong>Causa:</strong> o texto não está no arquivo (código 1), ou está com outra capitalização.</p>
+<p><strong>Como resolver:</strong> confira com <code>echo $?</code>; tente <code>grep -i</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Faz</th></tr>
+<tr><td><code>pwd</code></td><td>Mostra a pasta atual</td></tr>
+<tr><td><code>ls</code>, <code>ls -l</code>, <code>ls -la</code>, <code>ls -lh</code></td><td>Lista; detalhada; com ocultos; tamanhos legíveis</td></tr>
+<tr><td><code>cd pasta</code>, <code>cd ..</code>, <code>cd</code>, <code>cd -</code></td><td>Muda de pasta</td></tr>
+<tr><td><code>mkdir -p a/b</code></td><td>Cria pastas</td></tr>
+<tr><td><code>cp</code>, <code>cp -r</code></td><td>Copia arquivos / pastas</td></tr>
+<tr><td><code>mv</code></td><td>Move ou renomeia</td></tr>
+<tr><td><code>rm</code>, <code>rm -r</code></td><td>Apaga arquivos / pastas (sem lixeira)</td></tr>
+<tr><td><code>cat</code>, <code>less</code></td><td>Mostra arquivo inteiro / tela por tela</td></tr>
+<tr><td><code>nano arquivo</code>, <code>sudoedit arquivo</code></td><td>Edita / edita arquivo do sistema</td></tr>
+<tr><td><code>grep -n -i -c texto arquivo</code></td><td>Procura texto nas linhas</td></tr>
+<tr><td><code>find pasta -name 'padrão'</code></td><td>Procura arquivos pelo nome</td></tr>
+<tr><td><code>man comando</code>, <code>comando --help</code></td><td>Ajuda</td></tr>
+<tr><td><code>pacman -Qo arquivo</code></td><td>De que pacote é o arquivo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. No <code>ls -l</code> do Arch em português, o que significa <code>12 out 08:03</code>?</p>
+<label><input type="radio" name="q1"> 12 horas e 8 minutos de outubro.</label>
+<label><input type="radio" name="q1"> Tamanho 12, versão 8.03.</label>
+<label><input type="radio" name="q1"> Modificado em 12 de outubro, às 08:03.</label>
+<label><input type="radio" name="q1"> Outubro de 2012.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">2. Você instalou o Arch só com o <code>base</code> e digitou <code>nano /etc/hostname</code>. O que aparece?</p>
+<label><input type="radio" name="q2"> <code>bash: nano: comando não encontrado</code></label>
+<label><input type="radio" name="q2"> O <code>nano</code> abre.</label>
+<label><input type="radio" name="q2"> O <code>vi</code> abre no lugar.</label>
+<label><input type="radio" name="q2"> O arquivo é apagado.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. <code>man -f ls</code> respondeu <code>ls: nada apropriado.</code> num Arch recém-instalado. Por quê?</p>
+<label><input type="radio" name="q3"> O <code>ls</code> não tem manual.</label>
+<label><input type="radio" name="q3"> O <code>man</code> só funciona como root.</label>
+<label><input type="radio" name="q3"> Os manuais estão em inglês.</label>
+<label><input type="radio" name="q3"> O índice dos manuais ainda não foi gerado; <code>sudo mandb</code> resolve.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>grep kiwi frutas.txt</code> não mostrou nada e <code>echo $?</code> deu <code>1</code>. Isso é:</p>
+<label><input type="radio" name="q4"> Um erro: o arquivo não existe.</label>
+<label><input type="radio" name="q4"> O resultado normal de "não encontrei".</label>
+<label><input type="radio" name="q4"> Falta de permissão.</label>
+<label><input type="radio" name="q4"> Um problema do alias de cores.</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete para copiar a pasta <code>projetos</code> inteira para <code>backup/</code>:</p>
+<div class="ex-code">cp <input data-answer="-r"> projetos backup/</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete para listar só os arquivos <code>.log</code> dentro de <code>Documentos</code>:</p>
+<div class="ex-code">find Documentos <input data-answer="-name"> '*.log'</div>
+</div>
+
+<div class="exercise">
+<p>7. Complete para descobrir de que pacote é o <code>/usr/bin/nano</code>:</p>
+<div class="ex-code">pacman <input data-answer="-Qo"> /usr/bin/nano</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>pwd</code>, <code>ls</code> e <code>cd</code> para se localizar; no Arch, o <code>ls -l</code> mostra a data como <code>14 out 16:05</code>.</li>
+  <li><code>mkdir</code>, <code>cp</code> (<code>-r</code> para pastas), <code>mv</code> e <code>rm</code> (sem lixeira!).</li>
+  <li><code>cat</code> para arquivos curtos, <code>less</code> para longos; <code>nano</code> para editar, mas ele não vem no <code>base</code>.</li>
+  <li><code>grep</code> procura texto (código 1 = não achou); <code>find pasta -name</code> procura arquivos, sempre numa pasta específica.</li>
+  <li><code>man</code> vem do <code>man-db</code>; o índice do <code>man -f</code>/<code>apropos</code> é gerado pelo <code>man-db.timer</code> ou por <code>sudo mandb</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os comandos básicos estão em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>); os manuais, em <a href="https://wiki.archlinux.org/title/Man_page">Man page</a> (<a href="https://wiki.archlinux.org/title/Man_page_(Portugu%C3%AAs)">em português</a>); os editores, em <a href="https://wiki.archlinux.org/title/Nano">nano</a> e <a href="https://wiki.archlinux.org/title/Vim">Vim</a> (<a href="https://wiki.archlinux.org/title/Vim_(Portugu%C3%AAs)">em português</a>); a busca de arquivos, em <a href="https://wiki.archlinux.org/title/Find">find</a>; e a lista de alternativas modernas (como <code>ripgrep</code> e <code>fd</code>), em <a href="https://wiki.archlinux.org/title/Core_utilities#Alternatives">Core utilities — Alternatives</a>. Para aprender o Bash a fundo, o <a href="https://wallysondevs.github.io/guia-bash/">Guia Bash</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

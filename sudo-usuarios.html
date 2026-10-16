@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch sudo, root e Usuários — wheel, sudoers, visudo, su e useradd | Guia Arch</title>
+<meta name="description" content="sudo, root e usuários no Arch Linux: root × usuária comum, o grupo wheel e a linha do /etc/sudoers, visudo (e o erro do vi que não vem instalado), sudo -i, -s, -l e -k, su × su -, criar usuários com useradd e passwd, e as mensagens reais de erro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">sudo, root e Usuários</span></h1>
+
+<p class="intro">No Linux, um usuário pode tudo: o <strong>root</strong>. Os outros, como a Ana, só mexem no que é deles. Para instalar programas ou mudar o sistema, a Ana pede emprestado o poder do root por um instante, com o <code>sudo</code>. No Arch, nada disso vem pronto: você instala o <code>sudo</code>, cria o usuário e decide quem pode usá-lo. Esta aula mostra cada peça, com as mensagens reais.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre o root e um usuário comum, e por que não usar o root no dia a dia.</li>
+  <li>O grupo <code>wheel</code> e a linha do <code>/etc/sudoers</code> que libera o <code>sudo</code>, editada com o <code>visudo</code>.</li>
+  <li>Usar o <code>sudo</code>: a senha, as tentativas erradas, os 5 minutos, <code>sudo -i</code>, <code>-s</code>, <code>-l</code> e <code>-k</code>.</li>
+  <li>A diferença entre <code>su</code> e <code>su -</code>.</li>
+  <li>Criar um usuário com <code>useradd</code> e definir a senha com <code>passwd</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>root × usuária comum</h2>
+<p>Pense num prédio. O <strong>síndico</strong> tem a chave mestra: abre qualquer apartamento, a casa de máquinas, o quadro de luz. Cada <strong>morador</strong> tem só a chave do próprio apartamento. No Linux, o síndico é o <strong>root</strong> (número de usuário 0) e a Ana é uma moradora (número 1000).</p>
+
+<pre class="term">$ whoami
+ana
+$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)    « uid 1000; grupos ana e wheel
+$ ls /root
+ls: não foi possível abrir o diretório '/root': Permissão negada   « a casa do root
+$ cat /etc/shadow
+cat: /etc/shadow: Permissão negada      « onde ficam as senhas (embaralhadas)
+$ ls -l /etc/shadow /etc/sudoers
+-rw------- 1 root root  748 16 out 13:50 /etc/shadow
+-r--r----- 1 root root 5029 16 out 12:10 /etc/sudoers</pre>
+
+<p>As permissões no começo de cada linha (<code>-rw-------</code>) dizem que só o dono, o root, lê esses arquivos (veja <a href="permissoes.html">Permissões</a>). A Ana não precisa disso no dia a dia, e é melhor assim.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>root</th><th>ana</th></tr>
+<tr><td>Número (uid)</td><td>0</td><td>1000</td></tr>
+<tr><td>Pasta pessoal</td><td><code>/root</code></td><td><code>/home/ana</code></td></tr>
+<tr><td>Prompt</td><td><code>[root@notebook ~]#</code></td><td><code>[ana@notebook ~]$</code></td></tr>
+<tr><td>Pode</td><td>Tudo: instalar, apagar o sistema, ler senhas</td><td>Só os próprios arquivos</td></tr>
+<tr><td>Um erro de digitação</td><td>Pode destruir o sistema</td><td>Estraga, no máximo, os arquivos dela</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Não use o root como conta do dia a dia</strong>
+<p>Como root, um <code>rm</code> com um espaço no lugar errado apaga o sistema, e um programa com defeito (ou malicioso) pode fazer o mesmo. Use uma conta comum e peça o poder do root só para o comando que precisa: é o que o <code>sudo</code> faz.</p>
+</div>
+
+<hr>
+
+<h2>O grupo wheel e o /etc/sudoers</h2>
+<p>O <code>sudo</code> (de <em>superuser do</em>, "o superusuário faz") consulta um arquivo de regras, o <code>/etc/sudoers</code>, para saber quem pode virar root. No Arch, o costume é liberar um <strong>grupo</strong>, o <code>wheel</code>, e colocar nele quem administra a máquina. O nome vem da gíria inglesa <em>big wheel</em> ("figurão").</p>
+
+<p>Na instalação da VM, a Ana foi criada já dentro do <code>wheel</code>, e a linha do grupo estava <strong>comentada</strong> (desligada) no <code>sudoers</code>. Trecho real do log de instalação:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt useradd -m -G wheel -s /bin/bash ana
+#> arch-chroot /mnt id ana
+uid=1000(ana) gid=1000(ana) groups=1000(ana),998(wheel)     « o live fala inglês
+#> grep -n "wheel" /mnt/etc/sudoers
+124:## Uncomment to allow members of group wheel to execute any command
+125:# %wheel ALL=(ALL:ALL) ALL                « o # no começo desliga a linha
+128:# %wheel ALL=(ALL:ALL) NOPASSWD: ALL
+#> grep -n "^%wheel" /mnt/etc/sudoers; arch-chroot /mnt visudo -c
+125:%wheel ALL=(ALL:ALL) ALL                   « depois de editar com o visudo: ligada
+/etc/sudoers: parsed OK</pre>
+
+<p>A linha liberada, parte por parte:</p>
+
+<dl class="anatomy">
+  <dt>%wheel</dt><dd>Quem: o <code>%</code> indica um grupo, então "todos os membros do grupo wheel". Sem <code>%</code>, seria um usuário (<code>ana</code>).</dd>
+  <dt>ALL=</dt><dd>Em quais máquinas a regra vale (útil quando o mesmo arquivo é usado em várias). <code>ALL</code> = em qualquer uma.</dd>
+  <dt>(ALL:ALL)</dt><dd>Como quem podem rodar comandos: qualquer usuário e qualquer grupo (normalmente, o root).</dd>
+  <dt>ALL</dt><dd>Quais comandos: todos.</dd>
+</dl>
+
+<p>Logo abaixo, a linha 128 tem a mesma regra com <code>NOPASSWD:</code>, que dispensa a senha. Ela fica comentada, e é melhor assim: sem senha, qualquer programa rodando como a Ana vira root sem você saber. Hoje, no sistema instalado:</p>
+
+<pre class="term">$ getent group wheel
+wheel:x:998:ana                        « o grupo 998 tem um membro: a ana</pre>
+
+<h3>visudo: o único jeito certo de editar o sudoers</h3>
+<p>Um erro de digitação no <code>/etc/sudoers</code> pode deixar <strong>todo mundo</strong> sem <code>sudo</code>, inclusive você. Por isso ele não se edita com um editor comum: usa-se o <code>visudo</code>, que trava o arquivo, abre uma cópia, confere a sintaxe ao salvar e só então troca o arquivo de verdade.</p>
+<p>No Arch, a primeira tentativa costuma dar este erro real:</p>
+
+<pre class="term" data-user="root">#> visudo
+visudo: nenhum editor encontrado (caminho do editor = /usr/bin/vi)</pre>
+
+<p>O <code>visudo</code> procura o <code>vi</code>, e o Arch não o instala (nem o pacote <code>vim</code> cria o comando <code>vi</code>). A solução é dizer qual editor usar na variável <code>EDITOR</code>:</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Roda como root.</dd>
+  <dt>EDITOR=nano</dt><dd>Define o editor só para este comando. O <code>sudoers</code> do Arch deixa essa variável passar para o <code>visudo</code> (linha <code>Defaults!/usr/bin/visudo env_keep += "SUDO_EDITOR EDITOR VISUAL"</code>).</dd>
+  <dt>visudo</dt><dd>Abre o <code>/etc/sudoers</code> com segurança.</dd>
+</dl>
+
+<pre class="cmd">sudo EDITOR=nano visudo</pre>
+
+<p>Ao salvar e sair, se não houver erro, o <code>visudo</code> não diz nada; se você não mudou nada, ele avisa <code>visudo: /etc/sudoers.tmp sem alteração</code>. Para só conferir o arquivo, sem abrir:</p>
+
+<pre class="term" data-user="root">#> visudo -c
+/etc/sudoers: análise OK               « -c = check: sintaxe correta
+#> echo $?
+0</pre>
+
+<div class="tip">
+<strong>Prefira um arquivo em <code>/etc/sudoers.d/</code></strong>
+<p>A última linha do <code>sudoers</code> do Arch é <code>@includedir /etc/sudoers.d</code>: todo arquivo dessa pasta também vale. Em vez de mexer no arquivo principal, crie um arquivo seu: <code>sudo EDITOR=nano visudo -f /etc/sudoers.d/10-wheel</code> com a linha <code>%wheel ALL=(ALL:ALL) ALL</code>. Atualizações do pacote <code>sudo</code> nunca mexem nele.</p>
+</div>
+
+<hr>
+
+<h2>Usando o sudo</h2>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>"Rode o que vem a seguir como root." Pede a <strong>sua</strong> senha (não a do root).</dd>
+  <dt>pacman -Q bash</dt><dd>O comando a ser rodado, exatamente como você o escreveria.</dd>
+</dl>
+
+<h3>A primeira vez</h3>
+<p>Na primeira vez que um usuário usa o <code>sudo</code>, ele recebe um pequeno sermão, e depois o pedido de senha:</p>
+
+<pre class="term">$ sudo pacman -Q bash
+
+Presumimos que você recebeu as instruções de sempre do administrador
+de sistema local. Basicamente, resume-se a estas três coisas:
+
+    #1) Respeite a privacidade dos outros.
+    #2) Pense antes de digitar.
+    #3) Com grandes poderes vêm grandes responsabilidades.
+
+Por motivos de segurança, a senha que você digitar não será visível.
+
+[sudo] senha para ana:                  « a senha da ana; nada aparece enquanto ela digita
+bash 5.3.20-1
+$ echo $?
+0
+$ sudo whoami
+root                                   « não pediu senha de novo: vale por 5 minutos</pre>
+
+<p>O sermão aparece uma vez só por usuário. A partir daí, cada <code>sudo</code> mostra só a linha <code>[sudo] senha para ana:</code>. Depois de acertar, o <code>sudo</code> confia na Ana por <strong>5 minutos naquele terminal</strong>; em outra janela ou aba, ele pergunta de novo.</p>
+
+<h3>Senha errada</h3>
+<pre class="term">$ sudo pacman -Q bash
+[sudo] senha para ana:
+Sinto muito, tente novamente.
+[sudo] senha para ana:
+Sinto muito, tente novamente.
+[sudo] senha para ana:
+sudo: 3 tentativas de senha incorreta   « desistiu: o comando não foi rodado
+$ echo $?
+1</pre>
+
+<div class="warning">
+<strong>Depois de três erros, até a senha certa falha por 10 minutos</strong>
+<p>O Arch vem com o <code>pam_faillock</code>: três senhas erradas em 15 minutos <strong>bloqueiam a conta por 10 minutos</strong>, e durante o bloqueio a senha correta também recebe <code>Sinto muito, tente novamente.</code>, sem nenhum aviso. Isso foi conferido na VM. Os valores padrão estão comentados em <code>/etc/security/faillock.conf</code> (<code># deny = 3</code>, <code># fail_interval = 900</code>, <code># unlock_time = 600</code>). Espere os 10 minutos ou, como root, rode <code>faillock --user ana --reset</code>.</p>
+</div>
+
+<h3>Ver o que você pode: <code>sudo -l</code></h3>
+<pre class="term">$ sudo -l
+[sudo] senha para ana:
+Entradas de Defaults correspondentes a ana em notebook:
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/bin
+
+Padrão específico de comandos e "runas" de ana:
+    Defaults!/usr/bin/visudo env_keep+="SUDO_EDITOR EDITOR VISUAL"
+
+Usuário ana pode executar os seguintes comandos em notebook:
+    (ALL : ALL) ALL                    « a regra do grupo wheel: tudo</pre>
+
+<p>O <code>-l</code> (<em>list</em>) mostra as regras que valem para você. O <code>secure_path</code> é o <code>PATH</code> usado pelos comandos do <code>sudo</code>: ele ignora o <code>PATH</code> da Ana, para que um programa falso na pasta dela não seja rodado como root.</p>
+
+<h3>Um shell de root: <code>sudo -i</code> e <code>sudo -s</code></h3>
+<p>Para vários comandos seguidos como root, abra um shell de root. Há duas formas:</p>
+
+<pre class="term">$ sudo -i
+[sudo] senha para ana:
+#> whoami; pwd; echo $HOME
+root
+/root                                  « -i: login completo, vai para a casa do root
+/root
+#> exit
+sair                                   « o Bash em português escreve "sair" ao fechar</pre>
+
+<pre class="term">$ sudo -s
+[sudo] senha para ana:
+#> whoami; pwd; echo $HOME
+root
+/home/ana                              « -s: continua na pasta onde estava
+/root
+#> exit
+exit</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Pasta</th><th>Ambiente</th><th>Use para</th></tr>
+<tr><td><code>sudo -i</code></td><td><code>/root</code></td><td>O de um login do root (lê os arquivos de login dele)</td><td>Uma sessão de administração "limpa"; os comandos <code>#</code> da Wiki</td></tr>
+<tr><td><code>sudo -s</code></td><td>Continua onde estava</td><td>Um shell de root, mantendo boa parte do ambiente</td><td>Trabalhar como root na pasta atual</td></tr>
+</table>
+</div>
+
+<p>Nos dois casos, <code>exit</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd>) volta para a Ana. Não fique como root mais do que precisa.</p>
+
+<h3>Esquecer a senha: <code>sudo -k</code></h3>
+<pre class="term">$ sudo true
+[sudo] senha para ana:
+$ sudo -k                              « -k = kill: esquece a senha agora
+$ sudo whoami
+[sudo] senha para ana:                 « perguntou de novo
+root</pre>
+
+<p>Útil antes de sair de perto do computador, ou para testar se a senha ainda está pedindo.</p>
+
+<h3>O <code>sudo</code> e o redirecionamento</h3>
+<p>Uma armadilha clássica: gravar num arquivo do sistema com <code>&gt;</code>.</p>
+
+<pre class="term">$ sudo echo teste &gt; /etc/a1-teste.conf
+bash: /etc/a1-teste.conf: Permissão negada
+$ echo $?
+1</pre>
+
+<p>Por quê, se tem <code>sudo</code>? Porque quem abre o arquivo para o <code>&gt;</code> é o <strong>shell da Ana</strong>, antes mesmo de rodar o <code>sudo</code>. Só o <code>echo</code> virou root. Repare que nem a senha foi pedida. As saídas: usar o <code>tee</code> (que abre o arquivo ele mesmo) com <code>sudo</code>, ou abrir um shell de root com <code>sudo -i</code>.</p>
+
+<pre class="cmd">echo teste | sudo tee /etc/arquivo.conf</pre>
+
+<p>O <code>tee</code> grava no arquivo e também mostra o texto na tela. Para acrescentar no fim do arquivo em vez de trocar o conteúdo, use <code>sudo tee -a</code>.</p>
+
+<div class="try" data-goal="out:root" data-solucao="sudo whoami" data-stdin="ana">
+<p class="try-task"><strong>Missão:</strong> descubra quem o <code>sudo</code> faz você ser: rode <code>sudo whoami</code> e digite a senha <code>ana</code> (no simulador) quando ele pedir. Depois rode <code>whoami</code> sem <code>sudo</code> e compare.</p>
+</div>
+
+<div class="try" data-goal="cwd:/root" data-solucao="sudo -i" data-stdin="ana">
+<p class="try-task"><strong>Missão:</strong> abra um shell de root com <code>sudo -i</code>, repare no prompt <code>[root@notebook ~]#</code> e confira a pasta com <code>pwd</code>. Para voltar a ser a Ana, digite <code>exit</code>.</p>
+</div>
+
+<hr>
+
+<h2><code>su</code> e <code>su -</code></h2>
+<p>O <code>su</code> (<em>substitute user</em>, "trocar de usuário") é mais antigo que o <code>sudo</code>. A diferença principal: ele pede a senha <strong>do usuário de destino</strong>. Para virar root com <code>su</code>, você precisa da senha do root.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pede a senha de</th><th>Pasta e ambiente</th></tr>
+<tr><td><code>su</code></td><td>root</td><td>Fica na pasta atual e mantém boa parte das variáveis da Ana</td></tr>
+<tr><td><code>su -</code> (ou <code>su -l</code>)</td><td>root</td><td>Login completo: vai para <code>/root</code>, ambiente limpo</td></tr>
+<tr><td><code>su - bruno</code></td><td>bruno</td><td>Login completo como o usuário <code>bruno</code></td></tr>
+<tr><td><code>sudo -i</code></td><td>a sua</td><td>Como o <code>su -</code>, mas autorizado pelo <code>sudoers</code></td></tr>
+</table>
+</div>
+
+<p>Sem a senha certa:</p>
+<pre class="term">$ su -
+Senha:                                 « a senha do ROOT, não a da ana
+su: Falha de autenticação
+$ echo $?
+1</pre>
+
+<p>Se você definiu uma senha para o root na instalação (o <code>passwd</code> da aula <a href="configurar.html">Configurar o Sistema</a>), o <code>su -</code> funciona com ela. Se não definiu, a conta do root fica sem senha válida e só se chega a ela pelo <code>sudo</code>; muita gente prefere assim. Seja como for, prefira o <code>su -</code> ao <code>su</code>: o "meio root" do <code>su</code> sem hífen, com as variáveis da Ana, causa confusões difíceis de entender.</p>
+
+<hr>
+
+<h2>Criar um usuário</h2>
+<p>Vamos criar um usuário para o Bruno, que também vai administrar a máquina.</p>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Criar usuários é tarefa de root.</dd>
+  <dt>useradd</dt><dd>O programa que cria contas.</dd>
+  <dt>-m</dt><dd><em>Make home</em>: cria a pasta pessoal <code>/home/bruno</code>. Sem ele, o usuário fica sem pasta.</dd>
+  <dt>-G wheel</dt><dd>Grupos extras: coloca o Bruno no <code>wheel</code> (pode usar <code>sudo</code>). Para vários, separe com vírgula: <code>-G wheel,audio</code>.</dd>
+  <dt>-s /bin/bash</dt><dd>O shell de login. No Arch, o padrão do <code>useradd</code> já é o Bash, mas é bom deixar explícito.</dd>
+  <dt>bruno</dt><dd>O nome do usuário: minúsculas, sem espaços nem acentos.</dd>
+</dl>
+
+<p>Num shell de root (<code>sudo -i</code>):</p>
+
+<pre class="term" data-user="root">#> useradd -m -G wheel -s /bin/bash bruno
+#> echo $?
+0                                      « nenhuma mensagem: deu certo
+#> id bruno
+uid=1001(bruno) gid=1001(bruno) grupos=1001(bruno),998(wheel)   « o próximo número livre: 1001
+#> ls -ld /home/ana /home/bruno
+drwx------ 16 ana   ana   4096 16 out 13:28 /home/ana
+drwx------  2 bruno bruno 4096 16 out 13:29 /home/bruno       « modo 700: só o dono entra
+#> ls -la /home/bruno
+total 20
+drwx------ 2 bruno bruno 4096 16 out 13:29 .
+drwxr-xr-x 4 root  root  4096 16 out 13:29 ..
+-rw-r--r-- 1 bruno bruno   21 15 set 16:47 .bash_logout
+-rw-r--r-- 1 bruno bruno   57 15 set 16:47 .bash_profile
+-rw-r--r-- 1 bruno bruno  172 15 set 16:47 .bashrc</pre>
+
+<p>Fora do shell de root, a mesma coisa seria <code>sudo useradd -m -G wheel -s /bin/bash bruno</code>. Três coisas para notar. O <code>useradd</code> não diz nada quando dá certo (código 0). No Arch, a pasta pessoal nasce com modo <strong>700</strong> (<code>drwx------</code>): nem os outros usuários conseguem listar o que há dentro (o Debian e o Ubuntu usam 750 ou 755). E os três arquivos vieram do modelo em <code>/etc/skel</code>, por isso têm data de setembro, a do pacote <code>bash</code>.</p>
+
+<h3>A senha: <code>passwd</code></h3>
+<p>O usuário recém-criado ainda não tem senha e não consegue entrar. Como root, defina uma (de fora do shell de root: <code>sudo passwd bruno</code>):</p>
+
+<pre class="term" data-user="root">#> passwd bruno
+Nova senha:                            « nada aparece enquanto você digita
+Redigite a nova senha:
+passwd: senha atualizada com sucesso</pre>
+
+<p>Se as duas digitações não baterem:</p>
+<pre class="term" data-user="root">#> passwd bruno
+Nova senha:
+Redigite a nova senha:
+As senhas não são iguais.
+passwd : Falha na verificação preliminar por serviço de senha
+passwd: senha inalterada
+#> echo $?
+10</pre>
+
+<p>Cada usuário troca a própria senha com <code>passwd</code>, sem nome e sem <code>sudo</code>; aí ele pede antes a senha atual:</p>
+<pre class="term">$ passwd
+Mudando senha para ana.
+Atual senha:
+Nova senha:
+Redigite a nova senha:
+passwd: senha atualizada com sucesso</pre>
+
+<p>Errando a senha atual, nada muda:</p>
+<pre class="term">$ passwd
+Mudando senha para ana.
+Atual senha:
+passwd : Falha de autenticação
+passwd: senha inalterada</pre>
+
+<div class="note">
+<strong>Entrar no grupo depois</strong>
+<p>Se o usuário já existe, acrescente um grupo com <code>sudo usermod -aG wheel bruno</code>. O <code>-a</code> (<em>append</em>) é essencial: sem ele, o <code>-G</code> <strong>substitui</strong> todos os grupos extras do usuário. A mudança só vale no próximo login dele. Remover um usuário e a pasta dele: <code>sudo userdel -r bruno</code> (o aviso <code>spool de mail … não foi encontrado</code> é normal no Arch). Usuários e grupos a fundo estão em <a href="usuarios.html">Usuários e Grupos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de virar root</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Pacote</th><th>Pede a senha de</th><th>Observação</th></tr>
+<tr><td><code>sudo comando</code></td><td><code>sudo</code></td><td>Sua</td><td>O padrão de quase todo tutorial; regras em <code>/etc/sudoers</code></td></tr>
+<tr><td><code>sudo -i</code></td><td><code>sudo</code></td><td>Sua</td><td>Shell de root para vários comandos</td></tr>
+<tr><td><code>su -</code></td><td><code>util-linux</code> (já vem no <code>base</code>)</td><td>root</td><td>Precisa de senha no root; funciona mesmo sem o pacote <code>sudo</code></td></tr>
+<tr><td><code>run0 comando</code></td><td><code>systemd</code> (já instalado)</td><td>Sua (pelo polkit)</td><td>Alternativa nova do systemd, sem arquivo de regras próprio</td></tr>
+<tr><td><code>doas comando</code></td><td><code>opendoas</code> (não instalado)</td><td>Sua</td><td>Alternativa minimalista, vinda do OpenBSD</td></tr>
+<tr><td><code>sudo</code> do <code>sudo-rs</code></td><td><code>sudo-rs</code> (não instalado)</td><td>Sua</td><td>Reescrita do <code>sudo</code> em Rust, com algumas limitações</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Qual usar?</strong>
+<p>Use o <code>sudo</code>: é o que a Wiki, os fóruns e este guia assumem, e o <code>sudo -i</code> resolve quando você precisa de vários comandos seguidos. Mantenha o <code>su -</code> (com senha no root) como plano B: se um dia você quebrar o <code>sudoers</code>, ele ainda funciona. <code>run0</code>, <code>doas</code> e <code>sudo-rs</code> são alternativas para quem já domina o básico.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"bruno não está no arquivo sudoers."</strong>
+<pre class="term" data-user="bruno">$ sudo pacman -Q bash
+…                                      « o sermão da primeira vez (omitido)
+[sudo] senha para bruno:
+bruno não está no arquivo sudoers.
+$ echo $?
+1</pre>
+<p><strong>Causa:</strong> o usuário não está no grupo <code>wheel</code>, ou a linha <code>%wheel</code> do <code>sudoers</code> está comentada. A senha estava certa; o que faltou foi permissão.</p>
+<p><strong>Como confirmar:</strong> <code>id bruno</code> (aparece <code>998(wheel)</code>?) e <code>sudo grep -n '^%wheel' /etc/sudoers</code> (com outro usuário que tenha <code>sudo</code>).</p>
+<p><strong>Como resolver:</strong> com um usuário que já tenha <code>sudo</code> (ou com <code>su -</code>), rode <code>usermod -aG wheel bruno</code>; o Bruno precisa sair e entrar de novo. Se a linha estiver comentada, descomente com o <code>visudo</code>. Versões antigas do <code>sudo</code> acrescentavam "Este incidente será relatado"; a de 2026 não diz mais isso, mas a tentativa fica registrada no journal.</p>
+</div>
+
+<div class="cenario">
+<strong>"Sinto muito, tente novamente." (com a senha certa)</strong>
+<p><strong>Causa:</strong> ou a senha estava errada de verdade (teclado em outro layout? <kbd>Caps Lock</kbd>?), ou a conta está bloqueada pelo <code>faillock</code> depois de três erros.</p>
+<p><strong>Como confirmar:</strong> como root, <code>faillock --user ana</code> lista as tentativas recentes.</p>
+<p><strong>Como resolver:</strong> espere 10 minutos ou, como root, <code>faillock --user ana --reset</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"visudo: nenhum editor encontrado"</strong>
+<pre class="term" data-user="root">#> visudo
+visudo: nenhum editor encontrado (caminho do editor = /usr/bin/vi)</pre>
+<p><strong>Causa:</strong> o <code>vi</code> não vem instalado no Arch.</p>
+<p><strong>Como resolver:</strong> <code>sudo EDITOR=nano visudo</code> (ou <code>EDITOR=vim</code>). Para não precisar repetir, ponha <code>export EDITOR=nano</code> no seu <code>~/.bash_profile</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" mesmo com sudo</strong>
+<pre class="term">$ sudo echo teste &gt; /etc/a1-teste.conf
+bash: /etc/a1-teste.conf: Permissão negada</pre>
+<p><strong>Causa:</strong> o redirecionamento <code>&gt;</code> é feito pelo seu shell, sem privilégios.</p>
+<p><strong>Como resolver:</strong> <code>echo teste | sudo tee /etc/arquivo</code> ou um shell de root (<code>sudo -i</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"sudo: um terminal é necessário para ler a senha"</strong>
+<p>A mensagem real completa: <code>sudo: um terminal é necessário para ler a senha; use a opção -S para ler a entrada padrão ou configure um auxiliar de askpass</code>, seguida de <code>sudo: uma senha é necessária</code>.</p>
+<p><strong>Causa:</strong> o <code>sudo</code> foi chamado sem terminal (num script rodado por um serviço, por exemplo) e não tem como perguntar a senha.</p>
+<p><strong>Como resolver:</strong> rode o script a partir de um terminal, ou rode o script inteiro como root (por um serviço do systemd, por exemplo; veja <a href="timers.html">Timers</a>). Evite o <code>NOPASSWD</code> como atalho.</p>
+</div>
+
+<div class="cenario">
+<strong>"bash: sudo: comando não encontrado"</strong>
+<p><strong>Causa:</strong> o pacote <code>sudo</code> não foi instalado: ele não faz parte do <code>base</code>.</p>
+<p><strong>Como resolver:</strong> entre como root (no login do console ou com <code>su -</code>), rode <code>pacman -S sudo</code> e libere o <code>wheel</code> com o <code>visudo</code>. Na VM, o <code>sudo</code> foi instalado já no <code>pacstrap</code> (veja <a href="pacstrap.html">Espelhos e pacstrap</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"sudo: uma senha é necessária" com <code>-n</code></strong>
+<pre class="term">$ sudo -n true
+sudo: uma senha é necessária
+$ echo $?
+1</pre>
+<p><strong>Causa:</strong> o <code>-n</code> (<em>non-interactive</em>) proíbe o <code>sudo</code> de perguntar a senha; se ela não está guardada dos últimos 5 minutos, ele falha. É usado em scripts para testar "já tenho sudo?".</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo comando</code></td><td>Roda um comando como root (pede a sua senha)</td></tr>
+<tr><td><code>sudo -i</code> / <code>sudo -s</code></td><td>Shell de root com login / na pasta atual</td></tr>
+<tr><td><code>sudo -l</code></td><td>Lista o que você pode fazer</td></tr>
+<tr><td><code>sudo -k</code></td><td>Esquece a senha guardada</td></tr>
+<tr><td><code>sudo -n comando</code></td><td>Falha em vez de perguntar a senha</td></tr>
+<tr><td><code>sudo -u bruno comando</code></td><td>Roda como outro usuário</td></tr>
+<tr><td><code>sudo EDITOR=nano visudo</code></td><td>Edita o <code>/etc/sudoers</code> com segurança</td></tr>
+<tr><td><code>visudo -c</code></td><td>Confere a sintaxe do <code>sudoers</code></td></tr>
+<tr><td><code>su -</code></td><td>Login como root (senha do root)</td></tr>
+<tr><td><code>useradd -m -G wheel -s /bin/bash nome</code></td><td>Cria usuário com pasta, no grupo wheel</td></tr>
+<tr><td><code>passwd</code> / <code>passwd nome</code></td><td>Troca a sua senha / a de outro (como root)</td></tr>
+<tr><td><code>usermod -aG grupo nome</code></td><td>Acrescenta um grupo a um usuário</td></tr>
+<tr><td><code>userdel -r nome</code></td><td>Remove o usuário e a pasta dele</td></tr>
+<tr><td><code>id</code>, <code>groups</code>, <code>getent group wheel</code></td><td>Mostram usuário, grupos e membros</td></tr>
+<tr><td><code>faillock --user nome --reset</code></td><td>Desbloqueia depois de senhas erradas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Quando a Ana roda <code>sudo pacman -Syu</code>, qual senha o <code>sudo</code> pede?</p>
+<label><input type="radio" name="q1"> A do root.</label>
+<label><input type="radio" name="q1"> A da Ana.</label>
+<label><input type="radio" name="q1"> Nenhuma.</label>
+<label><input type="radio" name="q1"> A do Wi-Fi.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Em <code>%wheel ALL=(ALL:ALL) ALL</code>, o que significa o <code>%</code>?</p>
+<label><input type="radio" name="q2"> Que a linha está desligada.</label>
+<label><input type="radio" name="q2"> Que não precisa de senha.</label>
+<label><input type="radio" name="q2"> Que <code>wheel</code> é um grupo, e não um usuário.</label>
+<label><input type="radio" name="q2"> Que vale só para o root.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. O <code>visudo</code> respondeu <code>nenhum editor encontrado (caminho do editor = /usr/bin/vi)</code>. O que fazer?</p>
+<label><input type="radio" name="q3"> Editar o <code>/etc/sudoers</code> direto com <code>sudo nano</code>.</label>
+<label><input type="radio" name="q3"> Reinstalar o <code>sudo</code>.</label>
+<label><input type="radio" name="q3"> Apagar o <code>/etc/sudoers</code>.</label>
+<label><input type="radio" name="q3"> Rodar <code>sudo EDITOR=nano visudo</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que <code>sudo echo x &gt; /etc/arquivo</code> dá "Permissão negada"?</p>
+<label><input type="radio" name="q4"> Porque quem abre o arquivo para o <code>&gt;</code> é o shell da usuária, sem privilégios.</label>
+<label><input type="radio" name="q4"> Porque o <code>echo</code> não funciona com <code>sudo</code>.</label>
+<label><input type="radio" name="q4"> Porque a senha estava errada.</label>
+<label><input type="radio" name="q4"> Porque o <code>/etc</code> é só leitura no Arch.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana errou a senha do <code>sudo</code> três vezes e agora até a senha certa é recusada. Por quê?</p>
+<label><input type="radio" name="q5"> A senha foi trocada automaticamente.</label>
+<label><input type="radio" name="q5"> O <code>sudo</code> foi desinstalado.</label>
+<label><input type="radio" name="q5"> O <code>faillock</code> bloqueou a conta por 10 minutos.</label>
+<label><input type="radio" name="q5"> A Ana saiu do grupo wheel.</label>
+</div>
+
+<div class="exercise">
+<p>6. Complete para criar o usuário <code>carla</code> com pasta pessoal e no grupo wheel:</p>
+<div class="ex-code">sudo useradd <input data-answer="-m"> -G <input data-answer="wheel"> -s /bin/bash carla</div>
+</div>
+
+<div class="exercise">
+<p>7. Complete para acrescentar a <code>carla</code> ao grupo <code>audio</code> sem tirá-la dos outros grupos:</p>
+<div class="ex-code">sudo usermod <input data-answer="-aG"> audio carla</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>root (uid 0) pode tudo; use uma conta comum e o <code>sudo</code> só quando precisar.</li>
+  <li>No Arch, quem está no grupo <code>wheel</code> usa o <code>sudo</code> se a linha <code>%wheel ALL=(ALL:ALL) ALL</code> estiver ligada no <code>/etc/sudoers</code>.</li>
+  <li>Edite o <code>sudoers</code> só com <code>sudo EDITOR=nano visudo</code> (o <code>vi</code> não vem instalado); prefira arquivos em <code>/etc/sudoers.d/</code>.</li>
+  <li>O <code>sudo</code> pede a <strong>sua</strong> senha, sem mostrá-la, e a guarda por 5 minutos naquele terminal; três erros bloqueiam a conta por 10 minutos.</li>
+  <li><code>sudo -i</code> e <code>su -</code> abrem um shell de root com login; <code>su</code> pede a senha do root.</li>
+  <li><code>useradd -m -G wheel -s /bin/bash nome</code> + <code>passwd nome</code>; a pasta nasce com modo 700.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>sudo</code> está em <a href="https://wiki.archlinux.org/title/Sudo">Sudo</a> (<a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">em português</a>, tradução antiga); usuários e grupos, em <a href="https://wiki.archlinux.org/title/Users_and_groups">Users and groups</a> (<a href="https://wiki.archlinux.org/title/Users_and_groups_(Portugu%C3%AAs)">em português</a>); o <code>su</code>, em <a href="https://wiki.archlinux.org/title/Su">su</a>; as alternativas, em <a href="https://wiki.archlinux.org/title/Doas">doas</a> e <a href="https://wiki.archlinux.org/title/Run0">run0</a>; e o bloqueio por senhas erradas, em <a href="https://wiki.archlinux.org/title/Security#Lock_out_user_after_three_failed_login_attempts">Security — Lock out user after three failed login attempts</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

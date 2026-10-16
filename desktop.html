@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Desktop — escolher e instalar KDE Plasma, GNOME, Xfce, Hyprland ou Sway | Guia Arch</title>
+<meta name="description" content="Instalar uma interface gráfica no Arch Linux: KDE Plasma, GNOME, Xfce, Hyprland e Sway lado a lado, Xorg × Wayland, display manager (sddm, gdm, lightdm, plasma-login-manager), drivers de vídeo (mesa, nvidia-open) e o tamanho real de cada desktop, com as perguntas de provedor e de grupo do pacman explicadas.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Instalar um Desktop</span></h1>
+
+<p class="intro">O Arch termina a instalação no terminal: sem janelas, sem mouse, sem navegador. A interface gráfica é uma escolha sua, e há muitas. Esta aula ajuda a escolher entre KDE Plasma, GNOME, Xfce, Hyprland e Sway, explica as peças que formam um desktop (servidor gráfico, display manager, driver de vídeo) e mostra o tamanho real de cada um, medido na VM do guia, incluindo as perguntas que o <code>pacman</code> faz no meio do caminho.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As camadas de um desktop: driver, servidor gráfico (Xorg ou Wayland), ambiente e tela de login.</li>
+  <li>Comparar KDE Plasma, GNOME, Xfce, Hyprland e Sway.</li>
+  <li>Escolher o driver de vídeo: <code>mesa</code> (Intel/AMD) ou <code>nvidia-open</code>.</li>
+  <li>Ler o que o <code>pacman</code> pergunta ao instalar um desktop: provedores e grupos.</li>
+  <li>Ligar o display manager com o <code>systemctl</code>.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>O que é real e o que é ilustrativo nesta aula</strong>
+<p>A VM do guia é compartilhada e não tem interface gráfica: nenhum desktop foi instalado nela. Os tamanhos e as perguntas abaixo são <strong>reais</strong> (o <code>pacman</code> calculou a transação inteira e a resposta final foi <code>n</code>, então nada foi instalado). Os passos depois da instalação (ligar o display manager, a primeira tela de login) são <strong>ilustrativos</strong>. O projeto <a href="projeto-desktop.html">Montar um Desktop KDE</a> vai até o fim com o KDE.</p>
+</div>
+
+<hr>
+
+<h2>As camadas de um desktop</h2>
+<p>Uma interface gráfica é como um teatro. O <strong>driver de vídeo</strong> é a eletricidade e as luzes; o <strong>servidor gráfico</strong> é o palco, onde as janelas aparecem; o <strong>ambiente de desktop</strong> é o cenário completo (painel, menus, configurações, programas); e o <strong>display manager</strong> é a bilheteria, a tela de login onde você escolhe o usuário e o espetáculo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Camada</th><th>O que faz</th><th>Exemplos no Arch</th></tr>
+<tr><td>Driver de vídeo</td><td>Faz a placa de vídeo desenhar (aceleração 3D, vídeo)</td><td><code>mesa</code> (Intel, AMD), <code>nvidia-open</code> + <code>nvidia-utils</code></td></tr>
+<tr><td>Servidor gráfico / compositor</td><td>Junta as janelas na tela, recebe teclado e mouse</td><td>Xorg (<code>xorg-server</code>) ou um compositor Wayland (o KWin do KDE, o Mutter do GNOME, o Sway, o Hyprland)</td></tr>
+<tr><td>Ambiente de desktop</td><td>Painel, menus, área de trabalho, configurações, aplicativos</td><td>KDE Plasma, GNOME, Xfce</td></tr>
+<tr><td>Gerenciador de janelas</td><td>Só posiciona e decora janelas (sem o resto)</td><td>Sway, Hyprland, i3, Openbox</td></tr>
+<tr><td>Display manager</td><td>A tela de login gráfica</td><td><code>sddm</code>, <code>plasma-login-manager</code>, <code>gdm</code>, <code>lightdm</code></td></tr>
+</table>
+</div>
+
+<h3>Xorg × Wayland</h3>
+<p>O <strong>Xorg</strong> (X11) é o servidor gráfico clássico, de 1984 na origem. O <strong>Wayland</strong> é o sucessor: um protocolo em que o próprio compositor do desktop desenha a tela, mais simples e mais seguro (um programa não consegue espionar o teclado do outro). Em 2026, KDE Plasma e GNOME usam Wayland por padrão; programas que só sabem falar X11 rodam dentro do <strong>XWayland</strong>, uma ponte que vem junto.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Xorg (X11)</th><th>Wayland</th></tr>
+<tr><td>Quem desenha</td><td>O servidor X, com o gerenciador de janelas à parte</td><td>O compositor do próprio desktop</td></tr>
+<tr><td>Segurança</td><td>Qualquer programa vê o teclado e a tela dos outros</td><td>Cada programa vê só a própria janela</td></tr>
+<tr><td>Telas com escalas diferentes, HDR, toque</td><td>Limitado</td><td>Bem suportado</td></tr>
+<tr><td>Programas antigos</td><td>Rodam direto</td><td>Rodam pelo XWayland</td></tr>
+<tr><td>Usado por</td><td>Xfce (o padrão dele ainda é X11), i3, Openbox</td><td>Plasma, GNOME, Sway, Hyprland</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Primeiro, o driver de vídeo</h2>
+<p>Descubra que placa você tem e qual driver o kernel está usando. Na VM do guia:</p>
+
+<pre class="term">$ lspci -k | grep -A3 VGA
+00:02.0 VGA compatible controller: VMware SVGA II Adapter      « a placa (virtual) da VM
+        Subsystem: VMware SVGA II Adapter
+        Kernel driver in use: vmwgfx                          « o driver do kernel em uso
+        Kernel modules: vmwgfx</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Placa</th><th>Pacotes</th><th>Observação</th></tr>
+<tr><td>Intel ou AMD</td><td><code>mesa</code> (OpenGL); <code>vulkan-intel</code> ou <code>vulkan-radeon</code> (Vulkan, para jogos)</td><td>O driver do kernel já vem no <code>linux</code>. O <code>mesa</code> costuma chegar sozinho como dependência do desktop (na VM, ele já estava instalado como dependência de outro pacote).</td></tr>
+<tr><td>NVIDIA GTX 16xx, RTX e mais novas</td><td><code>nvidia-open</code> (kernel <code>linux</code>), <code>nvidia-open-lts</code> (kernel <code>linux-lts</code>) ou <code>nvidia-open-dkms</code> (outros kernels), mais <code>nvidia-utils</code></td><td>Em outubro de 2026, versão 615.78.08.</td></tr>
+<tr><td>NVIDIA antigas (GTX 10xx e anteriores)</td><td>Drivers legados, no AUR</td><td>Desde o driver 590 (notícia de 20 de dezembro de 2025), o suporte oficial acabou para elas.</td></tr>
+<tr><td>Máquina virtual</td><td>Nada além do <code>mesa</code></td><td>O kernel já traz <code>vmwgfx</code>/<code>virtio-gpu</code>.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>O pacote <code>nvidia</code> não existe mais</strong>
+<p>Tutoriais antigos mandam instalar <code>nvidia</code>. Em 2026:</p>
+<pre class="term">$ pacman -Si nvidia
+erro: o pacote "nvidia" não foi encontrado
+$ pacman -Ss "^nvidia-" | grep "^extra"
+extra/nvidia-cg-toolkit 3.1-8
+extra/nvidia-container-toolkit 1.20.1-1
+extra/nvidia-open 615.78.08-2
+extra/nvidia-open-dkms 615.78.08-1
+extra/nvidia-open-lts 1:615.78.08-4
+extra/nvidia-prime 1.0-6
+extra/nvidia-settings 615.78.08-1
+extra/nvidia-utils 615.78.08-1</pre>
+<p>Os detalhes (módulos no initramfs, <code>nvidia-prime</code> para notebooks com duas placas) estão na Wiki, em <a href="https://wiki.archlinux.org/title/NVIDIA">NVIDIA</a>.</p>
+</div>
+
+<hr>
+
+<h2>Escolher o ambiente</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ambiente</th><th>Versão (out/2026)</th><th>Estilo</th><th>Servidor</th><th>Tela de login</th><th>Para quem</th></tr>
+<tr><td><strong>KDE Plasma</strong></td><td>6.8</td><td>Tradicional (menu, painel, bandeja), muito configurável</td><td>Wayland (KWin)</td><td><code>plasma-login-manager</code> ou <code>sddm</code></td><td>Quem vem do Windows e gosta de ajustar tudo</td></tr>
+<tr><td><strong>GNOME</strong></td><td>51</td><td>Moderno, minimalista, guiado pelo teclado e pela "Visão geral"</td><td>Wayland (Mutter)</td><td><code>gdm</code></td><td>Quem quer algo coeso e sem distrações</td></tr>
+<tr><td><strong>Xfce</strong></td><td>4.20</td><td>Clássico e leve</td><td>Xorg</td><td><code>lightdm</code></td><td>Máquinas modestas; quem quer o simples que funciona</td></tr>
+<tr><td><strong>Hyprland</strong></td><td>0.56.2</td><td>Janelas lado a lado (<em>tiling</em>), animações, tudo por arquivo de configuração</td><td>Wayland</td><td>Nenhuma obrigatória</td><td>Quem gosta de montar o próprio ambiente</td></tr>
+<tr><td><strong>Sway</strong></td><td>1.12</td><td><em>Tiling</em>, compatível com a configuração do i3, sem enfeites</td><td>Wayland</td><td>Nenhuma obrigatória</td><td>Quem quer leveza e teclado em tudo</td></tr>
+</table>
+</div>
+
+<p>Hyprland e Sway não são ambientes completos: são <strong>compositores</strong> (gerenciadores de janelas para Wayland). Você monta o resto (barra, lançador, notificações, papel de parede) com outros programas. É ótimo para aprender, e trabalhoso no começo. Para o primeiro desktop, KDE Plasma, GNOME ou Xfce.</p>
+
+<hr>
+
+<h2>O tamanho real de cada um</h2>
+<p>Antes de instalar, dá para ver exatamente o que vai entrar: rode o <code>sudo pacman -S</code> e leia o resumo, que aparece <strong>antes</strong> da pergunta final. Responda <code>n</code> e nada é instalado. Foi o que se fez na VM:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pacotes</th><th>Download</th><th>Instalado</th></tr>
+<tr><td><code>pacman -S plasma-meta sddm</code></td><td>435</td><td>604,38 MiB</td><td>2072,27 MiB</td></tr>
+<tr><td><code>pacman -S gnome</code></td><td>462</td><td>468,36 MiB</td><td>1922,57 MiB</td></tr>
+<tr><td><code>pacman -S xfce4 lightdm lightdm-gtk-greeter</code></td><td>112</td><td>48,32 MiB</td><td>249,85 MiB</td></tr>
+<tr><td><code>pacman -S sway foot</code></td><td>20</td><td>11,73 MiB</td><td>32,93 MiB</td></tr>
+</table>
+</div>
+
+<p>Os números valem para a VM, que já tinha 408 pacotes (alguns, como o <code>mesa</code>, já presentes). Num sistema recém-instalado, eles seriam um pouco maiores. Sem os programas de terceiros (navegador, escritório), o KDE e o GNOME ocupam perto de 2 GB; o Xfce, um oitavo disso.</p>
+
+<h3>KDE Plasma: as perguntas de provedor</h3>
+
+<dl class="anatomy">
+  <dt>sudo pacman</dt><dd>O gerenciador de pacotes, como root.</dd>
+  <dt>-S</dt><dd><em>Sync</em>: instalar do repositório.</dd>
+  <dt>plasma-meta</dt><dd>Um <em>metapacote</em>: não tem programa, só a lista do Plasma completo (painel, configurações, rede, som, tela de login…).</dd>
+  <dt>sddm</dt><dd>O display manager mais usado com o KDE.</dd>
+</dl>
+
+<pre class="term" data-user="root">#> pacman -S plasma-meta sddm
+resolvendo dependências...
+:: Há 2 provedores disponíveis para qt6-multimedia-backend:
+:: Repositório extra
+   1) qt6-multimedia-ffmpeg  2) qt6-multimedia-gstreamer
+
+Digite um número (padrão=1):            « Enter = a opção 1
+:: Há 2 provedores disponíveis para jack:
+:: Repositório extra
+   1) jack2  2) pipewire-jack
+
+Digite um número (padrão=1):            « o recomendado com PipeWire é o 2
+:: Há 11 provedores disponíveis para ttf-font:
+:: Repositório extra
+   1) gnu-free-fonts  2) noto-fonts  3) ttf-bitstream-vera  4) ttf-croscore
+   5) ttf-dejavu  6) ttf-droid  7) ttf-ibm-plex  8) ttf-input
+   9) ttf-input-nerd  10) ttf-liberation  11) ttf-roboto
+
+Digite um número (padrão=1):            « o noto-fonts (2) cobre mais idiomas e emojis
+:: Há 128 provedores disponíveis para tessdata:
+:: Repositório extra
+   1) tesseract-data-afr  2) tesseract-data-amh  3) tesseract-data-ara
+…                                       « 128 idiomas; o 30 é inglês e o 92, português
+   127) tesseract-data-yid  128) tesseract-data-yor
+
+Digite um número (padrão=1):            « o padrão (1) é africâner!
+procurando pacotes conflitantes...
+
+Pacotes (435) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+              adwaita-icon-theme-51.0-1  adwaita-icon-theme-legacy-46.2-3
+…
+              zimg-3.0.6-2  zint-2.16.0-2  zix-0.8.2-1  zxing-cpp-3.1.1-1
+              plasma-meta-6.8-1  sddm-0.21.0-7
+
+Tamanho total download:    604,38 MiB
+Tamanho total instalado:  2072,27 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Uma <strong>pergunta de provedor</strong> aparece quando uma dependência pode ser satisfeita por mais de um pacote: o Plasma precisa de "uma fonte" (<code>ttf-font</code>), de "um servidor JACK" (<code>jack</code>), de "dados de reconhecimento de texto" (<code>tessdata</code>, usado pela captura de tela para ler texto em imagens). O <code>pacman</code> não escolhe por você: ele pergunta, e o <kbd>Enter</kbd> escolhe a opção 1. Na VM, todas as respostas foram <kbd>Enter</kbd>, e o resumo mostra o efeito: entrou o <code>tesseract-data-afr</code>, o idioma africâner, só porque é o primeiro da lista em ordem alfabética.</p>
+
+<div class="tip">
+<strong>Respostas sugeridas</strong>
+<ul>
+  <li><code>jack</code>: <strong>2</strong> (<code>pipewire-jack</code>), para tudo passar pelo PipeWire, o sistema de som atual.</li>
+  <li><code>ttf-font</code>: <strong>2</strong> (<code>noto-fonts</code>), que cobre quase todos os idiomas.</li>
+  <li><code>tessdata</code>: <strong>92</strong> (português) ou <strong>30</strong> (inglês).</li>
+  <li>Na dúvida, aceite o padrão: dá para trocar depois com <code>sudo pacman -S</code> o outro provedor.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>O Plasma já traz a própria tela de login</strong>
+<p>Em outubro de 2026, o <code>plasma-meta</code> 6.8 inclui o <code>plasma-login-manager</code> (serviço <code>plasmalogin.service</code>), a nova tela de login do KDE. O <code>sddm</code> continua nos repositórios e é o que a maioria dos tutoriais usa. Você pode ter os dois instalados, mas só <strong>um</strong> display manager fica ligado de cada vez.</p>
+</div>
+
+<h3>GNOME: a pergunta de grupo</h3>
+<p>O <code>gnome</code> não é um pacote, é um <strong>grupo</strong>: uma lista de pacotes com um nome em comum. O <code>pacman</code> mostra os membros e deixa você escolher:</p>
+
+<pre class="term" data-user="root">#> pacman -S gnome
+:: Há 58 membros no grupo gnome:
+:: Repositório extra
+   1) baobab  2) decibels  3) epiphany  4) gdm  5) gnome-backgrounds
+   6) gnome-calculator  7) gnome-calendar  8) gnome-characters  9) gnome-clocks
+   10) gnome-color-manager  11) gnome-connections  12) gnome-console
+…
+   53) snapshot  54) sushi  55) tecla  56) xdg-desktop-portal-gnome
+   57) xdg-user-dirs-gtk  58) yelp
+
+Digite uma seleção (padrão=todos):      « Enter = os 58
+resolvendo dependências...
+:: Há 11 provedores disponíveis para ttf-font:
+…
+Digite um número (padrão=1):
+:: Há 2 provedores disponíveis para jack:
+:: Repositório extra
+   1) jack2  2) pipewire-jack
+
+Digite um número (padrão=1):
+procurando pacotes conflitantes...
+
+Pacotes (462) aalib-1.4rc5-19  adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+…
+Tamanho total download:    468,36 MiB
+Tamanho total instalado:  1922,57 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Resposta em "Digite uma seleção"</th><th>Instala</th></tr>
+<tr><td><kbd>Enter</kbd></td><td>Todos os membros</td></tr>
+<tr><td><code>4 25 47</code></td><td>Só os números listados</td></tr>
+<tr><td><code>1-10</code></td><td>Um intervalo</td></tr>
+<tr><td><code>^3</code> ou <code>^1-3</code></td><td>Todos, <strong>menos</strong> esses (ex.: sem o navegador <code>epiphany</code>)</td></tr>
+</table>
+</div>
+
+<p>O grupo traz o <code>gdm</code> (a tela de login do GNOME, item 4) e o <code>gnome-console</code> (o terminal). Para uma instalação mínima, há o caminho inverso: instale só <code>gnome-shell</code>, <code>gdm</code> e os programas que quiser.</p>
+
+<h3>Xfce: leve</h3>
+<pre class="term" data-user="root">#> pacman -S xfce4 lightdm lightdm-gtk-greeter
+:: Há 14 membros no grupo xfce4:
+:: Repositório extra
+   1) exo  2) garcon  3) thunar  4) thunar-volman  5) tumbler
+   6) xfce4-appfinder  7) xfce4-panel  8) xfce4-power-manager  9) xfce4-session
+   10) xfce4-settings  11) xfce4-terminal  12) xfconf  13) xfdesktop  14) xfwm4
+
+Digite uma seleção (padrão=todos):
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (112) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+…
+              xfce4-settings-4.20.5-1  xfce4-terminal-1.2.0-1  xfconf-4.20.0-2
+              xfdesktop-4.20.2-1  xfwm4-4.20.0-2
+
+Tamanho total download:    48,32 MiB
+Tamanho total instalado:  249,85 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>O <code>lightdm</code> é só o "motor" da tela de login; a cara dela vem de um <em>greeter</em>, por isso o <code>lightdm-gtk-greeter</code> vai junto. Sem ele, o <code>lightdm</code> não tem o que mostrar. O <code>lightdm</code> e o <code>sddm</code> dependem do <code>xorg-server</code>, que entra na lista; o GNOME com o <code>gdm</code> não precisa dele (só do XWayland).</p>
+
+<h3>Hyprland e Sway</h3>
+<pre class="term">$ pacman -Si hyprland sway | grep -E "^(Nome|Versão|Descrição|Tamanho instalado)"
+Nome                 : hyprland
+Versão               : 0.56.2-4
+Descrição            : a highly customizable dynamic tiling Wayland compositor
+Tamanho instalado    : 64,02 MiB
+Nome                 : sway
+Versão               : 1:1.12-4
+Descrição            : Tiling Wayland compositor and replacement for the i3 window manager
+Tamanho instalado    : 5,64 MiB</pre>
+<p>São os tamanhos só do pacote principal. Com as dependências, o Sway mais o terminal <code>foot</code> ficaram assim na VM:</p>
+
+<pre class="term" data-user="root">#> pacman -S sway foot
+resolvendo dependências...
+:: Há 11 provedores disponíveis para ttf-font:
+:: Repositório extra
+   1) gnu-free-fonts  2) noto-fonts  3) ttf-bitstream-vera  4) ttf-croscore
+   5) ttf-dejavu  6) ttf-droid  7) ttf-ibm-plex  8) ttf-input
+   9) ttf-input-nerd  10) ttf-liberation  11) ttf-roboto
+
+Digite um número (padrão=1):
+procurando pacotes conflitantes...
+
+Pacotes (20) fcft-3.3.3-1  gnu-free-fonts-20120503-9  libdisplay-info-0.3.0-1
+             libevdev-1.14.0-1  libinput-1.32.0-1  libliftoff-0.5.0-1
+             libwacom-2.20.0-1  libxkbcommon-1.13.2-1  lua54-5.4.9-1
+             mtdev-1.1.7-1  seatd-0.9.3-1  vulkan-icd-loader-1.4.363.0-1
+             wayland-protocols-1.49-1  wlroots0.20-0.20.2-1
+             xcb-util-errors-1.0.1-2  xcb-util-renderutil-0.3.10-2
+             xcb-util-wm-0.4.2-2  xkeyboard-config-2.48-1  foot-1.28.0-2
+             sway-1:1.12-4
+
+Tamanho total download:   11,73 MiB
+Tamanho total instalado:  32,93 MiB       « 33 MiB: sessenta vezes menos que o KDE
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Com barra, lançador, notificações e um navegador, a conta cresce, mas continua bem abaixo dos ambientes completos. A transação do Hyprland não foi medida na VM. Os dois costumam ser iniciados direto do console (digitando <code>sway</code> ou <code>start-hyprland</code> depois do login em modo texto; o Hyprland também tem o comando <code>Hyprland</code>, mas o próprio projeto recomenda o <code>start-hyprland</code>), sem display manager.</p>
+
+<div class="try" data-goal="out:mesa 1:26.2.4" data-solucao="pacman -Q mesa">
+<p class="try-task"><strong>Missão:</strong> antes de instalar um desktop, confira se o driver <code>mesa</code> já está na máquina da Ana com <code>pacman -Q mesa</code>. Depois veja por que ele está lá com <code>pacman -Qi mesa</code> (procure "Motivo da instalação"). Se quiser, simule a instalação de um desktop com <code>sudo pacman -S xfce4</code> e responda <code>n</code> no fim.</p>
+</div>
+
+<hr>
+
+<h2>Ligar o display manager (ilustrativo)</h2>
+<p>Instalado o ambiente, falta mandar o sistema abrir a tela de login no boot. O display manager é um <strong>serviço</strong> do systemd. Hoje, na VM, ele não existe:</p>
+
+<pre class="term">$ systemctl status sddm
+Unit sddm.service could not be found.
+$ echo $?
+4                              « 4 = a unidade não existe
+$ systemctl get-default
+graphical.target               « o alvo padrão já é o "gráfico": falta só quem o ocupe</pre>
+
+<p>Depois de instalar, o passo é um destes (só <strong>um</strong>):</p>
+
+<dl class="anatomy">
+  <dt>sudo systemctl</dt><dd>O gerenciador de serviços, como root (veja <a href="systemd.html">systemctl e Serviços</a>).</dd>
+  <dt>enable</dt><dd>Liga o serviço em todo boot.</dd>
+  <dt>sddm.service</dt><dd>O serviço do display manager escolhido.</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ambiente</th><th>Comando</th></tr>
+<tr><td>KDE com SDDM</td><td><code>sudo systemctl enable sddm.service</code></td></tr>
+<tr><td>KDE com a tela nova do Plasma</td><td><code>sudo systemctl enable plasmalogin.service</code></td></tr>
+<tr><td>GNOME</td><td><code>sudo systemctl enable gdm.service</code></td></tr>
+<tr><td>Xfce</td><td><code>sudo systemctl enable lightdm.service</code></td></tr>
+<tr><td>Hyprland / Sway</td><td>Nenhum: entre no console e digite <code>start-hyprland</code> ou <code>sway</code></td></tr>
+</table>
+</div>
+
+<p>Depois, reinicie (<code>sudo reboot</code>). A tela de login aparece, normalmente com um menu para escolher a sessão (por exemplo, "Plasma (Wayland)"). Para testar antes de deixar ligado no boot, troque <code>enable</code> por <code>start</code>: a tela de login aparece na hora, e se algo der errado, o próximo boot volta ao modo texto.</p>
+
+<div class="warning">
+<strong>Teste antes de ligar no boot</strong>
+<p>Se o driver de vídeo estiver errado, um display manager ligado no boot pode deixar a tela preta toda vez que o computador liga. Tenha sempre o plano B: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd> abre um console de texto, de onde você desliga o serviço (veja <a href="travamentos.html">Quando o Sistema Trava</a>).</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de ter um desktop</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como</th><th>Quando escolher</th></tr>
+<tr><td>Metapacote ou grupo completo</td><td><code>plasma-meta</code>, <code>gnome</code>, <code>xfce4</code></td><td>O primeiro desktop: tudo funciona de primeira</td></tr>
+<tr><td>Mínimo + o que você quiser</td><td><code>plasma-desktop</code>, <code>gnome-shell</code> + <code>gdm</code>, e os programas um a um</td><td>Quem quer um sistema enxuto e sabe o que precisa</td></tr>
+<tr><td>Grupo com exclusões</td><td><code>pacman -S gnome</code> respondendo <code>^3</code> (tudo menos o item 3)</td><td>Quase tudo, menos alguns programas</td></tr>
+<tr><td>Junto com a instalação</td><td>O <a href="archinstall.html">archinstall</a> tem a opção "Profile → Desktop"</td><td>Quem instala pelo assistente</td></tr>
+<tr><td>Compositor <em>tiling</em></td><td><code>sway</code> ou <code>hyprland</code> + barra, lançador, terminal</td><td>Quem quer montar tudo à mão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Liguei o display manager e a tela ficou preta</strong>
+<p><strong>Causa provável:</strong> driver de vídeo faltando ou errado (comum com NVIDIA), ou o display manager não encontrou nenhuma sessão.</p>
+<p><strong>Como confirmar:</strong> <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F2</kbd>, entre com o seu usuário e rode <code>journalctl -b -u sddm</code> (troque pelo seu display manager) e <code>lspci -k | grep -A3 VGA</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl disable sddm</code> para voltar ao modo texto no próximo boot; corrija o driver; teste com <code>start</code> antes de <code>enable</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro: o pacote "nvidia" não foi encontrado"</strong>
+<pre class="term">$ pacman -Si nvidia
+erro: o pacote "nvidia" não foi encontrado</pre>
+<p><strong>Causa:</strong> o pacote foi substituído pelo <code>nvidia-open</code> em dezembro de 2025.</p>
+<p><strong>Como resolver:</strong> instale <code>nvidia-open</code> (ou <code>nvidia-open-lts</code>/<code>nvidia-open-dkms</code>, conforme o kernel) e <code>nvidia-utils</code>. Placas antigas: drivers legados do AUR.</p>
+</div>
+
+<div class="cenario">
+<strong>Quadradinhos no lugar de letras ou emojis</strong>
+<p><strong>Causa:</strong> faltam fontes. Na pergunta do <code>ttf-font</code>, o padrão (<code>gnu-free-fonts</code>) cobre pouco.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S noto-fonts noto-fonts-emoji</code> (e <code>noto-fonts-cjk</code> para chinês, japonês e coreano).</p>
+</div>
+
+<div class="cenario">
+<strong>Dois display managers ligados</strong>
+<p><strong>Causa:</strong> você instalou dois (o <code>plasma-meta</code> já traz o <code>plasma-login-manager</code>) e tentou ligar o segundo.</p>
+<p><strong>Como resolver:</strong> todos ocupam o mesmo lugar, o <code>display-manager.service</code>. Desligue o antigo (<code>sudo systemctl disable sddm</code>) antes de ligar o novo, ou use <code>enable --force</code> no novo, que toma o lugar.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível travar a base de dados" ao instalar</strong>
+<pre class="term" data-user="root">#> pacman -S sway
+erro: falha ao iniciar a transação (não foi possível travar a base de dados)
+erro: não foi possível travar a base de dados: Arquivo existe
+  se tiver certeza de que um gerenciador de pacotes não esteja
+  em execução, você pode remover /var/lib/pacman/db.lck</pre>
+<p><strong>Causa:</strong> outro <code>pacman</code> está rodando (uma loja gráfica como o Discover, outra janela), ou um anterior foi interrompido e deixou a trava.</p>
+<p><strong>Como resolver:</strong> espere o outro terminar. Só se tiver certeza de que não há nenhum <code>pacman</code> rodando (<code>pgrep -a pacman</code> não mostra nada), apague a trava com <code>sudo rm /var/lib/pacman/db.lck</code>. Veja <a href="problemas-update.html">Erros de Atualização</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ambiente</th><th>Instalar</th><th>Tela de login</th><th>Total na VM</th></tr>
+<tr><td>KDE Plasma</td><td><code>sudo pacman -S plasma-meta</code> (+ <code>sddm</code>, opcional)</td><td><code>plasmalogin.service</code> ou <code>sddm.service</code></td><td>435 pacotes, 2072 MiB</td></tr>
+<tr><td>GNOME</td><td><code>sudo pacman -S gnome</code></td><td><code>gdm.service</code></td><td>462 pacotes, 1923 MiB</td></tr>
+<tr><td>Xfce</td><td><code>sudo pacman -S xfce4 lightdm lightdm-gtk-greeter</code></td><td><code>lightdm.service</code></td><td>112 pacotes, 250 MiB</td></tr>
+<tr><td>Sway</td><td><code>sudo pacman -S sway foot</code></td><td>Nenhuma (digite <code>sway</code>)</td><td>20 pacotes, 33 MiB</td></tr>
+<tr><td>Hyprland</td><td><code>sudo pacman -S hyprland</code> (+ terminal, barra…)</td><td>Nenhuma (digite <code>start-hyprland</code>)</td><td>Não medido</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>lspci -k | grep -A3 VGA</code></td><td>Ver a placa de vídeo e o driver em uso</td></tr>
+<tr><td><code>pacman -Sg grupo</code></td><td>Listar os membros de um grupo</td></tr>
+<tr><td><code>sudo systemctl enable/start/disable gdm</code></td><td>Ligar no boot / agora / desligar a tela de login</td></tr>
+<tr><td><code>systemctl get-default</code></td><td>Ver o alvo de boot (<code>graphical.target</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O <code>pacman</code> mostrou <code>:: Há 11 provedores disponíveis para ttf-font</code> e pediu um número. O que ele está perguntando?</p>
+<label><input type="radio" name="q1"> Quantas fontes instalar.</label>
+<label><input type="radio" name="q1"> Qual pacote, entre vários equivalentes, deve satisfazer a dependência "uma fonte".</label>
+<label><input type="radio" name="q1"> Se você aceita a licença das fontes.</label>
+<label><input type="radio" name="q1"> O tamanho da fonte do terminal.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">2. Em <code>pacman -S gnome</code>, você quer tudo menos o item 3 (<code>epiphany</code>). O que digitar em "Digite uma seleção"?</p>
+<label><input type="radio" name="q2"> <code>3</code></label>
+<label><input type="radio" name="q2"> <code>-3</code></label>
+<label><input type="radio" name="q2"> <code>n</code></label>
+<label><input type="radio" name="q2"> <code>^3</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. Qual pacote instalar para uma NVIDIA RTX com o kernel <code>linux</code>, em 2026?</p>
+<label><input type="radio" name="q3"> <code>nvidia-open</code> (e <code>nvidia-utils</code>)</label>
+<label><input type="radio" name="q3"> <code>nvidia</code></label>
+<label><input type="radio" name="q3"> <code>mesa</code> apenas</label>
+<label><input type="radio" name="q3"> <code>xf86-video-nvidia</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual destes ambientes ocupou menos espaço na VM?</p>
+<label><input type="radio" name="q4"> KDE Plasma</label>
+<label><input type="radio" name="q4"> GNOME</label>
+<label><input type="radio" name="q4"> Xfce</label>
+<label><input type="radio" name="q4"> Todos iguais</label>
+</div>
+
+<div class="exercise">
+<p>5. Complete para ligar a tela de login do GNOME em todo boot:</p>
+<div class="ex-code">sudo systemctl <input data-answer="enable"> gdm.service</div>
+</div>
+
+<div class="exercise">
+<p>6. Complete para ver a placa de vídeo e o driver em uso:</p>
+<div class="ex-code">lspci <input data-answer="-k"> | grep -A3 VGA</div>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um desktop tem camadas: driver (<code>mesa</code>/<code>nvidia-open</code>), servidor gráfico (Xorg ou Wayland), ambiente e display manager.</li>
+  <li>Em 2026, Plasma e GNOME usam Wayland por padrão; o Xfce ainda usa Xorg.</li>
+  <li>Na VM: KDE + SDDM = 435 pacotes/2072 MiB; GNOME = 462/1923 MiB; Xfce + LightDM = 112/250 MiB; Sway + foot = 20/33 MiB.</li>
+  <li>Perguntas de provedor: escolha <code>pipewire-jack</code>, <code>noto-fonts</code> e o idioma certo do <code>tessdata</code>; perguntas de grupo aceitam números, intervalos e <code>^</code>.</li>
+  <li>Ligue <strong>um</strong> display manager com <code>sudo systemctl enable</code>; teste com <code>start</code> antes.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a visão geral está em <a href="https://wiki.archlinux.org/title/Desktop_environment">Desktop environment</a> (<a href="https://wiki.archlinux.org/title/Desktop_environment_(Portugu%C3%AAs)">em português</a>) e em <a href="https://wiki.archlinux.org/title/General_recommendations#Graphical_user_interface">General recommendations — Graphical user interface</a>; cada ambiente tem a sua página: <a href="https://wiki.archlinux.org/title/KDE">KDE</a>, <a href="https://wiki.archlinux.org/title/GNOME">GNOME</a>, <a href="https://wiki.archlinux.org/title/Xfce">Xfce</a>, <a href="https://wiki.archlinux.org/title/Hyprland">Hyprland</a> e <a href="https://wiki.archlinux.org/title/Sway">Sway</a>; as telas de login, em <a href="https://wiki.archlinux.org/title/Display_manager">Display manager</a> (<a href="https://wiki.archlinux.org/title/Display_manager_(Portugu%C3%AAs)">em português</a>); o Wayland e o Xorg, em <a href="https://wiki.archlinux.org/title/Wayland">Wayland</a> e <a href="https://wiki.archlinux.org/title/Xorg">Xorg</a> (<a href="https://wiki.archlinux.org/title/Xorg_(Portugu%C3%AAs)">em português</a>); e os drivers, em <a href="https://wiki.archlinux.org/title/Intel_graphics">Intel graphics</a>, <a href="https://wiki.archlinux.org/title/AMDGPU">AMDGPU</a> e <a href="https://wiki.archlinux.org/title/NVIDIA">NVIDIA</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
