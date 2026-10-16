@@ -81,11 +81,11 @@ function rodarSim(c) {
 }
 
 // normalizações que não são diferenças reais (PIDs, horários do relógio de verdade…)
-function normalizar(s, real) {
+function normalizar(s, real, ehReal) {
   // o previa às vezes corta um caractere UTF-8 ao meio (U+FFFD): compara sem os não-ASCII
   if (/\uFFFD/.test(real || "")) s = s.replace(/[^\x00-\x7f]+/g, "?");
   // PIDs de jobs ("[1] 12345") variam no Bash real; no previa (terminal), as respostas digitadas aparecem
-  return s.replace(/\r/g, "").replace(/^\[(\d+)\] \d+$/gm, "[$1] PID").replace(/(\[[Ss]\/[Nn]\] )n\n/g, "$1").replace(/(\(padrão=[^)]*\): )\n/g, "$1").replace(/(\[S\/n\] )\[código/g, "$1\n[código");
+  return s.replace(/\r/g, "").replace(/^\[(\d+)\] \d+$/gm, "[$1] PID").replace(ehReal ? /(\[[Ss]\/[Nn]\] )n?\n/g : /$^/, "$1").replace(/(\(padrão=[^)]*\): )\n/g, "$1").replace(/(\[S\/n\] )\[código/g, "$1\n[código");
 }
 
 function diff(a, b) {
@@ -119,7 +119,7 @@ function main(argv) {
     if (real === undefined) { difs.push({ c: c, real: "(sem resultado do VM)", sim: "" }); return; }
     var s;
     try { s = rodarSim(c); } catch (e) { s = "(exceção no simulador) " + (e && e.stack || e); }
-    var r0 = real; real = normalizar(real, r0); s = normalizar(s, r0);
+    var r0 = real; real = normalizar(real, r0, true); s = normalizar(s, r0, false);
     if (real === s) iguais++; else difs.push({ c: c, real: real, sim: s });
   });
   difs.forEach(function (d) {

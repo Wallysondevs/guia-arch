@@ -29,3 +29,25 @@
 -R firefox
 ### previa-Rs-flatpak [previa]
 -Rs flatpak
+### previa-Sc [previa]
+-Sc
+### previa-Scc [previa]
+-Scc
+### previa-S-gnome [previa]
+-S gnome
+### previa-S-docker [previa]
+-S docker
+### previa-S-git [previa]
+-S git
+### previa-S-xfce4 [previa]
+-S xfce4
+### previa-S-plasma-meta [previa]
+-S plasma-meta
+### previa-Rns-podman [previa]
+-Rns podman
+### previa-Rc-ncurses [previa]
+-Rc libnl
+### previa-S-asdeps [previa]
+-S --asdeps fastfetch
+### previa-S-grupo-inexistente [previa]
+-S base-devel

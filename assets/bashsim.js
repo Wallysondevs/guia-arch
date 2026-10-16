@@ -10533,7 +10533,7 @@
     if (k.preparando) return true; // data-setup: roda como se a senha já tivesse sido dada (sem lembrar dela)
     if (A.sudoAte > k.clock && !opt.k) return true;
     if (opt.n) { io.err("sudo: uma senha é necessária\n"); return false; }
-    if (!temTerminal(sh) && !opt.S) { io.err("sudo: a terminal is required to read the password; either use ssh's -t option or configure an askpass helper\nsudo: uma senha é necessária\n"); return false; }
+    if (!temTerminal(sh) && !opt.S) { io.err("sudo: um terminal é necessário para ler a senha; use a opção -S para ler a entrada padrão ou configure um auxiliar de askpass\nsudo: uma senha é necessária\n"); return false; }
     var erros = 0;
     if (!A.sermao && !opt.S) { // o "sermão" do sudo aparece no primeiro uso (a ana ainda não usou o sudo na VM)
       A.sermao = true;
@@ -11029,12 +11029,12 @@
         var velho = A.inst[p.n]; if (velho) { temVelho = true; rem += velho.m; }
       });
       if (dl > 0) { rot.push("Tamanho total download:"); val.push(dl); }
-      rot.push("Tamanho total instalado:"); val.push(ins);
-      if (temVelho) { rot.push("Alteração no tamanho:"); val.push(ins - rem); }
+      if (ins > 0) { rot.push("Tamanho total instalado:"); val.push(ins); }
+      if (temVelho && rem > 0) { rot.push("Alteração no tamanho:"); val.push(ins - rem); }
     }
     var w = 0, wv = 0, txts = val.map(function (v) { return tamPac(v, "M").replace(/ MiB$/, ""); });
     rot.forEach(function (r) { w = Math.max(w, largura(r)); }); txts.forEach(function (t) { wv = Math.max(wv, t.length); });
-    io.out(rot.map(function (r, i) { return pad(r, w, true) + " " + pad(txts[i], wv + 1) + " MiB"; }).join("\n") + "\n\n");
+    io.out(rot.length ? rot.map(function (r, i) { return pad(r, w, true) + " " + pad(txts[i], wv + 1) + " MiB"; }).join("\n") + "\n\n" : "\n");
   }
   function arqPacote(p) { return p.n + "-" + p.v + "-" + p.a + ".pkg.tar.zst"; }
   function noCache(A, p) { var pk = A.k ? null : null; return !!(A.cacheDir && A.cacheDir.c[arqPacote(p)]); }
@@ -11231,16 +11231,16 @@
     if (m.c) {
       var dir = sh.no("/var/cache/pacman/pkg");
       if (m.c > 1) {
-        io.out("Diretório de cache: /var/cache/pacman/pkg/\n");
-        if (yield* perguntaPac(io, ":: Deseja remover TODOS os arquivos do cache?", false, conf(o))) { io.out("removendo todos os arquivos do cache...\n"); if (dir) dir.c = Object.create(null); }
+        io.out("\nDiretório de cache: /var/cache/pacman/pkg/\n");
+        if (yield* perguntaPac(io, ":: Deseja remover TODOS os arquivos do cache?", false, conf(o))) { io.out("removendo todos os arquivos do cache...\n"); if (dir) dir.c = Object.create(null); } else io.out("\n");
       } else {
-        io.out("\nPacotes a serem mantidos:\n  Todos os pacotes instalados localmente\n\nDiretório de cache: /var/cache/pacman/pkg/\n");
+        io.out("Pacotes a serem mantidos:\n      Todos os pacotes instalados localmente\n\nDiretório de cache: /var/cache/pacman/pkg/\n");
         if (yield* perguntaPac(io, ":: Deseja remover todos os outros pacotes do cache?", true, conf(o))) {
           io.out("removendo pacotes antigos do cache...\n");
           if (dir) Object.keys(dir.c).forEach(function (f) { var mm = /^(.+)-([^-]+-[^-]+)-(x86_64|any)\.pkg\.tar\.zst(\.sig)?$/.exec(f); if (!mm || !A.inst[mm[1]] || A.inst[mm[1]].v !== mm[2]) delete dir.c[f]; });
-        }
+        } else io.out("\n");
       }
-      io.out("\nDiretório da base de dados: /var/lib/pacman/\n");
+      io.out("Diretório da base de dados: /var/lib/pacman/\n");
       if (yield* perguntaPac(io, ":: Deseja remover repositórios não utilizados?", true, conf(o))) io.out("removendo repositórios de sincronização não utilizados...\n");
       return 0;
     }
@@ -11719,14 +11719,14 @@
       }
       case "is-active": case "is-failed": case "is-enabled": {
         if (!pos.length) { io.err("Too few arguments.\n"); return 1; }
-        var ok = false, todosOk = true;
+        var ok = false, todosOk = true, naoAchou = false;
         pos.forEach(function (n) {
           var nome = nomeUnidade(n), s = estadoSvc(k, nome), v;
-          if (verbo === "is-enabled") { if (!s) { if (!op.q) io.err("Failed to get unit file state for " + nome + ": No such file or directory\n"); todosOk = false; return; } v = s.uf; if (/^(enabled|static|alias|indirect|generated|transient|enabled-runtime)$/.test(v)) ok = true; else todosOk = false; }
+          if (verbo === "is-enabled") { if (!s) { if (!op.q) io.out("not-found\n"); todosOk = false; naoAchou = true; return; } v = s.uf; if (/^(enabled|static|alias|indirect|generated|transient|enabled-runtime)$/.test(v)) ok = true; else todosOk = false; }
           else { v = s ? s.a : "inactive"; if (verbo === "is-active" ? v === "active" : v === "failed") ok = true; else todosOk = false; }
           if (!op.q) io.out(v + "\n");
         });
-        if (verbo === "is-enabled") return ok ? 0 : 1;
+        if (verbo === "is-enabled") return ok ? 0 : naoAchou ? 4 : 1;
         return ok ? 0 : (verbo === "is-active" ? 3 : 1);
       }
       case "cat": {
@@ -11743,10 +11743,7 @@
         if (!pos.length) { io.err("Too few arguments.\n"); return 1; }
         var nomes = pos.map(nomeUnidade), faltando = nomes.filter(function (n) { return !estadoSvc(k, n); });
         var VERBO_EN = { start: "start", stop: "stop", restart: "restart", reload: "reload", "try-restart": "try-restart", "reload-or-restart": "reload-or-restart" };
-        if (faltando.length && VERBO_EN[verbo]) {
-          if (verbo === "stop" || verbo === "try-restart") { if (sh.uid === 0) return 5; }
-          else { if (sh.uid === 0 || !temTerminal(sh)) { io.err("Failed to " + verbo + " " + faltando[0] + ": Unit " + faltando[0] + " not found.\n"); return 5; } }
-        }
+        if (faltando.length && VERBO_EN[verbo] && sh.uid === 0) { io.err("Failed to " + verbo + " " + faltando[0] + ": Unit " + faltando[0] + (verbo === "stop" ? " not loaded.\n" : " not found.\n")); return 5; }
         if (faltando.length && !VERBO_EN[verbo]) { io.err("Failed to " + verbo + " unit: Unit " + (verbo === "disable" ? "" : "file ") + faltando[0] + " does not exist.\n"); return 1; }
         if (sh.uid !== 0) {
           var aut = yield* autenticarPolkit(sh, io, verbo, nomes[0]);

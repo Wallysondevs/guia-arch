@@ -1,0 +1,47 @@
+## systemctl, sudo, su: o que dá para comparar com a VM sem terminal (estado limpo)
+### systemctl-estados
+systemctl is-active sshd NetworkManager nginx cronie systemd-timesyncd
+echo $?
+systemctl is-enabled sshd NetworkManager nginx cronie
+echo $?
+systemctl is-active nada
+systemctl is-enabled nada.service
+echo $?
+systemctl --failed
+### systemctl-cat
+systemctl cat sshd
+systemctl cat nginx
+### systemctl-sem-root
+systemctl start nginx
+echo $?
+systemctl enable nginx
+echo $?
+systemctl status nada
+echo $?
+systemctl start nada
+echo $?
+### sudo-sem-terminal
+sudo -n true
+echo $?
+sudo -l -n
+echo $?
+sudo whoami
+echo $?
+### outros-arch
+getent passwd ana
+getent group wheel
+getent passwd nada
+echo $?
+visudo
+echo $?
+which nada ls
+echo $?
+ufw status
+nft list ruleset
+resolvectl
+sysctl kernel.sysrq
+cat /proc/sys/kernel/sysrq
+cat /etc/arch-release | od -c
+paru --version
+echo $?
+type adduser
