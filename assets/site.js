@@ -13,7 +13,10 @@ var NIVEIS = [
       ["rolling-release.html", "Rolling Release"],
       ["arch-wiki.html", "A Arch Wiki"],
       ["simulador.html", "Terminal Simulado"],
-      ["terminal.html", "O Terminal no Arch"]
+      ["terminal.html", "O Terminal no Arch"],
+      ["sintaxe.html", "Sintaxe dos Comandos"],
+      ["ajuda.html", "Obtendo Ajuda (man, --help)"],
+      ["primeiros-comandos.html", "Primeiros Comandos"]
     ]},
     { grupo: "Instalação", itens: [
       ["preparar.html", "Baixar e Verificar a ISO"],
@@ -26,10 +29,27 @@ var NIVEIS = [
       ["primeiro-boot.html", "Primeiro Boot e Rede"],
       ["archinstall.html", "archinstall (o Instalador Guiado)"]
     ]},
-    { grupo: "Primeiros Passos", itens: [
+    { grupo: "Navegação", itens: [
+      ["estrutura-diretorios.html", "Estrutura de Diretórios"],
+      ["caminhos.html", "Caminhos"],
+      ["navegar.html", "pwd e cd"],
+      ["ls.html", "ls"]
+    ]},
+    { grupo: "Arquivos", itens: [
+      ["criar.html", "touch e mkdir"],
+      ["copiar.html", "Copiar (cp)"],
+      ["mover.html", "Mover e Renomear (mv)"],
+      ["remover.html", "rm e rmdir"],
+      ["ver-arquivos.html", "cat, less, head, tail"],
+      ["curingas.html", "Curingas"],
+      ["editores.html", "nano e vim"]
+    ]},
+    { grupo: "Usuários", itens: [
       ["sudo-usuarios.html", "sudo, root e Usuários"],
-      ["desktop.html", "Instalar um Desktop"],
-      ["comandos-essenciais.html", "Comandos Essenciais"]
+      ["permissoes.html", "Entendendo Permissões"]
+    ]},
+    { grupo: "Desktop", itens: [
+      ["desktop.html", "Instalar um Desktop"]
     ]},
     { grupo: "Pacotes", itens: [
       ["pacman.html", "pacman: o Básico"],
@@ -37,10 +57,22 @@ var NIVEIS = [
     ]},
     { grupo: "Socorro", itens: [
       ["travamentos.html", "Quando o Sistema Trava"],
-      ["processos.html", "Processos e kill"]
+      ["processos.html", "ps, pgrep, top, htop"],
+      ["kill.html", "Encerrar Programas (kill)"]
     ]}
   ]},
   { id: "n2", nome: "Nível 2 · Intermediário", curto: "Intermediário", desc: "Administrar o seu Arch", grupos: [
+    { grupo: "Arquivos e Texto", itens: [
+      ["find.html", "find e locate"],
+      ["links.html", "Links (ln)"],
+      ["compactar.html", "tar, zip, gzip"],
+      ["grep.html", "grep"],
+      ["texto.html", "sort, uniq, cut, wc, tr"],
+      ["sed.html", "sed"],
+      ["awk.html", "awk"],
+      ["redirecionamento.html", "Redirecionamento"],
+      ["pipes.html", "Pipes e xargs"]
+    ]},
     { grupo: "Pacotes a Fundo", itens: [
       ["pacman-avancado.html", "pacman Avançado"],
       ["cache-orfaos.html", "Cache e Órfãos"],
@@ -60,11 +92,15 @@ var NIVEIS = [
       ["journal.html", "Logs (journalctl)"],
       ["timers.html", "Timers e Tarefas"],
       ["usuarios.html", "Usuários e Grupos"],
-      ["permissoes.html", "Permissões"]
+      ["chmod.html", "chmod"],
+      ["chown.html", "chown, chgrp, umask"]
     ]},
     { grupo: "Rede", itens: [
       ["rede.html", "NetworkManager e iwd"],
+      ["ip.html", "ip, ping, ss"],
+      ["curl-wget.html", "curl, wget, dig"],
       ["ssh.html", "SSH"],
+      ["scp-rsync.html", "scp e rsync"],
       ["firewall.html", "Firewall (nftables e ufw)"]
     ]},
     { grupo: "Discos", itens: [
@@ -77,6 +113,15 @@ var NIVEIS = [
       ["mkinitcpio.html", "mkinitcpio e initramfs"],
       ["microcode.html", "Microcode"],
       ["downgrade.html", "Voltar um Pacote (downgrade)"]
+    ]},
+    { grupo: "Shell e Scripts", itens: [
+      ["bashrc.html", ".bashrc, alias, PATH"],
+      ["jobs.html", "Jobs, nohup, tmux"],
+      ["script-intro.html", "Primeiro Script"],
+      ["script-variaveis.html", "Variáveis e Argumentos"],
+      ["script-condicionais.html", "Condicionais"],
+      ["script-lacos.html", "Laços"],
+      ["script-funcoes.html", "Funções"]
     ]}
   ]},
   { id: "n3", nome: "Nível 3 · Avançado", curto: "Avançado", desc: "Do sistema perfeito ao sistema recuperado", grupos: [
