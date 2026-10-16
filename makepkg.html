@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch makepkg — compilar e instalar pacotes do AUR à mão | Guia Arch</title>
+<meta name="description" content="O jeito manual de usar o AUR: git clone, ler o PKGBUILD do yay-bin linha por linha, makepkg -s, -i, -c, -f, a saída fase por fase, Dependências faltando, chaves PGP (validpgpkeys, gpg --recv-keys), /etc/makepkg.conf (MAKEFLAGS, PKGDEST, debug) e atualizar com git pull.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Compilar do AUR: <span class="hl">makepkg</span></h1>
+
+<p class="intro">O <strong>makepkg</strong> (de <em>make package</em>, "fazer pacote") é o programa que transforma uma receita do <a href="aur.html">AUR</a> num pacote de verdade. Ele lê o <code>PKGBUILD</code>, baixa o programa, confere se o download não foi adulterado, compila, e embala tudo num arquivo <code>.pkg.tar.zst</code> que o pacman sabe instalar. Os ajudantes como o yay fazem exatamente isso por baixo; aprender o jeito manual é o que permite entender (e consertar) quando algo dá errado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O caminho completo: <code>git clone</code> → ler o <code>PKGBUILD</code> → <code>makepkg</code> → <code>pacman -U</code>.</li>
+  <li>Ler um PKGBUILD real (o do <code>yay-bin</code>) linha por linha.</li>
+  <li>As opções <code>-s</code>, <code>-i</code>, <code>-si</code>, <code>-c</code>, <code>-f</code> e a saída do makepkg fase por fase.</li>
+  <li>Os erros reais: <code>Dependências faltando</code>, <code>Um pacote já foi compilado</code>, assinatura PGP desconhecida.</li>
+  <li>Ajustar o <code>/etc/makepkg.conf</code> e atualizar um pacote do AUR à mão.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O caminho de uma receita até o sistema</h2>
+
+<ol class="passo">
+  <li><strong>Baixar a receita</strong> com <code>git clone</code> (vem só o <code>PKGBUILD</code> e o <code>.SRCINFO</code>).</li>
+  <li><strong>Ler o <code>PKGBUILD</code></strong>. Não é burocracia: é a única revisão que essa receita vai ter.</li>
+  <li><strong>Rodar <code>makepkg</code></strong> como usuário comum. Ele baixa o programa, confere, compila e cria o <code>.pkg.tar.zst</code>.</li>
+  <li><strong>Instalar</strong> o pacote com <code>sudo pacman -U arquivo.pkg.tar.zst</code> (ou deixar o <code>makepkg -i</code> chamar isso por você).</li>
+</ol>
+
+<h3>Antes de começar: git e base-devel</h3>
+
+<p>O makepkg vem com o pacman, mas para compilar você precisa do grupo de ferramentas <code>base-devel</code> (gcc, make, fakeroot, patch, sudo…) e do <code>git</code>. Na VM eles já estão instalados, e o <code>--needed</code> faz o pacman pular o que já existe:</p>
+
+<pre class="term">$ sudo pacman -S --needed git base-devel
+atenção: git-2.56.0-1 está atualizado -- ignorando
+atenção: base-devel-1-2 está atualizado -- ignorando
+nada para fazer</pre>
+
+<dl class="anatomy">
+  <dt>--needed</dt><dd>"Só se precisar": não reinstala o que já está na versão mais nova. Sem ele, o pacman reinstalaria os dois.</dd>
+  <dt>base-devel</dt><dd>Um metapacote: não tem arquivos, só dependências (<code>gcc make fakeroot binutils patch sudo</code>…). O makepkg <strong>supõe</strong> que ele está instalado: as receitas não listam essas ferramentas.</dd>
+</dl>
+
+<hr>
+
+<h2>1. Baixar a receita</h2>
+
+<p>Crie uma pasta para as suas receitas (a ana usa <code>~/aur</code>) e clone o endereço que aparece em "Git Clone URL" na página do pacote. Este é o comando real da instalação do yay na VM do guia:</p>
+
+<pre class="term">$ mkdir -p ~/aur &amp;&amp; cd ~/aur &amp;&amp; git clone https://aur.archlinux.org/yay-bin.git
+Clonando em 'yay-bin'...
+$ cd yay-bin
+$ ls
+PKGBUILD</pre>
+
+<p>O <code>ls</code> mostra só o <code>PKGBUILD</code> porque os outros arquivos (<code>.SRCINFO</code>, <code>.gitignore</code>, <code>.git</code>) começam com ponto. Se você clonar um nome que não existe, o AUR não dá erro: o git clona um repositório vazio, avisa <code>aviso: Parece que você clonou um repositório vazio.</code> (seguido de várias linhas <code>hint:</code> sobre o nome do branch) e termina com código 0, como se tudo tivesse dado certo. A pasta criada só tem <code>.git</code>. Confira o nome na página do pacote.</p>
+
+<hr>
+
+<h2>2. Ler o PKGBUILD antes</h2>
+
+<p>Esta é a receita real do <code>yay-bin</code> 13.0.1, que a ana usou para instalar o yay:</p>
+
+<pre class="file" data-file="~/aur/yay-bin/PKGBUILD"># Maintainer: Jguer &lt;pkgbuilds at jguer.space&gt;
+pkgname=yay-bin
+pkgver=13.0.1
+pkgrel=1
+pkgdesc="Yet another yogurt. Pacman wrapper and AUR helper written in go. Pre-compiled."
+arch=('x86_64' 'aarch64' 'armv7h')
+url="https://github.com/Jguer/yay"
+license=('GPL-3.0-or-later')
+depends=(
+  'pacman&gt;6.1'
+  'git'
+)
+optdepends=(
+  'sudo: privilege elevation'
+  'doas: privilege elevation'
+)
+provides=('yay')
+conflicts=('yay')
+
+source_x86_64=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_x86_64.tar.gz")
+source_aarch64=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_aarch64.tar.gz")
+source_armv7h=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_armv7h.tar.gz")
+
+sha256sums_x86_64=('1fdfcb5f7f387bc858d3a5754bdf4e4575bfbddac9560535a716d0ed7189c057')
+sha256sums_aarch64=('75bc500c8677d6760f51117ae0a61689e9cf165bea3c4800825a5c879d030726')
+sha256sums_armv7h=('9fe24f478ff6b80252fd6591061d478f0579e9118bc2522efe5328550870502f')
+
+package() {
+  _output="${srcdir}/${pkgname/-bin/}_${pkgver}_${CARCH}"
+  install -Dm755 "${_output}/${pkgname/-bin/}" "${pkgdir}/usr/bin/${pkgname/-bin/}"
+  install -Dm644 "${_output}/yay.8" "${pkgdir}/usr/share/man/man8/yay.8"
+
+  # Shell autocompletion script
+  install -Dm644 "${_output}/bash" "${pkgdir}/usr/share/bash-completion/completions/yay"
+  install -Dm644 "${_output}/zsh" "${pkgdir}/usr/share/zsh/site-functions/_yay"
+  install -Dm644 "${_output}/fish" "${pkgdir}/usr/share/fish/vendor_completions.d/yay.fish"
+
+  LANGS="ca cs de en es eu fr_FR he id it_IT ja ko pl_PL pt_BR pt ru_RU ru sv tr uk zh_CN zh_TW"
+  for lang in ${LANGS}; do
+    install -Dm644 "${_output}/${lang}.mo" "${pkgdir}/usr/share/locale/${lang}/LC_MESSAGES/yay.mo"
+  done
+}</pre>
+
+<p>Parece muito, mas é um script Bash comum com variáveis e uma função. Linha por linha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th><th>O que conferir</th></tr>
+<tr><td><code># Maintainer:</code></td><td>Comentário com quem mantém a receita</td><td>Bate com o "Maintainer" do site?</td></tr>
+<tr><td><code>pkgname pkgver pkgrel</code></td><td>Nome, versão do programa (13.0.1) e "lançamento" da receita (1). O pacote final será <code>yay-bin-13.0.1-1</code>.</td><td></td></tr>
+<tr><td><code>arch=(…)</code></td><td>Em quais arquiteturas funciona</td><td><code>x86_64</code> é o seu PC comum</td></tr>
+<tr><td><code>url</code></td><td>O site do programa</td><td>É o projeto oficial?</td></tr>
+<tr><td><code>depends</code></td><td>Precisa de <code>pacman</code> mais novo que 6.1 e de <code>git</code></td><td>Dependências estranhas para o que o programa faz?</td></tr>
+<tr><td><code>optdepends</code></td><td>Opcionais: o yay usa <code>sudo</code> <strong>ou</strong> <code>doas</code></td><td></td></tr>
+<tr><td><code>provides / conflicts</code></td><td>Este pacote "faz o papel" de <code>yay</code> e não pode conviver com o pacote <code>yay</code> (o de fonte)</td><td></td></tr>
+<tr><td><code>source_x86_64=(…)</code></td><td><strong>De onde baixa</strong>. <code>${pkgname/-bin/}</code> tira o "-bin" do nome: a URL vira <code>…/download/v13.0.1/yay_13.0.1_x86_64.tar.gz</code>, no GitHub oficial do yay</td><td><strong>A linha mais importante.</strong> O endereço é do projeto oficial? É <code>https</code>?</td></tr>
+<tr><td><code>sha256sums_x86_64</code></td><td>A "impressão digital" do arquivo baixado. Se o arquivo mudar um único byte, o makepkg recusa</td><td>Se aparecer <code>'SKIP'</code> num arquivo baixado, desconfie (a não ser que ele tenha assinatura PGP ou venha do git)</td></tr>
+<tr><td><code>package()</code></td><td>Copia os arquivos para dentro do pacote. <code>install -Dm755 origem destino</code> cria as pastas (<code>-D</code>) e define a permissão (<code>-m755</code>)</td><td>Tudo vai para <code>${pkgdir}/…</code>? Nada de <code>sudo</code>, <code>curl</code> ou mexer em <code>/home</code></td></tr>
+<tr><td><code>${srcdir}</code> e <code>${pkgdir}</code></td><td>Pastas que o makepkg cria: <code>src/</code> (onde o download é extraído) e <code>pkg/yay-bin/</code> (a "raiz falsa" que vira o pacote)</td><td></td></tr>
+</table>
+</div>
+
+<p>Esta receita é das mais simples: um <code>-bin</code> não compila nada, só baixa o programa pronto do autor e o coloca nos lugares certos. Receitas de fonte têm também <code>build()</code> (compilar); todas as partes estão explicadas em <a href="pkgbuild.html">Escrever um PKGBUILD</a>. O que procurar numa receita suspeita está em <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+
+<div class="try" data-goal="ran:(grep|cat|less|head).*downgrade/PKGBUILD,out:fzf" data-solucao="grep depends ~/aur/downgrade/PKGBUILD">
+<p class="try-task"><strong>Missão:</strong> as receitas que a ana baixou estão em <code>~/aur</code>. Leia o <code>PKGBUILD</code> do <code>downgrade</code> (com <code>cat</code>, ou só a linha certa com <code>grep</code>) e descubra de quais pacotes ele depende.</p>
+</div>
+
+<hr>
+
+<h2>3. makepkg: as opções</h2>
+
+<p>Rode o makepkg <strong>dentro da pasta da receita</strong> e <strong>como usuário comum</strong>. As opções mais usadas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Nome longo</th><th>O que faz</th></tr>
+<tr><td><em>(nenhuma)</em></td><td></td><td>Baixa, confere, compila e cria o <code>.pkg.tar.zst</code>. Não instala nada. Se faltar dependência, para.</td></tr>
+<tr><td><code>-s</code></td><td><code>--syncdeps</code></td><td>Instala as dependências que faltam <strong>dos repositórios oficiais</strong>, com <code>sudo pacman</code> (pede a senha).</td></tr>
+<tr><td><code>-i</code></td><td><code>--install</code></td><td>No final, instala o pacote criado com <code>sudo pacman -U</code>.</td></tr>
+<tr><td><code>-si</code></td><td></td><td>As duas: o jeito mais comum de "instalar do AUR".</td></tr>
+<tr><td><code>-r</code></td><td><code>--rmdeps</code></td><td>Remove, no final, as dependências que o <code>-s</code> instalou só para compilar.</td></tr>
+<tr><td><code>-c</code></td><td><code>--clean</code></td><td>Apaga as pastas de trabalho <code>src/</code> e <code>pkg/</code> no final.</td></tr>
+<tr><td><code>-C</code></td><td><code>--cleanbuild</code></td><td>Apaga a <code>src/</code> <strong>antes</strong> de começar (compilação do zero).</td></tr>
+<tr><td><code>-f</code></td><td><code>--force</code></td><td>Recria o pacote mesmo que ele já exista na pasta.</td></tr>
+<tr><td><code>-o</code></td><td><code>--nobuild</code></td><td>Só baixa e extrai (para você olhar o código antes de compilar).</td></tr>
+<tr><td><code>-g</code></td><td><code>--geninteg</code></td><td>Calcula e mostra as somas <code>sha256sums</code> dos arquivos.</td></tr>
+<tr><td></td><td><code>--noconfirm</code></td><td>Não pergunta nada ao pacman (scripts). Evite no dia a dia.</td></tr>
+</table>
+</div>
+
+<h3>Um makepkg de verdade, fase por fase</h3>
+
+<p>Vamos compilar o <code>downgrade</code> (um script pequeno, 25 KiB) numa pasta de testes. Na VM, os testes deste guia ficam em <code>/tmp/a5</code>; use a pasta que quiser. As dependências dele (<code>pacman-contrib</code> e <code>fzf</code>) já estão instaladas, então basta <code>makepkg</code> sem opções:</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ makepkg
+==&gt; Criando o pacote: downgrade 12.0.4-1 (sex 16 out 2026 13:22:10)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Verificando as dependências de tempo de compilação...
+==&gt; Obtendo fontes...
+  -&gt; Baixando downgrade-12.0.4.tar.gz...
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+100  24951 100  24951   0      0  50020      0                              0
+==&gt; Validando source arquivos com sha256sums...
+    downgrade-12.0.4.tar.gz ... Passou            « o download bate com a soma do PKGBUILD
+==&gt; Extraindo fontes...
+  -&gt; Extraindo downgrade-12.0.4.tar.gz com bsdtar
+==&gt; Entrando no ambiente de fakeroot...
+==&gt; Iniciando package()...
+install -Dm644 conf/downgrade.conf "/tmp/a5/downgrade/pkg/downgrade/etc/xdg/downgrade/downgrade.conf"
+install -Dm644 doc/downgrade.8 "/tmp/a5/downgrade/pkg/downgrade/usr/share/man/man8/downgrade.8"
+…                                                 « (mais linhas do Makefile do programa)
+==&gt; Organizando a instalação...
+  -&gt; Removendo arquivos libtool...
+  -&gt; Removendo arquivos de biblioteca estática...
+  -&gt; Expurgando arquivos indesejados...
+  -&gt; Removendo símbolos desnecessários dos executáveis e bibliotecas...
+  -&gt; Comprimindo páginas de man e info...
+==&gt; Verificando problemas de empacotamento...
+==&gt; Criando o pacote "downgrade"...
+  -&gt; Gerando o arquivo .PKGINFO...
+  -&gt; Gerando o arquivo .BUILDINFO...
+  -&gt; Gerando o arquivo .MTREE ...
+  -&gt; Compactando o pacote...
+==&gt; Saindo do ambiente de fakeroot.
+==&gt; Compilação concluída: downgrade 12.0.4-1 (sex 16 out 2026 13:22:19)
+$ echo $?
+0
+$ ls
+downgrade-12.0.4-1-any.pkg.tar.zst  downgrade-12.0.4.tar.gz  pkg  PKGBUILD  src</pre>
+
+<p>A barra do <code>curl</code> (o programa que baixa) se redesenha várias vezes; aqui está só o estado final. As fases:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que o makepkg está fazendo</th></tr>
+<tr><td><code>Verificando as dependências…</code></td><td>Confere <code>depends</code> (tempo de execução) e <code>makedepends</code> (tempo de compilação). Se faltar algo, para aqui.</td></tr>
+<tr><td><code>Obtendo fontes…</code></td><td>Baixa cada item de <code>source</code> (ou diz <code>Encontrado</code> se já baixou antes).</td></tr>
+<tr><td><code>Validando … com sha256sums</code></td><td>Compara cada arquivo com a soma da receita: <code>Passou</code>, <code>FALHOU</code> ou <code>Ignorada</code> (<code>SKIP</code>).</td></tr>
+<tr><td><code>Extraindo fontes…</code></td><td>Descompacta em <code>src/</code>.</td></tr>
+<tr><td><code>Iniciando prepare()/build()/check()</code></td><td>Só aparecem se a receita tiver essas funções (o downgrade não tem).</td></tr>
+<tr><td><code>Entrando no ambiente de fakeroot</code></td><td>O <strong>fakeroot</strong> faz o <code>package()</code> "achar" que é root, para os arquivos ficarem com dono <code>root</code> dentro do pacote, sem você ser root de verdade.</td></tr>
+<tr><td><code>Organizando a instalação…</code></td><td>Limpeza automática (as <code>OPTIONS</code> do <code>makepkg.conf</code>): tira símbolos de depuração, comprime manuais.</td></tr>
+<tr><td><code>Criando o pacote…</code></td><td>Gera os metadados (<code>.PKGINFO</code>, <code>.BUILDINFO</code>, <code>.MTREE</code>) e compacta em <code>.pkg.tar.zst</code>.</td></tr>
+</table>
+</div>
+
+<p>O resultado, <code>downgrade-12.0.4-1-any.pkg.tar.zst</code>, segue o padrão <code>nome-versão-lançamento-arquitetura</code> (<code>any</code> = um script, que roda em qualquer arquitetura). As pastas <code>src/</code> e <code>pkg/</code> são de trabalho; o <code>-c</code> as apaga.</p>
+
+<h3>O que o <code>-c</code> e o <code>-f</code> mudam</h3>
+
+<p>Rodar de novo, sem mudar nada, dá erro:</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ makepkg
+==&gt; ERRO: Um pacote já foi compilado. (use -f para sobrescrever)
+$ echo $?
+13</pre>
+
+<p>Com <code>-f</code> ele recria; com <code>-c</code>, limpa no final (só as linhas <code>==&gt;</code>, filtradas com <code>grep</code>):</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ makepkg -fc 2&gt;&amp;1 | grep "^==&gt;"
+==&gt; Criando o pacote: downgrade 12.0.4-1 (sex 16 out 2026 13:22:28)
+…
+==&gt; Removendo diretório $pkgdir/ existente...      « o -f recomeça o pkg/
+…
+==&gt; Compilação concluída: downgrade 12.0.4-1 (sex 16 out 2026 13:22:30)
+==&gt; Limpando...                                   « o -c apaga src/ e pkg/
+$ ls
+downgrade-12.0.4-1-any.pkg.tar.zst  downgrade-12.0.4.tar.gz  PKGBUILD</pre>
+
+<p>O <code>-o</code> é útil para olhar o código antes de compilar, e o <code>-g</code> mostra as somas (o mantenedor usa isso ao atualizar a receita):</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ makepkg -o
+…
+==&gt; Extraindo fontes...
+  -&gt; Extraindo downgrade-12.0.4.tar.gz com bsdtar
+==&gt; Os fontes estão prontos.              « parou aqui: nada foi compilado
+$ makepkg -g
+==&gt; Obtendo fontes...
+  -&gt; Encontrado downgrade-12.0.4.tar.gz
+==&gt; Gerando somas de verificação para os arquivos fonte...
+sha256sums=('6049701f233ecbc39a1b0b4c7921c1433dda12a1545b55f6264f60867abf84ba')</pre>
+
+<hr>
+
+<h2>4. Instalar o pacote</h2>
+
+<p>O pacote pronto é instalado com <code>pacman -U</code> (<em>upgrade</em>: "instalar ou atualizar a partir de um arquivo"). Esta é a instalação real do <code>yay-bin</code> na VM, feita como root:</p>
+
+<pre class="term">#> pacman -U --noconfirm /home/ana/aur/yay-bin/yay-bin-*.pkg.tar.zst
+carregando pacotes...
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) yay-bin-13.0.1-1  yay-bin-debug-13.0.1-1     « dois pacotes! (veja o debug, abaixo)
+
+Tamanho total instalado:  16,27 MiB
+
+:: Continuar a instalação? [S/n]
+verificando chaveiro...
+verificando integridade de pacotes...
+carregando arquivos do pacote...
+verificando conflitos de arquivos...
+verificando espaço em disco disponível...
+:: Processando alterações do pacote...
+instalando yay-bin...
+Dependências opcionais para yay-bin
+    sudo: privilege elevation [instalado]
+    doas: privilege elevation
+instalando yay-bin-debug...
+:: Executando hooks pós-transação...
+(1/1) Arming ConditionNeedsUpdate...
+$ yay --version
+yay v13.0.1 - libalpm v16.0.1</pre>
+
+<p>Como usuária comum, a ana escreveria <code>sudo pacman -U yay-bin-13.0.1-1-x86_64.pkg.tar.zst</code>, ou simplesmente <code>makepkg -si</code> na pasta da receita, que faz o <code>-U</code> sozinho no final. As linhas <code>:: Executando hooks pós-transação</code> são os <a href="hooks.html">hooks do pacman</a>.</p>
+
+<div class="tip">
+<strong>Instalar como dependência</strong>
+<p>Se você compilou um pacote do AUR só porque outro precisava dele, instale com <code>sudo pacman -U --asdeps arquivo</code>. Assim ele aparece como órfão (<code>pacman -Qdt</code>) quando ninguém mais precisar dele. Veja <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+</div>
+
+<hr>
+
+<h2>"Dependências faltando" e por que o -s precisa de sudo</h2>
+
+<p>Na instalação da VM, o terceiro pacote, <code>downgrade</code>, não compilou. O log real:</p>
+
+<pre class="term" data-cwd="~/aur">$ git clone -q https://aur.archlinux.org/downgrade.git &amp;&amp; cd downgrade &amp;&amp; makepkg -s --noconfirm 2&gt;&amp;1 | tail -3
+==&gt; Dependências faltando:
+  -&gt; fzf
+==&gt; ERRO: Não foi possível resolver todas as dependências.</pre>
+
+<p>A receita pede <code>depends=('pacman-contrib' 'fzf')</code>, e o <code>fzf</code> não estava instalado. Para ver o que acontece em cada caso, uma receita de teste que depende do <code>cowsay</code> (que não está instalado):</p>
+
+<pre class="term" data-cwd="/tmp/a5/dep">$ makepkg
+==&gt; Criando o pacote: teste-dep 1-1 (sex 16 out 2026 13:22:42)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Dependências faltando:
+  -&gt; cowsay
+==&gt; ERRO: Não foi possível resolver todas as dependências.
+$ echo $?
+8</pre>
+
+<p>Sem <code>-s</code>, o makepkg só reclama. Com <code>-s</code>, ele tenta instalar o que falta chamando <code>sudo pacman -S --asdeps cowsay</code>. Instalar é coisa de root, por isso a senha:</p>
+
+<pre class="term" data-cwd="/tmp/a5/dep">$ makepkg -s
+==&gt; Criando o pacote: teste-dep 1-1 (sex 16 out 2026 13:23:15)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Instalando dependências não encontradas...
+[sudo] senha para ana:</pre>
+
+<p>Daí em diante aparece o resumo normal do pacman. Se o sudo não consegue pedir a senha (num script, sem terminal), o erro é este, e foi o que aconteceu no log da VM, escondido pelo <code>| tail -3</code>:</p>
+
+<pre class="term" data-cwd="/tmp/a5/dep">$ makepkg -s &lt;/dev/null
+==&gt; Criando o pacote: teste-dep 1-1 (sex 16 out 2026 13:22:43)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Instalando dependências não encontradas...
+sudo: a terminal is required to read the password; either use ssh's -t option or configure an askpass helper
+sudo: uma senha é necessária
+==&gt; ERRO: "pacman" falhou em instalar dependências não encontradas.
+==&gt; Dependências faltando:
+  -&gt; cowsay
+==&gt; ERRO: Não foi possível resolver todas as dependências.</pre>
+
+<div class="warning">
+<strong>O -s só acha dependências dos repositórios oficiais</strong>
+<p>Se a dependência que falta também é do AUR, o <code>makepkg -s</code> não sabe buscá-la: o pacman responde <code>alvo não encontrado</code>. Você precisa compilar e instalar essa dependência antes (com o mesmo processo). Fazer isso sozinho, na ordem certa, é justamente o trabalho de um <a href="yay-paru.html">ajudante</a>.</p>
+</div>
+
+<h3>Nunca como root</h3>
+
+<pre class="term" data-cwd="/tmp/a5/ola" data-user="root">#> makepkg
+==&gt; ERRO: Executar makepkg como root não é permitido, pois isso pode
+causar danos catastróficos e permanentes ao seu sistema.
+#> echo $?
+10</pre>
+
+<p>Um erro no <code>package()</code> (um caminho sem <code>$pkgdir</code>, por exemplo) como usuário comum só consegue estragar a sua pasta; como root, estragaria o sistema. Por isso o makepkg roda como você e só o <code>pacman -U</code> usa root.</p>
+
+<hr>
+
+<h2>Assinaturas PGP das fontes</h2>
+
+<p>Muitos programas publicam, junto do arquivo, uma <strong>assinatura</strong> (<code>.sig</code>) feita com a chave pessoal do autor. A receita lista essa assinatura em <code>source</code> e diz em <code>validpgpkeys</code> qual chave pode tê-la feito. Exemplo real, a receita do <code>ncurses5-compat-libs</code>:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ncurses5-compat-libs">$ grep -n -E "^(source|validpgpkeys)" -A3 PKGBUILD
+18:source=(https://ftp.gnu.org/pub/gnu/ncurses/ncurses-$pkgver.tar.gz{,.sig})
+19-sha256sums=('355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11'
+20-            'SKIP')                                   « a .sig não precisa de soma
+21:validpgpkeys=('19882D92DDA4C400C22C0D56CC2AF4472167BE03')  # Thomas Dickey
+…</pre>
+
+<p>O <code>{,.sig}</code> é expansão de chaves do Bash: vira dois itens, o <code>.tar.gz</code> e o <code>.tar.gz.sig</code>. Na primeira tentativa, o makepkg não conhece a chave:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ncurses5-compat-libs">$ makepkg -o
+…
+==&gt; Validando source arquivos com sha256sums...
+    ncurses-6.6.tar.gz ... Passou
+    ncurses-6.6.tar.gz.sig ... Ignorada
+==&gt; Verificando assinatura de arquivo fonte com gpg...
+    ncurses-6.6.tar.gz ... FALHOU (chave pública desconhecida CC2AF4472167BE03)
+==&gt; ERRO: Uma ou mais assinaturas PGP não puderam ser verificadas!
+$ echo $?
+1</pre>
+
+<p>A solução é importar a chave pública para o <strong>seu</strong> chaveiro (o do seu usuário, em <code>~/.gnupg</code>; não é o chaveiro do pacman). Use o número completo (a <em>impressão digital</em>) que está em <code>validpgpkeys</code>:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ncurses5-compat-libs">$ gpg --recv-keys 19882D92DDA4C400C22C0D56CC2AF4472167BE03
+gpg: /home/ana/.gnupg/trustdb.gpg: trustdb criada
+gpg: chave CC2AF4472167BE03: chave pública "Thomas E. Dickey (self-signed w/o SHA1) &lt;dickey@invisible-island.net&gt;" importada
+gpg:          Número total processado: 1
+gpg:                       importadas: 1
+$ makepkg -o
+…
+==&gt; Verificando assinatura de arquivo fonte com gpg...
+    ncurses-6.6.tar.gz ... Passou                 « agora confere
+==&gt; Extraindo fontes...
+  -&gt; Extraindo ncurses-6.6.tar.gz com bsdtar
+==&gt; Iniciando prepare()...
+==&gt; Os fontes estão prontos.</pre>
+
+<dl class="anatomy">
+  <dt>gpg</dt><dd>O GnuPG, programa de criptografia.</dd>
+  <dt>--recv-keys</dt><dd>"Receber chaves": baixa a chave de um servidor de chaves (no Arch, por padrão, <code>keyserver.ubuntu.com</code>).</dd>
+  <dt>1988…BE03</dt><dd>A impressão digital completa. Os últimos 16 dígitos (<code>CC2AF4472167BE03</code>) são o "ID longo" que aparece no erro.</dd>
+</dl>
+
+<div class="note">
+<strong>Importar a chave não é "confiar cegamente"</strong>
+<p>A assinatura prova que o arquivo foi assinado por quem tem aquela chave. Quem garante que a chave é mesmo do autor? A receita (que você leu) e, melhor ainda, o site oficial do projeto, que costuma publicar a impressão digital. Nunca contorne o erro com <code>makepkg --skippgpcheck</code> sem saber por que a chave mudou.</p>
+</div>
+
+<hr>
+
+<h2>/etc/makepkg.conf: o jeito que o makepkg trabalha</h2>
+
+<p>As configurações globais do makepkg ficam em <code>/etc/makepkg.conf</code> (e em <code>/etc/makepkg.conf.d/</code>, com ajustes para Rust e Fortran). As linhas que mais importam, na VM:</p>
+
+<pre class="term">$ grep -n -E "MAKEFLAGS|^BUILDENV|BUILDDIR|^OPTIONS|PKGDEST|SRCDEST|PACKAGER" /etc/makepkg.conf
+54:#MAKEFLAGS="-j2"
+72:BUILDENV=(!distcc color !ccache check !sign)
+74:#-- If using DistCC, your MAKEFLAGS will also need modification. In addition,
+79:#BUILDDIR=/tmp/makepkg
+101:OPTIONS=(strip docs !libtool !staticlibs emptydirs zipman purge debug lto)
+129:#PKGDEST=/home/packages
+131:#SRCDEST=/home/sources
+133:#SRCPKGDEST=/home/srcpackages
+137:#PACKAGER="John Doe &lt;john@doe.com&gt;"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>O que controla</th><th>Sugestão</th></tr>
+<tr><td><code>MAKEFLAGS</code></td><td>Quantas tarefas de compilação em paralelo. Comentada = uma por vez.</td><td><code>MAKEFLAGS="-j$(nproc)"</code>: usa todos os núcleos (o <code>nproc</code> conta; na VM, 2)</td></tr>
+<tr><td><code>BUILDDIR</code></td><td>Onde ficam <code>src/</code> e <code>pkg/</code>. Padrão: a pasta da receita</td><td><code>/tmp/makepkg</code> compila na RAM (rápido, mas precisa de RAM sobrando)</td></tr>
+<tr><td><code>PKGDEST</code></td><td>Onde guardar os <code>.pkg.tar.zst</code> prontos</td><td>Uma pasta só, como <code>~/pacotes</code> (útil para um <a href="repositorio-local.html">repositório local</a>)</td></tr>
+<tr><td><code>SRCDEST</code></td><td>Onde guardar os downloads</td><td></td></tr>
+<tr><td><code>PACKAGER</code></td><td>O nome que aparece em "Empacotador" (<code>pacman -Qi</code>). Sem ele: <code>Unknown Packager</code></td><td><code>PACKAGER="Ana &lt;ana@exemplo.com&gt;"</code></td></tr>
+<tr><td><code>OPTIONS</code></td><td>O que fazer com o resultado. <code>!</code> na frente desliga</td><td>Veja <code>debug</code>, abaixo</td></tr>
+<tr><td><code>BUILDENV</code></td><td>O ambiente: <code>check</code> roda a função <code>check()</code>; <code>!ccache</code>, <code>!sign</code> desligados</td><td></td></tr>
+</table>
+</div>
+
+<p>Não edite o arquivo do sistema: crie o seu, que tem prioridade. O makepkg lê <code>~/.makepkg.conf</code> (ou <code>~/.config/pacman/makepkg.conf</code>) depois do global:</p>
+
+<pre class="file" data-file="~/.config/pacman/makepkg.conf">MAKEFLAGS="-j$(nproc)"
+PACKAGER="Ana &lt;ana@exemplo.com&gt;"
+OPTIONS=(strip docs !libtool !staticlibs emptydirs zipman purge !debug lto)</pre>
+
+<h3>O mistério do yay-bin-debug</h3>
+
+<p>Na instalação do yay apareceram dois pacotes: <code>yay-bin</code> e <code>yay-bin-debug</code>. O motivo é o <code>debug</code> nas <code>OPTIONS</code> padrão: para todo programa compilado (binário ELF), o makepkg separa os símbolos de depuração num pacote <code>NOME-debug</code>, usado para investigar travamentos com o <code>gdb</code>. Com um binário pronto como o do yay, que não tem esses símbolos, o makepkg reclamou e criou um pacote quase vazio (6,6 KiB):</p>
+
+<pre class="term" data-cwd="~/aur/yay-bin">$ makepkg -s --noconfirm
+…
+  -&gt; Removendo símbolos desnecessários dos executáveis e bibliotecas...
+Error while writing index for `/home/ana/aur/yay-bin/pkg/yay-bin/usr/bin/yay': No debugging symbols
+gdb-add-index: No index was created for ./usr/bin/yay
+gdb-add-index: [Was there no debuginfo? Was there already an index?]
+…
+==&gt; Criando o pacote "yay-bin"...
+…
+==&gt; Criando o pacote "yay-bin-debug"...
+…
+$ ls
+pkg       src                       yay-bin-13.0.1-1-x86_64.pkg.tar.zst
+PKGBUILD  yay_13.0.1_x86_64.tar.gz  yay-bin-debug-13.0.1-1-x86_64.pkg.tar.zst</pre>
+
+<p>As mensagens <code>No debugging symbols</code> são inofensivas. Você não precisa instalar o <code>-debug</code>: para quem não depura programas, o normal é pôr <code>!debug</code> no seu <code>makepkg.conf</code>, como no exemplo acima. Pacotes <code>any</code> (scripts, como o <code>downgrade</code>) nunca geram <code>-debug</code>. Para tirar o que já foi instalado: <code>sudo pacman -R yay-bin-debug</code>.</p>
+
+<div class="try" data-goal="ran:grep.*makepkg\.conf,out:debug" data-solucao="grep ^OPTIONS /etc/makepkg.conf">
+<p class="try-task"><strong>Missão:</strong> mostre só a linha <code>OPTIONS</code> ativa (a que não começa com <code>#</code>) do <code>/etc/makepkg.conf</code> e confira se o <code>debug</code> está ligado.</p>
+</div>
+
+<hr>
+
+<h2>Atualizar um pacote do AUR à mão</h2>
+
+<p>O <code>pacman -Syu</code> não atualiza nada que veio do AUR. Para saber o que você precisa acompanhar:</p>
+
+<pre class="term">$ pacman -Qm
+downgrade 12.0.4-1
+paru-bin 2.1.0-1
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1</pre>
+
+<p>Para cada um, entre na pasta da receita e traga as mudanças com <code>git pull</code>:</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ git pull
+Já está atualizado.            « nada novo: a sua versão é a última
+$ echo $?
+0</pre>
+
+<p>Quando houver novidade, o <code>git pull</code> lista os arquivos alterados. <strong>Leia o que mudou</strong> antes de compilar: <code>git log -p -1</code> mostra a última mudança, linha por linha (<code>+</code> = acrescentada, <code>-</code> = removida). Depois:</p>
+
+<pre class="term" data-cwd="~/aur/downgrade">$ git log --oneline -3
+6a212a7 Release 12.0.4
+683636e Release 12.0.3
+a7c5e87 Release 12.0.2
+$ makepkg -si          « compila a versão nova e instala por cima</pre>
+
+<p>Fazer isso pacote por pacote cansa. É exatamente o que <code>yay</code> e <code>paru</code> automatizam (veja <a href="yay-paru.html">Ajudantes: yay e paru</a>), mostrando as diferenças para você revisar.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Comando</th></tr>
+<tr><td>Instalar do AUR, dependências dos repositórios</td><td><code>makepkg -si</code></td></tr>
+<tr><td>Instalar e limpar a pasta e as dependências de compilação</td><td><code>makepkg -sirc</code></td></tr>
+<tr><td>Só gerar o pacote (para guardar, ou instalar em outra máquina)</td><td><code>makepkg -s</code></td></tr>
+<tr><td>Olhar o código antes de compilar</td><td><code>makepkg -o</code>, depois leia <code>src/</code></td></tr>
+<tr><td>Recompilar a mesma versão (programa quebrou depois de uma atualização)</td><td><code>makepkg -Cfsi</code></td></tr>
+<tr><td>Muitas receitas, dependências entre elas</td><td>Um ajudante: <a href="yay-paru.html">yay ou paru</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Um pacote já foi compilado. (use -f para sobrescrever)"</strong>
+<p><strong>O que aconteceu:</strong> o <code>.pkg.tar.zst</code> daquela versão já existe na pasta (código de saída 13).</p>
+<p><strong>Como resolver:</strong> se é só para instalar, <code>sudo pacman -U nome-*.pkg.tar.zst</code>; se quer recompilar, <code>makepkg -f</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Dependências faltando: … Não foi possível resolver todas as dependências."</strong>
+<p><strong>O que aconteceu:</strong> falta um pacote de <code>depends</code> ou <code>makedepends</code> (código 8).</p>
+<p><strong>Como resolver:</strong> rode com <code>-s</code> (e digite a senha). Se o pacman disser <code>alvo não encontrado</code>, a dependência é do AUR: compile-a primeiro.</p>
+</div>
+
+<div class="cenario">
+<strong>"FALHOU" na validação das somas</strong>
+<pre class="term">==&gt; Validando source arquivos com sha256sums...
+    ola.in ... FALHOU
+==&gt; ERRO: Um ou mais arquivos não passaram na verificação de validade!</pre>
+<p><strong>O que aconteceu:</strong> o arquivo baixado é diferente do que o mantenedor conferiu. Pode ser um download corrompido, o autor ter trocado o arquivo sem mudar a versão, ou alguém ter adulterado.</p>
+<p><strong>Como resolver:</strong> apague o arquivo e baixe de novo (<code>makepkg -C</code>). Se continuar, leia os comentários do pacote e avise o mantenedor. Não "conserte" trocando a soma por <code>SKIP</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"FALHOU (chave pública desconhecida …)"</strong>
+<p><strong>O que aconteceu:</strong> a fonte é assinada e a chave do autor não está no seu chaveiro.</p>
+<p><strong>Como resolver:</strong> <code>gpg --recv-keys IMPRESSÃO-DIGITAL</code> com o número de <code>validpgpkeys</code>. Se o servidor de chaves não responder, tente <code>gpg --keyserver hkps://keys.openpgp.org --recv-keys …</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Executar makepkg como root não é permitido"</strong>
+<p><strong>O que aconteceu:</strong> você estava como root (ou usou <code>sudo makepkg</code>).</p>
+<p><strong>Como resolver:</strong> saia do root e rode como seu usuário. O makepkg pede o sudo sozinho quando precisa.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>git clone https://aur.archlinux.org/NOME.git</code></td><td>Baixar a receita</td></tr>
+<tr><td><code>makepkg</code></td><td>Gerar o pacote</td></tr>
+<tr><td><code>makepkg -si</code></td><td>Dependências + gerar + instalar</td></tr>
+<tr><td><code>makepkg -c</code> / <code>-C</code></td><td>Limpar depois / antes</td></tr>
+<tr><td><code>makepkg -f</code></td><td>Recriar o pacote</td></tr>
+<tr><td><code>makepkg -o</code> / <code>-g</code></td><td>Só baixar e extrair / mostrar somas</td></tr>
+<tr><td><code>makepkg --printsrcinfo</code></td><td>Mostrar o <code>.SRCINFO</code> que a receita gera</td></tr>
+<tr><td><code>sudo pacman -U arquivo.pkg.tar.zst</code></td><td>Instalar um pacote de arquivo</td></tr>
+<tr><td><code>gpg --recv-keys CHAVE</code></td><td>Importar a chave de <code>validpgpkeys</code></td></tr>
+<tr><td><code>git pull</code> + <code>git log -p</code></td><td>Atualizar a receita e ver o que mudou</td></tr>
+<tr><td><code>pacman -Qm</code></td><td>Pacotes instalados de fora dos repositórios</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Instalar do AUR</h3>
+<p>Na pasta da receita, qual comando instala as dependências, gera o pacote e o instala?</p>
+<div class="ex-code">makepkg <input data-answer="-si|-is|-s -i|-i -s|--syncdeps --install" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Recriar</h3>
+<p>O makepkg disse <code>Um pacote já foi compilado</code>. Qual opção força a recriação?</p>
+<div class="ex-code">makepkg <input data-answer="-f|--force" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A chave</h3>
+<p>Complete o comando que importa a chave de <code>validpgpkeys</code>:</p>
+<div class="ex-code">gpg <input data-answer="--recv-keys|--recv-key" aria-label="opção"> 19882D92DDA4C400C22C0D56CC2AF4472167BE03</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que o <code>makepkg -s</code> pede a senha do sudo?</p>
+<label><input type="radio" name="q4"> Porque o makepkg sempre roda como root.</label>
+<label><input type="radio" name="q4"> Porque instalar as dependências que faltam é feito pelo pacman, que precisa de root.</label>
+<label><input type="radio" name="q4"> Porque ele baixa arquivos da internet.</label>
+<label><input type="radio" name="q4"> Porque o PKGBUILD tem <code>sudo</code> dentro.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Apareceu um pacote <code>yay-bin-debug</code>. De onde ele veio?</p>
+<label><input type="radio" name="q5"> O PKGBUILD do yay pede.</label>
+<label><input type="radio" name="q5"> É uma dependência do git.</label>
+<label><input type="radio" name="q5"> É um malware.</label>
+<label><input type="radio" name="q5"> Da opção <code>debug</code> em <code>OPTIONS</code> do <code>makepkg.conf</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Caminho manual: <code>git clone</code> → <strong>ler o PKGBUILD</strong> → <code>makepkg -si</code>.</li>
+  <li>O makepkg roda como usuário comum; só o <code>pacman -U</code> usa root (via sudo).</li>
+  <li><code>-s</code> instala dependências dos repositórios oficiais; dependências do AUR você compila antes.</li>
+  <li><code>Passou</code>/<code>FALHOU</code> nas somas e nas assinaturas protegem você: não desligue essas verificações.</li>
+  <li>Ajuste <code>MAKEFLAGS</code>, <code>PACKAGER</code> e <code>!debug</code> no seu <code>~/.config/pacman/makepkg.conf</code>.</li>
+  <li>Atualizar à mão: <code>git pull</code>, ler o <code>git log -p</code>, <code>makepkg -si</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Makepkg">makepkg</a> (em português: <a href="https://wiki.archlinux.org/title/Makepkg_(Portugu%C3%AAs)">makepkg (Português)</a>) explica todas as opções e o <code>makepkg.conf</code>, inclusive como compilar na RAM e usar o <code>ccache</code>. O passo a passo de instalar do AUR está em <a href="https://wiki.archlinux.org/title/Arch_User_Repository#Installing_and_upgrading_packages">Arch User Repository § Installing and upgrading packages</a>, e o uso das chaves PGP na compilação, em <a href="https://wiki.archlinux.org/title/Makepkg#Signature_checking">makepkg § Signature checking</a>. Para entender o pacote <code>-debug</code>: <a href="https://wiki.archlinux.org/title/Debugging/Getting_traces">Debugging/Getting traces</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

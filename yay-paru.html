@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch yay e paru — ajudantes do AUR | Guia Arch</title>
+<meta name="description" content="O que os ajudantes do AUR (yay e paru) fazem por você, como instalar o primeiro com makepkg, yay -Ss, -Si, -S passo a passo, yay sozinho (= -Syu com AUR), -Ps, -Yc, -G, a tabela yay × paru e o caso real do paru-bin quebrado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Ajudantes: <span class="hl">yay e paru</span></h1>
+
+<p class="intro">Um <strong>ajudante do AUR</strong> (<em>AUR helper</em>) é um programa que faz por você o trabalho repetitivo da aula <a href="makepkg.html">makepkg</a>: procurar no AUR, baixar as receitas, descobrir as dependências que também são do AUR, compilar na ordem certa e instalar. Os dois mais usados são o <strong>yay</strong> (<em>Yet Another Yogurt</em>, escrito em Go) e o <strong>paru</strong> (escrito em Rust). Os dois usam as mesmas letras do pacman, então quem sabe <code>pacman -Ss</code> já sabe <code>yay -Ss</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que um ajudante faz por você e o que ele <strong>não</strong> faz (ler a receita continua sendo seu trabalho).</li>
+  <li>Instalar o primeiro ajudante (que também vem do AUR).</li>
+  <li><code>yay -Ss</code>, <code>yay -Si</code>, <code>yay -S</code> passo a passo, <code>yay</code> sozinho, <code>-Ps</code>, <code>-Yc</code> e <code>-G</code>.</li>
+  <li>Os equivalentes no paru e qual escolher.</li>
+  <li>O que fazer quando o próprio ajudante quebra.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que o ajudante faz por você</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>À mão (makepkg)</th><th>Com yay/paru</th></tr>
+<tr><td>Procurar</td><td>No site <code>aur.archlinux.org</code></td><td><code>yay -Ss</code> procura nos repositórios <strong>e</strong> no AUR</td></tr>
+<tr><td>Baixar a receita</td><td><code>git clone</code> numa pasta sua</td><td>Automático (em <code>~/.cache/yay/</code>)</td></tr>
+<tr><td>Dependências do AUR</td><td>Você descobre e compila cada uma antes</td><td>Resolvidas e compiladas na ordem certa</td></tr>
+<tr><td>Revisar</td><td><code>less PKGBUILD</code>, <code>git log -p</code></td><td>Pergunta se você quer ver as diferenças (diffs)</td></tr>
+<tr><td>Compilar e instalar</td><td><code>makepkg -si</code></td><td>Chama o <code>makepkg</code> e o <code>sudo pacman -U</code></td></tr>
+<tr><td>Atualizar o que veio do AUR</td><td><code>git pull</code> em cada pasta</td><td><code>yay</code> (sozinho) atualiza tudo, repositórios e AUR</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O ajudante não revisa nada por você</strong>
+<p>Por baixo, o yay roda o mesmo <code>makepkg</code>. Ele só torna o processo mais rápido, e por isso mais fácil de fazer sem olhar. Os riscos da aula <a href="aur.html">O que é o AUR</a> continuam iguais: leia a receita (ou pelo menos as diferenças, quando atualizar). Veja <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+</div>
+
+<p>Ajudantes também <strong>não são do Arch</strong>: vêm do AUR, e o fórum do Arch não dá suporte a eles. Quando um pacote falhar pelo yay, tente com <code>makepkg</code> puro antes de pedir ajuda.</p>
+
+<hr>
+
+<h2>Instalar o primeiro ajudante</h2>
+
+<p>O yay não está nos repositórios oficiais (<code>pacman -S yay</code> responde <code>alvo não encontrado</code>), então o primeiro é sempre instalado do jeito manual. A ana fez assim na VM, com a versão já compilada (<code>yay-bin</code>), que não precisa do compilador Go:</p>
+
+<pre class="term">$ sudo pacman -S --needed git base-devel
+atenção: git-2.56.0-1 está atualizado -- ignorando
+atenção: base-devel-1-2 está atualizado -- ignorando
+nada para fazer
+$ mkdir -p ~/aur &amp;&amp; cd ~/aur
+$ git clone https://aur.archlinux.org/yay-bin.git
+Clonando em 'yay-bin'...
+$ cd yay-bin
+$ less PKGBUILD          « leia antes! (q para sair)
+$ makepkg -si
+…
+$ yay --version
+yay v13.0.1 - libalpm v16.0.1</pre>
+
+<p>O passo a passo com todas as saídas, linha por linha, está em <a href="makepkg.html">Compilar do AUR (makepkg)</a>. Depois do primeiro, o próprio yay se atualiza junto com o resto.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Receita</th><th>O que é</th><th>Tempo para instalar</th></tr>
+<tr><td><code>yay-bin</code></td><td>O yay já compilado pelo autor</td><td>Segundos</td></tr>
+<tr><td><code>yay</code></td><td>Compila o yay (precisa do <code>go</code>, que é baixado como dependência de compilação)</td><td>Minutos</td></tr>
+<tr><td><code>paru-bin</code></td><td>O paru já compilado</td><td>Segundos (mas veja o problema real abaixo)</td></tr>
+<tr><td><code>paru</code></td><td>Compila o paru (precisa do <code>cargo</code>, do Rust)</td><td>Vários minutos</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Q[a-z]* +yay,out:13.0.1" data-solucao="pacman -Q yay-bin">
+<p class="try-task"><strong>Missão:</strong> o yay da ana veio do AUR, mas o pacman o conhece como qualquer pacote instalado. Descubra com o pacman qual versão do <code>yay-bin</code> está instalada.</p>
+</div>
+
+<hr>
+
+<h2>Procurar: yay -Ss e yay TERMO</h2>
+
+<p><code>yay -Ss</code> procura no nome e na descrição, primeiro nos repositórios oficiais e depois no AUR:</p>
+
+<pre class="term">$ yay -Ss downgrade
+aur/paclogger 1.3.1-3 (+1 0.00) [442d18h]
+    A Pacman hook written in C++ that logs all of the updates and downgrades every day.
+aur/steamdepotdownloadergui 3.2.1-1 (+1 0.00) [78d22h]
+    Downgrade Steam games to older versions with ease using DepotDownloader
+aur/cachyos-downgrade-git r8.4f661a9-1 (+1 0.04) [182d5h]
+    Script for downgrading packages to versions in your cache or the C.L.A. or A.L.A.
+aur/gnome-firmware-git 47.0.r52.g6e4f11a-2 (+9 0.00) [626d17h]
+    GNOME application to update, reinstall and downgrade firmware on devices supported by fwupd
+aur/steamdepotdownloadergui-bin 3.2.1-1 (+4 0.88) [78d9h]
+    🎮⌛Downgrade Steam games to older versions with ease using DepotDownloader.(Prebuilt version)
+aur/downgrade 12.0.4-1 (+910 6.90) [3d2h] (Instalado)     « o mais relevante fica embaixo</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Significado</th></tr>
+<tr><td><code>aur/</code></td><td>De onde vem: <code>aur</code>, <code>core</code> ou <code>extra</code></td></tr>
+<tr><td><code>12.0.4-1</code></td><td>Versão-lançamento da receita</td></tr>
+<tr><td><code>(+910 6.90)</code></td><td>Votos e popularidade (veja <a href="aur.html">O que é o AUR</a>)</td></tr>
+<tr><td><code>[3d2h]</code></td><td>Tempo desde a última atualização da receita: 3 dias e 2 horas</td></tr>
+<tr><td><code>(Instalado)</code></td><td>Você já tem</td></tr>
+</table>
+</div>
+
+<p>Repare na ordem: o yay mostra o resultado mais parecido com a busca <strong>por último</strong>, perto do prompt, para você não precisar rolar a tela. Para inverter, use <code>yay -Ss --topdown</code>.</p>
+
+<p>Sem nenhuma opção, só com o termo, o yay mostra a mesma lista <strong>numerada</strong> e pergunta o que instalar. Esta é a tela real de <code>yay pfetch</code> (só o final da lista):</p>
+
+<pre class="term">$ yay pfetch
+…
+3 aur/pfetch-git r340.e18a095-1 (+15 0.00) [2305d10h]
+    A pretty system information tool written in POSIX sh.
+2 extra/pfetch-rs 3.0.2-1 (657.9 KiB 2.0 MiB)
+    A rewrite of the pfetch system information tool in Rust
+1 aur/pfetch 1.11.0-1 (+48 0.09) [128d17h]
+    A pretty system information tool written in POSIX sh.
+==&gt; Pacotes a instalar (ex: 1 2 3, 1-3 ou ^4)
+==&gt; </pre>
+
+<p>Você digita os números (<code>1</code>, <code>1 3</code>, <code>1-3</code>, ou <code>^4</code> para "todos menos o 4") e <kbd>Enter</kbd>. Para os repositórios oficiais, o yay mostra tamanho do download e instalado no lugar dos votos. <kbd>Ctrl</kbd>+<kbd>C</kbd> sai sem instalar nada.</p>
+
+<h2>Detalhes: yay -Si</h2>
+
+<pre class="term">$ yay -Si downgrade
+Repositório                   : aur
+Nome                          : downgrade
+Versão                        : 12.0.4-1
+Descrição                     : Bash script for downgrading one or more packages to a version in your cache or the A.L.A.
+URL                           : https://github.com/archlinux-downgrade/downgrade
+Licenças                      : GPL
+…
+Depende de                    : pacman-contrib  fzf
+Depêndencias Opcionais        : sudo
+…
+URL do AUR                    : https://aur.archlinux.org/packages/downgrade
+Primeira submissão            : Wed 11 Nov 2009 11:48:57 PM -02
+…
+Última modificação            : Tue 13 Oct 2026 11:09:16 AM -03
+Mantenedor                    : brisbin33
+Popularidade                  : 6.897357
+Votos                         : 910
+Desatualizado                 : No</pre>
+
+<p>São os mesmos campos da página do site (todos explicados em <a href="aur.html">O que é o AUR</a>). O "Depêndencias" com acento errado é da tradução do yay, não da cópia.</p>
+
+<hr>
+
+<h2>Instalar: yay -S, passo a passo</h2>
+
+<p>Instalar o <code>pfetch</code> do AUR (o <code>aur/</code> na frente diz de onde, porque existe um <code>pfetch-rs</code> no <code>extra</code> que também "fornece" pfetch). Esta é a sequência real, até o momento em que o yay pede a senha para instalar:</p>
+
+<pre class="term">$ yay -S aur/pfetch
+AUR Explicit (1): pfetch-1.11.0-1                       « 1 pacote pedido explicitamente, do AUR
+:: (1/1) PKGBUILD transferido: pfetch                   « clonou a receita em ~/.cache/yay/pfetch
+  1 pfetch                                   (Arquivos de Build Existem)
+==&gt; Limpar e construir quais pacotes?
+==&gt; [N]Nenhum [A]Todos [Ab]Abortar [I]Instalados [No]Não Instalados ou (1 2 3, 1-3, ^4)
+==&gt; N
+  1 pfetch                                   (Arquivos de Build Existem)
+==&gt; Exibir diffs?
+==&gt; [N]Nenhum [A]Todos [Ab]Abortar [I]Instalados [No]Não Instalados ou (1 2 3, 1-3, ^4)
+==&gt; N
+==&gt; Criando o pacote: pfetch 1.11.0-1 (sex 16 out 2026 13:26:06)
+==&gt; Obtendo fontes...
+  -&gt; Baixando pfetch-1.11.0.tar.gz...
+…
+==&gt; ATENÇÃO: Ignorando verificação de assinaturas PGP de arquivo fonte.
+==&gt; Validando source arquivos com sha256sums...
+    pfetch-1.11.0.tar.gz ... Passou
+:: (1/1) Analisando SRCINFO: pfetch
+==&gt; Criando o pacote: pfetch 1.11.0-1 (sex 16 out 2026 13:26:08)
+==&gt; Verificando as dependências de tempo de execução...
+…
+==&gt; Iniciando package()...
+…
+==&gt; Compilação concluída: pfetch 1.11.0-1 (sex 16 out 2026 13:26:13)
+==&gt; Limpando...
+[sudo] senha para ana:</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>O que é</th></tr>
+<tr><td><code>AUR Explicit (1)</code></td><td>O plano: o que vem do AUR, do repositório, e o que é dependência (<code>AUR Dependency</code>, <code>Sync Make Dependency</code>…)</td></tr>
+<tr><td><code>Limpar e construir…?</code></td><td>Se já existe uma pasta de compilação antiga, apagar antes? <code>N</code> = reaproveitar. Responda <code>A</code> se uma compilação anterior falhou.</td></tr>
+<tr><td><code>Exibir diffs?</code></td><td>Mostrar o que mudou na receita desde a última vez (num pacote novo, a receita inteira). <strong>É aqui que você revisa.</strong> <code>A</code> mostra todos.</td></tr>
+<tr><td>O primeiro <code>Criando o pacote</code></td><td>Um <code>makepkg</code> só para baixar e conferir as fontes (por isso ele pula a verificação PGP aqui)</td></tr>
+<tr><td>O segundo <code>Criando o pacote</code></td><td>A compilação de verdade</td></tr>
+<tr><td><code>[sudo] senha para ana:</code></td><td>Para instalar com <code>pacman -U</code>. Na VM do guia paramos aqui, sem digitar a senha.</td></tr>
+</table>
+</div>
+
+<p>Depois da senha vem o resumo normal do pacman. Para mostrar essa parte sem instalar nada, copiamos o pacote que o yay gerou (em <code>~/.cache/yay/pfetch/</code>) para a pasta de testes e pedimos ao pacman da VM, que responde "n" no fim:</p>
+
+<pre class="term" data-user="root">#> pacman -U /tmp/a5/pfetch-1.11.0-1-any.pkg.tar.zst
+carregando pacotes...
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) pfetch-1.11.0-1
+
+Tamanho total instalado:  0,08 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>Com <code>S</code>, o pacman instala e roda os hooks, exatamente como na <a href="makepkg.html">instalação do yay-bin</a>. Na VM o pacote <strong>não</strong> foi instalado.</p>
+
+<div class="tip">
+<strong>Revisar sempre, sem precisar lembrar</strong>
+<p>Para o yay sempre mostrar as diferenças sem perguntar: <code>yay --save --answerdiff All</code>. O <code>--save</code> grava a escolha em <code>~/.config/yay/config.json</code>.</p>
+</div>
+
+<hr>
+
+<h2>Atualizar tudo: yay sozinho</h2>
+
+<p><code>yay</code> sem nada é o mesmo que <code>yay -Syu</code>: primeiro chama <code>sudo pacman -Syu</code> (os repositórios oficiais, como na aula <a href="atualizar.html">Atualizar o Sistema</a>) e depois procura versões novas das receitas do AUR que você tem. A parte do AUR, sozinha, é o <code>-Sua</code>:</p>
+
+<pre class="term">$ yay -Sua
+:: Procurando atualizações no AUR...
+ -&gt; Pacotes AUR marcados como desatualizados: paru-bin      « aviso: alguém marcou no site
+  não há nada a ser feito</pre>
+
+<p>Nada para atualizar, mas o yay avisou que o <code>paru-bin</code> está marcado como desatualizado no site. Para só listar o que tem atualização no AUR, sem instalar, use <code>yay -Qua</code> (nada na saída e código 1 = nenhuma atualização).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Atualiza</th></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>Só os repositórios oficiais</td></tr>
+<tr><td><code>yay</code> (ou <code>yay -Syu</code>)</td><td>Repositórios + AUR</td></tr>
+<tr><td><code>yay -Sua</code></td><td>Só o AUR</td></tr>
+<tr><td><code>yay -Syu --devel</code></td><td>Também recompila os <code>-git</code> que tiveram commits novos</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Nunca rode yay com sudo</strong>
+<p>O yay chama o sudo sozinho só na hora de instalar. Como root, ele avisa (<code> -&gt; Evite executar o yay como root/sudo.</code>), e o makepkg se recusaria a compilar. Use <code>yay</code>, nunca <code>sudo yay</code>.</p>
+</div>
+
+<hr>
+
+<h2>Outras tarefas</h2>
+
+<h3>Estatísticas: yay -Ps</h3>
+
+<pre class="term">$ yay -Ps
+==&gt; Versão do Yay v13.0.1
+===========================================
+==&gt; Total de pacotes instalados: 408
+==&gt; Pacotes externos instalados: 4                « os do pacman -Qm
+==&gt; Pacotes explicitamente instalados: 45
+==&gt; Espaço total ocupado por pacotes: 3.2 GiB
+==&gt; Tamanho da cache do pacman /var/cache/pacman/pkg/: 1.3 GiB
+==&gt; Tamanho da cache do yay /home/ana/.cache/yay: 4.0 KiB
+===========================================
+==&gt; Dez maiores pacotes:
+linux-lts-headers: 273.5 MiB
+gcc: 220.9 MiB
+llvm-libs: 164.9 MiB
+linux: 161.6 MiB
+linux-lts: 155.8 MiB
+linux-firmware-intel: 138.0 MiB
+linux-firmware-nvidia: 103.5 MiB
+podman: 82.7 MiB
+python: 73.8 MiB
+perl: 70.3 MiB
+===========================================
+ -&gt; Pacotes AUR marcados como desatualizados: paru-bin</pre>
+
+<p><code>-P</code> é <em>show</em> ("mostrar") e <code>s</code>, <em>stats</em>. Um resumo rápido da máquina: quantos pacotes, quanto espaço, quais os maiores e quais pacotes do AUR estão marcados como desatualizados.</p>
+
+<h3>Limpar dependências sem uso: yay -Yc</h3>
+
+<pre class="term">$ yay -Yc
+$ echo $?
+0</pre>
+
+<p><code>-Y</code> são as operações próprias do yay e <code>c</code> é <em>clean</em>: remove dependências que ninguém mais usa (inclusive as de compilação que ficaram para trás). É o equivalente do <code>sudo pacman -Rns $(pacman -Qdtq)</code> da aula <a href="cache-orfaos.html">Cache e Órfãos</a>. Na VM não havia nada para remover, então ele não mostrou nada. Quando há, ele mostra a lista e pergunta antes.</p>
+
+<h3>Só baixar a receita: yay -G</h3>
+
+<pre class="term" data-cwd="/tmp/a5">$ yay -G yay-bin
+:: (1/1) PKGBUILD transferido: yay-bin
+$ ls yay-bin
+PKGBUILD</pre>
+
+<p><code>-G</code> (<em>getpkgbuild</em>) clona a receita na pasta atual, como o <code>git clone</code>: ótimo para ler com calma ou compilar à mão. <code>yay -Gp nome</code> só imprime o PKGBUILD na tela.</p>
+
+<hr>
+
+<h2>paru: o mesmo, com outra filosofia</h2>
+
+<p>O paru foi criado por um ex-desenvolvedor do yay (Morganamilo, hoje também da equipe do Arch). Os comandos são quase os mesmos; a diferença principal é que o paru <strong>mostra a receita para você revisar</strong> antes de compilar, por padrão, abrindo o PKGBUILD e as diferenças num paginador (o <code>less</code>, ou o <code>bat</code>, se instalado). Você lê, sai com <code>q</code>, e só então ele pergunta se continua.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>yay</th><th>paru</th></tr>
+<tr><td>Procurar</td><td><code>yay -Ss termo</code></td><td><code>paru -Ss termo</code></td></tr>
+<tr><td>Procurar e escolher pelo número</td><td><code>yay termo</code></td><td><code>paru termo</code></td></tr>
+<tr><td>Detalhes</td><td><code>yay -Si nome</code></td><td><code>paru -Si nome</code></td></tr>
+<tr><td>Instalar</td><td><code>yay -S nome</code></td><td><code>paru -S nome</code></td></tr>
+<tr><td>Atualizar tudo</td><td><code>yay</code></td><td><code>paru</code></td></tr>
+<tr><td>Ver atualizações do AUR</td><td><code>yay -Qua</code></td><td><code>paru -Qua</code></td></tr>
+<tr><td>Remover dependências sem uso</td><td><code>yay -Yc</code></td><td><code>paru -c</code></td></tr>
+<tr><td>Estatísticas</td><td><code>yay -Ps</code></td><td><code>paru -Ps</code></td></tr>
+<tr><td>Baixar a receita</td><td><code>yay -G nome</code></td><td><code>paru -G nome</code></td></tr>
+<tr><td>Imprimir o PKGBUILD</td><td><code>yay -Gp nome</code></td><td><code>paru -Gp nome</code></td></tr>
+<tr><td>Revisão da receita</td><td>Pergunta "Exibir diffs?"</td><td>Mostra sempre, por padrão</td></tr>
+<tr><td>Configuração</td><td><code>~/.config/yay/config.json</code> (<code>yay --save …</code>)</td><td><code>/etc/paru.conf</code> e <code>~/.config/paru/paru.conf</code></td></tr>
+</table>
+</div>
+
+<h3>O paru da VM está quebrado (e isso é uma aula)</h3>
+
+<p>A ana instalou o <code>paru-bin</code> junto com o yay. Em outubro de 2026, ele não abre:</p>
+
+<pre class="term">$ paru -Ss pfetch
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory
+$ echo $?
+127
+$ ldd /usr/bin/paru | grep "not found"
+	libalpm.so.15 =&gt; not found
+$ pacman -Qi pacman | grep -E "^(Versão|Provê)"
+Versão               : 7.1.0.r9.g54d9411-3
+Provê                : libalpm.so=16-64</pre>
+
+<p>O binário do <code>paru-bin</code> foi compilado pelo autor contra a biblioteca do pacman antigo (<code>libalpm.so.15</code>); o pacman atual traz a <code>.16</code>. A receita diz <code>libalpm.so&gt;=14</code>, então o pacman achou que estava tudo bem. Desde dezembro de 2025 o pacote está marcado como desatualizado, e os comentários pedem uma versão nova. Por isso as saídas do paru nesta página são descritas em palavras, e não copiadas da VM.</p>
+
+<p>As saídas: compilar o <code>paru</code> de fonte (que foi recompilado, <code>2.1.0-2</code>), ou usar o yay até o <code>-bin</code> ser atualizado. Esse tipo de quebra é o assunto de <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Bom para</th><th>Cuidado</th></tr>
+<tr><td><code>makepkg</code></td><td>Aprender; poucas receitas; quando um ajudante falha; seus próprios pacotes</td><td>Dependências do AUR e atualizações são com você</td></tr>
+<tr><td><code>yay</code></td><td>O mais popular; muita documentação; o <code>-bin</code> funcionou com o pacman novo</td><td>Revisão é opcional: não pule o "Exibir diffs?"</td></tr>
+<tr><td><code>paru</code></td><td>Revisão por padrão; recursos extras (repositório local, compilação em chroot)</td><td>O <code>-bin</code> depende do mantenedor acompanhar o pacman</td></tr>
+</table>
+</div>
+
+<p>Escolha <strong>um</strong>. Ter os dois não traz vantagem; eles fazem o mesmo trabalho.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Evite executar o yay como root/sudo."</strong>
+<p><strong>O que aconteceu:</strong> você rodou <code>sudo yay</code> ou estava como root.</p>
+<p><strong>Como resolver:</strong> rode como seu usuário. O yay pede a senha do sudo quando precisa.</p>
+</div>
+
+<div class="cenario">
+<strong>O ajudante não abre depois de atualizar o pacman</strong>
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory</pre>
+<p><strong>O que aconteceu:</strong> o binário foi feito para a biblioteca antiga do pacman.</p>
+<p><strong>Como resolver:</strong> reinstale o ajudante do jeito manual (<code>git clone</code> + <code>makepkg -si</code>), de preferência a versão de fonte (<code>paru</code> ou <code>yay</code>), que compila contra o pacman atual. Até lá, <code>makepkg</code> continua funcionando.</p>
+</div>
+
+<div class="cenario">
+<strong>A compilação demorou e a senha "expirou"</strong>
+<p><strong>O que aconteceu:</strong> o yay pede o sudo no fim; se você saiu e voltou depois de muito tempo, o pedido pode ter falhado e o pacote compilado ficou sem instalar.</p>
+<p><strong>Como resolver:</strong> rode <code>yay -S nome</code> de novo: ele reaproveita o pacote pronto em <code>~/.cache/yay/nome/</code>. Ou instale direto com <code>sudo pacman -U ~/.cache/yay/nome/*.pkg.tar.zst</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma dependência do AUR não compila</strong>
+<p><strong>O que aconteceu:</strong> o ajudante para no primeiro pacote que falha e não instala nada do resto.</p>
+<p><strong>Como resolver:</strong> leia o erro do makepkg (as mensagens são as da aula <a href="makepkg.html">makepkg</a>), confira os comentários da página desse pacote e tente compilá-lo à mão com <code>yay -G nome</code> + <code>makepkg -si</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>yay -Ss termo</code></td><td>Procurar (repositórios + AUR); melhor resultado por último</td></tr>
+<tr><td><code>yay termo</code></td><td>Procurar e escolher pelo número</td></tr>
+<tr><td><code>yay -Si nome</code></td><td>Detalhes (votos, mantenedor, datas)</td></tr>
+<tr><td><code>yay -S nome</code> / <code>yay -S aur/nome</code></td><td>Instalar (forçando a origem)</td></tr>
+<tr><td><code>yay</code></td><td>Atualizar tudo (<code>-Syu</code> + AUR)</td></tr>
+<tr><td><code>yay -Sua</code> / <code>yay -Qua</code></td><td>Atualizar / listar só o AUR</td></tr>
+<tr><td><code>yay -Ps</code></td><td>Estatísticas</td></tr>
+<tr><td><code>yay -Yc</code></td><td>Remover dependências sem uso</td></tr>
+<tr><td><code>yay -G nome</code> / <code>yay -Gp nome</code></td><td>Baixar / imprimir a receita</td></tr>
+<tr><td><code>yay --save --answerdiff All</code></td><td>Sempre mostrar as diferenças</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Atualizar tudo</h3>
+<p>Qual comando atualiza os repositórios oficiais <strong>e</strong> os pacotes do AUR?</p>
+<div class="ex-code"><input data-answer="yay|yay -Syu|paru|paru -Syu" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Estatísticas</h3>
+<p>Complete para ver o resumo de pacotes e espaço com o yay:</p>
+<div class="ex-code">yay <input data-answer="-Ps|-sP" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Origem explícita</h3>
+<p>Como pedir o <code>pfetch</code> do AUR, e não o que vem do <code>extra</code>?</p>
+<div class="ex-code">yay -S <input data-answer="aur/pfetch" aria-label="alvo"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O primeiro ajudante do AUR é instalado com…</p>
+<label><input type="radio" name="q4"> <code>sudo pacman -S yay</code></label>
+<label><input type="radio" name="q4"> <code>sudo yay -S yay</code></label>
+<label><input type="radio" name="q4"> <code>git clone</code> da receita e <code>makepkg -si</code></label>
+<label><input type="radio" name="q4"> <code>flatpak install yay</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Na pergunta "Exibir diffs?" do yay, o que você está decidindo?</p>
+<label><input type="radio" name="q5"> Se quer ler o que mudou na receita antes de compilar.</label>
+<label><input type="radio" name="q5"> Se quer apagar o cache.</label>
+<label><input type="radio" name="q5"> Quais dependências instalar.</label>
+<label><input type="radio" name="q5"> Se o pacote vai para o <code>extra</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Ajudantes automatizam busca, dependências do AUR, compilação e atualização; por baixo, é o mesmo <code>makepkg</code>.</li>
+  <li>O primeiro ajudante é instalado à mão (<code>git clone</code> + <code>makepkg -si</code>).</li>
+  <li><code>yay -Ss</code>, <code>-Si</code>, <code>-S</code>; <code>yay</code> sozinho = <code>-Syu</code> com AUR; <code>-Ps</code>, <code>-Yc</code>, <code>-G</code>.</li>
+  <li>O paru tem os mesmos comandos e mostra a receita para revisão por padrão.</li>
+  <li>Nunca <code>sudo yay</code>. E não pule a revisão.</li>
+  <li>Um <code>-bin</code> pode quebrar quando o pacman muda (o caso real do <code>paru-bin</code>).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/AUR_helpers">AUR helpers</a> (em português: <a href="https://wiki.archlinux.org/title/AUR_helpers_(Portugu%C3%AAs)">AUR helpers (Português)</a>) compara dezenas de ajudantes pelo que eles fazem com segurança (revisão de diffs, leitura do PKGBUILD, compilação em chroot) e começa com o aviso de que eles não são suportados. A documentação de cada um fica no próprio projeto: <a href="https://github.com/Jguer/yay">github.com/Jguer/yay</a> e <a href="https://github.com/Morganamilo/paru">github.com/Morganamilo/paru</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

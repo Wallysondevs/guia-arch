@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch AUR — o repositório de receitas mantido pelos usuários | Guia Arch</title>
+<meta name="description" content="O que é o AUR (Arch User Repository): receitas (PKGBUILD) e não programas prontos, a página de um pacote em aur.archlinux.org (votos, popularidade, comentários, desatualizado), -bin × -git × fonte, quando usar AUR, repositórios oficiais ou Flatpak, e os riscos reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O que é o <span class="hl">AUR</span></h1>
+
+<p class="intro">O <strong>AUR</strong> (<em>Arch User Repository</em>, "repositório dos usuários do Arch") é um site onde qualquer pessoa pode publicar <strong>receitas</strong> para montar pacotes do Arch. Ele não guarda programas prontos: guarda as instruções (o arquivo <code>PKGBUILD</code>) que o <strong>seu</strong> computador segue para baixar, compilar e empacotar o programa. É o motivo de "tem no AUR" ser a resposta para quase tudo no Arch, e também o motivo de você precisar ter cuidado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre os repositórios oficiais (pacotes prontos) e o AUR (receitas).</li>
+  <li>Ler a página de um pacote em <code>aur.archlinux.org</code>: votos, popularidade, comentários, "Last Updated", mantenedor, "desatualizado".</li>
+  <li>O que significam os sufixos <code>-bin</code> e <code>-git</code>.</li>
+  <li>Quando usar repositório oficial, AUR ou Flatpak.</li>
+  <li>Os riscos reais do AUR e por que ele "não é suportado".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Receita, não bolo</h2>
+
+<p>Pense numa padaria. Os <strong>repositórios oficiais</strong> (<code>core</code> e <code>extra</code>, veja <a href="pacman.html">pacman: o Básico</a>) são a vitrine: o bolo já vem pronto, feito por gente da equipe do Arch (os <em>Package Maintainers</em>, que até 2023 se chamavam <em>Trusted Users</em>), embalado e com um selo de garantia (a assinatura digital, veja <a href="chaves.html">Chaves e Assinaturas</a>). O <code>pacman</code> só busca e instala.</p>
+
+<p>O <strong>AUR</strong> é um caderno de receitas que os clientes escrevem e compartilham. Você pega a receita, confere os ingredientes e assa o bolo <strong>na sua cozinha</strong>. Ninguém da equipe do Arch provou aquela receita antes.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Repositórios oficiais</th><th>AUR</th></tr>
+<tr><td>O que guarda</td><td>Pacotes prontos (<code>.pkg.tar.zst</code>)</td><td>Receitas (<code>PKGBUILD</code> + <code>.SRCINFO</code>) num repositório <code>git</code></td></tr>
+<tr><td>Quem mantém</td><td>Package Maintainers e desenvolvedores do Arch</td><td>Qualquer pessoa com uma conta no site</td></tr>
+<tr><td>Quem compila</td><td>O Arch, em servidores próprios</td><td>Você, com o <code>makepkg</code></td></tr>
+<tr><td>Assinatura do Arch</td><td>Sim, conferida pelo pacman</td><td>Não</td></tr>
+<tr><td>Instalar com</td><td><code>sudo pacman -S</code></td><td><a href="makepkg.html">makepkg</a> ou um ajudante (<a href="yay-paru.html">yay, paru</a>)</td></tr>
+<tr><td>Suporte</td><td>Fórum, wiki, relatórios de bug</td><td>Só os comentários da página do pacote</td></tr>
+</table>
+</div>
+
+<p>Os números mostram por que o AUR é tão usado. Na VM do guia, em outubro de 2026, os repositórios oficiais tinham pouco mais de 15 mil pacotes:</p>
+
+<pre class="term">$ pacman -Sl | wc -l
+15330                     « um pacote por linha: core + extra
+$ pacman -Sl core | wc -l
+299
+$ pacman -Sl extra | wc -l
+15031</pre>
+
+<p>No mesmo dia, a página inicial do AUR mostrava <strong>114.756 pacotes</strong> (14.058 deles órfãos, isto é, sem mantenedor). É muita coisa, mas lembre: cada um desses é uma receita escrita por alguém que você não conhece.</p>
+
+<h3>O pacman não sabe que o AUR existe</h3>
+
+<p>O AUR não é um repositório no sentido do pacman: ele não está no <code>/etc/pacman.conf</code> e não tem um banco de dados que o pacman entenda. Por isso, pedir um pacote do AUR ao pacman dá erro:</p>
+
+<pre class="term">$ sudo pacman -S yay
+[sudo] senha para ana:
+erro: alvo não encontrado: yay     « "alvo" = o pacote que você pediu
+$ echo $?
+1</pre>
+
+<p>Não é que o <code>yay</code> não exista: ele só não está em <code>core</code> nem em <code>extra</code>. Para instalar coisas do AUR, você usa o <a href="makepkg.html">makepkg</a> (o jeito manual) ou um ajudante como o <a href="yay-paru.html">yay</a>.</p>
+
+<hr>
+
+<h2>O que tem dentro de um pacote do AUR</h2>
+
+<p>Cada pacote do AUR é um pequeno repositório <code>git</code>. Clonar o do <code>yay-bin</code> mostra tudo o que ele tem:</p>
+
+<pre class="term" data-cwd="/tmp/a5/fresh">$ git clone https://aur.archlinux.org/yay-bin.git
+Clonando em 'yay-bin'...
+remote: Enumerating objects: 491, done.
+remote: Counting objects: 100% (491/491), done.
+remote: Compressing objects: 100% (324/324), done.
+remote: Total 491 (delta 164), reused 482 (delta 164), pack-reused 0 (from 0)
+Recebendo objetos: 100% (491/491), 110.04 KiB | 555.00 KiB/s, concluído.
+Resolvendo deltas: 100% (164/164), concluído.
+$ cd yay-bin
+$ ls -a
+.  ..  .git  .gitignore  PKGBUILD  .SRCINFO</pre>
+
+<p>Só 110 KiB, e quase tudo é histórico do git. O programa em si não está aqui:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>O que é</th></tr>
+<tr><td><code>PKGBUILD</code></td><td>A receita: um script Bash com o nome, a versão, as dependências, <strong>de onde baixar</strong> o programa e como instalá-lo. É o arquivo que você precisa ler.</td></tr>
+<tr><td><code>.SRCINFO</code></td><td>Um resumo do PKGBUILD em texto simples, gerado com <code>makepkg --printsrcinfo</code>. O site do AUR e os ajudantes leem este, para não precisar executar o PKGBUILD.</td></tr>
+<tr><td><code>.gitignore</code></td><td>Diz ao git para ignorar o que o makepkg cria (<code>src/</code>, <code>pkg/</code>, os downloads).</td></tr>
+<tr><td><code>.git/</code></td><td>O histórico: cada versão da receita é um commit. Com ele você vê o que mudou entre uma atualização e outra.</td></tr>
+</table>
+</div>
+
+<p>O que a receita do <code>yay-bin</code> faz, linha por linha, está na aula <a href="makepkg.html">Compilar do AUR (makepkg)</a>.</p>
+
+<hr>
+
+<h2>A página de um pacote no site</h2>
+
+<p>Antes de instalar qualquer coisa do AUR, abra a página dele em <code>https://aur.archlinux.org/packages/NOME</code>. Abaixo está o texto da página do <code>paru-bin</code> em 16 de outubro de 2026, copiado do site (sem a lista completa de "Required by"). Ela é um ótimo exemplo porque mostra um pacote com problema:</p>
+
+<pre class="file" data-file="aur.archlinux.org/packages/paru-bin (outubro de 2026)">Package Details: paru-bin 2.1.0-1
+Flagged out-of-date (2025-12-13)
+Git Clone URL:   https://aur.archlinux.org/paru-bin.git (read-only, click to copy)
+Package Base:    paru-bin
+Description:     Feature packed AUR helper
+Upstream URL:    https://github.com/morganamilo/paru
+Licenses:        GPL-3.0-or-later
+Conflicts:       paru
+Provides:        paru
+Submitter:       Morganamilo
+Maintainer:      ralphptorres
+Last Packager:   Morganamilo
+Votes:           324
+Popularity:      0.94
+First Submitted: 2020-10-28 12:23 (UTC)
+Last Updated:    2025-07-08 08:51 (UTC)
+Dependencies (5) git  libalpm.so  pacman  bat (optional)  devtools (optional)
+Required by (137) …</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo</th><th>O que diz</th><th>O que olhar</th></tr>
+<tr><td><code>Flagged out-of-date</code></td><td>Alguém marcou o pacote como desatualizado naquela data</td><td>Faz 10 meses! O mantenedor não está respondendo.</td></tr>
+<tr><td><code>Git Clone URL</code></td><td>O endereço para o <code>git clone</code></td><td>É sempre <code>https://aur.archlinux.org/NOME.git</code></td></tr>
+<tr><td><code>Upstream URL</code></td><td>O site do programa original (o "upstream")</td><td>Confira que é o projeto que você pensa</td></tr>
+<tr><td><code>Submitter</code></td><td>Quem criou a página</td><td></td></tr>
+<tr><td><code>Maintainer</code></td><td>Quem cuida dela hoje</td><td>Sem mantenedor = órfão (aparece "None")</td></tr>
+<tr><td><code>Last Packager</code></td><td>Quem enviou a última versão da receita</td><td>Se mudou de repente, leia o que mudou</td></tr>
+<tr><td><code>Votes</code></td><td>Quantas contas votaram no pacote, desde sempre</td><td>Mostra quanta gente já usou</td></tr>
+<tr><td><code>Popularity</code></td><td>Os votos com "prazo de validade": cada voto perde 2% do peso por dia (fator 0,98 por dia)</td><td>Mostra se ainda tem gente usando <strong>agora</strong></td></tr>
+<tr><td><code>Last Updated</code></td><td>A última vez que a receita mudou</td><td>Muito antigo + "out-of-date" = provável abandono</td></tr>
+<tr><td><code>Dependencies</code> / <code>Required by</code></td><td>Do que ele precisa / quem precisa dele</td><td></td></tr>
+</table>
+</div>
+
+<p>Abaixo dos detalhes ficam os <strong>comentários</strong>, e eles são a parte mais útil da página. Os mais recentes do <code>paru-bin</code> contavam a história toda (trechos reais, em inglês, como no site):</p>
+
+<pre class="file" data-file="Latest Comments (trechos)">User872340 commented on 2026-03-02 20:49 (UTC)
+  I know there was a comment about it in December, but is this package abandoned?
+  It's been broken for almost three months when all that needs to be done is
+  rebuild it and make a release on github.
+
+hron84 commented on 2026-03-03 13:16 (UTC)
+  … yay-bin works perfectly with the new Pacman, so it could be a feasible
+  alternative for paru-bin …</pre>
+
+<p>Ou seja: o <code>paru-bin</code> quebrou quando o pacman novo chegou, e a receita não foi atualizada. Na VM do guia é exatamente isso que acontece (a explicação completa está em <a href="aur-seguranca.html">AUR com Segurança</a>):</p>
+
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory
+$ echo $?
+127</pre>
+
+<p>No rodapé de todas as páginas do site está o aviso que resume o AUR: <em>"AUR packages are user produced content. Any use of the provided files is at your own risk."</em> ("Os pacotes do AUR são conteúdo produzido por usuários. Qualquer uso dos arquivos é por sua conta e risco.")</p>
+
+<h3>As mesmas informações pelo terminal</h3>
+
+<p>Com o <a href="yay-paru.html">yay</a> instalado, <code>yay -Si</code> mostra os mesmos campos (as datas saem em inglês, como no site):</p>
+
+<pre class="term">$ yay -Si yay-bin
+Repositório                   : aur          « veio do AUR, não de core/extra
+Nome                          : yay-bin
+Versão                        : 13.0.1-1
+Descrição                     : Yet another yogurt. Pacman wrapper and AUR helper written in go. Pre-compiled.
+URL                           : https://github.com/Jguer/yay
+Licenças                      : GPL-3.0-or-later
+Grupos                        : Nenhum
+Fornece                       : yay
+Depende de                    : pacman&gt;6.1  git
+Depêndencias Opcionais        : sudo  doas
+Dependências Make             : Nenhum
+Dependências de verificação   : Nenhum
+Em conflito com               : yay
+Substitui                     : Nenhum
+URL do AUR                    : https://aur.archlinux.org/packages/yay-bin
+Primeira submissão            : Sat 03 Dec 2016 01:06:14 PM -02
+Palavras-chave                : AUR  go  helper  pacman  wrapper
+Última modificação            : Fri 19 Jun 2026 06:29:42 PM -03
+Mantenedor                    : jguer          « o próprio autor do yay
+Popularidade                  : 4.044327
+Votos                         : 370
+Desatualizado                 : No</pre>
+
+<p>Por baixo, o yay pergunta à <strong>API do AUR</strong> (a "RPC"), que qualquer programa pode usar. Dá para ver a resposta crua com o <code>curl</code>:</p>
+
+<pre class="term">$ curl -s "https://aur.archlinux.org/rpc/v5/info?arg[]=yay-bin" | python -m json.tool
+{
+    "resultcount": 1,
+    "results": [
+        {
+…
+            "LastModified": 1781904582,      « segundos desde 1970 (veja abaixo)
+            "Maintainer": "jguer",
+            "Name": "yay-bin",
+            "NumVotes": 370,
+            "OutOfDate": null,               « null = ninguém marcou como desatualizado
+            "Popularity": 4.044327,
+…
+            "Version": "13.0.1-1"
+        }
+    ],
+    "type": "multiinfo",
+    "version": 5
+}
+$ date -d @1781904582
+sex 19 jun 2026 18:29:42 -03</pre>
+
+<hr>
+
+<h2>Os sufixos: fonte, -bin e -git</h2>
+
+<p>O mesmo programa costuma ter várias receitas no AUR. O sufixo do nome diz o que a receita faz:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>O que a receita baixa</th><th>Compila na sua máquina?</th><th>Versão</th></tr>
+<tr><td><code>paru</code> (sem sufixo)</td><td>O <strong>código-fonte</strong> de uma versão lançada</td><td>Sim (precisa das <em>makedepends</em>, aqui o <code>cargo</code> do Rust)</td><td>A última versão estável</td></tr>
+<tr><td><code>paru-bin</code></td><td>O programa <strong>já compilado</strong> pelo autor (o binário do GitHub)</td><td>Não, só empacota</td><td>A última estável, se o mantenedor atualizar</td></tr>
+<tr><td><code>paru-git</code></td><td>O código do <strong>último commit</strong> do repositório do autor</td><td>Sim</td><td>A de hoje (pode estar quebrada)</td></tr>
+</table>
+</div>
+
+<p>Uma busca mostra os três tipos convivendo. Repare no <code>extra/pfetch-rs</code>: um parente que está no repositório oficial.</p>
+
+<pre class="term">$ yay -Ss pfetch
+…                            « (resultados menos parecidos, cortados)
+aur/pfetch-git r340.e18a095-1 (+15 0.00) [2305d10h]
+    A pretty system information tool written in POSIX sh.
+extra/pfetch-rs 3.0.2-1 (657.9 KiB 2.0 MiB)
+    A rewrite of the pfetch system information tool in Rust
+aur/pfetch 1.11.0-1 (+48 0.09) [128d17h]
+    A pretty system information tool written in POSIX sh.</pre>
+
+<p>O <code>(+48 0.09)</code> é "48 votos, popularidade 0,09"; o <code>[128d17h]</code> é há quanto tempo a receita foi atualizada (128 dias e 17 horas). A versão do <code>-git</code>, <code>r340.e18a095</code>, é "commit número 340, identificador <code>e18a095</code>": ela é calculada na hora de compilar.</p>
+
+<p>Compare o <code>paru-bin</code> com o <code>paru</code> no mesmo dia: o <code>-bin</code> estava parado em <code>2.1.0-1</code> e quebrado; o de fonte tinha ganhado um <code>2.1.0-2</code> (recompilado para o pacman novo) em dezembro de 2025.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Qual escolher?</th><th></th></tr>
+<tr><td>Fonte (sem sufixo)</td><td>O padrão. Compila contra as bibliotecas do <strong>seu</strong> sistema, então se ajusta quando elas mudam. Custa tempo de CPU (minutos, às vezes horas).</td></tr>
+<tr><td><code>-bin</code></td><td>Instala rápido, ótimo em máquinas fracas e para programas enormes (navegadores, IDEs) ou fechados (que nem têm fonte). Depende do mantenedor acompanhar as mudanças do Arch: foi o que falhou no <code>paru-bin</code>.</td></tr>
+<tr><td><code>-git</code></td><td>Só se você precisa de uma correção que ainda não saiu numa versão. Atualizar exige recompilar (os ajudantes têm a opção <code>--devel</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>AUR, repositório oficial ou Flatpak?</h2>
+
+<p>A ordem de preferência que a comunidade do Arch costuma seguir:</p>
+
+<ol>
+  <li><strong>Repositório oficial</strong> (<code>pacman -Ss nome</code>). Sempre a primeira opção: testado, assinado, atualizado junto com o resto do sistema.</li>
+  <li>Se não tem, veja se é um <strong>aplicativo gráfico</strong> com versão oficial no Flathub: o <a href="flatpak.html">Flatpak</a> roda isolado (em "caixa de areia") e é mantido muitas vezes pelo próprio autor.</li>
+  <li>Para o resto (ferramentas de terminal, drivers, fontes, temas, programas que precisam se integrar ao sistema): <strong>AUR</strong>, lendo a receita antes.</li>
+</ol>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Existe em <code>extra</code></td><td><code>sudo pacman -S</code>. Não instale a versão do AUR "porque é mais nova".</td></tr>
+<tr><td>Aplicativo gráfico fechado (Spotify, Discord, Zoom…)</td><td>Flatpak (isolado) ou o <code>-bin</code> do AUR (integrado). Os dois funcionam; o Flatpak dá menos acesso ao sistema.</td></tr>
+<tr><td>Ferramenta de terminal pequena</td><td>AUR (fonte ou <code>-bin</code>)</td></tr>
+<tr><td>Driver, módulo do kernel, fonte, tema do sistema</td><td>AUR (o Flatpak não alcança essas partes)</td></tr>
+<tr><td>Um programa seu</td><td>Escreva o seu próprio PKGBUILD: <a href="pkgbuild.html">Escrever um PKGBUILD</a></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Nunca use o AUR para "trocar" pacotes do sistema</strong>
+<p>Receitas como <code>pacman-git</code>, <code>systemd-git</code> ou <code>linux-git</code> substituem peças centrais do Arch por versões em desenvolvimento. Uma receita errada aí deixa o sistema sem iniciar. Se você não sabe exatamente por que precisa disso, não precisa.</p>
+</div>
+
+<hr>
+
+<h2>Os riscos do AUR</h2>
+
+<p>Qualquer pessoa pode criar uma conta e publicar uma receita. Ninguém da equipe do Arch revisa os PKGBUILDs antes de eles aparecerem. Um PKGBUILD é um script Bash que roda no seu computador com o seu usuário, e o pacote que ele gera é instalado <strong>como root</strong>. Então uma receita maliciosa pode fazer qualquer coisa.</p>
+
+<p>Isso já aconteceu, e é bom conhecer os casos (o que está abaixo foi anunciado publicamente na lista de e-mails <code>aur-general</code> do Arch):</p>
+
+<ul>
+  <li><strong>Julho de 2018:</strong> o pacote <code>acroread</code> (Adobe Reader) ficou órfão; uma conta o "adotou" e mudou a receita para baixar e rodar um script que coletava informações da máquina e criava um serviço do systemd para repetir isso. Outros pacotes órfãos foram alterados do mesmo jeito. A equipe do AUR removeu as mudanças e a conta.</li>
+  <li><strong>Julho de 2025:</strong> foram publicados pacotes com nomes de navegadores "corrigidos" (como <code>firefox-patch-bin</code> e <code>librewolf-fix-bin</code>) que instalavam um programa de acesso remoto (um <em>RAT</em>). Eles ficaram no ar cerca de dois dias antes de serem removidos.</li>
+</ul>
+
+<p>Repare no padrão: <strong>pacotes novos, com nomes que imitam programas conhecidos</strong>, e <strong>pacotes órfãos adotados</strong> por alguém desconhecido. Votos, idade da página e comentários ajudam muito a perceber isso. O que procurar dentro da receita está em <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+
+<div class="note">
+<strong>"O AUR não é suportado"</strong>
+<p>A frase aparece em toda a documentação. Quer dizer: o Arch oferece o site e as ferramentas, mas não garante nada sobre as receitas. Se um pacote do AUR quebra, você reclama na página dele (comentários) e não no fórum do Arch ou no rastreador de bugs. O fórum, aliás, não dá suporte a ajudantes como yay e paru: quando algo der errado, tente repetir com <code>makepkg</code> puro antes de pedir ajuda.</p>
+</div>
+
+<h3>A vida de um pacote no AUR</h3>
+
+<ul>
+  <li><strong>Órfão:</strong> o mantenedor desistiu; qualquer um pode adotar (e esse "qualquer um" é o risco).</li>
+  <li><strong>Desatualizado (<em>out-of-date</em>):</strong> alguém marcou que saiu versão nova. É só um aviso; a receita antiga continua lá.</li>
+  <li><strong>Removido:</strong> pacotes duplicados, abandonados ou quebrados podem ser apagados depois de um pedido (<em>deletion request</em>).</li>
+  <li><strong>Promovido:</strong> pacotes muito usados podem ser adotados por um Package Maintainer e ir para o <code>extra</code>. Aí ele sai do AUR.</li>
+</ul>
+
+<hr>
+
+<h2>Quais pacotes do AUR eu tenho?</h2>
+
+<p>O pacman não sabe de onde veio cada pacote, mas sabe quais <strong>não</strong> estão em nenhum repositório configurado. São os "estrangeiros" (<em>foreign</em>), a letra <code>m</code>:</p>
+
+<pre class="term">$ pacman -Qm
+downgrade 12.0.4-1
+paru-bin 2.1.0-1
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1      « um pacote extra que o makepkg criou (veja a aula do makepkg)</pre>
+
+<dl class="anatomy">
+  <dt>-Q</dt><dd><em>query</em>: consulta os pacotes instalados.</dd>
+  <dt>m</dt><dd><em>foreign</em>: só os que não existem em nenhum repositório do <code>pacman.conf</code>. Na prática, os do AUR e os que você instalou com <code>pacman -U</code>.</dd>
+</dl>
+
+<p>Guarde essa lista: são os pacotes que o <code>pacman -Syu</code> <strong>não</strong> atualiza. Atualizá-los é tarefa sua (ou do ajudante).</p>
+
+<div class="try" data-goal="ran:pacman +-Qm,out:yay-bin" data-solucao="pacman -Qm">
+<p class="try-task"><strong>Missão:</strong> descubra quais pacotes da ana vieram de fora dos repositórios oficiais. Depois, veja com <code>pacman -Qi yay-bin</code> a ficha de um deles.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"erro: alvo não encontrado: yay"</strong>
+<pre class="term">$ sudo pacman -S yay
+erro: alvo não encontrado: yay</pre>
+<p><strong>O que aconteceu:</strong> você pediu ao pacman um pacote que só existe no AUR.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Ss '^yay'</code> não acha nada; a página <code>aur.archlinux.org/packages/yay</code> existe.</p>
+<p><strong>Como resolver:</strong> instale pelo <a href="makepkg.html">makepkg</a> (o primeiro ajudante sempre é instalado assim) ou, se você já tem um ajudante, com <code>yay -S yay</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>yay -Si diz que o pacote não existe, mas a busca mostra</strong>
+<pre class="term">$ yay -Si pfetch
+erro: o pacote "pfetch" não foi encontrado
+ -&gt; exit status 1
+$ yay -Si aur/pfetch
+Repositório                   : aur
+Nome                          : pfetch
+Versão                        : 1.11.0-1
+…</pre>
+<p><strong>O que aconteceu:</strong> o yay consulta primeiro os repositórios oficiais, e lá o pacote <code>pfetch-rs</code> declara que <strong>fornece</strong> <code>pfetch</code> (<code>pacman -Si pfetch-rs</code> mostra <code>Provê : pfetch</code>). O nome "pfetch" ficou ambíguo. Pelo mesmo motivo, <code>yay -S pfetch</code> instalaria o <code>pfetch-rs</code> do <code>extra</code>, e não o do AUR.</p>
+<p><strong>Como resolver:</strong> diga a origem antes do nome: <code>aur/pfetch</code> (ou <code>extra/pfetch-rs</code>, se for esse que você quer).</p>
+</div>
+
+<div class="cenario">
+<strong>O programa do AUR parou de abrir depois de uma atualização</strong>
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory</pre>
+<p><strong>O que aconteceu:</strong> o programa foi compilado contra uma biblioteca (<code>libalpm.so.15</code>) que o sistema atualizado não tem mais (agora é a <code>.16</code>).</p>
+<p><strong>Como resolver:</strong> recompile o pacote (a versão de fonte, ou a mesma receita de novo) ou espere o mantenedor do <code>-bin</code>. O passo a passo está em <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O pacote sumiu do AUR</strong>
+<p><strong>O que aconteceu:</strong> foi removido (duplicado, abandonado) ou promovido para o <code>extra</code>.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Ss nome</code>; se apareceu no <code>extra</code>, reinstale de lá com <code>sudo pacman -S nome</code>. Se sumiu de vez, o seu pacote instalado continua funcionando, mas não recebe mais atualizações: procure uma alternativa.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / endereço</th><th>Para quê</th></tr>
+<tr><td><code>https://aur.archlinux.org/packages/NOME</code></td><td>A página do pacote (detalhes, comentários, "View PKGBUILD", "View Changes")</td></tr>
+<tr><td><code>git clone https://aur.archlinux.org/NOME.git</code></td><td>Baixar a receita</td></tr>
+<tr><td><code>pacman -Ss nome</code></td><td>Primeiro, procurar nos repositórios oficiais</td></tr>
+<tr><td><code>pacman -Qm</code></td><td>Pacotes que não vieram de repositórios (AUR e <code>-U</code>)</td></tr>
+<tr><td><code>yay -Ss nome</code> / <code>yay -Si nome</code></td><td>Procurar / ver detalhes, incluindo o AUR</td></tr>
+<tr><td><code>…/rpc/v5/info?arg[]=NOME</code></td><td>A API do AUR, em JSON</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O nome do arquivo</h3>
+<p>Qual é o nome do arquivo de receita que todo pacote do AUR tem?</p>
+<div class="ex-code"><input data-answer="PKGBUILD" aria-label="arquivo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Pacotes estrangeiros</h3>
+<p>Complete o comando que lista os pacotes instalados que não vieram dos repositórios:</p>
+<div class="ex-code">pacman <input data-answer="-Qm" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você quer um programa que existe no <code>extra</code> na versão 2.0 e no AUR como <code>programa-git</code>. O que fazer?</p>
+<label><input type="radio" name="q3"> Instalar o <code>-git</code>, que é sempre mais novo.</label>
+<label><input type="radio" name="q3"> Instalar do <code>extra</code> com <code>sudo pacman -S</code>.</label>
+<label><input type="radio" name="q3"> Instalar os dois para comparar.</label>
+<label><input type="radio" name="q3"> Esperar o pacote sair do AUR.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Um pacote tem 300 votos e popularidade 0,01. O que isso indica?</p>
+<label><input type="radio" name="q4"> É novo e está ficando famoso.</label>
+<label><input type="radio" name="q4"> É malicioso.</label>
+<label><input type="radio" name="q4"> Já foi muito usado, mas quase ninguém votou nele recentemente.</label>
+<label><input type="radio" name="q4"> Está no repositório oficial.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que significa o sufixo <code>-bin</code>?</p>
+<label><input type="radio" name="q5"> A receita baixa o programa já compilado pelo autor e só o empacota.</label>
+<label><input type="radio" name="q5"> O pacote vai para <code>/bin</code>.</label>
+<label><input type="radio" name="q5"> É a versão do último commit.</label>
+<label><input type="radio" name="q5"> É um pacote binário assinado pelo Arch.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O AUR guarda <strong>receitas</strong> (<code>PKGBUILD</code>), não programas prontos; você compila na sua máquina.</li>
+  <li>Qualquer pessoa publica; ninguém revisa antes. Leia a página, os comentários e a receita.</li>
+  <li><strong>Votes</strong> = total histórico; <strong>Popularity</strong> = uso recente; <strong>out-of-date</strong> e <strong>Last Updated</strong> mostram abandono.</li>
+  <li>Sem sufixo = compila da fonte; <code>-bin</code> = binário pronto do autor; <code>-git</code> = último commit.</li>
+  <li>Repositório oficial primeiro; Flatpak para apps gráficos; AUR para o resto.</li>
+  <li><code>pacman -Qm</code> lista o que veio de fora; o <code>pacman -Syu</code> não atualiza esses pacotes.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> (em português: <a href="https://wiki.archlinux.org/title/Arch_User_Repository_(Portugu%C3%AAs)">Arch User Repository (Português)</a>) explica o AUR do começo ao fim, inclusive como votar, marcar desatualizado e pedir remoção. As regras para quem publica estão em <a href="https://wiki.archlinux.org/title/AUR_submission_guidelines">AUR submission guidelines</a>, e a comparação dos ajudantes, em <a href="https://wiki.archlinux.org/title/AUR_helpers">AUR helpers</a>. A API usada pelo yay está documentada em <a href="https://wiki.archlinux.org/title/Aurweb_RPC_interface">Aurweb RPC interface</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
