@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Flatpak — Flathub, search, remote-info, install, --user e permissões | Guia Arch</title>
+<meta name="description" content="Flatpak no Arch Linux: o pacote flatpak e o Flathub, flatpak search, remote-info, install, run, uninstall, runtimes, --user × --system, permissões e Flatseal, e quando usar Flatpak, pacman ou AUR, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Flatpak</span></h1>
+
+<p class="intro">O <strong>Flatpak</strong> é um jeito de instalar aplicativos gráficos que funciona igual em qualquer distribuição. Cada aplicativo vem com as bibliotecas de que precisa e roda numa "caixa de areia" (<em>sandbox</em>), separado do resto do sistema. No Arch, ele não substitui o pacman: é uma alternativa para alguns aplicativos, principalmente os que não estão nos repositórios ou que você quer isolados.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são aplicativo, runtime e remoto (o Flathub) no Flatpak.</li>
+  <li>Como o Flathub chega configurado no Arch e como conferir.</li>
+  <li>Procurar (<code>flatpak search</code>), ver detalhes (<code>flatpak remote-info</code>), instalar, rodar e remover.</li>
+  <li>A diferença entre <code>--system</code> e <code>--user</code>, as permissões e o Flatseal.</li>
+  <li>Quando usar Flatpak, pacman ou AUR.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Três palavras do Flatpak</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th><th>Exemplo</th></tr>
+<tr><td><strong>Aplicativo</strong></td><td>O programa, identificado por um <strong>ID</strong> no formato de domínio invertido.</td><td><code>org.gnome.Calculator</code></td></tr>
+<tr><td><strong>Runtime</strong></td><td>Um "mini-sistema" compartilhado com as bibliotecas base (GTK, Qt, etc.). Vários aplicativos usam o mesmo runtime.</td><td><code>org.gnome.Platform</code> versão 51</td></tr>
+<tr><td><strong>Remoto</strong> (<em>remote</em>)</td><td>O repositório de onde vêm os aplicativos. O principal é o <strong>Flathub</strong>.</td><td><code>flathub</code> = <code>https://dl.flathub.org/repo/</code></td></tr>
+</table>
+</div>
+
+<p>Comparando com o pacman: o remoto faz o papel do repositório; o runtime, o papel das dependências, só que em um bloco grande e independente das bibliotecas do seu Arch. Por isso um Flatpak não quebra numa atualização do sistema, e por isso também ocupa mais espaço.</p>
+
+<hr>
+
+<h2>Instalar o Flatpak e conferir o Flathub</h2>
+
+<p>O Flatpak é um pacote comum do repositório <code>extra</code>:</p>
+
+<pre class="term">$ sudo pacman -S flatpak
+…
+$ pacman -Qi flatpak | grep -E "^(Versão|Tamanho instalado)"
+Versão               : 1:1.18.4-1            « o "1:" é a época: um contador que vence qualquer número de versão
+Tamanho instalado    : 8,08 MiB
+$ flatpak --version
+Flatpak 1.18.4</pre>
+
+<p>Na VM do guia, a instalação real do <code>flatpak</code> veio junto com os pacotes das aulas (registro <code>10-pacotes-aulas</code>), puxando dependências como <code>bubblewrap</code> (a ferramenta da sandbox), <code>ostree</code> e <code>xdg-desktop-portal</code>. Um dos hooks criou o usuário de sistema do Flatpak: <code>Creating user 'flatpak' (Flatpak system helper) with UID 967 and GID 967.</code></p>
+
+<h3>O Flathub já vem configurado</h3>
+
+<p>Muitos guias mandam adicionar o Flathub à mão. No Arch atual isso não é preciso: o próprio pacote traz o arquivo do Flathub, e o Flatpak o aplica sozinho na primeira vez que roda:</p>
+
+<pre class="term">$ pacman -Ql flatpak | grep remotes.d
+flatpak /usr/share/flatpak/remotes.d/
+flatpak /usr/share/flatpak/remotes.d/flathub.flatpakrepo    « o "cartão de visita" do Flathub, com a chave dele
+$ flatpak remotes
+flathub	system                                             « nome e tipo de instalação</pre>
+
+<p>Para ter certeza de que é o pacote, e não algo feito depois, testamos com uma instalação do Flatpak vazia, numa pasta temporária (a variável <code>FLATPAK_SYSTEM_DIR</code> troca a pasta do sistema, <code>/var/lib/flatpak</code>, por outra):</p>
+
+<pre class="term">#> FLATPAK_SYSTEM_DIR=/tmp/a4/fp flatpak remotes --system
+flathub                                                    « nasceu com o Flathub
+#> grep applied /var/lib/flatpak/repo/config
+xa.applied-remotes=flathub;                                « o Flatpak anota que já aplicou o arquivo</pre>
+
+<p>Durante a instalação da VM, rodamos o comando "clássico" mesmo assim. Com <code>--if-not-exists</code>, ele não faz nada quando o remoto já existe, e termina com sucesso (registro <code>13-flatpak</code>):</p>
+
+<pre class="term">#> flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+#> echo $?
+0
+$ flatpak remotes
+flathub	system</pre>
+
+<dl class="anatomy">
+  <dt>remote-add</dt><dd>Adicionar um remoto.</dd>
+  <dt>--if-not-exists</dt><dd>Se já existe, não dá erro. Sem ele, a resposta real é <code>erro: O remoto flathub já existe</code>, com código 1.</dd>
+  <dt>flathub</dt><dd>O nome que você dá ao remoto.</dd>
+  <dt>https://…/flathub.flatpakrepo</dt><dd>O arquivo com o endereço e a chave de assinatura do repositório.</dd>
+</dl>
+
+<p>Esse comando continua útil em dois casos: se você apagou o remoto, e para o Flathub <strong>do usuário</strong> (<code>--user</code>, abaixo), que não vem configurado.</p>
+
+<div class="tip">
+<strong>Depois de instalar o Flatpak, reinicie a sessão</strong>
+<p>Os aplicativos instalados pelo Flatpak só aparecem no menu do ambiente gráfico depois de sair e entrar de novo (o script <code>/etc/profile.d/flatpak.sh</code>, do pacote, ajusta a variável <code>XDG_DATA_DIRS</code> no login).</p>
+</div>
+
+<hr>
+
+<h2>Procurar: flatpak search</h2>
+
+<p>A busca usa um catálogo (dados <em>appstream</em>) que precisa ser baixado. Numa instalação nova, a primeira busca não acha nada:</p>
+
+<pre class="term">$ flatpak search calculator
+Nenhuma correspondência localizada
+$ sudo flatpak update --appstream
+Atualizando dados de appstream para remoto flathub
+$ flatpak search calculator | head -4
+Calculadora de IMC	Calcule seu IMC	io.github.johannesboehler2.BmiCalculator	1.6.2	stable	flathub
+Uno Calculator	Linux port of the Microsoft Windows calculator app	uno.platform.uno-calculator	1.2.9	stable	flathub
+Yesser Calculator	Extend your calculator	io.github.yesser_studios.Yesser-Calculator	1.3.0	stable	flathub
+Modular Calculator	A powerful, scriptable, modular calculator aimed at scientific, engineering or computing work.	io.github.jordanl2.ModularCalculator	1.5.8	stable	flathub</pre>
+
+<p>Num terminal, o resultado sai em colunas com título; mandando para outro comando (o <code>| head</code>), sai separado por tabulações, uma coluna por campo. As colunas são: <strong>Nome</strong>, <strong>Descrição</strong>, <strong>ID de aplicativo</strong>, <strong>Versão</strong>, <strong>Ramo</strong> (<code>stable</code>) e <strong>Remotos</strong>. O nome e a descrição vêm traduzidos quando o aplicativo tem tradução. Para escolher as colunas:</p>
+
+<pre class="term">$ flatpak search --columns=name,application,version calculadora | head -3
+Calculadora	org.kde.kalk	26.08.1
+Calculadora	org.gnome.Calculator	51.1
+Calculadora de IMC	io.github.johannesboehler2.BmiCalculator	1.6.2</pre>
+
+<p>Repare que há várias "Calculadora": é o <strong>ID</strong> que diz qual é qual. O <code>org.kde.kalk</code> é a do KDE; o <code>org.gnome.Calculator</code>, a do GNOME.</p>
+
+<h2>Ver os detalhes: flatpak remote-info</h2>
+
+<pre class="term">$ flatpak remote-info flathub org.gnome.Calculator
+
+Calculadora - Efetue cálculos aritméticos, científicos ou financeiros
+
+                 ID: org.gnome.Calculator
+                Ref: app/org.gnome.Calculator/x86_64/stable      « tipo/ID/arquitetura/ramo
+               Arq.: x86_64
+               Ramo: stable
+             Versão: 51.1
+            Licença: GPL-3.0-or-later
+            Coleção: org.flathub.Stable
+Tamanho do download: 2,0 MB                                      « só o aplicativo
+  Tamanho instalado: 5,1 MB
+            Runtime: org.gnome.Platform/x86_64/51                « o runtime de que ele precisa
+                Sdk: org.gnome.Sdk/x86_64/51
+
+             Commit: 00516a24d410ad62ed3e955fa5deb5af221ab6b181ed5549103f3670d1…
+                Pai: 0032886e3396c2e0cb107d453d600301c8090241d3fef31ca3f688510d…
+            Assunto: Merge pull request #55 from flathub/update-master-db2c4e6 (6d83df014422)
+               Data: 2026-10-12 11:33:26 +0000</pre>
+
+<p>A calculadora tem 5,1 MB, mas o <strong>runtime</strong> é outra história:</p>
+
+<pre class="term">$ flatpak remote-info flathub org.gnome.Platform//51 | grep -E "Tamanho|ID"
+                 ID: org.gnome.Platform
+Tamanho do download: 431,7 MB
+  Tamanho instalado: 1,1 GB</pre>
+
+<p>O primeiro aplicativo GNOME custa mais de 1 GB, porque traz o runtime. Os seguintes que usam o mesmo runtime saem baratos. É a troca do Flatpak: espaço em disco por independência do sistema.</p>
+
+<hr>
+
+<h2>Instalar, rodar e remover</h2>
+
+<dl class="anatomy">
+  <dt>flatpak install</dt><dd>Instalar.</dd>
+  <dt>flathub</dt><dd>De qual remoto (pode omitir se só houver um).</dd>
+  <dt>org.gnome.Calculator</dt><dd>O ID do aplicativo.</dd>
+</dl>
+
+<p>Na VM do guia não instalamos (seria mais de 400 MB de download). Esta é a saída real até a primeira pergunta, respondida com <code>n</code>:</p>
+
+<pre class="term">#> flatpak install flathub org.gnome.Calculator
+Procurando por correspondências…
+Runtime exigido para org.gnome.Calculator/x86_64/stable (runtime/org.gnome.Platform/x86_64/51) localizado no remoto flathub
+Você deseja instalá-lo? [Y/n]: n                     « as letras ficam em inglês: Y = sim
+erro: O aplicativo org.gnome.Calculator/x86_64/stable requer o runtime org.gnome.Platform/x86_64/51, que não está instalado
+#> echo $?
+1</pre>
+
+<p>Respondendo <code>Y</code> (ou Enter), o Flatpak mostra uma tabela com tudo o que vai baixar (aplicativo, runtime, traduções) e pede mais uma confirmação. Depois de instalado, os comandos do dia a dia são estes (ilustrativos, pelo mesmo motivo):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>flatpak run org.gnome.Calculator</code></td><td>Abre o aplicativo (ou pelo menu do ambiente gráfico)</td></tr>
+<tr><td><code>flatpak list --app</code></td><td>Lista os aplicativos instalados (sem <code>--app</code>, inclui os runtimes)</td></tr>
+<tr><td><code>flatpak update</code></td><td>Atualiza todos os Flatpaks (o <code>pacman -Syu</code> <strong>não</strong> faz isso)</td></tr>
+<tr><td><code>flatpak uninstall org.gnome.Calculator</code></td><td>Remove o aplicativo</td></tr>
+<tr><td><code>flatpak uninstall --unused</code></td><td>Remove runtimes que nenhum aplicativo usa mais (os "órfãos" do Flatpak)</td></tr>
+<tr><td><code>flatpak uninstall --delete-data org.gnome.Calculator</code></td><td>Remove e apaga os dados do aplicativo em <code>~/.var/app/</code></td></tr>
+</table>
+</div>
+
+<p>Na VM, sem nada instalado: <code>flatpak list</code> não mostra nada e devolve 0. O espaço ocupado em <code>/var/lib/flatpak</code> já era de 116 MB, só com o catálogo do Flathub.</p>
+
+<hr>
+
+<h2>--system × --user</h2>
+
+<p>O Flatpak tem duas instalações separadas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>--system</code> (padrão)</th><th><code>--user</code></th></tr>
+<tr><td>Onde fica</td><td><code>/var/lib/flatpak</code></td><td><code>~/.local/share/flatpak</code></td></tr>
+<tr><td>Quem vê</td><td>Todos os usuários</td><td>Só você</td></tr>
+<tr><td>Precisa de senha</td><td>Sim (root, ou a janela de senha do polkit no ambiente gráfico)</td><td>Não</td></tr>
+<tr><td>Flathub configurado</td><td>Sim, de fábrica</td><td><strong>Não</strong>: adicione com <code>--user</code></td></tr>
+</table>
+</div>
+
+<p>Por isso, a primeira tentativa de instalar só para você falha. Saída real, como ana:</p>
+
+<pre class="term">$ flatpak remotes --user
+$ flatpak install --user flathub org.gnome.Calculator
+Procurando por correspondências…
+erro: Nenhuma ref de remoto localizada para “flathub”      « o remoto flathub do usuário não existe
+$ echo $?
+1</pre>
+
+<p>A solução é adicionar o Flathub também na instalação do usuário:</p>
+
+<pre class="term">$ flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+$ flatpak install --user flathub org.gnome.Calculator</pre>
+
+<p>(Ilustrativo: na VM, o Flathub do usuário não foi adicionado.) Use <code>--user</code> num computador compartilhado, ou quando não tem a senha de administrador.</p>
+
+<hr>
+
+<h2>Permissões e Flatseal</h2>
+
+<p>Cada aplicativo declara o que precisa acessar fora da sandbox. Veja <strong>antes</strong> de instalar, com <code>--show-metadata</code>:</p>
+
+<pre class="term">$ flatpak remote-info --show-metadata flathub org.gnome.Calculator
+[Application]
+name=org.gnome.Calculator
+runtime=org.gnome.Platform/x86_64/51
+sdk=org.gnome.Sdk/x86_64/51
+command=gnome-calculator
+
+[Context]
+shared=ipc;network;                 « rede (cotação de moedas) e memória compartilhada
+sockets=fallback-x11;wayland;       « desenhar janelas (Wayland, ou X11 se não houver Wayland)
+devices=dri;                        « aceleração gráfica
+…</pre>
+
+<p>A calculadora não pede acesso aos seus arquivos (<code>filesystems=</code> não aparece). Um editor de imagens pediria, por exemplo, <code>filesystems=home;</code>. Permissões comuns:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Permissão</th><th>Libera</th></tr>
+<tr><td><code>filesystems=home</code> / <code>host</code></td><td>Sua pasta pessoal / o sistema de arquivos todo</td></tr>
+<tr><td><code>shared=network</code></td><td>Internet</td></tr>
+<tr><td><code>sockets=wayland;x11</code></td><td>Mostrar janelas</td></tr>
+<tr><td><code>sockets=pulseaudio</code></td><td>Som</td></tr>
+<tr><td><code>devices=all</code></td><td>Todos os dispositivos (webcam, controles de jogo…)</td></tr>
+</table>
+</div>
+
+<p>Para mudar as permissões de um aplicativo instalado, há o comando <code>flatpak override</code> (ex.: <code>flatpak override --user --nofilesystem=home ID</code> tira o acesso à pasta pessoal) e o aplicativo gráfico <strong>Flatseal</strong>, que mostra tudo com chaves liga/desliga. Ele próprio é um Flatpak:</p>
+
+<pre class="term">$ flatpak search flatseal | head -1
+Flatseal	Gerencie as permissões de Flatpaks	com.github.tchx84.Flatseal	2.4.1	stable	flathub</pre>
+
+<div class="warning">
+<strong>Sandbox não é garantia</strong>
+<p>Um aplicativo com <code>filesystems=host</code> enxerga quase tudo, e o Flathub aceita aplicativos enviados por terceiros (nem sempre pelos autores originais). Prefira os marcados como "verificados" no site do Flathub e confira as permissões.</p>
+</div>
+
+<hr>
+
+<h2>Flatpak × pacman × AUR</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>pacman (repositórios oficiais)</th><th>AUR</th><th>Flatpak (Flathub)</th></tr>
+<tr><td>Quem empacota</td><td>Equipe do Arch</td><td>Qualquer usuário</td><td>Autores ou voluntários</td></tr>
+<tr><td>Bibliotecas</td><td>As do sistema, compartilhadas</td><td>As do sistema</td><td>Do runtime, separadas</td></tr>
+<tr><td>Espaço em disco</td><td>Pequeno</td><td>Pequeno</td><td>Grande (runtimes)</td></tr>
+<tr><td>Isolamento</td><td>Nenhum</td><td>Nenhum</td><td>Sandbox com permissões</td></tr>
+<tr><td>Atualizar</td><td><code>pacman -Syu</code></td><td><code>yay</code>/<code>paru</code></td><td><code>flatpak update</code></td></tr>
+<tr><td>Quebra com atualização do sistema?</td><td>Não (tudo anda junto)</td><td>Pode (veja o <code>paru</code> em <a href="atualizar.html">Atualizar</a>)</td><td>Não</td></tr>
+<tr><td>Bom para</td><td>Tudo o que existe nele: sistema, terminal, servidores, a maioria dos aplicativos</td><td>O que não está nos repositórios</td><td>Aplicativos gráficos proprietários ou que você quer isolar; versões que o Arch não tem</td></tr>
+<tr><td>Ruim para</td><td>—</td><td>Quem não lê PKGBUILD (<a href="aur-seguranca.html">segurança</a>)</td><td>Ferramentas de terminal e de sistema, drivers, temas que precisam bater com o sistema</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> No Arch, a ordem costuma ser: <strong>repositórios oficiais primeiro</strong> (<code>pacman -Ss</code>); se não estiver lá e for um aplicativo gráfico, <strong>Flatpak</strong>; se não houver Flatpak, ou for uma ferramenta de terminal, o <strong>AUR</strong> (lendo o PKGBUILD). Evite ter o mesmo programa pelos três caminhos: você não sabe qual está abrindo.</p>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="try" data-goal="ran:pacman +-Q.*flatpak,out:1.18" data-solucao="pacman -Qi flatpak">
+<p class="try-task"><strong>Missão:</strong> o simulador não roda o Flatpak, mas conhece o pacote dele. Descubra a versão do pacote <code>flatpak</code> instalado na máquina da ana e de quais pacotes ele depende.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Nenhuma ref de remoto localizada para “flathub”"</strong>
+<pre class="term">$ flatpak install --user flathub org.gnome.Calculator
+Procurando por correspondências…
+erro: Nenhuma ref de remoto localizada para “flathub”</pre>
+<p><strong>O que aconteceu:</strong> o remoto não existe na instalação escolhida (aqui, a do usuário).</p>
+<p><strong>Como confirmar:</strong> <code>flatpak remotes --user</code> e <code>flatpak remotes --system</code>.</p>
+<p><strong>Como resolver:</strong> instale sem <code>--user</code>, ou adicione o Flathub com <code>flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Nenhuma correspondência localizada" numa busca</strong>
+<p><strong>O que aconteceu:</strong> o catálogo appstream ainda não foi baixado (ou o nome não existe).</p>
+<p><strong>Como resolver:</strong> <code>sudo flatpak update --appstream</code> e procure de novo; procure também pelo nome em inglês.</p>
+</div>
+
+<div class="cenario">
+<strong>"requer o runtime …, que não está instalado"</strong>
+<p><strong>O que aconteceu:</strong> você respondeu <code>n</code> à pergunta do runtime. Sem ele, o aplicativo não instala.</p>
+<p><strong>Como resolver:</strong> repita e aceite o runtime. Se o problema é espaço, confira antes com <code>flatpak remote-info</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O aplicativo não aparece no menu</strong>
+<p><strong>O que aconteceu:</strong> a sessão gráfica começou antes do Flatpak ser instalado.</p>
+<p><strong>Como resolver:</strong> saia e entre de novo na sessão. Enquanto isso, <code>flatpak run ID</code> abre o aplicativo.</p>
+</div>
+
+<div class="cenario">
+<strong>O aplicativo não enxerga meus arquivos</strong>
+<p><strong>O que aconteceu:</strong> é a sandbox funcionando: ele não tem permissão de <code>filesystems</code> para aquela pasta.</p>
+<p><strong>Como resolver:</strong> use o seletor de arquivos do próprio aplicativo (ele passa pelo "portal", que pede sua autorização), ou libere a pasta no Flatseal / <code>flatpak override --user --filesystem=~/Documentos ID</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo pacman -S flatpak</code></td><td>Instala o Flatpak (o Flathub vem junto)</td></tr>
+<tr><td><code>flatpak remotes</code> (<code>--user</code>/<code>--system</code>)</td><td>Lista os remotos</td></tr>
+<tr><td><code>flatpak remote-add --if-not-exists flathub URL</code></td><td>Adiciona o Flathub (útil com <code>--user</code>)</td></tr>
+<tr><td><code>flatpak update --appstream</code></td><td>Baixa o catálogo para a busca</td></tr>
+<tr><td><code>flatpak search texto</code></td><td>Procura</td></tr>
+<tr><td><code>flatpak remote-info flathub ID</code></td><td>Detalhes, tamanho e runtime (<code>--show-metadata</code>: permissões)</td></tr>
+<tr><td><code>flatpak install flathub ID</code></td><td>Instala</td></tr>
+<tr><td><code>flatpak run ID</code></td><td>Roda</td></tr>
+<tr><td><code>flatpak list --app</code></td><td>Lista os instalados</td></tr>
+<tr><td><code>flatpak update</code></td><td>Atualiza os Flatpaks</td></tr>
+<tr><td><code>flatpak uninstall ID</code> / <code>--unused</code></td><td>Remove o aplicativo / runtimes sem uso</td></tr>
+<tr><td><code>flatpak override --user …</code></td><td>Muda permissões (ou use o Flatseal)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Detalhes antes de instalar</h3>
+<p>Veja o tamanho e o runtime do aplicativo <code>org.kde.kalk</code> no Flathub:</p>
+<div class="ex-code">flatpak <input data-answer="remote-info" aria-label="subcomando"> flathub org.kde.kalk</div>
+</div>
+
+<div class="exercise">
+<h3>2. Limpar runtimes</h3>
+<p>Remova os runtimes que nenhum aplicativo usa mais:</p>
+<div class="ex-code">flatpak uninstall <input data-answer="--unused" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Por que o primeiro aplicativo do GNOME instalado por Flatpak ocupa mais de 1 GB?</p>
+<label><input type="radio" name="q3"> Porque o Flatpak baixa o código-fonte e compila.</label>
+<label><input type="radio" name="q3"> Porque vem junto o runtime <code>org.gnome.Platform</code>, compartilhado com os próximos aplicativos.</label>
+<label><input type="radio" name="q3"> Porque o Flatpak instala o GNOME inteiro no sistema.</label>
+<label><input type="radio" name="q3"> Porque cada aplicativo tem uma cópia do kernel.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Você quer o <code>htop</code>. Por onde instalar no Arch?</p>
+<label><input type="radio" name="q4"> Flatpak, porque é mais seguro.</label>
+<label><input type="radio" name="q4"> AUR, porque é mais novo.</label>
+<label><input type="radio" name="q4"> Tanto faz, é igual.</label>
+<label><input type="radio" name="q4"> pacman: está nos repositórios oficiais e é uma ferramenta de terminal.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. <code>sudo pacman -Syu</code> atualiza os aplicativos Flatpak?</p>
+<label><input type="radio" name="q5"> Não: só o pacote <code>flatpak</code>. Os aplicativos se atualizam com <code>flatpak update</code>.</label>
+<label><input type="radio" name="q5"> Sim, todos.</label>
+<label><input type="radio" name="q5"> Só os instalados com <code>--user</code>.</label>
+<label><input type="radio" name="q5"> Só os runtimes.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Flatpak = aplicativo + runtime, vindos de um remoto (o Flathub), rodando numa sandbox.</li>
+  <li>No Arch, <code>sudo pacman -S flatpak</code> já traz o Flathub da instalação do sistema; o do usuário (<code>--user</code>) você adiciona.</li>
+  <li><code>search</code> (depois de <code>update --appstream</code>), <code>remote-info</code> (tamanho, runtime, permissões), <code>install</code>, <code>run</code>, <code>update</code>, <code>uninstall --unused</code>.</li>
+  <li>Permissões: confira antes; ajuste com o Flatseal ou <code>flatpak override</code>.</li>
+  <li>Repositórios oficiais primeiro; Flatpak para aplicativos gráficos que não estão lá; AUR com cuidado.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Flatpak">Flatpak</a> (em português: <a href="https://wiki.archlinux.org/title/Flatpak_(Portugu%C3%AAs)">Flatpak (Português)</a>) cobre instalação, remotos, <code>--user</code> e permissões. Para comparar as formas de instalar programas, veja também <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> e a documentação oficial em <a href="https://docs.flatpak.org/">docs.flatpak.org</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
