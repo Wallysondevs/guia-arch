@@ -160,7 +160,11 @@ Sinto muito, tente novamente.              « recusada! a conta está bloqueada
 [sudo] senha para teste-a9:
 Sinto muito, tente novamente.</pre>
 
-<p>Repare: <strong>nenhuma mensagem diz "conta bloqueada"</strong>. A senha certa simplesmente é recusada, o que leva muita gente a achar que esqueceu a senha ou que o teclado está errado. O root vê o motivo com o comando <code>faillock</code>:</p>
+<p>Repare: <strong>o sudo não diz "conta bloqueada"</strong>. A senha certa simplesmente é recusada, o que leva muita gente a achar que esqueceu a senha ou que o teclado está errado. Outros programas avisam: quando o polkit pediu a senha da ana na VM, logo depois de senhas erradas no <code>sudo</code>, apareceu (veja <a href="usuarios.html">Usuários e Grupos</a>):</p>
+<pre class="term">Info: The account is locked due to 3 failed logins.
+Info: (3 minutes left to unlock)
+Password: </pre>
+<p>O root vê o motivo com o comando <code>faillock</code>:</p>
 
 <pre class="term">#> faillock --user teste-a9
 teste-a9:
