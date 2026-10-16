@@ -1,0 +1,72 @@
+## pacman: consultas (só leitura), conferidas na VM
+### pacman-Q
+pacman -Q bash
+pacman -Q htop nano tree linux-lts intel-ucode flatpak
+pacman -Q | wc -l
+pacman -Qe | wc -l
+pacman -Qd | wc -l
+pacman -Qm
+pacman -Qn | wc -l
+pacman -Qdt
+echo $?
+pacman -Q firefox
+echo $?
+pacman -Qq | head -5
+### pacman-Qi
+pacman -Qi bash
+pacman -Qi nano htop
+pacman -Qi base-devel
+### pacman-Qi2
+pacman -Qi flatpak sudo openssh
+pacman -Qi glibc | grep -E '^(Nome|Versão|Tamanho|Motivo)'
+pacman -Qi linux linux-lts
+### pacman-Qs-Qo
+pacman -Qs ^linux
+pacman -Qs editor
+pacman -Qo /usr/bin/ls
+pacman -Qo ls
+pacman -Qo /etc/pacman.conf
+pacman -Qo /home/ana/frutas.txt
+echo $?
+pacman -Qo /nada
+echo $?
+### pacman-Ql-Qk
+pacman -Ql htop
+pacman -Ql bash | head -20
+pacman -Ql nano | wc -l
+pacman -Qk bash htop
+pacman -Qkk bash
+pacman -Qg base-devel
+echo $?
+### pacman-Ss-Si
+pacman -Ss fastfetch
+pacman -Ss '^htop$'
+pacman -Si htop
+pacman -Si firefox
+pacman -Si fastfetch nano
+pacman -Si neofetch
+echo $?
+pacman -Sg base-devel
+echo $?
+pacman -Sg xfce4 | head -3
+### pacman-root
+pacman -S htop
+echo $?
+pacman -R htop
+echo $?
+pacman -Syu
+echo $?
+pacman -Sc
+echo $?
+pacman
+echo $?
+pacman -X
+echo $?
+### pacman-F
+pacman -F hostname
+pacman -F ifconfig
+pacman -F neofetch
+echo $?
+pacman -F /usr/bin/hostname
+### pacman-V
+pacman -V

@@ -1,0 +1,31 @@
+## Transações do pacman: na VM com "previa" (responde não, nada é instalado)
+### previa-S-htop [previa]
+-S htop
+### previa-S-fastfetch [previa]
+-S fastfetch
+### previa-S-dois [previa]
+-S htop fastfetch
+### previa-S-firefox [previa]
+-S firefox
+### previa-S-vlc [previa]
+-S vlc
+### previa-S-gimp [previa]
+-S gimp
+### previa-S-needed [previa]
+-S --needed htop tree
+### previa-S-inexistente [previa]
+-S neofetch
+### previa-R-htop [previa]
+-R htop
+### previa-Rs-podman [previa]
+-Rs podman
+### previa-Rns-nginx [previa]
+-Rns nginx
+### previa-R-bash [previa]
+-R bash
+### previa-Rdd-ncurses [previa]
+-Rdd ncurses
+### previa-R-inexistente [previa]
+-R firefox
+### previa-Rs-flatpak [previa]
+-Rs flatpak
