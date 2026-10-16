@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projeto: montar um desktop KDE Plasma no Arch | Guia Arch</title>
+<meta name="description" content="Projeto do Guia Arch: transformar uma instalação mínima num desktop KDE Plasma completo, passo a passo: plasma-meta (438 pacotes, perguntas de provedor reais), drivers mesa/vulkan, tela de login, PipeWire, fontes, Firefox e Flatpak.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Montar um Desktop KDE</span></h1>
+
+<p class="intro">Depois da <a href="projeto-instalacao.html">instalação</a>, o Arch dá boot numa tela preta com <code>notebook login:</code>. Neste projeto você transforma essa instalação mínima num desktop KDE Plasma completo: interface, tela de login, vídeo, som, fontes, navegador e loja de aplicativos. Cada peça é uma decisão sua, e é por isso que o resultado fica do seu jeito.</p>
+
+<div class="note">
+<strong>Você vai praticar</strong>
+<ul>
+  <li>Instalar um meta-pacote grande e responder às perguntas de <strong>provedor</strong> do pacman com consciência.</li>
+  <li>Escolher drivers de vídeo (mesa, Vulkan, NVIDIA).</li>
+  <li>Habilitar um gerenciador de login com <code>systemctl enable</code>.</li>
+  <li>Montar o som com PipeWire e WirePlumber, e escolher fontes.</li>
+  <li>Instalar aplicativos pelo pacman e pelo Flatpak.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>O que é real e o que é ilustrativo nesta página</strong>
+<p>A VM do guia é compartilhada e não tem interface gráfica, então o desktop <strong>não foi instalado</strong> nela. Todas as listas de pacotes, perguntas e tamanhos abaixo são reais: vieram do <code>previa</code>, que roda a transação de verdade e responde "não" no fim (outubro de 2026). As partes que acontecem na tela gráfica (login, configurações do Plasma) são <strong>ilustrativas</strong> e estão marcadas.</p>
+</div>
+
+<hr>
+
+<h2>Antes de começar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você precisa de</th><th>Como conferir</th><th>Aula</th></tr>
+<tr><td>Um Arch instalado e dando boot</td><td>Entrar como seu usuário</td><td><a href="projeto-instalacao.html">Instalação Completa do Zero</a></td></tr>
+<tr><td>Rede funcionando</td><td><code>ping -c 3 archlinux.org</code></td><td><a href="primeiro-boot.html">Primeiro Boot e Rede</a></td></tr>
+<tr><td>Usuário comum com sudo</td><td><code>sudo -v</code> pede a senha e não reclama</td><td><a href="sudo-usuarios.html">sudo, root e Usuários</a></td></tr>
+<tr><td>Sistema atualizado</td><td><code>sudo pacman -Syu</code></td><td><a href="atualizar.html">Atualizar o Sistema</a></td></tr>
+<tr><td>~4 GB de RAM e ~10 GB livres</td><td><code>free -h</code>, <code>df -h /</code></td><td><a href="discos.html">lsblk, df, du</a></td></tr>
+<tr><td>Um snapshot da VM</td><td>"antes-desktop"</td><td><a href="projetos.html">Como Usar os Projetos</a></td></tr>
+</table>
+</div>
+
+<p>Na VM, se for usar o VirtualBox: Configurações → Tela → Memória de vídeo no máximo e controlador <strong>VMSVGA</strong>. É ele que o Arch enxerga:</p>
+
+<pre class="term">$ lspci | grep -i vga
+00:02.0 VGA compatible controller: VMware SVGA II Adapter</pre>
+
+<hr>
+
+<h2>Passo 1: as peças de um desktop</h2>
+<p>Um "desktop Linux" é um conjunto de camadas, como os andares de um prédio. No Windows elas vêm grudadas; no Arch você instala cada uma:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Camada</th><th>O que faz</th><th>No projeto</th></tr>
+<tr><td>Driver de vídeo</td><td>Fala com a placa de vídeo (OpenGL, Vulkan, aceleração de vídeo)</td><td><code>mesa</code>, <code>vulkan-*</code></td></tr>
+<tr><td>Servidor gráfico</td><td>Desenha janelas na tela. <strong>Wayland</strong> é o atual; <strong>Xwayland</strong> roda programas antigos feitos para X11</td><td><code>kwin</code> (compositor Wayland), <code>xorg-xwayland</code></td></tr>
+<tr><td>Ambiente de desktop</td><td>Painel, menu, área de trabalho, configurações</td><td><code>plasma-meta</code></td></tr>
+<tr><td>Gerenciador de login</td><td>A tela gráfica de usuário e senha</td><td><code>sddm</code> ou <code>plasma-login-manager</code></td></tr>
+<tr><td>Som</td><td>Mistura e envia áudio para as caixas e o Bluetooth</td><td><code>pipewire</code> + <code>wireplumber</code></td></tr>
+<tr><td>Aplicativos</td><td>Terminal, arquivos, navegador…</td><td><code>konsole</code>, <code>dolphin</code>, <code>firefox</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Passo 2: o Plasma e suas perguntas</h2>
+
+<dl class="anatomy">
+  <dt>plasma-meta</dt><dd>Meta-pacote: um pacote vazio (7,13 KiB) que só depende das peças do Plasma (cerca de 65). Instalar o meta-pacote = instalar o Plasma completo; e, ao contrário de um grupo, ele <strong>acompanha</strong> peças novas que o KDE acrescentar no futuro.</dd>
+  <dt>sddm</dt><dd>O gerenciador de login clássico do KDE.</dd>
+  <dt>konsole</dt><dd>O terminal do KDE (o Plasma não traz terminal!).</dd>
+  <dt>dolphin</dt><dd>O gerenciador de arquivos do KDE (também não vem no Plasma).</dd>
+</dl>
+
+<p>Antes da lista de pacotes, o pacman faz quatro perguntas. Saída real (o <code>previa</code> respondeu Enter, o padrão, em todas):</p>
+
+<pre class="term">#> previa -S plasma-meta sddm konsole dolphin
+resolvendo dependências...
+:: Há 2 provedores disponíveis para qt6-multimedia-backend:
+:: Repositório extra
+   1) qt6-multimedia-ffmpeg  2) qt6-multimedia-gstreamer
+
+Digite um número (padrão=1):
+:: Há 2 provedores disponíveis para jack:
+:: Repositório extra
+   1) jack2  2) pipewire-jack
+
+Digite um número (padrão=1):
+:: Há 11 provedores disponíveis para ttf-font:
+:: Repositório extra
+   1) gnu-free-fonts  2) noto-fonts  3) ttf-bitstream-vera  4) ttf-croscore
+   5) ttf-dejavu  6) ttf-droid  7) ttf-ibm-plex  8) ttf-input
+   9) ttf-input-nerd  10) ttf-liberation  11) ttf-roboto
+
+Digite um número (padrão=1):
+:: Há 128 provedores disponíveis para tessdata:
+:: Repositório extra
+   1) tesseract-data-afr  2) tesseract-data-amh  3) tesseract-data-ara
+   …                                                   « (encurtado: 128 idiomas)
+   92) tesseract-data-por  93) tesseract-data-pus  94) tesseract-data-que
+   …
+   127) tesseract-data-yid  128) tesseract-data-yor
+
+Digite um número (padrão=1):
+procurando pacotes conflitantes...</pre>
+
+<p>Uma pergunta de <strong>provedor</strong> aparece quando uma dependência pode ser satisfeita por mais de um pacote (veja <a href="pacman-avancado.html">pacman Avançado</a>). O padrão (<code>1</code>) é só o primeiro da lista em ordem alfabética, <strong>não</strong> uma recomendação. As respostas boas para um desktop em português:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Responda</th><th>Por quê</th></tr>
+<tr><td><code>qt6-multimedia-backend</code></td><td><code>1</code> (ffmpeg)</td><td>O backend recomendado pelo Qt 6</td></tr>
+<tr><td><code>jack</code></td><td><code>2</code> (<code>pipewire-jack</code>)</td><td>O som será PipeWire; <code>jack2</code> seria um segundo servidor de áudio</td></tr>
+<tr><td><code>ttf-font</code></td><td><code>2</code> (<code>noto-fonts</code>)</td><td>Cobre quase todos os alfabetos; <code>gnu-free-fonts</code> (o padrão) é limitado e feio na tela</td></tr>
+<tr><td><code>tessdata</code></td><td><code>92</code> (<code>tesseract-data-por</code>)</td><td>Idioma do reconhecimento de texto (OCR) do Spectacle. O padrão seria <strong>africâner</strong> (<code>afr</code>)!</td></tr>
+</table>
+</div>
+
+<p>Depois das perguntas, o resumo:</p>
+
+<pre class="term">Pacotes (438) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+              …                                          « (encurtado)
+              bluez-5.87-2  breeze-6.8.0-1  discover-6.8.0-1  ffmpeg-2:9.0.2-2
+              flatpak-kcm-6.8.0-1  gnu-free-fonts-20120503-9  jack2-1.9.22-2
+              …
+              kwin-6.8.0-1  pipewire-audio-1:1.6.9-1  pipewire-pulse-1:1.6.9-1
+              plasma-desktop-6.8.0-1  plasma-nm-6.8.0-1  plasma-pa-6.8.0-1
+              plasma-workspace-6.8.0-1  qt6-base-6.12.0-3  spectacle-1:6.8.0-1
+              tesseract-data-afr-2:4.1.0-5  wireplumber-0.5.18-1
+              xorg-server-21.1.25-2  xorg-xwayland-24.1.14-1
+              …
+              dolphin-26.08.2-1  konsole-26.08.2-1  plasma-meta-6.8-1
+              sddm-0.21.0-7
+
+Tamanho total download:    611,75 MiB
+Tamanho total instalado:  2099,43 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<ul>
+  <li><strong>438 pacotes, 612 MiB de download, 2,1 GiB instalados.</strong> Numa conexão de 50 Mbit/s, uns 2 minutos de download e alguns de instalação.</li>
+  <li>Veja na lista o efeito das respostas padrão: <code>gnu-free-fonts</code>, <code>jack2</code> e <code>tesseract-data-afr</code>. Com as respostas da tabela, eles dão lugar a <code>noto-fonts</code>, <code>pipewire-jack</code> e <code>tesseract-data-por</code>.</li>
+  <li>Versões: Plasma 6.8, KDE Frameworks 6.31, KDE Gear (aplicativos) 26.08, Qt 6.12.</li>
+  <li>O som (<code>pipewire-pulse</code>, <code>wireplumber</code>) e o Bluetooth (<code>bluez</code>) já vêm como dependências do Plasma.</li>
+</ul>
+
+<p>No seu Arch, o comando de verdade é:</p>
+<pre class="file" data-file="ilustrativo: instalar o Plasma">sudo pacman -S plasma-meta sddm konsole dolphin
+# respostas: 1, 2, 2, 92 ; depois confira a lista e confirme com S</pre>
+
+<div class="tip">
+<strong>plasma-meta, grupo plasma ou kde-applications-meta?</strong>
+<p><code>plasma-meta</code> (meta-pacote) e o grupo <code>plasma</code> (68 pacotes; o pacman pergunta quais você quer) instalam o ambiente. <code>kde-applications-meta</code> instala <strong>todos</strong> os aplicativos do KDE (jogos, educação, PIM…): são centenas de pacotes a mais. Prefira o Plasma + os aplicativos que você usa.</p>
+</div>
+
+<hr>
+
+<h2>Passo 3: drivers de vídeo</h2>
+<p>O <code>mesa</code> (drivers livres de OpenGL para Intel, AMD e VMs) já vem como dependência de quase tudo gráfico; na VM, ele já estava instalado:</p>
+
+<pre class="term">$ pacman -Q mesa
+mesa 1:26.2.4-1</pre>
+
+<div class="try" data-goal="ran:pacman\s+-Q\w*\s+.*mesa" data-solucao="pacman -Q mesa">
+<p class="try-task"><strong>Missão:</strong> confira se o driver <code>mesa</code> está instalado e em qual versão.</p>
+</div>
+
+<p>O que falta é o <strong>Vulkan</strong> (jogos, alguns apps) e a aceleração de vídeo, que dependem da placa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Placa</th><th>Pacotes</th></tr>
+<tr><td>Intel</td><td><code>mesa vulkan-intel intel-media-driver</code></td></tr>
+<tr><td>AMD</td><td><code>mesa vulkan-radeon</code> (o <code>xf86-video-amdgpu</code> só é útil no X11 puro)</td></tr>
+<tr><td>NVIDIA recente (Turing, série 16/20, e mais novas)</td><td><code>nvidia-open</code> (ou <code>nvidia-open-dkms</code> para kernels além do <code>linux</code>) + <code>nvidia-utils</code></td></tr>
+<tr><td>NVIDIA antiga</td><td><code>mesa</code> + <code>vulkan-nouveau</code> (livre) ou drivers antigos do AUR</td></tr>
+<tr><td>VM (VirtualBox, QEMU)</td><td>Só <code>mesa</code></td></tr>
+</table>
+</div>
+
+<pre class="term">#> previa -S vulkan-intel vulkan-radeon intel-media-driver
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (9) intel-gmmlib-22.10.0-1  libdisplay-info-0.3.0-1  libva-2.24.1-1
+            vulkan-icd-loader-1.4.363.0-1
+            vulkan-mesa-implicit-layers-1:26.2.4-1  xcb-util-keysyms-0.4.1-5
+            intel-media-driver-26.3.5-1  vulkan-intel-1:26.2.4-1
+            vulkan-radeon-1:26.2.4-1
+
+Tamanho total download:    17,17 MiB
+Tamanho total instalado:  107,90 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>(Aqui pedimos Intel e AMD juntos só para ver os tamanhos; instale só o da sua placa.) Repare que <code>vulkan-intel</code> e <code>vulkan-radeon</code> têm a mesma versão do <code>mesa</code> (<code>1:26.2.4</code>): eles fazem parte do projeto Mesa. Em outubro de 2026, o pacote <code>nvidia</code> (fechado, antigo) não existe mais nos repositórios: <code>nvidia-open</code> 615.78.08 é o caminho para placas suportadas. Steam e jogos de 32 bits pedem também o repositório <code>multilib</code> e os pacotes <code>lib32-*</code>.</p>
+
+<hr>
+
+<h2>Passo 4: a tela de login</h2>
+<p>Até aqui, nada gráfico liga sozinho (no Arch, nenhum serviço liga sozinho). Você precisa <strong>habilitar</strong> um gerenciador de login:</p>
+
+<pre class="file" data-file="ilustrativo">sudo systemctl enable sddm.service
+# na próxima vez que ligar, a tela de login gráfica aparece
+sudo reboot</pre>
+
+<div class="note">
+<strong>SDDM ou Plasma Login Manager?</strong>
+<p>As versões recentes do Plasma ganharam um gerenciador de login próprio do KDE, e o <code>plasma-meta</code> já o puxa como dependência: o pacote <code>plasma-login-manager</code>, com o serviço <code>plasmalogin.service</code>. O SDDM continua disponível e é o que a maioria dos tutoriais usa. Os dois funcionam; <strong>habilite só um</strong>. Dois gerenciadores de login habilitados disputam a tela e o resultado é imprevisível.</p>
+<pre class="file" data-file="ilustrativo: usar o Plasma Login Manager em vez do SDDM">sudo systemctl enable plasmalogin.service</pre>
+</div>
+
+<p>Por que <code>enable</code> e não <code>enable --now</code>? Ligar a interface gráfica no meio de uma sessão de texto funciona, mas reiniciar garante que tudo (drivers, grupos, variáveis) comece limpo. Na tela de login, confira no canto o tipo de sessão: <strong>Plasma (Wayland)</strong> é o padrão e o recomendado; "Plasma (X11)" existe para casos especiais.</p>
+
+<hr>
+
+<h2>Passo 5: som com PipeWire</h2>
+<p>O <strong>PipeWire</strong> é o servidor de som (e de vídeo, para compartilhar tela) atual. Ele "finge ser" os sistemas antigos para os programas antigos funcionarem: <code>pipewire-pulse</code> imita o PulseAudio, <code>pipewire-jack</code> imita o JACK, <code>pipewire-alsa</code> atende programas ALSA. O <strong>WirePlumber</strong> é o "gerente de sessão": decide para onde vai cada som (caixas, fone, HDMI, Bluetooth).</p>
+
+<pre class="term">$ pacman -Q pipewire wireplumber
+pipewire 1:1.6.9-1
+erro: o pacote "wireplumber" não foi encontrado</pre>
+
+<p>Na VM sem desktop, só o <code>pipewire</code> (biblioteca) está instalado; o <code>wireplumber</code> e o <code>pipewire-pulse</code> vêm com o Plasma, como a lista do passo 2 mostrou. Eles rodam como <strong>serviços do usuário</strong> (<code>systemctl --user</code>), ativados sozinhos quando você faz login. Para conferir, no Konsole (ilustrativo):</p>
+
+<pre class="file" data-file="ilustrativo: conferir o som depois do login">systemctl --user status pipewire pipewire-pulse wireplumber
+wpctl status          # dispositivos e volumes, do WirePlumber</pre>
+
+<p>Notebooks recentes com placa de som Intel às vezes precisam de <code>sof-firmware</code> (sem ele: "Dummy Output", sem som). Para microfone e fone Bluetooth: <code>sudo systemctl enable --now bluetooth</code>.</p>
+
+<hr>
+
+<h2>Passo 6: fontes</h2>
+<p>Com <code>noto-fonts</code> escolhido no passo 2, latim, grego, cirílico e muito mais já aparecem. Complete com:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Para quê</th></tr>
+<tr><td><code>noto-fonts-emoji</code></td><td>Emojis coloridos (o Plasma já puxa)</td></tr>
+<tr><td><code>noto-fonts-cjk</code></td><td>Chinês, japonês, coreano (grande; sem ele aparecem quadradinhos)</td></tr>
+<tr><td><code>ttf-liberation</code></td><td>Métricas iguais a Arial, Times New Roman e Courier New (documentos do Office abrem com a paginação certa)</td></tr>
+<tr><td><code>ttf-dejavu</code></td><td>Boa fonte monoespaçada para terminal</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Passo 7: aplicativos</h2>
+<h3>Pelo pacman: Firefox</h3>
+<pre class="term">#> previa -S firefox
+resolvendo dependências...
+:: Há 2 provedores disponíveis para jack:
+:: Repositório extra
+   1) jack2  2) pipewire-jack
+
+Digite um número (padrão=1):
+:: Há 11 provedores disponíveis para ttf-font:
+:: Repositório extra
+   1) gnu-free-fonts  2) noto-fonts  3) ttf-bitstream-vera  4) ttf-croscore
+   5) ttf-dejavu  6) ttf-droid  7) ttf-ibm-plex  8) ttf-input
+   9) ttf-input-nerd  10) ttf-liberation  11) ttf-roboto
+
+Digite um número (padrão=1):
+procurando pacotes conflitantes...
+
+Pacotes (97) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+             …                                          « (encurtado: ffmpeg, codecs, gtk3…)
+             firefox-158.0-1
+
+Tamanho total download:   161,28 MiB
+Tamanho total instalado:  616,00 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Esta prévia foi feita na VM <strong>sem</strong> o Plasma, por isso as mesmas perguntas reaparecem e vêm 97 pacotes. Instalando o Firefox <strong>depois</strong> do Plasma (com <code>pipewire-jack</code> e <code>noto-fonts</code> já escolhidos), as perguntas somem e a lista encolhe. Outros aplicativos do KDE que fazem falta: <code>kate</code> (editor), <code>ark</code> (compactados), <code>gwenview</code> (imagens), <code>okular</code> (PDF), <code>kcalc</code>.</p>
+
+<h3>Pelo Flatpak: a loja</h3>
+<p>O Plasma traz o <strong>Discover</strong> (a "loja") e o <code>flatpak-kcm</code> (permissões de Flatpak nas Configurações). O Flatpak do Arch vem <strong>sem</strong> o Flathub; na VM ele foi adicionado assim (log real da preparação):</p>
+
+<pre class="term">#> flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+#> flatpak remotes
+flathub	system</pre>
+
+<p>Daí em diante, o Discover mostra os apps do Flathub, e você pode instalar pelo terminal: <code>flatpak install flathub org.libreoffice.LibreOffice</code>. Quando usar pacman e quando usar Flatpak está em <a href="flatpak.html">Flatpak</a>.</p>
+
+<hr>
+
+<h2>Passo 8: o primeiro login (ilustrativo)</h2>
+<ol class="passo">
+<li>Reinicie: a tela do SDDM aparece. Escolha a sessão <strong>Plasma (Wayland)</strong>, digite a senha.</li>
+<li>Configurações do Sistema → <strong>Região e idioma</strong>: confira Português (Brasil). O teclado gráfico é configurado à parte do console: Configurações → Teclado → Leiautes → Português (Brasil).</li>
+<li>Abra o Konsole e atualize: <code>sudo pacman -Syu</code>. O Discover também avisa de atualizações; no Arch, prefira o terminal para os pacotes do sistema e deixe o Discover para Flatpaks.</li>
+<li>Tire um snapshot da VM: "desktop-pronto".</li>
+</ol>
+
+<div class="note">
+<strong>Capturas de tela</strong>
+<p>Esta página não tem capturas do Plasma porque o desktop não foi instalado na VM do guia; os passos gráficos seguem a interface do Plasma 6.8 e podem mudar de lugar em versões futuras.</p>
+</div>
+
+<hr>
+
+<h2>Checklist</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Como conferir</th></tr>
+<tr><td>Plasma instalado</td><td><code>pacman -Q plasma-meta</code></td></tr>
+<tr><td>Login gráfico habilitado (só um)</td><td><code>systemctl is-enabled sddm plasmalogin</code> (um <code>enabled</code>, outro <code>disabled</code>)</td></tr>
+<tr><td>Sessão Wayland</td><td><code>echo $XDG_SESSION_TYPE</code> → <code>wayland</code></td></tr>
+<tr><td>Vídeo acelerado</td><td><code>glxinfo -B</code> (pacote <code>mesa-utils</code>): o "renderer" não é <code>llvmpipe</code> num PC físico</td></tr>
+<tr><td>Som</td><td><code>wpctl status</code> mostra a saída de áudio</td></tr>
+<tr><td>Fontes</td><td><code>fc-match sans-serif</code> → Noto Sans</td></tr>
+<tr><td>Flathub</td><td><code>flatpak remotes</code></td></tr>
+</table>
+</div>
+
+<h2>Desfazer</h2>
+<p>O jeito mais limpo é restaurar o snapshot "antes-desktop". Sem snapshot: <code>sudo systemctl disable sddm</code>, depois <code>sudo pacman -Rns plasma-meta sddm konsole dolphin firefox</code> (o <code>-s</code> leva as dependências que ninguém mais usa; confira a lista antes de confirmar). Veja <a href="cache-orfaos.html">Cache e Órfãos</a> para o que sobrar.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Reiniciei e continua a tela preta de texto</strong>
+<p><strong>O que aconteceu:</strong> o gerenciador de login não foi habilitado.</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-enabled sddm</code> → <code>disabled</code>.</p>
+<p><strong>Como resolver:</strong> entre no texto, <code>sudo systemctl enable --now sddm</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Tela preta com cursor depois do login (NVIDIA)</strong>
+<p><strong>O que aconteceu:</strong> driver NVIDIA ausente ou sem o modo DRM (o <code>nvidia-open</code> atual já liga <code>nvidia_drm.modeset=1</code>).</p>
+<p><strong>Como resolver:</strong> <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd> para um console de texto, confira <code>pacman -Q nvidia-open nvidia-utils</code> e o kernel (com <code>linux-lts</code>, use <code>nvidia-open-dkms</code>), veja <code>journalctl -b -p err</code>. Veja <a href="travamentos.html">Quando o Sistema Trava</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem som / "Dummy Output"</strong>
+<p><strong>O que aconteceu:</strong> falta firmware da placa de som (<code>sof-firmware</code>) ou o PipeWire não subiu.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S sof-firmware</code> e reinicie; <code>systemctl --user status wireplumber</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Caracteres como quadradinhos</strong>
+<p><strong>O que aconteceu:</strong> falta fonte para aquele alfabeto ou para emojis.</p>
+<p><strong>Como resolver:</strong> <code>noto-fonts</code>, <code>noto-fonts-cjk</code>, <code>noto-fonts-emoji</code>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Na pergunta de provedor para <code>ttf-font</code>, por que não aceitar o padrão (1)?</p>
+<label><input type="radio" name="q1"> Porque o padrão não instala nada.</label>
+<label><input type="radio" name="q1"> Porque o padrão é só o primeiro em ordem alfabética (<code>gnu-free-fonts</code>), não o mais indicado.</label>
+<label><input type="radio" name="q1"> Porque o padrão quebra o Plasma.</label>
+<label><input type="radio" name="q1"> Porque fontes só vêm do Flatpak.</label>
+</div>
+
+<div class="exercise">
+<h3>2. Ligar a tela de login</h3>
+<p>Complete para o SDDM aparecer no próximo boot:</p>
+<div class="ex-code">sudo systemctl <input data-answer="enable" aria-label="subcomando"> sddm</div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. No passo 2, qual provedor escolher para <code>jack</code> num desktop com PipeWire?</p>
+<label><input type="radio" name="q3"> <code>jack2</code></label>
+<label><input type="radio" name="q3"> Nenhum: cancele a instalação.</label>
+<label><input type="radio" name="q3"> O padrão, sempre.</label>
+<label><input type="radio" name="q3"> <code>pipewire-jack</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Quanto o Plasma com SDDM, Konsole e Dolphin ocupa instalado (prévia real de outubro de 2026)?</p>
+<label><input type="radio" name="q4"> Cerca de 2,1 GiB (438 pacotes).</label>
+<label><input type="radio" name="q4"> Cerca de 200 MiB.</label>
+<label><input type="radio" name="q4"> Cerca de 10 GiB.</label>
+<label><input type="radio" name="q4"> Cerca de 600 KiB.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>sudo pacman -S plasma-meta sddm konsole dolphin</code>: 438 pacotes, 612 MiB de download.</li>
+  <li>Responda às perguntas de provedor: ffmpeg, <code>pipewire-jack</code>, <code>noto-fonts</code>, <code>tesseract-data-por</code>.</li>
+  <li>Driver: <code>mesa</code> + <code>vulkan-intel</code>/<code>vulkan-radeon</code>, ou <code>nvidia-open</code>.</li>
+  <li><code>sudo systemctl enable sddm</code> (ou <code>plasmalogin</code>, nunca os dois) e reinicie.</li>
+  <li>Som: PipeWire + WirePlumber, como serviços do usuário. Apps: pacman e Flatpak (adicione o Flathub).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/KDE">KDE</a> (instalação, sessões, Plasma Login Manager), <a href="https://wiki.archlinux.org/title/SDDM">SDDM</a>, <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a> (o que fazer depois de instalar; em pt-BR: <a href="https://wiki.archlinux.org/title/General_recommendations_(Portugu%C3%AAs)">Recomendações gerais</a>), <a href="https://wiki.archlinux.org/title/Xorg#Driver_installation">Xorg: Driver installation</a> (tabela de drivers), <a href="https://wiki.archlinux.org/title/NVIDIA">NVIDIA</a>, <a href="https://wiki.archlinux.org/title/PipeWire">PipeWire</a> e <a href="https://wiki.archlinux.org/title/Fonts">Fonts</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
