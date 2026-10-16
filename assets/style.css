@@ -501,6 +501,7 @@ pre.term {
 .term-win .copy-btn { top: 5px; right: 8px; background: transparent; color: #d4d4d8; border-color: rgba(255,255,255,.25); }
 .term-win .copy-btn:hover { color: #fff; border-color: #1475b0; }
 .t-u, .c-u { color: #8ae234; font-weight: 700; }
+.t-r { color: #ef2929; }
 .t-d, .c-d { color: #729fcf; font-weight: 700; }
 .t-c { color: #ffffff; }
 .t-o { color: #e2e2e6; }

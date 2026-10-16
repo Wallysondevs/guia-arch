@@ -404,6 +404,8 @@ var NIVEIS = [
     var linhas = pre.textContent.replace(/^\n+|\s+$/g, "").split("\n"), html = [], cmds = [];
     var tituloCwd = curto(cwd, homeUser), primeiroUser = user, pilhaSu = [];
     var ultimoCmd = false, sessao = { vars: {}, oldpwd: null, pilha: [] };
+    // live da ISO = zsh; dentro do arch-chroot (data-cwd="/") volta a ser o Bash. data-shell="zsh|bash" força.
+    var zsh = pre.getAttribute("data-shell") ? pre.getAttribute("data-shell") === "zsh" : (host === "archiso" && pre.getAttribute("data-cwd") !== "/");
     linhas.forEach(function (l, idx) {
       var mc = ultimoCmd && /^> ?(.*)$/.exec(l);
       if (mc) {
@@ -420,9 +422,14 @@ var NIVEIS = [
         var root_ = m[1] === "#>", u = root_ ? "root" : user, home = root_ ? "/root" : homeUser;
         var nota = "", ia = m[2].indexOf("«");
         if (ia !== -1) { nota = '<span class="t-a">← ' + esc(m[2].slice(ia + 1).trim()) + "</span>"; m[2] = m[2].slice(0, ia).replace(/\s+$/, ""); }
-        // prompt padrão do Arch: PS1='[\u@\h \W]\$ ' (\W = só o nome da pasta atual; ~ na pasta pessoal)
-        var w = cwd === home ? "~" : cwd === "/" ? "/" : cwd.slice(cwd.lastIndexOf("/") + 1);
-        html.push('<span class="t-p">[<span class="t-u">' + u + "@" + host + '</span> <span class="t-d">' + esc(w) + "</span>]" + (root_ ? "#" : "$") + " </span>" + '<span class="t-c">' + esc(m[2]) + "</span>" + (nota ? "   " + nota : ""));
+        if (zsh) {
+          // ambiente live da ISO: zsh com o prompt do grml-zsh-config ("root@archiso ~ #", caminho completo com ~)
+          html.push('<span class="t-p"><span class="t-r">' + u + '</span>@' + host + " " + esc(curto(cwd, home)) + " " + (root_ || u === "root" ? "#" : "%") + " </span>" + '<span class="t-c">' + esc(m[2]) + "</span>" + (nota ? "   " + nota : ""));
+        } else {
+          // prompt padrão do Arch: PS1='[\u@\h \W]\$ ' (\W = só o nome da pasta atual; ~ na pasta pessoal)
+          var w = cwd === home ? "~" : cwd === "/" ? "/" : cwd.slice(cwd.lastIndexOf("/") + 1);
+          html.push('<span class="t-p">[<span class="t-u">' + u + "@" + host + '</span> <span class="t-d">' + esc(w) + "</span>]" + (root_ ? "#" : "$") + " </span>" + '<span class="t-c">' + esc(m[2]) + "</span>" + (nota ? "   " + nota : ""));
+        }
         cmds.push(m[2]);
         cwd = acompanharCd(m[2], cwd, home, sessao, saidaDepois(linhas, idx));
         if (/^\s*sudo -i\s*$/.test(m[2])) cwd = "/root";
