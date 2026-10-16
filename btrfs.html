@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Btrfs — subvolumes, compressão e scrub | Guia Arch</title>
+<meta name="description" content="Btrfs no Arch Linux: cópia na escrita, subvolumes @ e @home, montagem com subvol= e compress=zstd, btrfs filesystem df/usage, scrub e como instalar o Arch com Btrfs, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Btrfs</span></h1>
+
+<p class="intro">O <strong>Btrfs</strong> (lê-se "bê-tê-ér-éfe-ésse", ou <em>"butter FS"</em>; o nome vem de <em>B-tree file system</em>) é um sistema de arquivos moderno que faz o que o ext4 não faz: <strong>subvolumes</strong>, <strong>snapshots</strong> instantâneos, <strong>compressão</strong> transparente e conferência de cada bloco por <strong>soma de verificação</strong>. É a base dos snapshots automáticos que deixam você "voltar no tempo" depois de uma atualização ruim.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é cópia na escrita (CoW), subvolume e snapshot, sem mistério.</li>
+  <li>Criar um Btrfs com <code>mkfs.btrfs</code> e o layout de subvolumes mais usado no Arch (<code>@</code>, <code>@home</code>, <code>@var_log</code>, <code>@snapshots</code>).</li>
+  <li>Montar com <code>subvol=</code> e <code>compress=zstd</code> e ler o espaço com <code>btrfs filesystem df</code> e <code>usage</code>.</li>
+  <li>Conferir a saúde dos dados com <code>btrfs scrub</code> (e ver um erro de verdade).</li>
+  <li>O que muda na instalação do Arch quando a raiz é Btrfs.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Os conceitos antes dos comandos</h2>
+
+<h3>Cópia na escrita (CoW)</h3>
+<p>No ext4, quando você altera um arquivo, os blocos antigos são <strong>sobrescritos no lugar</strong>. No Btrfs, a alteração é gravada em <strong>blocos novos</strong> e só no fim o sistema "aponta" para eles. Os blocos antigos continuam lá até ninguém mais precisar deles. Isso se chama <strong>cópia na escrita</strong> (<em>copy-on-write</em>, CoW).</p>
+<p>Pense num caderno: em vez de apagar uma frase com borracha, você escreve a frase nova numa folha limpa e muda o índice para apontar para ela. Se faltar luz no meio, o índice ainda aponta para a versão antiga, inteira. E se você guardar uma cópia do índice antigo, ganhou de graça uma "foto" do caderno naquele momento: isso é um <strong>snapshot</strong>.</p>
+
+<h3>Subvolume</h3>
+<p>Um <strong>subvolume</strong> parece uma pasta, mas é uma árvore de arquivos independente dentro do mesmo Btrfs. Ele pode ser montado sozinho (como se fosse uma partição) e pode ganhar snapshots próprios. Todos os subvolumes dividem o mesmo espaço livre: não é preciso decidir tamanhos, como nas partições.</p>
+
+<h3>Snapshot</h3>
+<p>Um <strong>snapshot</strong> é um subvolume novo que começa compartilhando todos os blocos com o original. Por causa do CoW, ele é criado em menos de um segundo e quase não ocupa espaço; só passa a ocupar quando os arquivos mudam. Os snapshots têm aula própria: <a href="snapshots.html">Snapshots (snapper)</a>.</p>
+
+<h3>Compressão e somas de verificação</h3>
+<p>O Btrfs pode <strong>comprimir</strong> os dados ao gravar (com <code>zstd</code>, <code>lzo</code> ou <code>zlib</code>) e descomprimir ao ler, sem você perceber. E guarda uma <strong>soma de verificação</strong> (<em>checksum</em>, por padrão <code>crc32c</code>) de cada bloco: se o disco devolver um bloco estragado, o Btrfs percebe e avisa, em vez de entregar lixo ao programa.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Recurso</th><th>ext4</th><th>Btrfs</th></tr>
+<tr><td>Snapshots instantâneos</td><td>Não</td><td>Sim</td></tr>
+<tr><td>Subvolumes (vários "/" e "/home" no mesmo espaço)</td><td>Não</td><td>Sim</td></tr>
+<tr><td>Compressão transparente</td><td>Não</td><td>Sim (<code>compress=zstd</code>)</td></tr>
+<tr><td>Soma de verificação dos <strong>dados</strong></td><td>Não (só metadados)</td><td>Sim</td></tr>
+<tr><td>Maturidade e simplicidade</td><td>Máxima; é o padrão de quase todas as distros</td><td>Estável no uso comum; RAID5/6 ainda não recomendado</td></tr>
+<tr><td>Ferramenta de reparo</td><td><code>fsck.ext4</code></td><td><code>btrfs scrub</code>, <code>btrfs check</code> (só desmontado e com cuidado)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O laboratório: um disco de mentira</h2>
+<p>A máquina do guia (a <code>notebook</code>) foi instalada com raiz <strong>ext4</strong>, como em <a href="formatar-montar.html">Formatar e Montar</a>. Para treinar Btrfs sem arriscar nada, vamos usar um <strong>arquivo-imagem</strong>: um arquivo comum que o Linux trata como se fosse um disco. Tudo o que você fizer nele fica dentro do arquivo; para "jogar o disco fora", basta apagar o arquivo.</p>
+
+<dl class="anatomy">
+  <dt>truncate</dt><dd>Muda o tamanho de um arquivo (e cria se não existir).</dd>
+  <dt>-s 3G</dt><dd>Tamanho: 3 GiB. O arquivo é <strong>esparso</strong>: só ocupa espaço real quando algo é gravado nele.</dd>
+  <dt>/var/tmp/a8/disco.img</dt><dd>O arquivo-imagem.</dd>
+</dl>
+
+<pre class="term">#> mkdir -p /var/tmp/a8 /mnt/a8
+#> truncate -s 3G /var/tmp/a8/disco.img
+#> ls -lh /var/tmp/a8/disco.img
+-rw-r--r-- 1 root root 3,0G 16 out 13:22 /var/tmp/a8/disco.img   « o tamanho "anunciado"
+#> du -h /var/tmp/a8/disco.img
+0	/var/tmp/a8/disco.img                                         « o espaço realmente usado
+#> losetup -f --show /var/tmp/a8/disco.img
+/dev/loop1                                                         « o "disco" novo</pre>
+
+<p><code>losetup</code> (de <em>loop setup</em>) liga o arquivo a um <strong>dispositivo de loop</strong>, <code>/dev/loopN</code>. <code>-f</code> pega o primeiro livre e <code>--show</code> imprime qual foi. Daqui em diante, <code>/dev/loop1</code> é o nosso "disco". No seu computador o número pode ser outro: use o que o comando mostrar.</p>
+
+<div class="warning">
+<strong>Formatar apaga tudo</strong>
+<p>Os comandos desta aula destroem o conteúdo do dispositivo indicado. No laboratório isso é um arquivo. No seu computador, confira três vezes com <code>lsblk</code> antes de escrever <code>/dev/sdX</code> ou <code>/dev/nvme0n1pN</code> (veja <a href="discos.html">lsblk, df, du</a>).</p>
+</div>
+
+<hr>
+
+<h2>Criar o Btrfs: mkfs.btrfs</h2>
+
+<dl class="anatomy">
+  <dt>mkfs.btrfs</dt><dd><em>make filesystem</em> do tipo Btrfs (vem no pacote <code>btrfs-progs</code>).</dd>
+  <dt>-L arch-teste</dt><dd>Rótulo (<em>label</em>): um nome legível para o sistema de arquivos. Opcional.</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo a formatar.</dd>
+</dl>
+
+<pre class="term">#> mkfs.btrfs -L arch-teste /dev/loop1
+btrfs-progs v7.1
+See https://btrfs.readthedocs.io for more information.
+
+Performing full device TRIM /dev/loop1 (3.00GiB) ...
+NOTE: default settings have changed in version 6.19 (supported since linux 6.1):
+      - enable block-group-tree (-O bgt)
+
+Label:              arch-teste
+UUID:               745b2685-6e7d-48ef-af91-5c4e8573d0fd     « o que vai no fstab
+Node size:          16384
+Sector size:        4096	(CPU page size: 4096)
+Filesystem size:    3.00GiB
+Block group profiles:
+  Data:             single            8.00MiB              « dados: uma cópia
+  Metadata:         DUP             256.00MiB              « metadados: duas cópias
+  System:           DUP               8.00MiB
+SSD detected:       yes
+Zoned device:       no
+Features:           extref, skinny-metadata, no-holes, free-space-tree, block-group-tree
+Checksum:           crc32c                                 « a soma de verificação
+Number of devices:  1
+Devices:
+   ID        SIZE  PATH
+    1     3.00GiB  /dev/loop1
+
+#> echo $?
+0</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que significa</th></tr>
+<tr><td><code>Performing full device TRIM</code></td><td>Avisa ao dispositivo que todos os blocos estão livres (bom para SSD).</td></tr>
+<tr><td><code>NOTE: default settings have changed…</code></td><td>Aviso informativo: uma função nova passou a vir ligada. Não é erro.</td></tr>
+<tr><td><code>Label</code> / <code>UUID</code></td><td>O nome e o identificador único. O <code>genfstab</code> usa o UUID.</td></tr>
+<tr><td><code>Data: single</code></td><td>Os dados ficam em <strong>uma</strong> cópia. Com dois discos, dá para pedir <code>raid1</code>.</td></tr>
+<tr><td><code>Metadata: DUP</code></td><td>Os metadados (a "árvore" que diz onde está cada arquivo) ficam <strong>duplicados</strong> no mesmo disco, por segurança.</td></tr>
+<tr><td><code>SSD detected: yes</code></td><td>Ele achou que é SSD (um loop herda isso do disco virtual) e ajusta a montagem (<code>ssd</code>, <code>discard=async</code>).</td></tr>
+<tr><td><code>Checksum: crc32c</code></td><td>O algoritmo das somas de verificação.</td></tr>
+</table>
+</div>
+
+<p>O comando não pergunta nada e devolve <code>0</code>. Se o dispositivo já tiver outro sistema de arquivos, ele se recusa (veja <a href="#quando">Quando não funciona</a>).</p>
+
+<hr>
+
+<h2>Subvolumes: o layout do Arch</h2>
+<p>Depois de formatar, o Btrfs tem um único subvolume, o <strong>topo</strong> (<em>top level</em>, ID 5). Monte o topo e crie os subvolumes dentro dele:</p>
+
+<dl class="anatomy">
+  <dt>btrfs</dt><dd>A ferramenta única do Btrfs (pacote <code>btrfs-progs</code>).</dd>
+  <dt>subvolume create</dt><dd>Grupo <code>subvolume</code>, ação <code>create</code>. Pode abreviar: <code>btrfs su cr</code>.</dd>
+  <dt>/mnt/a8/@home</dt><dd>Onde criar. O <code>@</code> no começo é só uma <strong>convenção</strong> de nome, não tem efeito especial.</dd>
+</dl>
+
+<pre class="term">#> mount /dev/loop1 /mnt/a8
+#> btrfs subvolume create /mnt/a8/@
+Create subvolume '/mnt/a8/@'
+#> btrfs subvolume create /mnt/a8/@home
+Create subvolume '/mnt/a8/@home'
+#> btrfs subvolume create /mnt/a8/@var_log
+Create subvolume '/mnt/a8/@var_log'
+#> btrfs subvolume create /mnt/a8/@snapshots
+Create subvolume '/mnt/a8/@snapshots'
+#> btrfs subvolume list /mnt/a8
+ID 256 gen 9 top level 5 path @
+ID 257 gen 9 top level 5 path @home
+ID 258 gen 9 top level 5 path @var_log
+ID 259 gen 9 top level 5 path @snapshots
+#> ls -l /mnt/a8
+total 0
+drwxr-xr-x 1 root root 0 16 out 13:23 @
+drwxr-xr-x 1 root root 0 16 out 13:23 @home
+drwxr-xr-x 1 root root 0 16 out 13:23 @snapshots
+drwxr-xr-x 1 root root 0 16 out 13:23 @var_log</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna de <code>subvolume list</code></th><th>Significado</th></tr>
+<tr><td><code>ID 256</code></td><td>Número do subvolume. O topo é sempre o 5; os criados começam em 256.</td></tr>
+<tr><td><code>gen 9</code></td><td>Geração: um contador de transações. Sobe a cada gravação no subvolume.</td></tr>
+<tr><td><code>top level 5</code></td><td>Dentro de qual subvolume ele está (aqui, no topo).</td></tr>
+<tr><td><code>path @home</code></td><td>O caminho a partir do topo.</td></tr>
+</table>
+</div>
+
+<h3>Por que separar em subvolumes?</h3>
+<p>Um snapshot de um subvolume <strong>não inclui</strong> os subvolumes de dentro dele. É isso que permite voltar o sistema (<code>/</code>) para ontem sem desfazer o trabalho de hoje em <code>/home</code>, e sem apagar os logs que explicam o que deu errado.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Subvolume</th><th>Montado em</th><th>Por que separado</th></tr>
+<tr><td><code>@</code></td><td><code>/</code></td><td>O sistema. É ele que ganha snapshots antes de cada atualização.</td></tr>
+<tr><td><code>@home</code></td><td><code>/home</code></td><td>Seus arquivos não "voltam no tempo" quando você restaura o sistema.</td></tr>
+<tr><td><code>@var_log</code></td><td><code>/var/log</code></td><td>Os logs sobrevivem a uma restauração (você vai querer ler o que aconteceu).</td></tr>
+<tr><td><code>@snapshots</code></td><td><code>/.snapshots</code></td><td>Onde o snapper guarda os snapshots de <code>@</code>, fora do próprio <code>@</code>.</td></tr>
+<tr><td><code>@pkg</code> (opcional)</td><td><code>/var/cache/pacman/pkg</code></td><td>Não guardar o cache de pacotes em todos os snapshots.</td></tr>
+</table>
+</div>
+<p>Esse é o layout sugerido na Arch Wiki para usar com o snapper, e o que o <a href="archinstall.html">archinstall</a> cria quando você escolhe Btrfs. Nada obriga a usá-lo, mas ele evita muita dor de cabeça.</p>
+
+<hr>
+
+<h2>Montar com subvol= e compress=zstd</h2>
+<p>Agora desmonte o topo e monte cada subvolume no seu lugar, como seria numa instalação:</p>
+
+<dl class="anatomy">
+  <dt>mount</dt><dd>Monta um sistema de arquivos.</dd>
+  <dt>--mkdir</dt><dd>Cria a pasta de destino se ela não existir.</dd>
+  <dt>-o subvol=@home,compress=zstd</dt><dd>Opções: qual subvolume montar e ligar a compressão zstd.</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo (o mesmo para todos os subvolumes).</dd>
+  <dt>/mnt/a8/home</dt><dd>Onde montar.</dd>
+</dl>
+
+<pre class="term">#> umount /mnt/a8
+#> mount -o subvol=@,compress=zstd /dev/loop1 /mnt/a8
+#> mount --mkdir -o subvol=@home,compress=zstd /dev/loop1 /mnt/a8/home
+#> mount --mkdir -o subvol=@var_log,compress=zstd /dev/loop1 /mnt/a8/var/log
+#> mount --mkdir -o subvol=@snapshots,compress=zstd /dev/loop1 /mnt/a8/.snapshots
+#> findmnt -R /mnt/a8
+TARGET               SOURCE                  FSTYPE OPTIONS
+/mnt/a8              /dev/loop1[/@]          btrfs  rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=256,subvol=/@
+├─/mnt/a8/home       /dev/loop1[/@home]      btrfs  rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/@home
+├─/mnt/a8/var/log    /dev/loop1[/@var_log]   btrfs  rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=258,subvol=/@var_log
+└─/mnt/a8/.snapshots /dev/loop1[/@snapshots] btrfs  rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvolid=259,subvol=/@snapshots
+#> lsblk /dev/loop1
+NAME  MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+loop1   7:1    0   3G  0 loop /mnt/a8/.snapshots
+                              /mnt/a8/var/log
+                              /mnt/a8/home
+                              /mnt/a8</pre>
+
+<p>O mesmo dispositivo aparece montado quatro vezes, cada vez mostrando um subvolume (o <code>[/@home]</code> na coluna SOURCE). As opções que você não pediu foram ligadas sozinhas:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th></tr>
+<tr><td><code>compress=zstd:3</code></td><td>Compressão zstd no nível 3 (o padrão; vai de 1 a 15). Só vale para o que for gravado <strong>depois</strong> da montagem.</td></tr>
+<tr><td><code>ssd</code></td><td>Otimizações para SSD, detectadas automaticamente.</td></tr>
+<tr><td><code>discard=async</code></td><td>Avisa o SSD sobre blocos liberados, em segundo plano (padrão desde o kernel 6.2 em SSDs).</td></tr>
+<tr><td><code>space_cache=v2</code></td><td>A árvore de espaço livre, padrão moderno.</td></tr>
+<tr><td><code>subvolid=256</code></td><td>O ID do subvolume montado (equivale ao <code>subvol=</code>).</td></tr>
+<tr><td><code>relatime</code></td><td>Não grava a hora de acesso a cada leitura. Muita gente usa <code>noatime</code> no Btrfs para reduzir escritas (e o CoW que elas causam).</td></tr>
+</table>
+</div>
+
+<h3>Detalhes de um subvolume: subvolume show</h3>
+<pre class="term">#> btrfs subvolume show /mnt/a8
+@
+	Name: 			@
+	UUID: 			991a7a1d-31c1-4442-ada9-84f8aa7cb19c
+	Parent UUID: 		-                         « não é snapshot de ninguém
+	Received UUID: 		-
+	Creation time: 		2026-10-16 13:23:01 -0300
+	Subvolume ID: 		256
+	Generation: 		9
+	Gen at creation: 	9
+	Parent ID: 		5                         « está dentro do topo
+	Top level ID: 		5
+	Flags: 			-                         « "readonly" num snapshot só de leitura
+	Send transid: 		0
+	Send time: 		2026-10-16 13:23:01 -0300
+	Receive transid: 	0
+	Receive time: 		-
+	Snapshot(s):                                  « os snapshots feitos dele aparecem aqui
+	Quota group:		n/a</pre>
+<p>Os campos <code>Send</code>/<code>Receive</code> são do <code>btrfs send</code>/<code>receive</code>, que copia snapshots para outro disco (backup). <code>Quota group: n/a</code> quer dizer que as cotas (<code>qgroups</code>) estão desligadas, o normal.</p>
+
+<hr>
+
+<h2>Quanto espaço eu tenho? filesystem df e usage</h2>
+<p>Com CoW, compressão e metadados duplicados, o <code>df</code> comum dá só uma ideia. O Btrfs tem os seus próprios relatórios. Para ter o que medir, gravamos um arquivo aleatório de 50 MiB e um texto de 908 KiB:</p>
+
+<pre class="term">#> ls -lh /mnt/a8/home/ana
+total 51M
+-rw-r--r-- 1 root root  50M 16 out 13:23 aleatorio.bin
+-rw-r--r-- 1 root root 908K 16 out 13:23 relatorio.txt
+#> btrfs filesystem df /mnt/a8
+Data, single: total=328.00MiB, used=50.03MiB            « 50 MiB + 908 KiB comprimidos
+System, DUP: total=8.00MiB, used=16.00KiB
+Metadata, DUP: total=256.00MiB, used=288.00KiB
+GlobalReserve, single: total=5.75MiB, used=0.00B</pre>
+
+<p>Cada linha é um tipo de bloco. <code>total</code> é quanto o Btrfs já <strong>reservou</strong> (em pedaços chamados <em>chunks</em>) e <code>used</code> é quanto está de fato ocupado. <code>GlobalReserve</code> é uma reserva de emergência para o próprio Btrfs conseguir trabalhar quando o disco enche. A visão completa vem do <code>usage</code>:</p>
+
+<pre class="term">#> btrfs filesystem usage /mnt/a8
+Overall:
+    Device size:		   3.00GiB
+    Device allocated:		 856.00MiB              « já dividido em chunks
+    Device unallocated:		   2.16GiB              « ainda livre para qualquer uso
+    Device missing:		     0.00B
+    Device slack:		     0.00B
+    Used:			  50.62MiB
+    Free (estimated):		   2.43GiB	(min: 1.35GiB)   « o número que importa
+    Free (statfs, df):		   2.43GiB
+    Data ratio:			      1.00
+    Metadata ratio:		      2.00              « metadados em dobro (DUP)
+    Global reserve:		   5.75MiB	(used: 0.00B)
+    Multiple profiles:		        no
+
+Data,single: Size:328.00MiB, Used:50.03MiB (15.25%)
+   /dev/loop1	 328.00MiB
+
+Metadata,DUP: Size:256.00MiB, Used:288.00KiB (0.11%)
+   /dev/loop1	 512.00MiB
+
+System,DUP: Size:8.00MiB, Used:16.00KiB (0.20%)
+   /dev/loop1	  16.00MiB
+
+Unallocated:
+   /dev/loop1	   2.16GiB
+#> df -h /mnt/a8 /mnt/a8/home
+Sist. Arq.      Tam. Usado Disp. Uso% Montado em
+/dev/loop1      3,0G   57M  2,5G   3% /mnt/a8
+/dev/loop1      3,0G   57M  2,5G   3% /mnt/a8/home   « o mesmo espaço para todos os subvolumes</pre>
+
+<h3>A compressão funcionando</h3>
+<p>Repare: o texto de 908 KiB quase não aparece no <code>used</code>. Para ver melhor, grave 100 MiB de texto repetido e compare o antes e o depois:</p>
+
+<pre class="term">#> yes "Guia Arch: linha repetida de um arquivo de texto" | head -c 100M &gt; /mnt/a8/home/ana/texto-grande.txt
+#> sync
+#> ls -lh /mnt/a8/home/ana/texto-grande.txt
+-rw-r--r-- 1 root root 100M 16 out 13:23 /mnt/a8/home/ana/texto-grande.txt
+#> btrfs filesystem df /mnt/a8 | head -1
+Data, single: total=328.00MiB, used=53.16MiB     « era 50.03 MiB: 100 MiB viraram ~3 MiB</pre>
+
+<p>O <code>ls</code> mostra o tamanho do arquivo (100 MiB); o disco gastou cerca de 3 MiB. Dados aleatórios (fotos, vídeos, arquivos <code>.zst</code>) não comprimem, e o Btrfs percebe isso e grava sem comprimir. Para ver a taxa por arquivo existe o <code>compsize</code> (pacote <code>compsize</code>, repositório extra), que não está instalado na máquina do guia.</p>
+
+<p>Para saber quanto cada pasta ocupa de verdade, contando o que é compartilhado com snapshots, use <code>btrfs filesystem du</code>:</p>
+<pre class="term">#> btrfs filesystem du /mnt/a8/home/ana
+     Total   Exclusive  Set shared  Filename
+ 908.00KiB   908.00KiB           -  /mnt/a8/home/ana/relatorio.txt
+  50.00MiB    50.00MiB           -  /mnt/a8/home/ana/aleatorio.bin
+  50.89MiB    50.89MiB       0.00B  /mnt/a8/home/ana</pre>
+<p><code>Exclusive</code> é o que só esse arquivo usa; <code>Set shared</code> é o que ele divide com snapshots (aqui, nada ainda). Os tamanhos são os <strong>não comprimidos</strong>.</p>
+
+<hr>
+
+<h2>Conferir a saúde: btrfs scrub</h2>
+<p>O <strong>scrub</strong> (esfregar, faxinar) lê <strong>todos</strong> os blocos usados e confere cada soma de verificação. Quando há uma segunda cópia (metadados <code>DUP</code>, ou dados em <code>raid1</code>), ele conserta o bloco ruim com a cópia boa. Pode rodar com o sistema montado e em uso.</p>
+
+<dl class="anatomy">
+  <dt>btrfs scrub start</dt><dd>Começa a verificação.</dd>
+  <dt>-B</dt><dd>Fica em primeiro plano (<em>don't Background</em>) e mostra o resumo no fim. Sem ele, o scrub roda escondido e você consulta com <code>btrfs scrub status</code>.</dd>
+  <dt>/mnt/a8</dt><dd>Qualquer ponto de montagem do Btrfs: o scrub vale para o sistema de arquivos inteiro.</dd>
+</dl>
+
+<pre class="term">#> btrfs scrub start -B /mnt/a8
+Starting scrub on devid 1
+scrub done for 745b2685-6e7d-48ef-af91-5c4e8573d0fd
+Scrub started:    Fri Oct 16 13:23:25 2026
+Status:           finished
+Duration:         0:00:00
+Total to scrub:   54.03MiB
+Rate:             54.03MiB/s
+Error summary:    no errors found        « tudo certo
+#> echo $?
+0</pre>
+
+<h3>Um erro de verdade</h3>
+<p>Para ver o scrub achando um problema, estragamos de propósito um bloco de 4 KiB de um arquivo, escrevendo zeros direto no arquivo-imagem (é o que um setor defeituoso faria). O arquivo <code>importante.bin</code> tinha 1 MiB de dados aleatórios:</p>
+
+<pre class="term">#> umount -R /mnt/a8
+#> dd if=/dev/zero of=/var/tmp/a8/disco.img bs=4096 seek=$((978321408/4096)) count=1 conv=notrunc
+1+0 registro de entrada
+1+0 registros de saída
+4096 bytes (4,1 kB, 4,0 KiB) copiados, 7,9655e-05 s, 51,4 MB/s
+#> mount -o subvol=@home /dev/loop1 /mnt/a8
+#> sha256sum /mnt/a8/ana/importante.bin
+sha256sum: /mnt/a8/ana/importante.bin: Erro de entrada/saída     « o Btrfs se recusa a entregar dados errados
+#> echo $?
+1
+#> btrfs scrub start -B /mnt/a8
+ERROR: there are 1 device(s) with uncorrectable errors
+Starting scrub on devid 1
+scrub done for 745b2685-6e7d-48ef-af91-5c4e8573d0fd
+Scrub started:    Fri Oct 16 13:26:19 2026
+Status:           finished
+Duration:         0:00:00
+Total to scrub:   1.53MiB
+Rate:             1.53MiB/s
+Error summary:    csum=1               « uma soma de verificação não bateu
+  Corrected:      0
+  Uncorrectable:  1                    « não havia segunda cópia para consertar
+  Unverified:     0
+#> echo $?
+3
+#> btrfs device stats /mnt/a8
+[/dev/loop1].write_io_errs    0
+[/dev/loop1].read_io_errs     0
+[/dev/loop1].flush_io_errs    0
+[/dev/loop1].corruption_errs  3        « contador de corrupções (fica gravado no disco)
+[/dev/loop1].generation_errs  0</pre>
+
+<p>O kernel conta o que aconteceu no journal, inclusive <strong>qual arquivo</strong> foi atingido:</p>
+<pre class="term">#> journalctl -k -n 6 --no-pager -o short
+out 16 13:26:19 notebook kernel: BTRFS error (device loop1): bdev /dev/loop1 errs: wr 0, rd 0, flush 0, corrupt 2, gen 0
+out 16 13:26:19 notebook kernel: BTRFS info (device loop1): scrub: started on devid 1
+out 16 13:26:19 notebook kernel: BTRFS error (device loop1): scrub: unable to fixup (regular) error at logical 667942912 on dev /dev/loop1 physical 978321408
+out 16 13:26:19 notebook kernel: BTRFS warning (device loop1): scrub: checksum error at logical 667942912 on dev /dev/loop1, physical 978321408 root 257 inode 267 offset 0 length 4096 links 1 (path: ana/importante.bin)
+out 16 13:26:19 notebook kernel: BTRFS error (device loop1): bdev /dev/loop1 errs: wr 0, rd 0, flush 0, corrupt 3, gen 0
+out 16 13:26:19 notebook kernel: BTRFS info (device loop1): scrub: finished on devid 1 with status: 0</pre>
+
+<p>Na leitura com o <code>sha256sum</code>, o kernel já tinha registrado: <code>BTRFS warning (device loop1): csum failed root 257 ino 267 off 0 csum 0x8941f998 expected csum 0x9653f63a mirror 1</code>. Com ext4, o programa teria recebido os zeros sem aviso nenhum. A lição: o Btrfs <strong>detecta</strong>; para <strong>recuperar</strong> o arquivo, você precisa de uma segunda cópia (RAID1) ou de um <strong>backup</strong> em outro disco. Snapshots ficam no mesmo disco e não substituem backup.</p>
+
+<div class="tip">
+<strong>Scrub mensal automático</strong>
+<p>O <code>btrfs-progs</code> traz o timer <code>btrfs-scrub@.timer</code>. Para a raiz: <code>systemctl enable --now btrfs-scrub@-.timer</code> (o <code>-</code> é o nome "escapado" de <code>/</code>; para <code>/home</code> seria <code>btrfs-scrub@home.timer</code>). Veja <a href="timers.html">Timers e Tarefas</a>.</p>
+</div>
+
+<hr>
+
+<h2>Como seria instalar o Arch com Btrfs</h2>
+<p>Esta seção é <strong>ilustrativa</strong>: a máquina do guia foi instalada com ext4 (veja <a href="projeto-instalacao.html">Instalação Completa do Zero</a>). Os comandos são os mesmos que você acabou de rodar na imagem, só que no disco de verdade, dentro do <a href="ambiente-live.html">ambiente live</a>. Só o <code>genfstab</code> abaixo é saída real (da imagem).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Com ext4 (como no guia)</th><th>Com Btrfs</th></tr>
+<tr><td><a href="particionar.html">Particionar</a></td><td>EFI + swap + raiz</td><td>Igual. Muita gente troca a partição de swap por <a href="swap-zram.html">zram</a> ou por um swapfile num subvolume próprio.</td></tr>
+<tr><td><a href="formatar-montar.html">Formatar</a></td><td><code>mkfs.ext4 /dev/sda3</code></td><td><code>mkfs.btrfs -L arch /dev/sda3</code></td></tr>
+<tr><td>Subvolumes</td><td>—</td><td><code>mount /dev/sda3 /mnt</code>, <code>btrfs subvolume create /mnt/@</code> (e <code>@home</code>, <code>@var_log</code>, <code>@snapshots</code>), <code>umount /mnt</code></td></tr>
+<tr><td>Montar</td><td><code>mount /dev/sda3 /mnt</code></td><td><code>mount -o subvol=@,compress=zstd /dev/sda3 /mnt</code> e <code>mount --mkdir -o subvol=@home,compress=zstd /dev/sda3 /mnt/home</code> (idem para os outros)</td></tr>
+<tr><td><a href="pacstrap.html">pacstrap</a></td><td><code>base linux linux-firmware …</code></td><td>Acrescente <code>btrfs-progs</code></td></tr>
+<tr><td><a href="fstab.html">fstab</a></td><td>Uma linha para <code>/</code></td><td>Uma linha por subvolume, com <code>subvol=</code> (o <code>genfstab</code> faz sozinho)</td></tr>
+<tr><td><a href="mkinitcpio.html">mkinitcpio</a></td><td>Nada a mudar</td><td>Nada a mudar para um disco só (o hook <code>btrfs</code> só é necessário em Btrfs de vários discos <strong>sem</strong> os hooks <code>udev</code>/<code>systemd</code>)</td></tr>
+<tr><td><a href="bootloader.html">GRUB</a></td><td>Igual</td><td>Igual; o <code>grub-mkconfig</code> põe <code>rootflags=subvol=@</code> sozinho</td></tr>
+</table>
+</div>
+
+<p>O <code>genfstab</code> entende os subvolumes. Rodado na imagem montada como uma instalação:</p>
+<pre class="term">#> genfstab -U /mnt/a8
+# /dev/loop1 LABEL=arch-teste
+UUID=745b2685-6e7d-48ef-af91-5c4e8573d0fd	/         	btrfs     	rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@	0 0
+
+# /dev/loop1 LABEL=arch-teste
+UUID=745b2685-6e7d-48ef-af91-5c4e8573d0fd	/home     	btrfs     	rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@home	0 0
+
+# /dev/loop1 LABEL=arch-teste
+UUID=745b2685-6e7d-48ef-af91-5c4e8573d0fd	/var/log  	btrfs     	rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@var_log	0 0
+
+# /dev/loop1 LABEL=arch-teste
+UUID=745b2685-6e7d-48ef-af91-5c4e8573d0fd	/.snapshots	btrfs     	rw,relatime,compress=zstd:3,ssd,discard=async,space_cache=v2,subvol=/@snapshots	0 0
+
+# /dev/sda2
+UUID=02576132-0458-4975-916f-94e08af9a31c	none      	swap      	defaults  	0 0</pre>
+<p>Três detalhes: o mesmo UUID aparece em todas as linhas (é o mesmo Btrfs); o último campo é <code>0</code> (o Btrfs não usa o <code>fsck</code> no boot); e o <code>genfstab</code> incluiu a swap porque ela estava ativa na máquina. Ele tira o <code>subvolid=</code> de propósito: assim, se você restaurar um snapshot no lugar do <code>@</code>, o fstab continua certo.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escolha</th><th>Opções</th><th>Qual usar?</th></tr>
+<tr><td>Compressão</td><td><code>compress=zstd</code>, <code>compress=lzo</code>, <code>compress=zlib</code>, <code>compress-force=zstd</code></td><td><code>zstd</code>: boa taxa e rápido. <code>lzo</code> só em máquina muito fraca. <code>compress-force</code> insiste mesmo em dados que parecem não comprimir (raramente vale a pena).</td></tr>
+<tr><td>Hora de acesso</td><td><code>relatime</code> (padrão), <code>noatime</code></td><td><code>noatime</code> é comum no Btrfs: menos escritas e snapshots menores.</td></tr>
+<tr><td>Layout</td><td>Plano (<code>@</code>, <code>@home</code>… no topo) ou aninhado (subvolumes dentro de <code>@</code>)</td><td>Plano: é o da Arch Wiki e o que o snapper e o <code>grub-btrfs</code> esperam.</td></tr>
+<tr><td>Sistema de arquivos da raiz</td><td>ext4, Btrfs, XFS</td><td>ext4 se você quer o simples. Btrfs se quer snapshots e rollback. XFS para servidores com arquivos enormes.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:^\s*(lsblk\b.*-[a-zA-Z]*f|df\b.*-[a-zA-Z]*T),out:ext4" data-solucao="lsblk -f">
+<p class="try-task"><strong>Missão:</strong> confirme que a raiz da máquina do guia é <strong>ext4</strong> e não Btrfs, usando <code>lsblk -f</code> (ou <code>df -T /</code>).</p>
+</div>
+
+<hr>
+
+<h2 id="quando">Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"appears to contain an existing filesystem"</strong>
+<pre class="term">#> mkfs.btrfs /dev/loop1
+ERROR: /dev/loop1 appears to contain an existing filesystem (type=ext4)
+ERROR: use the -f option to force overwrite of /dev/loop1
+btrfs-progs v7.1
+See https://btrfs.readthedocs.io for more information.
+</pre>
+<p><strong>O que aconteceu:</strong> o dispositivo já tem um sistema de arquivos e o <code>mkfs.btrfs</code> se protege (código de saída 1).</p>
+<p><strong>Como confirmar:</strong> <code>lsblk -f /dev/loop1</code> mostra o tipo atual.</p>
+<p><strong>Como resolver:</strong> se tem certeza de que é o dispositivo certo e que pode apagar, <code>mkfs.btrfs -f /dev/loop1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>mount: fsconfig() falhou: Arquivo ou diretório inexistente</strong>
+<pre class="term">#> mount -o subvol=@ /dev/loop1 /var/tmp/a8/m
+mount: /var/tmp/a8/m: fsconfig() falhou: Arquivo ou diretório inexistente.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> echo $?
+32</pre>
+<p><strong>O que aconteceu:</strong> o subvolume <code>@</code> não existe nesse Btrfs (aqui, recém-formatado). A mensagem fala de "arquivo", mas é o subvolume que falta.</p>
+<p><strong>Como confirmar:</strong> monte o topo (<code>mount /dev/loop1 /mnt</code>, sem <code>subvol=</code>) e rode <code>btrfs subvolume list /mnt</code>.</p>
+<p><strong>Como resolver:</strong> crie o subvolume ou corrija o nome (<code>@</code> e <code>@home</code> são só convenções; o seu pode chamar <code>root</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"tipo de sistema de arquivos incorreto, opção inválida…"</strong>
+<pre class="term">#> mount -o subvol=@,compress=zsdt /dev/loop1 /var/tmp/a8/m
+mount: /var/tmp/a8/m: tipo de sistema de arquivos incorreto, opção inválida, superbloco inválido em /dev/loop1, página de código ou programa auxiliar faltando ou outro erro.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+#> journalctl -k -n 1 --no-pager -o short
+out 16 13:43:42 notebook kernel: BTRFS error: failed to parse compression option 'zsdt'</pre>
+<p><strong>O que aconteceu:</strong> uma opção digitada errado (<code>zsdt</code> em vez de <code>zstd</code>). A mensagem do <code>mount</code> é genérica; a explicação está no log do kernel, como o próprio <code>mount</code> sugere ("dmesg pode ter mais informação").</p>
+<p><strong>Como resolver:</strong> leia <code>journalctl -k -n 5</code> (ou <code>dmesg | tail</code>) e corrija a opção. Se esse erro estiver no <code>/etc/fstab</code> da raiz, o sistema não liga: veja <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"No space left on device" com espaço sobrando no df</strong>
+<p><strong>O que aconteceu:</strong> o Btrfs reserva espaço em <em>chunks</em> separados para dados e metadados. Se todo o espaço foi reservado para dados e os metadados encheram, a gravação falha mesmo com o <code>df</code> mostrando espaço.</p>
+<p><strong>Como confirmar:</strong> <code>btrfs filesystem usage /</code>: <code>Device unallocated</code> perto de zero e <code>Metadata</code> perto de 100%.</p>
+<p><strong>Como resolver:</strong> apague snapshots antigos e rode um <strong>balance</strong> só dos chunks de dados pouco usados, que devolve espaço para o <code>unallocated</code>:</p>
+<pre class="term">#> btrfs balance start -dusage=50 /var/tmp/a8/m
+Done, had to relocate 1 out of 3 chunks</pre>
+<p><code>-dusage=50</code> = só os chunks de <strong>d</strong>ados com até 50% de uso. Um <code>balance</code> sem filtros reescreve o disco inteiro e pode levar horas.</p>
+</div>
+
+<div class="cenario">
+<strong>csum failed / Erro de entrada/saída ao ler um arquivo</strong>
+<p><strong>O que aconteceu:</strong> o bloco no disco não bate com a soma de verificação (setor ruim, cabo, memória RAM com defeito).</p>
+<p><strong>Como confirmar:</strong> <code>journalctl -k | grep -i csum</code> e <code>btrfs device stats /</code>; rode <code>btrfs scrub start -B /</code> para achar todos os arquivos atingidos.</p>
+<p><strong>Como resolver:</strong> restaure os arquivos citados do backup, zere os contadores com <code>btrfs device stats -z /</code> depois de resolver, e verifique o disco (<code>smartctl</code>, do pacote <code>smartmontools</code>) e a memória. Não rode <code>btrfs check --repair</code> por conta própria: a própria documentação pede para usar só com orientação.</p>
+</div>
+
+<hr>
+
+<h2>Desfazendo o laboratório</h2>
+<p>Sempre limpe o que criou: desmonte tudo, solte o loop e apague a imagem.</p>
+<pre class="term">#> umount -R /mnt/a8
+#> losetup -d /dev/loop1
+#> rm /var/tmp/a8/disco.img</pre>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (como root)</th><th>O que faz</th></tr>
+<tr><td><code>mkfs.btrfs -L nome /dev/X</code></td><td>Cria o Btrfs (<code>-f</code> força sobre outro sistema)</td></tr>
+<tr><td><code>btrfs subvolume create /mnt/@</code></td><td>Cria um subvolume</td></tr>
+<tr><td><code>btrfs subvolume list /</code></td><td>Lista os subvolumes</td></tr>
+<tr><td><code>btrfs subvolume show /</code></td><td>Detalhes de um subvolume (e seus snapshots)</td></tr>
+<tr><td><code>btrfs subvolume delete caminho</code></td><td>Apaga um subvolume ou snapshot</td></tr>
+<tr><td><code>mount -o subvol=@,compress=zstd /dev/X /mnt</code></td><td>Monta um subvolume com compressão</td></tr>
+<tr><td><code>btrfs filesystem df /</code> / <code>usage /</code></td><td>Espaço por tipo de bloco / visão completa</td></tr>
+<tr><td><code>btrfs filesystem du -s pasta</code></td><td>Uso real, exclusivo e compartilhado</td></tr>
+<tr><td><code>btrfs scrub start -B /</code> / <code>scrub status /</code></td><td>Confere todas as somas de verificação</td></tr>
+<tr><td><code>btrfs device stats /</code></td><td>Contadores de erro do dispositivo</td></tr>
+<tr><td><code>btrfs balance start -dusage=50 /</code></td><td>Reorganiza chunks de dados pouco usados</td></tr>
+<tr><td><code>genfstab -U /mnt</code></td><td>Gera o fstab com os subvolumes (instalação)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar o subvolume da home</h3>
+<p>Complete o comando que cria o subvolume <code>@home</code> no topo montado em <code>/mnt</code>:</p>
+<div class="ex-code">btrfs <input data-answer="subvolume|su|subvol" aria-label="grupo"> <input data-answer="create|cr" aria-label="ação"> /mnt/@home</div>
+</div>
+
+<div class="exercise">
+<h3>2. Montar com compressão</h3>
+<p>Monte o subvolume <code>@</code> em <code>/mnt</code> com compressão zstd:</p>
+<div class="ex-code">mount -o <input data-answer="subvol=@,compress=zstd|compress=zstd,subvol=@" aria-label="opções"> /dev/sda3 /mnt</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você restaura um snapshot de <code>@</code> (o sistema). O que acontece com os seus arquivos em <code>/home</code>, se <code>/home</code> é o subvolume <code>@home</code>?</p>
+<label><input type="radio" name="q3"> Voltam para a data do snapshot.</label>
+<label><input type="radio" name="q3"> Não mudam: o snapshot de <code>@</code> não inclui outros subvolumes.</label>
+<label><input type="radio" name="q3"> São apagados.</label>
+<label><input type="radio" name="q3"> Ficam só de leitura.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O scrub terminou com <code>Uncorrectable: 1</code> num disco com dados <code>single</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> O scrub consertou o bloco.</label>
+<label><input type="radio" name="q4"> O disco está cheio.</label>
+<label><input type="radio" name="q4"> Um bloco de dados está corrompido e não havia segunda cópia: restaure o arquivo do backup.</label>
+<label><input type="radio" name="q4"> A compressão falhou.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que o <code>@var_log</code> fica num subvolume separado?</p>
+<label><input type="radio" name="q5"> Para os logs sobreviverem quando você restaura um snapshot do sistema.</label>
+<label><input type="radio" name="q5"> Porque o Btrfs não aceita logs no <code>@</code>.</label>
+<label><input type="radio" name="q5"> Para comprimir os logs.</label>
+<label><input type="radio" name="q5"> Porque o journald exige.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Btrfs = cópia na escrita: alterações vão para blocos novos, e isso dá snapshots instantâneos.</li>
+  <li>Subvolumes são árvores independentes no mesmo espaço; o layout do Arch é <code>@</code>, <code>@home</code>, <code>@var_log</code>, <code>@snapshots</code>.</li>
+  <li>Monte cada um com <code>-o subvol=NOME,compress=zstd</code>; o <code>genfstab</code> escreve isso no fstab.</li>
+  <li>Use <code>btrfs filesystem usage</code> para ver o espaço de verdade.</li>
+  <li><code>btrfs scrub</code> confere tudo; ele detecta corrupção, mas só conserta se houver segunda cópia. Backup continua obrigatório.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> tudo sobre o sistema de arquivos em <a href="https://wiki.archlinux.org/title/Btrfs">Btrfs</a> (<a href="https://wiki.archlinux.org/title/Btrfs_(Portugu%C3%AAs)">em português</a>); o layout de subvolumes para snapshots em <a href="https://wiki.archlinux.org/title/Snapper#Suggested_filesystem_layout">Snapper: Suggested filesystem layout</a>; imagens e dispositivos de loop em <a href="https://wiki.archlinux.org/title/File_systems">File systems</a> (<a href="https://wiki.archlinux.org/title/File_systems_(Portugu%C3%AAs)">em português</a>); e a documentação oficial do projeto em <a href="https://btrfs.readthedocs.io/">btrfs.readthedocs.io</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

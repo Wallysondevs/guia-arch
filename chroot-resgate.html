@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Resgate com chroot — consertar o sistema pelo pendrive | Guia Arch</title>
+<meta name="description" content="Quando o Arch não liga: boot pelo pendrive, montar a raiz e a EFI, arch-chroot e o que consertar lá dentro (kernel, initramfs, GRUB, senha esquecida, pacman quebrado), com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Resgate com chroot</span></h1>
+
+<p class="intro">O computador não liga mais no Arch: o GRUB sumiu, o kernel não acha a raiz, uma atualização foi interrompida. Quase sempre o sistema está inteiro no disco, só não consegue <em>iniciar</em>. O resgate é o mesmo truque da instalação: ligar pelo <strong>pendrive do Arch</strong>, montar o sistema quebrado e "entrar" nele com <code>arch-chroot</code> para consertá-lo por dentro, com o pacman, o mkinitcpio e o GRUB dele.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>chroot</code> e o <code>arch-chroot</code> fazem.</li>
+  <li>O roteiro completo: pendrive → identificar partições → montar raiz e EFI → <code>arch-chroot</code> → consertar → sair.</li>
+  <li>O que dá para consertar lá dentro: kernel, initramfs, GRUB, senha esquecida, pacman interrompido.</li>
+  <li>Os erros mais comuns do próprio resgate (esquecer a EFI, montar a partição errada).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Quando usar o resgate</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Precisa do pendrive?</th></tr>
+<tr><td>O GRUB aparece e o kernel padrão falha, mas o <strong>LTS</strong> liga</td><td>Não: conserte de dentro do LTS (veja <a href="recuperar-boot.html">Recuperar o Boot</a>)</td></tr>
+<tr><td>Cai num <em>emergency mode</em> com senha de root</td><td>Normalmente não: dá para consertar ali (fstab, por exemplo)</td></tr>
+<tr><td>O firmware não acha nada para dar boot, ou aparece <code>grub rescue&gt;</code></td><td>Sim</td></tr>
+<tr><td>Kernel panic / <code>Failed to mount /sysroot</code> em todos os kernels</td><td>Sim</td></tr>
+<tr><td>Faltou energia no meio do <code>pacman -Syu</code> e nada liga</td><td>Sim</td></tr>
+<tr><td>Esqueceu a senha de root e a da sua usuária</td><td>Sim</td></tr>
+</table>
+</div>
+<p>O diagnóstico de cada tela de erro está em <a href="recuperar-boot.html">Recuperar o Boot</a>; esta aula é a <strong>ferramenta</strong> que quase todos eles usam.</p>
+
+<hr>
+
+<h2>O que é chroot</h2>
+<p><code>chroot</code> (de <em>change root</em>, mudar a raiz) roda um programa achando que uma pasta qualquer é o <code>/</code>. Se você montou o disco do Arch quebrado em <code>/mnt</code> e roda <code>chroot /mnt</code>, o <code>/etc/fstab</code> que o shell enxerga é o do sistema quebrado, o <code>pacman</code> que roda é o dele e instala no disco dele. É como "teletransportar" o terminal para dentro do sistema que não liga.</p>
+<p>Um <code>chroot</code> puro não basta: programas como o <code>pacman</code>, o <code>mkinitcpio</code> e o <code>grub-install</code> precisam de <code>/proc</code>, <code>/sys</code>, <code>/dev</code>, das variáveis EFI e da internet. O <code>arch-chroot</code> (pacote <code>arch-install-scripts</code>, que já vem no pendrive) monta tudo isso antes e desmonta na saída. Foi ele que você usou na <a href="configurar.html">instalação</a>.</p>
+
+<hr>
+
+<h2>O roteiro do resgate</h2>
+<p>Os comandos do ambiente live abaixo são os da instalação real da máquina do guia (o live fala inglês e usa o zsh, com o prompt <code>root@archiso ~ #</code>). As saídas vêm dos registros dessa instalação.</p>
+
+<ol class="passo">
+<li><strong>Dê boot pelo pendrive do Arch</strong> (o mesmo da instalação; baixe a ISO mais nova se o seu for antigo: veja <a href="preparar.html">Baixar e Verificar a ISO</a>). No menu do firmware, escolha o pendrive no modo <strong>UEFI</strong>. Confira, ajuste o teclado e a rede (detalhes em <a href="ambiente-live.html">O Ambiente Live</a>):
+<pre class="term" data-host="archiso" data-user="root">#> cat /sys/firmware/efi/fw_platform_size
+64                                 « 64 = boot em UEFI (precisa ser o mesmo modo do sistema)
+#> loadkeys br-abnt2
+#> ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes of data.
+64 bytes from 209.126.35.79: icmp_seq=1 ttl=64 time=44.0 ms
+64 bytes from 209.126.35.79: icmp_seq=2 ttl=64 time=42.5 ms
+64 bytes from 209.126.35.79: icmp_seq=3 ttl=64 time=55.2 ms
+
+--- archlinux.org ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 5616ms
+rtt min/avg/max/mdev = 42.522/47.247/55.200/5.656 ms</pre>
+</li>
+
+<li><strong>Descubra qual partição é qual.</strong> Não confie em lembranças: os nomes (<code>sda</code>, <code>nvme0n1</code>) podem mudar com outro pendrive conectado. Olhe tipo e tamanho:
+<pre class="term">#> lsblk -f /dev/sda
+NAME   FSTYPE FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+sda
+├─sda1 vfat   FAT32       C509-6CB1                             929,2M     9% /boot
+├─sda2 swap   1           02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+└─sda3 ext4   1.0         75d167c8-1dad-4d0a-a0ae-b063058a18e9   18,1G    21% /</pre>
+<p>Essa saída é da máquina do guia ligada, para você ver os tipos. No pendrive, a coluna <code>MOUNTPOINTS</code> vem vazia e aparecem também o <code>loop0</code> (o sistema do live) e o próprio pendrive. A pista: <strong>vfat</strong> de ~1 GiB é a EFI; <strong>swap</strong> é a swap; a <strong>ext4</strong> (ou <code>btrfs</code>, ou <code>crypto_LUKS</code>) grande é a raiz.</p>
+</li>
+
+<li><strong>Monte a raiz em <code>/mnt</code> e a EFI em <code>/mnt/boot</code></strong> (onde ela fica no sistema; confira no fstab dele, em <code>/mnt/etc/fstab</code>, se tiver dúvida):
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/sda3 /mnt
+#> mount --mkdir /dev/sda1 /mnt/boot
+#> lsblk -f
+NAME   FSTYPE   FSVER            LABEL       UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop0  squashfs 4.0                                                                     0   100% /run/archiso/airootfs
+sda
+|-sda1 vfat     FAT32                        C509-6CB1                              1022M     0% /mnt/boot
+|-sda2 swap     1                            02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+`-sda3 ext4     1.0                          75d167c8-1dad-4d0a-a0ae-b063058a18e9   23.2G     0% /mnt
+sr0    iso9660  Joliet Extension ARCH_202606 2026-06-01-15-21-12-00                     0   100% /run/archiso/bootmnt</pre>
+<p>Se o seu disco for diferente, monte antes as camadas de baixo:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A raiz é…</th><th>Antes do <code>mount</code></th><th>O <code>mount</code> da raiz</th></tr>
+<tr><td>ext4 simples</td><td>—</td><td><code>mount /dev/sda3 /mnt</code></td></tr>
+<tr><td><a href="btrfs.html">Btrfs</a> com subvolumes</td><td>—</td><td><code>mount -o subvol=@ /dev/sda3 /mnt</code> (e <code>@home</code> etc., se for mexer neles)</td></tr>
+<tr><td><a href="luks.html">LUKS</a></td><td><code>cryptsetup open /dev/sda3 cryptroot</code></td><td><code>mount /dev/mapper/cryptroot /mnt</code></td></tr>
+<tr><td><a href="lvm.html">LVM</a> (on LUKS)</td><td><code>cryptsetup open …</code> e <code>vgchange -ay</code></td><td><code>mount /dev/VG/raiz /mnt</code></td></tr>
+</table>
+</div>
+</li>
+
+<li><strong>Entre no sistema:</strong> <code>arch-chroot /mnt</code>. O prompt muda para o do Bash do seu Arch, na pasta <code>/</code>:
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt</pre>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> cat /etc/hostname
+notebook                       « é o sistema do disco, não o do pendrive</pre>
+<p>(O conteúdo do <code>/etc/hostname</code> é o do treino real mais abaixo.) Dentro do chroot, o nome da máquina no prompt continua <code>archiso</code> (o kernel em execução é o do pendrive), mas todos os arquivos são os do seu sistema.</p>
+</li>
+
+<li><strong>Conserte</strong> (veja abaixo o que dá para fazer).</li>
+
+<li><strong>Saia, desmonte e reinicie.</strong> <code>exit</code> (ou <kbd>Ctrl</kbd>+<kbd>D</kbd>) volta ao live; <code>umount -R /mnt</code> desmonta tudo, na ordem certa, gravando o que estava pendente:
+<pre class="term" data-host="archiso" data-user="root">#> umount -R /mnt; swapoff /dev/sda2; echo ok
+ok
+#> reboot</pre>
+<p>Tire o pendrive quando a tela apagar. Desmontar antes de reiniciar evita o aviso de "volume não foi desmontado corretamente" na EFI (veja <a href="recuperar-boot.html">Recuperar o Boot</a>).</p>
+</li>
+</ol>
+
+<hr>
+
+<h2>Treino de verdade, sem pendrive</h2>
+<p>Dá para treinar o <code>arch-chroot</code> na própria máquina, com segurança, montando o disco dela de novo, <strong>só para leitura</strong>, num "espaço de montagens" separado (<code>unshare -m</code>): nada do que se monta ali aparece para o resto do sistema, e tudo some quando o shell termina. Foi assim que as saídas abaixo foram tiradas (cada comando do chroot foi rodado como <code>arch-chroot /mnt comando</code>, que dá o mesmo resultado que digitar lá dentro).</p>
+
+<pre class="term">#> unshare -m --propagation private bash
+#> mount /dev/sda3 /mnt
+#> mount -o remount,ro,bind /mnt                « só leitura: nenhum risco
+#> ls /mnt
+bin
+boot
+dev
+etc
+home
+lib
+lib64
+lost+found
+mnt
+opt
+proc
+root
+run
+sbin
+srv
+sys
+tmp
+usr
+var
+#> ls /mnt/boot
+#> arch-chroot /mnt</pre>
+
+<p>O <code>ls /mnt/boot</code> veio <strong>vazio</strong>: a EFI ainda não foi montada. Lá dentro, o <code>/boot</code> também está vazio, mas o pacman funciona normalmente:</p>
+<pre class="term" data-user="root" data-cwd="/">#> ls /boot
+#> cat /etc/hostname; pacman -Q linux linux-lts
+notebook
+linux 7.2.10.arch1-1
+linux-lts 6.18.57-1</pre>
+
+<div class="warning">
+<strong>O erro clássico: esquecer a EFI</strong>
+<p>Nesse estado, um <code>mkinitcpio -P</code> ou a reinstalação do kernel gravariam os arquivos novos na pasta <code>/boot</code> <strong>da raiz</strong>, escondida embaixo da EFI. O comando dá "certo", você reinicia e o boot continua usando os arquivos velhos da EFI. Sempre confira com <code>ls /mnt/boot</code> (deve mostrar <code>vmlinuz-linux</code>, <code>initramfs-linux.img</code>, <code>EFI</code>, <code>grub</code>) antes de entrar.</p>
+</div>
+
+<p>Saindo, montando a EFI e entrando de novo:</p>
+<pre class="term">#> mount /dev/sda1 /mnt/boot
+#> mount -o remount,ro,bind /mnt/boot
+#> ls /mnt/boot
+EFI
+grub
+initramfs-linux.img
+initramfs-linux-lts.img
+intel-ucode.img
+vmlinuz-linux
+vmlinuz-linux-lts
+#> findmnt -R /mnt -o TARGET,SOURCE,FSTYPE
+TARGET      SOURCE    FSTYPE
+/mnt        /dev/sda3 ext4
+└─/mnt/boot /dev/sda1 vfat
+#> arch-chroot /mnt</pre>
+
+<pre class="term" data-user="root" data-cwd="/">#> findmnt -o TARGET,SOURCE,FSTYPE | head -20
+TARGET                        SOURCE                      FSTYPE
+/                             /dev/sda3                   ext4
+├─/boot                       /dev/sda1                   vfat
+├─/etc/resolv.conf            /dev/sda3[/etc/resolv.conf] ext4      « DNS do live, para baixar pacotes
+├─/proc                       proc                        proc
+├─/sys                        sys                         sysfs
+│ └─/sys/firmware/efi/efivars efivarfs                    efivarfs  « para o grub-install e o efibootmgr
+├─/dev                        udev                        devtmpfs
+│ ├─/dev/pts                  devpts                      devpts
+│ └─/dev/shm                  shm                         tmpfs
+├─/run                        tmpfs                       tmpfs
+└─/tmp                        tmp                         tmpfs
+#> ls /boot; uname -r; ls /usr/lib/modules
+EFI
+grub
+initramfs-linux.img
+initramfs-linux-lts.img
+intel-ucode.img
+vmlinuz-linux
+vmlinuz-linux-lts
+7.2.10-arch1-1
+6.18.57-1-lts
+7.2.10-arch1-1
+#> touch /etc/teste-a8
+touch: não foi possível tocar '/etc/teste-a8': Sistema de arquivos somente para leitura
+#> pacman -Qkk linux 2&gt;&amp;1 | tail -2
+linux: total de 7749 arquivos, 0 arquivo alterado
+#> exit</pre>
+
+<p>O <code>findmnt</code> mostra tudo o que o <code>arch-chroot</code> montou sozinho. O <code>touch</code> falhou porque o treino é só leitura; num resgate de verdade, a raiz está gravável. Repare no <code>uname -r</code>: dentro do chroot, ele mostra o kernel <strong>que está rodando</strong> (no pendrive, seria o do live), não o instalado. Por isso o <code>mkinitcpio -P</code> usa os presets (<code>/etc/mkinitcpio.d/*.preset</code>) e não o <code>uname</code>. Para encerrar o treino: <code>umount -R /mnt</code> e <code>exit</code> (o <code>unshare</code> termina e as montagens somem).</p>
+
+<hr>
+
+<h2>O que consertar lá dentro</h2>
+
+<h3>Refazer o initramfs</h3>
+<p>Initramfs quebrado ou desatualizado (atualização interrompida, hook novo de <a href="luks.html">LUKS</a>/<a href="lvm.html">LVM</a>): <code>mkinitcpio -P</code> refaz as imagens de todos os kernels (<code>-P</code> = todos os <em>presets</em>). A saída real, rodada do live durante a instalação:</p>
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt mkinitcpio -P
+==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+==> Using default configuration file: '/etc/mkinitcpio.conf'
+  -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
+==> Starting build: '7.2.10-arch1-1'
+  -> Running build hook: [base]
+  -> Running build hook: [systemd]
+  -> Running build hook: [autodetect]
+  -> Running build hook: [microcode]
+  -> Running build hook: [modconf]
+  -> Running build hook: [kms]
+  -> Running build hook: [keyboard]
+  -> Running build hook: [sd-vconsole]
+  -> Running build hook: [block]
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
+  -> Early uncompressed CPIO image generation successful
+==> Initcpio image generation successful</pre>
+<p><code>arch-chroot /mnt COMANDO</code> roda um comando só e volta: útil para consertos de uma linha. O que importa é o fim: <code>Initcpio image generation successful</code>, sem nenhum <code>ERROR</code>. Mais em <a href="mkinitcpio.html">mkinitcpio e initramfs</a>.</p>
+
+<h3>Reinstalar o kernel</h3>
+<p>Se o <code>/boot</code> ficou sem o <code>vmlinuz-linux</code>, ou os módulos em <code>/usr/lib/modules</code> estão incompletos: <code>pacman -S linux</code> dentro do chroot. A reinstalação regrava o kernel e roda os hooks que refazem o initramfs. Assim ficou o fim da instalação real do <code>linux-lts</code> na máquina do guia (trecho de uma transação maior, com vários pacotes):</p>
+<pre class="term">#> pacman -Syu --noconfirm --needed … linux-lts linux-lts-headers
+…
+instalando linux-lts...
+…
+:: Executando hooks pós-transação...
+…
+(10/18) Updating module dependencies...
+(11/18) Updating linux initcpios...
+==> Building image from preset: /etc/mkinitcpio.d/linux-lts.preset: 'default'
+==> Using default configuration file: '/etc/mkinitcpio.conf'
+  -> -k /boot/vmlinuz-linux-lts -g /boot/initramfs-linux-lts.img
+==> Starting build: '6.18.57-1-lts'
+…
+==> Initcpio image generation successful</pre>
+
+<h3>Reinstalar o GRUB</h3>
+<p>Entrada sumiu do firmware, <code>grub rescue&gt;</code>, ou o Windows sobrescreveu o boot: reinstale e regere o menu. Saídas reais da instalação:</p>
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+Installing for x86_64-efi platform.
+Installation finished. No error reported.
+#> arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+Generating grub configuration file ...
+Found linux image: /boot/vmlinuz-linux
+Found initrd image: /boot/intel-ucode.img /boot/initramfs-linux.img
+Warning: os-prober will not be executed to detect other bootable partitions.
+Systems on them will not be added to the GRUB boot configuration.
+Check GRUB_DISABLE_OS_PROBER documentation entry.
+Adding boot menu entry for UEFI Firmware Settings ...
+…
+done</pre>
+<p>As opções têm que ser as da sua instalação (a EFI em <code>/boot</code> ou em <code>/efi</code>?). Se o firmware "esquece" a entrada a cada boot, acrescente <code>--removable</code>. Explicações completas em <a href="bootloader.html">Bootloader</a> e <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+
+<h3>Senha esquecida</h3>
+<p>Como root dentro do chroot, o <code>passwd</code> troca a senha de qualquer usuário sem pedir a antiga. Saída real (com um usuário de teste):</p>
+<pre class="term">#> passwd teste-a8
+Nova senha:
+Redigite a nova senha:
+passwd: senha atualizada com sucesso
+#> passwd -S teste-a8
+teste-a8 P 2026-10-16 -1 -1 -1 -1          « P = tem senha (usable Password)</pre>
+<p>No seu caso: <code>passwd ana</code> e/ou <code>passwd</code> (sozinho = root). Se a conta ficou bloqueada por tentativas erradas, <code>faillock --user ana --reset</code> (veja <a href="seguranca.html">Segurança</a>). E repare: qualquer um com um pendrive faz isso no seu computador. Só a <a href="luks.html">criptografia de disco</a> impede.</p>
+
+<h3>pacman quebrado ou atualização interrompida</h3>
+<p>Faltou energia no meio do <code>pacman -Syu</code>: pacotes ficaram pela metade e às vezes sobra a trava <code>/var/lib/pacman/db.lck</code>. Dentro do chroot:</p>
+<ol>
+  <li>Confirme que nenhum pacman está rodando e apague a trava (<code>rm /var/lib/pacman/db.lck</code>).</li>
+  <li>Complete a atualização: <code>pacman -Syu</code>.</li>
+  <li>Procure arquivos estragados: <code>pacman -Qkk 2&gt;&amp;1 | grep -v ' 0 arquivo alterado'</code> e reinstale os pacotes citados com <code>pacman -S pacote</code>.</li>
+  <li>Refaça o initramfs (<code>mkinitcpio -P</code>), por garantia.</li>
+</ol>
+<p>Cada mensagem desse caminho, com a saída real, está em <a href="problemas-update.html">Erros de Atualização</a>. Se o próprio pacman do sistema não roda mais (biblioteca quebrada), use o pacman <strong>do pendrive</strong> apontando para o disco: <code>pacman --sysroot /mnt -Syu</code> (sem chroot).</p>
+
+<h3>fstab errado</h3>
+<p>Um UUID errado ou uma opção inválida no <code>/etc/fstab</code> derruba o boot. Edite <code>/mnt/etc/fstab</code> (nem precisa de chroot) e compare com <code>genfstab -U /mnt</code>. Veja <a href="fstab.html">mount e fstab</a> e o caso do <em>emergency mode</em> em <a href="recuperar-boot.html">Recuperar o Boot</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como</th><th>Qual usar?</th></tr>
+<tr><td><code>arch-chroot /mnt</code></td><td>Monta proc/sys/dev/run/tmp/efivars e o DNS sozinho</td><td>Sempre que estiver no pendrive do Arch. É o padrão.</td></tr>
+<tr><td><code>chroot</code> manual</td><td><code>mount --rbind /dev /mnt/dev</code> (e <code>/proc</code>, <code>/sys</code>…) e <code>chroot /mnt</code></td><td>Pendrive de outra distro sem <code>arch-install-scripts</code>.</td></tr>
+<tr><td><code>pacman --sysroot /mnt</code></td><td>O pacman do live instala no disco montado</td><td>Quando o pacman do sistema está quebrado.</td></tr>
+<tr><td><code>systemd-nspawn -D /mnt</code></td><td>Um "container" com o sistema do disco</td><td>Testes; não serve para <code>grub-install</code> (sem acesso às variáveis EFI).</td></tr>
+<tr><td>Kernel LTS / emergency mode</td><td>Sem pendrive</td><td>Quando o sistema ainda chega a algum shell. Bem mais rápido.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:fstab,out:75d167c8-1dad-4d0a-a0ae-b063058a18e9" data-solucao="grep UUID /etc/fstab">
+<p class="try-task"><strong>Missão:</strong> num resgate, o <code>/mnt/etc/fstab</code> diz qual partição é a raiz. Na máquina do guia, descubra o UUID da raiz (<code>/</code>) olhando o <code>/etc/fstab</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"mount point does not exist"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/sda1 /mnt/boot
+mount: /mnt/boot: mount point does not exist.
+       dmesg(1) may have more information after failed mount system call.</pre>
+<p><strong>O que aconteceu:</strong> a pasta <code>/mnt/boot</code> não existe. Quase sempre porque a raiz <strong>ainda não foi montada</strong> em <code>/mnt</code> (a pasta <code>boot</code> está dentro dela), ou porque você montou a partição errada como raiz. (Saída real da máquina do guia com <code>LANG=C</code>, igual à do live; em pt_BR: <code>o ponto de montagem não existe</code>.)</p>
+<p><strong>Como resolver:</strong> monte a raiz primeiro; confira com <code>ls /mnt</code> (deve ter <code>bin boot etc home usr var…</code>). Se a pasta realmente não existe, <code>mount --mkdir</code> cria.</p>
+</div>
+
+<div class="cenario">
+<strong>"is not a mountpoint" / "failed to setup chroot"</strong>
+<pre class="term">#> arch-chroot /tmp/a8/vazio2
+==&gt; WARNING: /tmp/a8/vazio2 is not a mountpoint. This may have undesirable side effects.
+mount: /tmp/a8/vazio2/proc: o ponto de montagem não existe.
+       dmesg(1) pode ter mais informação após uma chamada a montar o sistema falhada.
+==&gt; ERROR: failed to setup chroot /tmp/a8/vazio2</pre>
+<p><strong>O que aconteceu:</strong> a pasta não é um sistema montado (você esqueceu o <code>mount</code>, ou digitou o caminho errado) e não tem <code>proc</code>, <code>sys</code>… dentro.</p>
+<p><strong>Como resolver:</strong> monte a raiz em <code>/mnt</code> e rode <code>arch-chroot /mnt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"não parece ser uma partição EFI"</strong>
+<pre class="term">#> grub-install --target=x86_64-efi --efi-directory=/var/tmp/a8 --bootloader-id=TESTE --no-nvram
+Instalando para a plataforma x86_64-efi.
+grub-install: erro: /var/tmp/a8 não parece ser uma partição EFI.</pre>
+<p><strong>O que aconteceu:</strong> o <code>--efi-directory</code> aponta para uma pasta que não é a partição FAT da EFI. No resgate, é o sintoma de ter esquecido de montar a EFI em <code>/mnt/boot</code> antes do <code>arch-chroot</code> (aí a mensagem fala de <code>/boot</code>).</p>
+<p><strong>Como resolver:</strong> <code>exit</code>, <code>mount /dev/sda1 /mnt/boot</code>, <code>arch-chroot /mnt</code> e repita.</p>
+</div>
+
+<div class="cenario">
+<strong>O conserto "funcionou", mas nada mudou no boot</strong>
+<p><strong>O que aconteceu:</strong> o <code>mkinitcpio</code> ou o <code>pacman -S linux</code> rodaram sem a EFI montada e gravaram no <code>/boot</code> errado (veja o aviso acima). Ou você consertou outro sistema (outra partição, outro disco).</p>
+<p><strong>Como confirmar:</strong> no live, <code>ls -l /mnt/boot</code>: as datas de <code>initramfs-linux.img</code> devem ser de agora.</p>
+<p><strong>Como resolver:</strong> monte a EFI e repita o conserto.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem internet dentro do chroot</strong>
+<p><strong>O que aconteceu:</strong> a rede é a do <strong>live</strong>. Se o <code>ping</code> falha no live, falha no chroot também.</p>
+<p><strong>Como resolver:</strong> saia, conecte no live (cabo, ou <code>iwctl</code> para Wi-Fi; veja <a href="ambiente-live.html">O Ambiente Live</a>) e entre de novo. O <code>arch-chroot</code> copia o DNS do live (a linha <code>/etc/resolv.conf</code> do <code>findmnt</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>Comando (no live, como root)</th></tr>
+<tr><td>Teclado e rede</td><td><code>loadkeys br-abnt2</code>; <code>ping -c 3 archlinux.org</code></td></tr>
+<tr><td>Ver partições</td><td><code>lsblk -f</code></td></tr>
+<tr><td>Abrir LUKS / ativar LVM</td><td><code>cryptsetup open /dev/sda3 cryptroot</code>; <code>vgchange -ay</code></td></tr>
+<tr><td>Montar raiz e EFI</td><td><code>mount /dev/sda3 /mnt</code>; <code>mount /dev/sda1 /mnt/boot</code></td></tr>
+<tr><td>Entrar</td><td><code>arch-chroot /mnt</code> (ou <code>arch-chroot /mnt comando</code>)</td></tr>
+<tr><td>Initramfs</td><td><code>mkinitcpio -P</code></td></tr>
+<tr><td>Kernel</td><td><code>pacman -S linux</code></td></tr>
+<tr><td>GRUB</td><td><code>grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB</code>; <code>grub-mkconfig -o /boot/grub/grub.cfg</code></td></tr>
+<tr><td>Senha</td><td><code>passwd ana</code>; <code>passwd</code></td></tr>
+<tr><td>Atualização interrompida</td><td><code>rm /var/lib/pacman/db.lck</code>; <code>pacman -Syu</code>; <code>pacman -Qkk</code></td></tr>
+<tr><td>Sair</td><td><code>exit</code>; <code>umount -R /mnt</code>; <code>reboot</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A ordem das montagens</h3>
+<p>Complete: primeiro a raiz, depois a EFI.</p>
+<div class="ex-code">mount /dev/sda3 <input data-answer="/mnt" aria-label="raiz"><br>mount /dev/sda1 <input data-answer="/mnt/boot" aria-label="EFI"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Refazer as imagens de todos os kernels</h3>
+<div class="ex-code">mkinitcpio <input data-answer="-P|--allpresets" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Por que usar <code>arch-chroot</code> em vez de <code>chroot</code> puro?</p>
+<label><input type="radio" name="q3"> Porque o <code>chroot</code> não existe no live.</label>
+<label><input type="radio" name="q3"> Porque ele monta <code>/proc</code>, <code>/sys</code>, <code>/dev</code>, as variáveis EFI e o DNS que o pacman e o GRUB precisam.</label>
+<label><input type="radio" name="q3"> Porque ele conserta o sistema sozinho.</label>
+<label><input type="radio" name="q3"> Porque ele formata a raiz.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Você rodou <code>mkinitcpio -P</code> no chroot sem montar a EFI. O que acontece no próximo boot?</p>
+<label><input type="radio" name="q4"> O sistema liga com o initramfs novo.</label>
+<label><input type="radio" name="q4"> O GRUB some.</label>
+<label><input type="radio" name="q4"> O disco é formatado.</label>
+<label><input type="radio" name="q4"> Nada muda: as imagens novas foram para a pasta <code>/boot</code> da raiz, escondida embaixo da EFI.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Dentro do chroot, <code>uname -r</code> mostra…</p>
+<label><input type="radio" name="q5"> o kernel que está rodando (o do pendrive).</label>
+<label><input type="radio" name="q5"> o kernel instalado no disco.</label>
+<label><input type="radio" name="q5"> o kernel LTS.</label>
+<label><input type="radio" name="q5"> um erro.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Pendrive (UEFI) → <code>lsblk -f</code> → montar raiz em <code>/mnt</code> e EFI em <code>/mnt/boot</code> → <code>arch-chroot /mnt</code>.</li>
+  <li>LUKS, LVM e Btrfs têm um passo antes do <code>mount</code> (<code>cryptsetup open</code>, <code>vgchange -ay</code>, <code>-o subvol=@</code>).</li>
+  <li>Lá dentro: <code>mkinitcpio -P</code>, <code>pacman -S linux</code>, <code>grub-install</code> + <code>grub-mkconfig</code>, <code>passwd</code>, <code>pacman -Syu</code>/<code>-Qkk</code>.</li>
+  <li>Confira <code>ls /mnt/boot</code> antes de entrar: esquecer a EFI é o erro mais comum.</li>
+  <li>Saia com <code>exit</code> e <code>umount -R /mnt</code> antes do <code>reboot</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o chroot e o <code>arch-chroot</code> estão em <a href="https://wiki.archlinux.org/title/Chroot">chroot</a> (<a href="https://wiki.archlinux.org/title/Chroot_(Portugu%C3%AAs)">em português</a>); um roteiro geral de problemas de boot em <a href="https://wiki.archlinux.org/title/General_troubleshooting">General troubleshooting</a> (<a href="https://wiki.archlinux.org/title/General_troubleshooting_(Portugu%C3%AAs)">em português</a>); senha esquecida em <a href="https://wiki.archlinux.org/title/Reset_lost_root_password">Reset lost root password</a>; e o pacman pelo live em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#Reinstalling_all_packages">Pacman/Tips and tricks</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

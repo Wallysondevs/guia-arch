@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch LUKS — criptografia de disco com cryptsetup | Guia Arch</title>
+<meta name="description" content="Criptografia de disco no Arch Linux com LUKS2: cryptsetup luksFormat, open, close, luksDump, slots de chave, backup do cabeçalho, raiz criptografada com sd-encrypt e rd.luks.name, e a ideia de TPM2/FIDO2, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">LUKS</span></h1>
+
+<p class="intro">Se alguém roubar o seu notebook, tudo o que está no disco pode ser lido em outro computador, sem precisar da sua senha de login. A <strong>criptografia de disco</strong> resolve isso: sem a senha certa, o disco é só ruído. No Linux, o padrão é o <strong>LUKS</strong> (<em>Linux Unified Key Setup</em>), usado pelo programa <code>cryptsetup</code>, que já vem no grupo <code>base</code> do Arch.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o LUKS funciona: cabeçalho, slots de chave e o dispositivo <code>/dev/mapper</code>.</li>
+  <li>Criptografar, abrir e fechar um volume com <code>cryptsetup</code> (inclusive com a senha vinda da entrada padrão).</li>
+  <li>Ler o <code>luksDump</code>, ter duas senhas e fazer backup do cabeçalho.</li>
+  <li>O que muda no boot quando a <strong>raiz</strong> é criptografada: hook <code>sd-encrypt</code> e <code>rd.luks.name=</code>.</li>
+  <li>A ideia de destravar com TPM2 ou chave FIDO2.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como o LUKS funciona</h2>
+<p>Pense num cofre com um <strong>chaveiro</strong> na porta:</p>
+<ul>
+  <li>Os dados são cifrados com uma <strong>chave mestra</strong> aleatória e enorme (512 bits), que você nunca vê.</li>
+  <li>A chave mestra fica guardada no <strong>cabeçalho</strong> do LUKS, no começo da partição, trancada dentro de <strong>slots de chave</strong>. Cada slot tranca uma cópia da chave mestra com uma senha diferente. O LUKS2 tem 32 slots.</li>
+  <li>Para abrir, você dá uma senha; o LUKS tenta os slots, recupera a chave mestra e cria um dispositivo "aberto" em <code>/dev/mapper/NOME</code>. Tudo o que você grava ali é cifrado no caminho para o disco (isso é o <code>dm-crypt</code>, do kernel).</li>
+</ul>
+
+<pre class="file" data-file="As camadas">disco ou partição (/dev/sda3)          ← só ruído para quem olha de fora
+ └─ cabeçalho LUKS + dados cifrados
+     └─ /dev/mapper/cryptroot           ← aparece depois do "cryptsetup open"
+         └─ sistema de arquivos (ext4, Btrfs…) montado em /
+</pre>
+
+<p>Trocar a senha não recifra o disco: só o slot muda. E se o <strong>cabeçalho</strong> estragar, nenhuma senha funciona mais, por isso o backup dele (mais abaixo) é tão importante.</p>
+
+<div class="warning">
+<strong>O que a criptografia não protege</strong>
+<p>Com o computador <strong>ligado e destravado</strong>, o disco está aberto: vírus, alguém na sua cadeira ou um programa malicioso leem tudo normalmente. O LUKS protege o disco <strong>desligado</strong> (roubo, descarte, conserto). E se você esquecer todas as senhas e não tiver backup do cabeçalho com uma senha conhecida, <strong>não há recuperação</strong>.</p>
+</div>
+
+<hr>
+
+<h2>O laboratório</h2>
+<p>Como nas outras aulas de armazenamento, usamos um arquivo-imagem de 1 GiB ligado a um dispositivo de loop (explicado em <a href="btrfs.html">Btrfs</a>). Nada aqui toca o disco da máquina.</p>
+<pre class="term">#> truncate -s 1G /var/tmp/a8/cripto.img
+#> losetup -f --show /var/tmp/a8/cripto.img
+/dev/loop1</pre>
+
+<hr>
+
+<h2>Criptografar: luksFormat</h2>
+
+<dl class="anatomy">
+  <dt>cryptsetup</dt><dd>A ferramenta do LUKS e do dm-crypt (pacote <code>cryptsetup</code>, já no <code>base</code>).</dd>
+  <dt>luksFormat</dt><dd>Cria o cabeçalho LUKS (versão 2, por padrão) e escolhe a chave mestra. <strong>Apaga</strong> o que havia no dispositivo.</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo a criptografar.</dd>
+</dl>
+
+<p>Do jeito interativo, ele pede uma confirmação em inglês (digite <code>YES</code>, em maiúsculas) e a senha duas vezes. As senhas não aparecem enquanto você digita:</p>
+<pre class="term">#> cryptsetup luksFormat /dev/loop1
+
+WARNING!
+========
+Isto vai sobrescrever dados em /dev/loop1 permanentemente.
+
+Are you sure? (Type 'yes' in capital letters): YES
+Digite a senha para /var/tmp/a8/cripto.img:       « num loop, ele mostra o arquivo por trás
+Verificar senha:
+#> echo $?
+0</pre>
+
+<p>Leva uns segundos: o LUKS2 usa o <strong>argon2id</strong>, um algoritmo de propósito lento e "guloso" de memória, para que adivinhar a senha por força bruta custe caro.</p>
+
+<h3>Com a senha vinda da entrada padrão</h3>
+<p>Em scripts (e no laboratório), a senha pode chegar pela entrada padrão. O <code>-</code> no fim quer dizer "leia a chave de stdin" e o <code>-q</code> (<em>quiet</em>) pula a confirmação <code>YES</code>:</p>
+
+<dl class="anatomy">
+  <dt>printf '%s' 'arch-teste-123'</dt><dd>Imprime a senha <strong>sem</strong> quebra de linha no fim.</dd>
+  <dt>|</dt><dd>Manda para a entrada do próximo comando.</dd>
+  <dt>cryptsetup luksFormat -q</dt><dd>Formata sem perguntar.</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo.</dd>
+  <dt>-</dt><dd>Arquivo de chave = entrada padrão.</dd>
+</dl>
+
+<pre class="term">#> printf '%s' 'arch-teste-123' | cryptsetup luksFormat -q /dev/loop1 -
+#> echo $?
+0
+#> cryptsetup isLuks /dev/loop1 &amp;&amp; echo "é LUKS"
+é LUKS
+#> blkid /dev/loop1
+/dev/loop1: UUID="56937a95-55c3-4526-a4e3-b82116159828" TYPE="crypto_LUKS"</pre>
+
+<div class="warning">
+<strong>printf, não echo</strong>
+<p>Com o arquivo de chave <code>-</code>, o <code>cryptsetup</code> usa <strong>tudo</strong> o que chega, inclusive a quebra de linha que o <code>echo</code> põe no fim. Aí a senha gravada seria "arch-teste-123 + Enter", e digitar <code>arch-teste-123</code> no teclado não abriria. Por isso o <code>printf '%s'</code>. E uma senha escrita na linha de comando fica no histórico do shell: em uso real, digite-a quando ele pedir.</p>
+</div>
+
+<hr>
+
+<h2>Abrir, usar e fechar</h2>
+
+<dl class="anatomy">
+  <dt>cryptsetup open</dt><dd>Destrava o volume (forma antiga: <code>luksOpen</code>).</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo cifrado.</dd>
+  <dt>a8cripto</dt><dd>O nome que você escolhe. Vira <code>/dev/mapper/a8cripto</code>. Na raiz, o costume é <code>cryptroot</code>.</dd>
+</dl>
+
+<pre class="term">#> printf '%s' 'arch-teste-123' | cryptsetup open /dev/loop1 a8cripto -
+#> echo $?
+0
+#> ls -l /dev/mapper/
+total 0
+lrwxrwxrwx 1 root root       7 16 out 13:27 a8cripto -&gt; ../dm-0     « o volume aberto
+crw------- 1 root root 10, 236 16 out 13:06 control
+#> lsblk /dev/loop1
+NAME       MAJ:MIN RM  SIZE RO TYPE  MOUNTPOINTS
+loop1        7:1    0    1G  0 loop
+└─a8cripto 253:0    0 1008M  0 crypt                    « 16 MiB a menos: o cabeçalho
+#> cryptsetup status a8cripto
+/dev/mapper/a8cripto is active.
+  type:    LUKS2
+  cipher:  aes-xts-plain64
+  keysize: 512 [bits]
+  key location: keyring
+  device:  /dev/loop1
+  loop:    /var/tmp/a8/cripto.img
+  sector size:  512 [bytes]
+  offset:  32768 [512-byte units] (16777216 [bytes])
+  size:    2064384 [512-byte units] (1056964608 [bytes])
+  mode:    read/write</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Campo do status</th><th>Significado</th></tr>
+<tr><td><code>cipher: aes-xts-plain64</code></td><td>A cifra: AES no modo XTS, o padrão para discos. Processadores modernos têm instruções próprias para AES (rápido).</td></tr>
+<tr><td><code>keysize: 512</code></td><td>A chave mestra tem 512 bits (no XTS, são duas chaves AES-256).</td></tr>
+<tr><td><code>key location: keyring</code></td><td>A chave mestra está guardada no chaveiro do kernel enquanto o volume estiver aberto.</td></tr>
+<tr><td><code>offset: … (16777216 [bytes])</code></td><td>Os dados começam depois de 16 MiB: o espaço do cabeçalho LUKS2.</td></tr>
+</table>
+</div>
+
+<p>O <code>/dev/mapper/a8cripto</code> se comporta como um disco qualquer: formate, monte e use.</p>
+<pre class="term">#> mkfs.ext4 -q -L dados /dev/mapper/a8cripto
+#> mount --mkdir /dev/mapper/a8cripto /mnt/a8
+#> echo "segredo da ana" &gt; /mnt/a8/segredo.txt
+#> lsblk -f /dev/loop1
+NAME       FSTYPE      FSVER LABEL UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+loop1      crypto_LUKS 2           56937a95-55c3-4526-a4e3-b82116159828
+└─a8cripto ext4        1.0   dados 4bb02059-d922-4f27-8b49-58c9684fde94    907M     0% /mnt/a8
+#> umount /mnt/a8
+#> cryptsetup close a8cripto
+#> echo $?
+0
+#> ls /dev/mapper/
+control
+#> grep -c "segredo da ana" /var/tmp/a8/cripto.img
+0                                         « no disco, o texto não aparece em lugar nenhum</pre>
+
+<p>Repare nos <strong>dois UUIDs</strong> do <code>lsblk -f</code>: o do LUKS (<code>56937a95…</code>, da partição cifrada) e o do ext4 de dentro (<code>4bb02059…</code>, que só existe com o volume aberto). Na configuração do boot, cada um vai num lugar diferente, e trocar um pelo outro é um erro clássico.</p>
+<p>A ordem para fechar é a inversa da de abrir: primeiro <code>umount</code>, depois <code>close</code>. Com o volume montado, o <code>close</code> recusa: num teste com um volume chamado <code>a8t</code>, a resposta foi <code>O dispositivo a8t ainda está em uso.</code>, com código de saída 5.</p>
+
+<hr>
+
+<h2>Por dentro do cabeçalho: luksDump</h2>
+<pre class="term">#> cryptsetup luksDump /dev/loop1
+LUKS header information
+Version:       	2
+Epoch:         	3
+Metadata area: 	16384 [bytes]
+Keyslots area: 	16744448 [bytes]
+UUID:          	56937a95-55c3-4526-a4e3-b82116159828
+Label:         	(no label)
+Subsystem:     	(no subsystem)
+Flags:       	(no flags)
+
+Data segments:
+  0: crypt
+	offset: 16777216 [bytes]          « os dados começam em 16 MiB
+	length: (whole device)
+	cipher: aes-xts-plain64
+	sector: 512 [bytes]
+
+Keyslots:
+  0: luks2                            « o slot 0: a senha que você criou
+	Key:        512 bits
+	Priority:   normal
+	Cipher:     aes-xts-plain64
+	Cipher key: 512 bits
+	PBKDF:      argon2id               « a função que deixa a força bruta cara
+	Time cost:  4
+	Memory:     590031                 « KiB (~576 MiB) por tentativa
+	Threads:    2
+	Salt:       64 4c bc ac c7 9e a9 fe 39 91 26 e3 d9 54 95 0d
+	            5a a1 88 05 da 24 d3 08 d1 58 7e 49 05 e2 f1 b5
+	AF stripes: 4000
+	AF hash:    sha256
+	Area offset:32768 [bytes]
+	Area length:258048 [bytes]
+	Digest ID:  0
+Tokens:                               « vazio; o TPM2/FIDO2 apareceria aqui
+Digests:
+  0: pbkdf2
+	Hash:       sha256
+	Iterations: 89286
+	Salt:       60 f8 48 55 ab 3d 93 1a 9e 6b 74 8f b7 97 57 3d
+	            34 69 d9 ae c2 4a 02 75 8b aa 3f 57 7d b6 4f 09
+	Digest:     3d 32 c2 05 7e ed 5a 4f e1 f2 0e cd bf 52 7f 2b
+	            37 6b f7 b4 ff 95 31 8b e0 d4 3a b6 36 7d 8f 01 </pre>
+
+<p>O <code>luksDump</code> não pede senha e não revela a chave: tudo o que ele mostra é público por natureza. Os números do argon2id (<code>Time cost</code>, <code>Memory</code>, <code>Threads</code>) são calibrados no momento do <code>luksFormat</code> para que abrir leve cerca de 2 segundos <strong>naquela máquina</strong>. O <code>Digest</code> serve para o LUKS saber se a chave mestra que saiu de um slot é a certa.</p>
+
+<hr>
+
+<h2>Mais de uma senha: slots de chave</h2>
+<p>Ter uma segunda senha (guardada num lugar seguro) é a forma mais simples de não ficar trancado para fora. <code>luksAddKey</code> pede uma senha que já funciona e a nova:</p>
+<pre class="term">#> cryptsetup luksAddKey /dev/loop1
+Digite qualquer senha existente:
+Digite uma senha para o slot de chave:
+Verificar senha:
+#> cryptsetup luksDump /dev/loop1 | grep -E "^  [0-9]: luks2"
+  0: luks2
+  1: luks2                     « o slot novo</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>cryptsetup luksAddKey DISP</code></td><td>Acrescenta uma senha num slot livre</td></tr>
+<tr><td><code>cryptsetup luksChangeKey DISP</code></td><td>Troca uma senha (pede a velha e a nova)</td></tr>
+<tr><td><code>cryptsetup luksRemoveKey DISP</code></td><td>Remove o slot da senha que você digitar</td></tr>
+<tr><td><code>cryptsetup luksKillSlot DISP 1</code></td><td>Remove o slot 1 (pede uma <strong>outra</strong> senha válida)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Backup do cabeçalho</h2>
+<p>Se os primeiros megabytes da partição estragarem (setor ruim, um <code>dd</code> no lugar errado, outro sistema que "formatou" por cima), a chave mestra se perde e os dados também. O backup do cabeçalho evita isso:</p>
+
+<dl class="anatomy">
+  <dt>cryptsetup luksHeaderBackup</dt><dd>Copia o cabeçalho inteiro (com os slots) para um arquivo.</dd>
+  <dt>/dev/loop1</dt><dd>O dispositivo.</dd>
+  <dt>--header-backup-file /tmp/a8/cripto-cabecalho.img</dt><dd>Onde salvar. A pasta precisa existir.</dd>
+</dl>
+
+<pre class="term">#> cryptsetup luksHeaderBackup /dev/loop1 --header-backup-file /tmp/a8/cripto-cabecalho.img
+Não foi possível criar o arquivo de cópia de segurança de cabeçalho /tmp/a8/cripto-cabecalho.img.
+#> mkdir -p /tmp/a8
+#> cryptsetup luksHeaderBackup /dev/loop1 --header-backup-file /tmp/a8/cripto-cabecalho.img
+#> echo $?
+0
+#> ls -lh /tmp/a8/cripto-cabecalho.img
+-r-------- 1 root root 16M 16 out 13:28 /tmp/a8/cripto-cabecalho.img   « só o root lê</pre>
+
+<p>A primeira tentativa falhou porque a pasta não existia. Agora, simulamos o desastre: zeros nos primeiros 4 MiB do dispositivo.</p>
+<pre class="term">#> dd if=/dev/zero of=/dev/loop1 bs=1M count=4 status=none
+#> cryptsetup isLuks /dev/loop1; echo $?
+1
+#> printf '%s' 'arch-teste-123' | cryptsetup open /dev/loop1 a8cripto -
+O dispositivo /dev/loop1 não é um dispositivo LUKS válido.
+#> cryptsetup luksHeaderRestore /dev/loop1 --header-backup-file /tmp/a8/cripto-cabecalho.img -q
+#> echo $?
+0
+#> printf '%s' 'reserva-456' | cryptsetup open /dev/loop1 a8cripto -     « a segunda senha
+#> mount /dev/mapper/a8cripto /mnt/a8
+#> cat /mnt/a8/segredo.txt
+segredo da ana                     « tudo de volta
+#> umount /mnt/a8
+#> cryptsetup close a8cripto</pre>
+
+<div class="warning">
+<strong>Guarde o backup fora do disco, e com cuidado</strong>
+<p>O arquivo de cabeçalho abre o disco com <strong>qualquer senha que existia quando ele foi feito</strong>, mesmo que você troque a senha depois. Guarde-o num pendrive ou num cofre de senhas, nunca no próprio disco criptografado (se o disco estragar, o backup vai junto).</p>
+</div>
+
+<hr>
+
+<h2>A raiz criptografada: o que muda no boot</h2>
+<p>Esta parte é <strong>ilustrativa</strong>: a máquina do guia não tem raiz criptografada e não mexemos no boot dela. Mas todos os arquivos mostrados são reais, e o initramfs de teste foi gerado de verdade, numa pasta temporária.</p>
+
+<h3>O problema do ovo e da galinha</h3>
+<p>O sistema que sabe abrir o LUKS está <strong>dentro</strong> do LUKS. Quem pede a senha no boot é o <strong>initramfs</strong> (o mini-sistema que o kernel carrega antes da raiz, gerado pelo <a href="mkinitcpio.html">mkinitcpio</a>). Por isso, para a raiz, duas coisas mudam: um <strong>hook</strong> a mais no initramfs e um <strong>parâmetro</strong> a mais no kernel.</p>
+
+<h3>/etc/crypttab não é para a raiz</h3>
+<p>O <code>/etc/crypttab</code> lista volumes cifrados que o systemd abre <strong>depois</strong> da raiz (uma partição de dados, um HD externo). O arquivo padrão do Arch avisa isso logo no começo:</p>
+<pre class="file" data-file="/etc/crypttab"># Configuration for encrypted block devices.
+# See crypttab(5) for details.
+
+# NOTE: Do not list your root (/) partition here, it must be set up
+#       beforehand by the initramfs (/etc/mkinitcpio.conf).
+
+# &lt;name&gt;       &lt;device&gt;                                     &lt;password&gt;              &lt;options&gt;
+# home         UUID=b8ad5c18-f445-495d-9095-c9ec4f9d2f37    /etc/mypassword1
+# data1        /dev/sda3                                    /etc/mypassword2
+# data2        /dev/sda5                                    /etc/cryptfs.key
+# swap         /dev/sdx4                                    /dev/urandom            swap,cipher=aes-cbc-essiv:sha256,size=256
+# vol          /dev/sdb7                                    none
+</pre>
+<p>Cada linha: nome em <code>/dev/mapper</code>, dispositivo (de preferência <code>UUID=</code> do LUKS), arquivo de senha (<code>none</code> = perguntar) e opções. Um disco de dados cifrado ficaria assim: <code>dados  UUID=56937a95-55c3-4526-a4e3-b82116159828  none  timeout=60</code>, mais a linha do <code>/dev/mapper/dados</code> no <a href="fstab.html">fstab</a>.</p>
+
+<h3>O hook sd-encrypt</h3>
+<p>Os hooks atuais da máquina (reais) não sabem abrir LUKS:</p>
+<pre class="term">#> grep -n '^HOOKS' /etc/mkinitcpio.conf
+55:HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block filesystems fsck)</pre>
+<p>Com o hook <code>systemd</code>, o hook do LUKS é o <code>sd-encrypt</code>, e ele entra <strong>entre</strong> <code>block</code> (que traz os drivers de disco) e <code>filesystems</code> (que monta a raiz). O <code>keyboard</code> e o <code>sd-vconsole</code> antes dele garantem que o teclado funcione, e no layout certo (<code>br-abnt2</code>), na hora de digitar a senha. Testamos numa <strong>cópia</strong>, gerando um initramfs em <code>/tmp</code>, sem tocar o <code>/boot</code>:</p>
+
+<pre class="term">#> cp /etc/mkinitcpio.conf /tmp/a8/mkinitcpio.conf
+#> sed -i '/^HOOKS/s/block filesystems/block sd-encrypt filesystems/' /tmp/a8/mkinitcpio.conf
+#> grep -n '^HOOKS' /tmp/a8/mkinitcpio.conf
+55:HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)
+#> mkinitcpio -c /tmp/a8/mkinitcpio.conf -g /tmp/a8/initramfs-teste.img
+==> Starting build: '7.2.10-arch1-1'
+  -> Running build hook: [base]
+  -> Running build hook: [systemd]
+  -> Running build hook: [autodetect]
+  -> Running build hook: [microcode]
+  -> Running build hook: [modconf]
+  -> Running build hook: [kms]
+  -> Running build hook: [keyboard]
+  -> Running build hook: [sd-vconsole]
+  -> Running build hook: [block]
+  -> Running build hook: [sd-encrypt]                         « o hook novo
+==> WARNING: Possibly missing firmware for module: 'qat_6xxx'  « inofensivo (placa aceleradora Intel QAT)
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/tmp/a8/initramfs-teste.img'
+  -> Early uncompressed CPIO image generation successful
+==> Initcpio image generation successful
+#> echo $?
+0
+#> ls -lh /tmp/a8/initramfs-teste.img /boot/initramfs-linux.img
+-rwxr-xr-x 1 root root 15M 16 out 12:58 /boot/initramfs-linux.img
+-rw------- 1 root root 20M 16 out 13:30 /tmp/a8/initramfs-teste.img   « 5 MiB a mais
+#> lsinitcpio /tmp/a8/initramfs-teste.img | grep -E 'bin/cryptsetup|systemd-cryptsetup|dm-crypt|dm_crypt'
+usr/lib/modules/7.2.10-arch1-1/kernel/drivers/md/dm-crypt.ko.zst      « o módulo do kernel
+usr/bin/systemd-cryptsetup
+usr/lib/systemd/system-generators/systemd-cryptsetup-generator
+usr/lib/systemd/systemd-cryptsetup</pre>
+
+<p><code>-c</code> escolhe outro arquivo de configuração e <code>-g</code> gera a imagem nesse caminho, sem passar pelos <em>presets</em> do <code>/boot</code>. No sistema de verdade, você editaria o <code>/etc/mkinitcpio.conf</code> e rodaria <code>mkinitcpio -P</code>. Os hooks <code>sd-encrypt</code> e <code>encrypt</code> vêm no próprio pacote <code>mkinitcpio</code> (versão 42.2 em outubro de 2026).</p>
+
+<h3>O parâmetro do kernel: rd.luks.name</h3>
+<p>O <code>sd-encrypt</code> precisa saber <strong>qual</strong> partição abrir e com que nome. Isso vai na linha de comando do kernel. A atual (real):</p>
+<pre class="term">#> cat /proc/cmdline
+BOOT_IMAGE=/vmlinuz-linux root=UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9 rw loglevel=3 quiet
+#> grep -n '^GRUB_CMDLINE_LINUX' /etc/default/grub
+6:GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet"
+7:GRUB_CMDLINE_LINUX=""</pre>
+<p>Com a raiz em LUKS, ficaria (ilustrativo, com o UUID do LUKS da imagem como exemplo):</p>
+<pre class="file" data-file="/etc/default/grub (trecho, ilustrativo)">GRUB_CMDLINE_LINUX="rd.luks.name=56937a95-55c3-4526-a4e3-b82116159828=cryptroot root=/dev/mapper/cryptroot"
+</pre>
+<dl class="anatomy">
+  <dt>rd.luks.name=</dt><dd>"No initramfs (<code>rd</code> = <em>ramdisk</em>), abra este LUKS com este nome".</dd>
+  <dt>56937a95-…</dt><dd>O UUID <strong>do LUKS</strong> (o <code>crypto_LUKS</code> do <code>lsblk -f</code>), sem o prefixo <code>UUID=</code>.</dd>
+  <dt>=cryptroot</dt><dd>O nome em <code>/dev/mapper/</code>.</dd>
+  <dt>root=/dev/mapper/cryptroot</dt><dd>A raiz é o volume aberto (ou <code>root=UUID=</code> do sistema de arquivos <strong>de dentro</strong>).</dd>
+</dl>
+<p>Depois, <code>grub-mkconfig -o /boot/grub/grub.cfg</code> (veja <a href="bootloader.html">Bootloader</a>). Na instalação, a ordem é: <code>cryptsetup luksFormat /dev/sda3</code> → <code>cryptsetup open /dev/sda3 cryptroot</code> → <code>mkfs.ext4 /dev/mapper/cryptroot</code> → <code>mount /dev/mapper/cryptroot /mnt</code> → o resto igual, mais o hook e o parâmetro. A partição EFI (<code>/boot</code>) continua sem criptografia, com o kernel e o initramfs.</p>
+
+<h3>Formas diferentes de fazer</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escolha</th><th>Opções</th><th>Qual usar?</th></tr>
+<tr><td>Hook do initramfs</td><td><code>sd-encrypt</code> (com o hook <code>systemd</code>) ou <code>encrypt</code> (com o hook <code>udev</code>, o antigo)</td><td>Use o que combina com o seu <code>HOOKS=</code>. O Arch atual usa <code>systemd</code>, então <code>sd-encrypt</code>. O <code>encrypt</code> usa outro parâmetro: <code>cryptdevice=UUID=…:cryptroot</code>.</td></tr>
+<tr><td>Versão do LUKS</td><td>LUKS2 (padrão) ou LUKS1 (<code>--type luks1</code>)</td><td>LUKS2. O LUKS1 só faz sentido se o próprio GRUB precisar abrir um <code>/boot</code> cifrado (o suporte do GRUB ao argon2id é limitado).</td></tr>
+<tr><td>Como destravar</td><td>Senha, arquivo de chave, TPM2, chave FIDO2</td><td>Senha forte para começar; TPM2/FIDO2 como comodidade, <strong>mantendo</strong> uma senha num slot.</td></tr>
+<tr><td>O que cifrar</td><td>Só a raiz; raiz + swap; tudo com LVM dentro (<a href="lvm.html">LVM on LUKS</a>)</td><td>Se tem swap em partição, cifre-a também (memória vai para lá). Com LVM, uma senha só abre tudo.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>TPM2 e FIDO2: só a ideia</h2>
+<p>Digitar a senha a cada boot cansa. O <code>systemd-cryptenroll</code> cadastra outras formas de destravar como <strong>tokens</strong> no cabeçalho (o campo <code>Tokens:</code> do <code>luksDump</code>):</p>
+<ul>
+  <li><strong>TPM2</strong>: o chip de segurança da placa-mãe guarda a chave e só a entrega se o boot não foi adulterado (firmware, Secure Boot). O disco abre sozinho, mas só naquele computador.</li>
+  <li><strong>FIDO2</strong>: uma chave de segurança USB (YubiKey, por exemplo); você encosta o dedo e o disco abre.</li>
+</ul>
+<pre class="term">#> systemd-cryptenroll --tpm2-device=list
+No suitable TPM2 devices found.
+#> systemd-cryptenroll --fido2-device=list
+Shared library 'libfido2.so.1' is not available: libfido2.so.1: cannot open shared object file: No such file or directory</pre>
+<p>A máquina do guia é uma máquina virtual sem TPM, e o suporte a FIDO2 precisa do pacote <code>libfido2</code>. Num computador com TPM2, o cadastro seria <code>systemd-cryptenroll --tpm2-device=auto /dev/sda3</code> e o <code>/etc/crypttab.initramfs</code> (ou o parâmetro <code>rd.luks.options=tpm2-device=auto</code>) ensinaria o <code>sd-encrypt</code> a usá-lo. Mantenha sempre a senha num slot: se a placa-mãe for trocada, o TPM não abre mais.</p>
+
+<hr>
+
+<h2>Desfazendo o laboratório</h2>
+<pre class="term">#> losetup -d /dev/loop1
+#> rm /var/tmp/a8/cripto.img /tmp/a8/initramfs-teste.img</pre>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:mkinitcpio\.conf,out:HOOKS=(base systemd" data-solucao="grep '^HOOKS' /etc/mkinitcpio.conf">
+<p class="try-task"><strong>Missão:</strong> mostre a linha <code>HOOKS=</code> do <code>/etc/mkinitcpio.conf</code> da máquina e descubra se ela já tem o <code>sd-encrypt</code>. Dica: <code>grep '^HOOKS' arquivo</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Nenhuma chave disponível com esta senha."</strong>
+<pre class="term">#> printf '%s' 'senha-errada' | cryptsetup open /dev/loop1 a8cripto -
+Nenhuma chave disponível com esta senha.
+#> echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> nenhum slot abriu com essa senha (código de saída 2).</p>
+<p><strong>Como resolver:</strong> confira o layout do teclado (no boot, sem o hook <code>sd-vconsole</code>/<code>keymap</code>, o teclado é americano: <code>ç</code>, acentos e símbolos mudam de lugar), Caps Lock e Num Lock. Se a senha foi criada com <code>echo</code> por um script, ela tem uma quebra de linha no fim. Tente a senha reserva de outro slot.</p>
+</div>
+
+<div class="cenario">
+<strong>"não é um dispositivo LUKS válido"</strong>
+<pre class="term">#> printf '%s' 'arch-teste-123' | cryptsetup open /dev/loop1 a8cripto -
+O dispositivo /dev/loop1 não é um dispositivo LUKS válido.</pre>
+<p><strong>O que aconteceu:</strong> dispositivo errado (a partição EFI, o disco inteiro em vez da partição) ou cabeçalho estragado.</p>
+<p><strong>Como confirmar:</strong> <code>lsblk -f</code> deve mostrar <code>crypto_LUKS</code> na partição; <code>cryptsetup isLuks /dev/X; echo $?</code> dá 0 se for LUKS.</p>
+<p><strong>Como resolver:</strong> use o dispositivo certo; se o cabeçalho estragou, <code>luksHeaderRestore</code> com o seu backup.</p>
+</div>
+
+<div class="cenario">
+<strong>O boot não pede a senha e cai num shell de emergência</strong>
+<p><strong>O que aconteceu</strong> (ilustrativo): faltou o hook <code>sd-encrypt</code>, o <code>mkinitcpio -P</code> não foi rodado depois de editar, ou o <code>rd.luks.name=</code> tem o UUID errado (o do ext4 de dentro em vez do LUKS). O initramfs espera a raiz, que nunca aparece, e o systemd mostra algo como <code>Timed out waiting for device /dev/mapper/cryptroot</code>.</p>
+<p><strong>Como resolver:</strong> dê boot pelo pendrive, abra o LUKS com <code>cryptsetup open /dev/sda3 cryptroot</code>, monte, entre com <code>arch-chroot</code> e corrija hook, parâmetro e <code>mkinitcpio -P</code> (veja <a href="chroot-resgate.html">Resgate com chroot</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Possibly missing firmware for module"</strong>
+<p><strong>O que aconteceu:</strong> o <code>mkinitcpio</code> avisa que um módulo poderia precisar de um firmware que não está instalado. Com <code>sd-encrypt</code>, aparece o <code>qat_6xxx</code>, de placas aceleradoras de criptografia Intel QAT, que um computador comum não tem.</p>
+<p><strong>Como resolver:</strong> nada; é um aviso, e a imagem é gerada (<code>Initcpio image generation successful</code>, código 0).</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (como root)</th><th>O que faz</th></tr>
+<tr><td><code>cryptsetup luksFormat /dev/X</code></td><td>Cria o LUKS (apaga o conteúdo)</td></tr>
+<tr><td><code>cryptsetup open /dev/X nome</code></td><td>Destrava em <code>/dev/mapper/nome</code></td></tr>
+<tr><td><code>cryptsetup close nome</code></td><td>Tranca de novo (desmonte antes)</td></tr>
+<tr><td><code>cryptsetup status nome</code></td><td>Situação do volume aberto</td></tr>
+<tr><td><code>cryptsetup luksDump /dev/X</code></td><td>Mostra o cabeçalho e os slots</td></tr>
+<tr><td><code>cryptsetup isLuks /dev/X</code></td><td>Código 0 se for LUKS</td></tr>
+<tr><td><code>cryptsetup luksAddKey</code> / <code>luksChangeKey</code> / <code>luksRemoveKey</code></td><td>Gerencia as senhas</td></tr>
+<tr><td><code>cryptsetup luksHeaderBackup /dev/X --header-backup-file ARQ</code></td><td>Backup do cabeçalho</td></tr>
+<tr><td><code>cryptsetup luksHeaderRestore /dev/X --header-backup-file ARQ</code></td><td>Restaura o cabeçalho</td></tr>
+<tr><td><code>HOOKS=(… block sd-encrypt filesystems …)</code></td><td>Initramfs que abre a raiz cifrada</td></tr>
+<tr><td><code>rd.luks.name=UUID-DO-LUKS=cryptroot root=/dev/mapper/cryptroot</code></td><td>Parâmetros do kernel</td></tr>
+<tr><td><code>systemd-cryptenroll --tpm2-device=auto /dev/X</code></td><td>Cadastra o TPM2</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Abrir o volume</h3>
+<p>Destrave <code>/dev/sdb1</code> com o nome <code>backup</code>:</p>
+<div class="ex-code">cryptsetup <input data-answer="open|luksOpen" aria-label="subcomando"> /dev/sdb1 <input data-answer="backup" aria-label="nome"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O hook certo</h3>
+<p>Num <code>mkinitcpio.conf</code> com o hook <code>systemd</code>, qual hook abre a raiz LUKS?</p>
+<div class="ex-code">HOOKS=(base systemd … block <input data-answer="sd-encrypt" aria-label="hook"> filesystems fsck)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Você trocou a senha do LUKS. Um backup de cabeçalho feito antes da troca…</p>
+<label><input type="radio" name="q3"> …não serve mais para nada.</label>
+<label><input type="radio" name="q3"> …só abre com a senha nova.</label>
+<label><input type="radio" name="q3"> …ainda abre o disco com a senha antiga; guarde-o com cuidado ou faça um novo.</label>
+<label><input type="radio" name="q3"> …apaga a senha nova se for restaurado por engano, mas não abre nada.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. No <code>rd.luks.name=UUID=cryptroot</code>, qual UUID vai?</p>
+<label><input type="radio" name="q4"> O do sistema de arquivos ext4 de dentro.</label>
+<label><input type="radio" name="q4"> O da partição <code>crypto_LUKS</code>.</label>
+<label><input type="radio" name="q4"> O da partição EFI.</label>
+<label><input type="radio" name="q4"> Qualquer um, o systemd descobre.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Contra o que a criptografia de disco <strong>não</strong> protege?</p>
+<label><input type="radio" name="q5"> Um programa malicioso rodando com o computador ligado e o disco aberto.</label>
+<label><input type="radio" name="q5"> O roubo do notebook desligado.</label>
+<label><input type="radio" name="q5"> Alguém que tira o SSD e lê em outro computador.</label>
+<label><input type="radio" name="q5"> O descarte do disco velho.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>LUKS = cabeçalho com slots de senha que guardam a chave mestra; o <code>dm-crypt</code> cifra tudo o que passa por <code>/dev/mapper/nome</code>.</li>
+  <li><code>luksFormat</code> → <code>open</code> → <code>mkfs</code>/<code>mount</code> → <code>umount</code> → <code>close</code>.</li>
+  <li>Tenha duas senhas (<code>luksAddKey</code>) e um backup do cabeçalho fora do disco.</li>
+  <li>Raiz cifrada: hook <code>sd-encrypt</code> + <code>mkinitcpio -P</code> + <code>rd.luks.name=UUID-do-LUKS=cryptroot root=/dev/mapper/cryptroot</code>. O <code>crypttab</code> é para os outros volumes.</li>
+  <li>TPM2/FIDO2 são comodidade; a senha num slot é a garantia.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o ponto de partida é <a href="https://wiki.archlinux.org/title/Dm-crypt">dm-crypt</a> (<a href="https://wiki.archlinux.org/title/Dm-crypt_(Portugu%C3%AAs)">em português</a>), com as receitas completas em <a href="https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system">Encrypting an entire system</a>, a configuração do boot em <a href="https://wiki.archlinux.org/title/Dm-crypt/System_configuration">System configuration</a> e os comandos em <a href="https://wiki.archlinux.org/title/Dm-crypt/Device_encryption">Device encryption</a>; o crypttab em <a href="https://wiki.archlinux.org/title/Dm-crypt/System_configuration#crypttab">crypttab</a>; e TPM2/FIDO2 em <a href="https://wiki.archlinux.org/title/Systemd-cryptenroll">systemd-cryptenroll</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

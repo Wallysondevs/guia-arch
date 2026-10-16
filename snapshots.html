@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Snapshots — btrfs snapshot, snapper, snap-pac e Timeshift | Guia Arch</title>
+<meta name="description" content="Snapshots no Arch Linux: btrfs subvolume snapshot, snapper (create-config, list, create, status, diff, undochange, pre/post), snap-pac, grub-btrfs, Timeshift e como restaurar, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Snapshots</span></h1>
+
+<p class="intro">Um <strong>snapshot</strong> é uma "foto" de um subvolume Btrfs num instante. Ele é criado em menos de um segundo, quase não ocupa espaço e deixa você ver, comparar e recuperar arquivos como eram. O <strong>snapper</strong> organiza essas fotos: cria automaticamente, numera, compara, desfaz alterações e apaga as velhas. Com o <code>snap-pac</code>, cada <code>pacman -Syu</code> ganha uma foto de "antes" e outra de "depois".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Criar snapshots com <code>btrfs subvolume snapshot</code> e entender por que eles são "de graça".</li>
+  <li>Configurar o snapper e usar <code>list</code>, <code>create</code>, <code>status</code>, <code>diff</code> e <code>undochange</code>.</li>
+  <li>Os pares <em>pre/post</em> e o que o <code>snap-pac</code> e o <code>grub-btrfs</code> fazem.</li>
+  <li>Timeshift × snapper: qual usar.</li>
+  <li>As três formas de restaurar: um arquivo, uma alteração, o sistema inteiro.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Snapshot não é backup</strong>
+<p>O snapshot fica <strong>no mesmo disco</strong>. Se o disco morrer, for roubado ou criptografado por um vírus, os snapshots vão junto. Eles protegem contra <em>erros</em> (uma atualização ruim, um <code>rm</code> errado); contra <em>perda do disco</em>, só um backup em outro lugar.</p>
+</div>
+
+<hr>
+
+<h2>O laboratório</h2>
+<p>A raiz da máquina do guia é ext4, então tudo aqui acontece num Btrfs dentro de um arquivo-imagem, montado em <code>/mnt/a8</code> com os subvolumes <code>@</code>, <code>@home</code> (em <code>/mnt/a8/home</code>) e <code>@snapshots</code> (em <code>/mnt/a8/.snapshots</code>). A montagem desse laboratório está passo a passo em <a href="btrfs.html">Btrfs e Subvolumes</a>.</p>
+
+<hr>
+
+<h2>Snapshot "na mão": btrfs subvolume snapshot</h2>
+
+<dl class="anatomy">
+  <dt>btrfs subvolume snapshot</dt><dd>Cria um snapshot (um subvolume novo que compartilha tudo com a origem).</dd>
+  <dt>-r</dt><dd><em>read-only</em>: o snapshot fica só de leitura. É o certo para "fotos" de segurança.</dd>
+  <dt>/mnt/a8/home</dt><dd>A origem: precisa ser um subvolume (aqui, o <code>@home</code> montado).</dd>
+  <dt>/mnt/a8/.snapshots/home-antes</dt><dd>Onde o snapshot vai aparecer (como uma pasta).</dd>
+</dl>
+
+<pre class="term">#> ls /mnt/a8/home/ana
+notas.txt
+relatorio.txt
+#> btrfs subvolume snapshot -r /mnt/a8/home /mnt/a8/.snapshots/home-antes
+Create readonly snapshot of '/mnt/a8/home' in '/mnt/a8/.snapshots/home-antes'
+#> echo $?
+0
+#> btrfs subvolume list /mnt/a8
+ID 256 gen 10 top level 5 path @
+ID 257 gen 12 top level 5 path @home
+ID 258 gen 9 top level 5 path @var_log
+ID 259 gen 12 top level 5 path @snapshots
+ID 260 gen 12 top level 259 path @snapshots/home-antes   « o snapshot é um subvolume
+#> ls /mnt/a8/.snapshots/home-antes/ana
+notas.txt
+relatorio.txt</pre>
+
+<p>Agora "estrague" a pasta original e veja que o snapshot não muda:</p>
+<pre class="term">#> echo "Apagar tudo" &gt; /mnt/a8/home/ana/notas.txt
+#> rm /mnt/a8/home/ana/relatorio.txt
+#> ls /mnt/a8/home/ana
+notas.txt
+#> cat /mnt/a8/home/ana/notas.txt
+Apagar tudo
+#> touch /mnt/a8/.snapshots/home-antes/ana/teste
+touch: não foi possível tocar '/mnt/a8/.snapshots/home-antes/ana/teste': Sistema de arquivos somente para leitura
+#> cp /mnt/a8/.snapshots/home-antes/ana/notas.txt /mnt/a8/home/ana/
+#> cat /mnt/a8/home/ana/notas.txt
+Comprar café
+Ligar para o João
+Estudar Btrfs                                    « recuperado do snapshot</pre>
+
+<p>Recuperar um arquivo é só <strong>copiar</strong> de dentro do snapshot. O <code>-r</code> garante que ninguém (nem você, por engano) altere a foto. O snapshot "sabe" de onde veio:</p>
+
+<pre class="term">#> btrfs subvolume show /mnt/a8/home | grep -A2 'Snapshot(s)'
+	Snapshot(s):
+				@snapshots/home-antes
+	Quota group:		n/a
+#> btrfs subvolume show /mnt/a8/.snapshots/home-antes | head -12
+@snapshots/home-antes
+	Name: 			home-antes
+	UUID: 			7a64ee4f-17b6-a94f-ac6a-4a0e51b306bf
+	Parent UUID: 		cd06d456-ab66-4d4d-a3f8-1a95103d9919   « o UUID do @home
+	Received UUID: 		-
+	Creation time: 		2026-10-16 13:23:42 -0300
+	Subvolume ID: 		260
+	Generation: 		12
+	Gen at creation: 	12
+	Parent ID: 		259
+	Top level ID: 		259
+	Flags: 			readonly</pre>
+
+<h3>Por que o snapshot é "de graça"</h3>
+<p>Com um arquivo de 20 MiB na home, veja o espaço antes e depois do snapshot, e depois de apagar o arquivo original:</p>
+
+<pre class="term">#> btrfs filesystem df /mnt/a8 | head -1
+Data, single: total=328.00MiB, used=20.03MiB
+#> btrfs subvolume snapshot -r /mnt/a8/home /mnt/a8/.snapshots/home-2
+Create readonly snapshot of '/mnt/a8/home' in '/mnt/a8/.snapshots/home-2'
+#> sync
+#> btrfs filesystem df /mnt/a8 | head -1
+Data, single: total=328.00MiB, used=20.03MiB        « o snapshot não gastou nada
+#> btrfs filesystem du -s /mnt/a8/home /mnt/a8/.snapshots/home-2
+     Total   Exclusive  Set shared  Filename
+  20.00MiB       0.00B    20.00MiB  /mnt/a8/home              « os mesmos blocos...
+  20.00MiB       0.00B    20.00MiB  /mnt/a8/.snapshots/home-2  « ...nos dois
+#> rm /mnt/a8/home/ana/fotos.bin
+#> sync
+#> btrfs filesystem df /mnt/a8 | head -1
+Data, single: total=328.00MiB, used=20.03MiB        « apagar não liberou espaço!
+#> btrfs filesystem du -s /mnt/a8/home /mnt/a8/.snapshots/home-2
+     Total   Exclusive  Set shared  Filename
+     0.00B       0.00B       0.00B  /mnt/a8/home
+  20.00MiB    20.00MiB       0.00B  /mnt/a8/.snapshots/home-2  « agora só o snapshot segura o arquivo
+#> btrfs subvolume delete /mnt/a8/.snapshots/home-2
+Delete subvolume 262 (no-commit): '/mnt/a8/.snapshots/home-2'
+#> btrfs subvolume sync /mnt/a8
+Waiting for 1 subvolume
+Subvolume id 262 is gone (1/1)
+#> btrfs filesystem sync /mnt/a8
+#> btrfs filesystem df /mnt/a8 | head -1
+Data, single: total=328.00MiB, used=32.00KiB        « agora sim o espaço voltou</pre>
+
+<p>Essa é a pegadinha dos snapshots: <strong>apagar arquivos não libera espaço</strong> enquanto algum snapshot ainda os guarda. Quando o disco enche "do nada", quase sempre são snapshots velhos. A limpeza automática do snapper existe exatamente para isso. O <code>delete</code> diz <code>no-commit</code> porque a liberação acontece em segundo plano; o <code>subvolume sync</code> espera ela terminar.</p>
+
+<div class="tip">
+<strong>Snapshot gravável</strong>
+<p>Sem o <code>-r</code>, o snapshot nasce gravável: <code>btrfs subvolume snapshot /mnt/a8/.snapshots/home-antes /mnt/a8/.snapshots/home-gravavel</code> respondeu <code>Create snapshot of …</code>. É assim que se "promove" uma foto a sistema ativo numa restauração (veja <a href="projeto-snapshots.html">o projeto</a>).</p>
+</div>
+
+<hr>
+
+<h2>snapper: snapshots organizados</h2>
+<p>O <strong>snapper</strong> nasceu no openSUSE e está no repositório oficial do Arch (pacote <code>snapper</code>). Ele trabalha com <strong>configurações</strong>: cada configuração cuida de um subvolume, guarda os snapshots numerados em <code>.snapshots/</code> dentro dele e tem regras de limpeza. Num sistema real, a configuração se chama <code>root</code> e aponta para <code>/</code>; no laboratório, criamos a <code>teste</code>, apontando para o <code>@home</code> da imagem.</p>
+
+<h3>Criar a configuração: create-config</h3>
+<dl class="anatomy">
+  <dt>snapper</dt><dd>O programa.</dd>
+  <dt>-c teste</dt><dd>Nome da configuração (<em>config</em>). Sem <code>-c</code>, o snapper usa <code>root</code>.</dd>
+  <dt>create-config</dt><dd>Cria a configuração.</dd>
+  <dt>/mnt/a8/home</dt><dd>O subvolume que ela vai fotografar.</dd>
+</dl>
+
+<pre class="term">#> snapper -c teste create-config /mnt/a8/home
+#> echo $?
+0
+#> snapper list-configs
+Configuração │ Subvolume
+─────────────┼─────────────
+teste        │ /mnt/a8/home
+#> btrfs subvolume list /mnt/a8
+ID 256 gen 10 top level 5 path @
+ID 257 gen 17 top level 5 path @home
+ID 258 gen 9 top level 5 path @var_log
+ID 259 gen 17 top level 5 path @snapshots
+ID 260 gen 12 top level 259 path @snapshots/home-antes
+ID 263 gen 19 top level 257 path @home/.snapshots      « criado pelo snapper
+#> ls -la /mnt/a8/home
+total 0
+drwxr-xr-x 1 root root 26 16 out 13:24 .
+drwxr-xr-x 1 root root 40 16 out 13:23 ..
+drwxr-xr-x 1 root root 18 16 out 13:23 ana
+drwxr-x--- 1 root root  0 16 out 13:24 .snapshots    « só root entra</pre>
+
+<p>O <code>create-config</code> não imprime nada quando dá certo. Ele fez três coisas: criou o subvolume <code>.snapshots</code> dentro do alvo, criou o arquivo <code>/etc/snapper/configs/teste</code> e acrescentou o nome em <code>/etc/conf.d/snapper</code>:</p>
+
+<pre class="term">#> grep -v '^#' /etc/snapper/configs/teste | grep -v '^$'
+SUBVOLUME="/mnt/a8/home"
+FSTYPE="btrfs"
+QGROUP=""
+SPACE_LIMIT="0.5"
+FREE_LIMIT="0.2"
+UNIQUE_NUMBERS="yes"
+ALLOW_USERS=""
+ALLOW_GROUPS=""
+SYNC_ACL="no"
+BACKGROUND_COMPARISON="yes"
+NUMBER_CLEANUP="yes"
+NUMBER_MIN_AGE="3600"
+NUMBER_LIMIT="50"
+NUMBER_LIMIT_IMPORTANT="10"
+TIMELINE_CREATE="yes"
+TIMELINE_CLEANUP="yes"
+TIMELINE_MIN_AGE="3600"
+TIMELINE_LIMIT_HOURLY="10"
+TIMELINE_LIMIT_DAILY="10"
+TIMELINE_LIMIT_WEEKLY="0"
+TIMELINE_LIMIT_MONTHLY="10"
+TIMELINE_LIMIT_QUARTERLY="0"
+TIMELINE_LIMIT_YEARLY="10"
+EMPTY_PRE_POST_CLEANUP="yes"
+EMPTY_PRE_POST_MIN_AGE="3600"
+#> grep SNAPPER_CONFIGS /etc/conf.d/snapper
+SNAPPER_CONFIGS="teste"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>O que controla</th></tr>
+<tr><td><code>ALLOW_USERS</code> / <code>ALLOW_GROUPS</code></td><td>Quem, além do root, pode usar a configuração (ex.: <code>ALLOW_GROUPS="wheel"</code>).</td></tr>
+<tr><td><code>NUMBER_LIMIT</code> / <code>NUMBER_LIMIT_IMPORTANT</code></td><td>Quantos snapshots "numerados" (os do <code>snap-pac</code>, por exemplo) manter; os marcados <code>important=yes</code> têm limite próprio.</td></tr>
+<tr><td><code>TIMELINE_CREATE</code></td><td>Se o timer <code>snapper-timeline.timer</code> deve criar uma foto por hora para esta configuração.</td></tr>
+<tr><td><code>TIMELINE_LIMIT_HOURLY</code>… <code>YEARLY</code></td><td>Quantas fotos de cada período a limpeza preserva (10 de hora em hora, 10 diárias…).</td></tr>
+<tr><td><code>*_MIN_AGE="3600"</code></td><td>Nenhum snapshot com menos de 1 hora é apagado pela limpeza.</td></tr>
+<tr><td><code>SPACE_LIMIT</code> / <code>FREE_LIMIT</code></td><td>Limites de espaço (só valem com cotas ligadas).</td></tr>
+</table>
+</div>
+<p>Para mudar um valor, edite o arquivo ou use <code>snapper -c teste set-config "NUMBER_LIMIT=10"</code>.</p>
+
+<h3>Criar e listar snapshots</h3>
+
+<dl class="anatomy">
+  <dt>snapper -c teste create</dt><dd>Cria um snapshot da configuração <code>teste</code>.</dd>
+  <dt>-d "antes da faxina"</dt><dd><code>--description</code>: o que você estava para fazer. Sempre escreva uma.</dd>
+  <dt>-c number</dt><dd><code>--cleanup-algorithm</code>: qual regra de limpeza vai poder apagar este snapshot (<code>number</code> ou <code>timeline</code>). Sem isso, só você apaga.</dd>
+  <dt>--userdata important=yes</dt><dd>Etiqueta livre; <code>important=yes</code> faz a limpeza usar o limite dos importantes.</dd>
+  <dt>-p</dt><dd><code>--print-number</code>: imprime o número do snapshot criado.</dd>
+</dl>
+
+<pre class="term">#> snapper -c teste create --description "antes da faxina"
+#> snapper -c teste create -d "importante" -c number --userdata important=yes -p
+2
+#> rm /mnt/a8/home/ana/notas.txt
+#> echo "Nova ideia" &gt; /mnt/a8/home/ana/ideias.txt
+#> mkdir /mnt/a8/home/ana/projetos
+#> snapper -c teste create -d "depois da faxina"
+#> snapper -c teste list
+# │ Tipo   │ Pre # │ Data                     │ Usuário │ Limpeza │ Descrição        │ Dados de usuário
+──┼────────┼───────┼──────────────────────────┼─────────┼─────────┼──────────────────┼─────────────────
+0 │ single │       │                          │ root    │         │ current          │
+1 │ single │       │ sex 16 out 2026 13:24:49 │ root    │         │ antes da faxina  │
+2 │ single │       │ sex 16 out 2026 13:24:50 │ root    │ number  │ importante       │ important=yes
+3 │ single │       │ sex 16 out 2026 13:24:52 │ root    │         │ depois da faxina │</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>#</code></td><td>Número do snapshot. O <strong>0 é o estado atual</strong> (não é um snapshot, é "agora").</td></tr>
+<tr><td><code>Tipo</code></td><td><code>single</code> (avulso), <code>pre</code> (antes de algo) ou <code>post</code> (depois).</td></tr>
+<tr><td><code>Pre #</code></td><td>Num <code>post</code>, o número do <code>pre</code> correspondente.</td></tr>
+<tr><td><code>Limpeza</code></td><td>O algoritmo que pode apagá-lo (<code>number</code>, <code>timeline</code>) ou vazio (só manual).</td></tr>
+<tr><td><code>Dados de usuário</code></td><td>As etiquetas do <code>--userdata</code>.</td></tr>
+</table>
+</div>
+
+<p>Os snapshots ficam em <code>.snapshots/NÚMERO/snapshot</code>, com um <code>info.xml</code> ao lado:</p>
+<pre class="term">#> ls /mnt/a8/home/.snapshots
+1
+2
+3
+#> cat /mnt/a8/home/.snapshots/1/info.xml
+&lt;?xml version="1.0"?&gt;
+&lt;snapshot&gt;
+  &lt;type&gt;single&lt;/type&gt;
+  &lt;num&gt;1&lt;/num&gt;
+  &lt;date&gt;2026-10-16 16:24:49&lt;/date&gt;          « em UTC (aqui é UTC−3)
+  &lt;description&gt;antes da faxina&lt;/description&gt;
+&lt;/snapshot&gt;</pre>
+
+<h3>O que mudou: status e diff</h3>
+<dl class="anatomy">
+  <dt>snapper -c teste status</dt><dd>Lista os arquivos diferentes entre dois snapshots.</dd>
+  <dt>1..3</dt><dd>Do snapshot 1 até o 3. Use <code>0</code> para "agora" (ex.: <code>1..0</code>).</dd>
+</dl>
+
+<pre class="term">#> snapper -c teste status 1..3
++..... /mnt/a8/home/ana/ideias.txt     « + criado
+-..... /mnt/a8/home/ana/notas.txt      « - apagado
++..... /mnt/a8/home/ana/projetos
+#> snapper -c teste diff 1..3 /mnt/a8/home/ana/notas.txt
+--- /mnt/a8/home/.snapshots/1/snapshot/ana/notas.txt	2026-10-16 13:23:43.512750324 -0300
++++ /mnt/a8/home/.snapshots/3/snapshot/ana/notas.txt	1969-12-31 21:00:00.000000000 -0300
+@@ -1,3 +0,0 @@
+-Comprar café
+-Ligar para o João
+-Estudar Btrfs</pre>
+
+<p>Cada linha do <code>status</code> começa com seis posições. A primeira é o tipo de mudança: <code>+</code> criado, <code>-</code> apagado, <code>c</code> conteúdo alterado, <code>t</code> tipo mudou. As outras cinco marcam mudanças de <code>p</code>ermissão, dono (<code>u</code>ser), <code>g</code>rupo, atributos estendidos (<code>x</code>) e ACL (<code>a</code>); um ponto quer dizer "não mudou". O <code>diff</code> mostra o conteúdo, no formato do <code>diff -u</code> (a data de 1969 é o "arquivo inexistente").</p>
+
+<h3>Desfazer: undochange</h3>
+<p><code>undochange A..B</code> desfaz no estado <strong>atual</strong> as mudanças que aconteceram entre A e B. Pode ser um arquivo só ou tudo:</p>
+
+<pre class="term">#> snapper -c teste undochange 1..3 /mnt/a8/home/ana/notas.txt
+criar:1 modificar:0 remover:0              « recriou só o notas.txt
+#> cat /mnt/a8/home/ana/notas.txt
+Comprar café
+Ligar para o João
+Estudar Btrfs
+#> ls /mnt/a8/home/ana
+ideias.txt
+notas.txt
+projetos
+#> snapper -c teste undochange 1..3
+criar:1 modificar:0 remover:2              « tudo: apagou ideias.txt e projetos
+#> ls /mnt/a8/home/ana
+notas.txt</pre>
+
+<div class="warning">
+<strong>undochange apaga o que foi criado depois</strong>
+<p>Desfazer <code>1..3</code> inteiro <strong>remove</strong> os arquivos criados no meio (o <code>ideias.txt</code> sumiu). Antes de um <code>undochange</code> grande, rode o <code>status</code> e, na dúvida, crie um snapshot novo do estado atual: assim dá para desfazer o desfazer.</p>
+</div>
+
+<h3>Pares pre/post</h3>
+<p>Para mudanças planejadas, o snapper usa pares: um snapshot <code>pre</code> antes e um <code>post</code> depois, ligados pelo número. É exatamente o que o <code>snap-pac</code> faz em cada transação do pacman:</p>
+
+<pre class="term">#> snapper -c teste create -t pre -p -d "antes de editar"
+4
+#> echo "Estudar snapper" &gt;&gt; /mnt/a8/home/ana/notas.txt
+#> snapper -c teste create -t post --pre-number 4 -d "depois de editar"
+#> snapper -c teste status 4..5
+c..... /mnt/a8/home/ana/notas.txt           « c = conteúdo mudou
+#> snapper -c teste diff 4..5
+--- /mnt/a8/home/.snapshots/4/snapshot/ana/notas.txt	2026-10-16 13:24:53.729885577 -0300
++++ /mnt/a8/home/.snapshots/5/snapshot/ana/notas.txt	2026-10-16 13:25:05.368750324 -0300
+@@ -1,3 +1,4 @@
+ Comprar café
+ Ligar para o João
+ Estudar Btrfs
++Estudar snapper</pre>
+
+<p>O atalho <code>--command</code> cria o <code>pre</code>, roda o comando e cria o <code>post</code>:</p>
+<pre class="term">#> snapper -c teste create --command "rm /mnt/a8/home/ana/notas.txt" -d "comando rm"
+#> snapper -c teste list --type pre-post
+Pre # │ Post # │ Data anterior            │ Data posterior           │ Descrição       │ Dados de usuário
+──────┼────────┼──────────────────────────┼──────────────────────────┼─────────────────┼─────────────────
+    4 │      5 │ sex 16 out 2026 13:25:03 │ sex 16 out 2026 13:25:05 │ antes de editar │
+    6 │      7 │ sex 16 out 2026 13:25:06 │ sex 16 out 2026 13:25:07 │ comando rm      │
+#> snapper -c teste status 6..7
+-..... /mnt/a8/home/ana/notas.txt
+#> snapper -c teste undochange 6..7
+criar:1 modificar:0 remover:0
+#> cat /mnt/a8/home/ana/notas.txt
+Comprar café
+Ligar para o João
+Estudar Btrfs
+Estudar snapper</pre>
+
+<h3>Apagar e limpar</h3>
+<pre class="term">#> snapper -c teste delete 2
+#> snapper -c teste delete 6-7                « uma faixa
+#> snapper -c teste list
+# │ Tipo   │ Pre # │ Data                     │ Usuário │ Limpeza │ Descrição        │ Dados de usuário
+──┼────────┼───────┼──────────────────────────┼─────────┼─────────┼──────────────────┼─────────────────
+0 │ single │       │                          │ root    │         │ current          │
+1 │ single │       │ sex 16 out 2026 13:24:49 │ root    │         │ antes da faxina  │
+3 │ single │       │ sex 16 out 2026 13:24:52 │ root    │         │ depois da faxina │
+4 │ pre    │       │ sex 16 out 2026 13:25:03 │ root    │         │ antes de editar  │
+5 │ post   │     4 │ sex 16 out 2026 13:25:05 │ root    │         │ depois de editar │
+#> snapper -c teste cleanup number
+#> echo $?
+0</pre>
+<p><code>cleanup number</code> aplica a regra <code>NUMBER_LIMIT</code> agora; não apagou nada porque nenhum snapshot com limpeza <code>number</code> passava do limite (e todos tinham menos de 1 hora). No sistema real, quem roda as limpezas é o timer <code>snapper-cleanup.timer</code> (de hora em hora), e quem cria as fotos de hora em hora é o <code>snapper-timeline.timer</code>. Ligar os dois está no <a href="projeto-snapshots.html">projeto</a>.</p>
+
+<p>Para desfazer o laboratório, apague a configuração (isso apaga os snapshots dela e o subvolume <code>.snapshots</code>):</p>
+<pre class="term">#> snapper -c teste delete-config
+#> snapper list-configs
+Configuração │ Subvolume
+─────────────┼──────────
+#> grep SNAPPER_CONFIGS /etc/conf.d/snapper
+SNAPPER_CONFIGS=""</pre>
+
+<hr>
+
+<h2>snap-pac: snapshots a cada pacman</h2>
+<p>O <code>snap-pac</code> é um conjunto de <a href="hooks.html">hooks do pacman</a>: antes de cada instalação, atualização ou remoção, ele chama <code>snapper create -t pre</code>; depois, <code>snapper create -t post</code>. A descrição é o comando do pacman. Se uma atualização quebrar algo, você tem o "antes" pronto. A instalação é pequena (resumo real, respondido com "não"):</p>
+
+<pre class="term">#> pacman -S snap-pac
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) snap-pac-3.0.1-3
+
+Tamanho total download:   0,02 MiB
+Tamanho total instalado:  0,04 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>O pacote é só isso:</p>
+<pre class="term">$ pacman -Fl snap-pac | grep -v '/$'
+snap-pac etc/snap-pac.ini
+snap-pac usr/share/doc/snap-pac/README.md
+snap-pac usr/share/libalpm/hooks/05-snap-pac-pre.hook      « roda antes
+snap-pac usr/share/libalpm/hooks/10-snap-pac-removal.hook
+snap-pac usr/share/libalpm/hooks/zz-snap-pac-post.hook     « roda por último
+snap-pac usr/share/libalpm/scripts/snap-pac
+snap-pac usr/share/licenses/snap-pac/LICENSE
+snap-pac usr/share/man/man8/snap-pac.8.gz</pre>
+
+<p>O hook de "antes", tirado do pacote (sem o cabeçalho de licença):</p>
+<pre class="file" data-file="/usr/share/libalpm/hooks/05-snap-pac-pre.hook">[Trigger]
+Operation = Upgrade
+Operation = Install
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Performing snapper pre snapshots for the following configurations...
+Depends = snap-pac
+When = PreTransaction
+Exec = /usr/share/libalpm/scripts/snap-pac pre
+NeedsTargets
+AbortOnFail
+</pre>
+<p><code>Target = *</code>: qualquer pacote. <code>When = PreTransaction</code>: antes de mexer em qualquer arquivo. <code>AbortOnFail</code>: se o snapshot falhar, o pacman <strong>não</strong> continua (melhor parar do que atualizar sem rede de proteção). Os números <code>05-</code> e <code>zz-</code> no nome garantem a ordem: o "antes" roda primeiro, o "depois" por último. Por padrão, só a configuração <code>root</code> é fotografada; para incluir outras, edite <code>/etc/snap-pac.ini</code> (seção <code>[nome]</code> com <code>snapshot = True</code>).</p>
+<p>Num sistema com <code>snap-pac</code>, cada atualização deixa um par na lista, com descrições como <code>pacman -Syu</code> no <code>pre</code> e a lista de pacotes no <code>post</code> (ilustrativo: a máquina do guia não tem raiz Btrfs).</p>
+
+<hr>
+
+<h2>grub-btrfs: dar boot num snapshot</h2>
+<p>Se a atualização quebrou o boot, de nada adianta um snapshot que você não consegue alcançar. O <code>grub-btrfs</code> acrescenta ao menu do GRUB um submenu com os snapshots, para iniciar o sistema como ele era. Ele traz (lista real dos arquivos):</p>
+<pre class="term">$ pacman -Fl grub-btrfs | grep -v "/$"
+grub-btrfs etc/default/grub-btrfs/config
+grub-btrfs etc/grub.d/41_snapshots-btrfs                   « script que o grub-mkconfig roda
+grub-btrfs usr/bin/grub-btrfsd                            « o vigia
+grub-btrfs usr/lib/initcpio/hooks/grub-btrfs-overlayfs
+grub-btrfs usr/lib/initcpio/install/grub-btrfs-overlayfs  « hook do mkinitcpio
+grub-btrfs usr/lib/systemd/system/grub-btrfsd.service
+grub-btrfs usr/share/doc/grub-btrfs/README.md
+grub-btrfs usr/share/doc/grub-btrfs/initramfs-overlayfs.md
+grub-btrfs usr/share/licenses/grub-btrfs/LICENSE
+grub-btrfs usr/share/man/man8/grub-btrfs.8.gz
+grub-btrfs usr/share/man/man8/grub-btrfsd.8.gz
+$ pacman -Si grub-btrfs | grep -E "^(Depende|Dependências opc)" -A3
+Depende de           : btrfs-progs  grub
+Depend. opcionais    : snapper: For snapper support
+                       inotify-tools: For grub-btrfsd daemon
+Conflita com         : Nenhum</pre>
+
+<ul>
+  <li><code>41_snapshots-btrfs</code>: o <code>grub-mkconfig</code> passa a gerar o submenu "Arch Linux snapshots".</li>
+  <li><code>grub-btrfsd.service</code>: vigia <code>/.snapshots</code> (precisa do <code>inotify-tools</code>) e regenera o submenu sozinho a cada snapshot novo: <code>ExecStart=/usr/bin/grub-btrfsd --syslog /.snapshots</code>. Ligue com <code>systemctl enable --now grub-btrfsd</code>.</li>
+  <li><code>grub-btrfs-overlayfs</code>: os snapshots do snapper são só de leitura, e muitos serviços não sobem num <code>/</code> só de leitura. Esse hook, acrescentado ao fim do <code>HOOKS=</code> do <a href="mkinitcpio.html">mkinitcpio.conf</a>, monta uma camada gravável temporária por cima.</li>
+</ul>
+<p>Tudo isso é <strong>ilustrativo</strong> aqui: a máquina do guia usa ext4 e não mexemos no GRUB dela. O fluxo de socorro fica assim: atualização quebrou → no menu do GRUB, "Arch Linux snapshots" → escolha o <code>pre</code> da atualização → o sistema liga como era → você decide restaurar de vez (veja abaixo).</p>
+
+<hr>
+
+<h2>Timeshift</h2>
+<p>O <strong>Timeshift</strong> (pacote <code>timeshift</code>, repositório extra) é a alternativa com interface gráfica, popular no Linux Mint. Ele tem dois modos: <strong>Btrfs</strong> (snapshots de verdade, mas exige o layout com subvolumes chamados exatamente <code>@</code> e <code>@home</code>) e <strong>rsync</strong> (cópias de arquivos, funciona em ext4, mas ocupa espaço de verdade). A instalação puxa a pilha GTK (resumo real, respondido com "não"; a lista de 41 pacotes foi encurtada com <code>…</code>):</p>
+<pre class="term">#> pacman -S timeshift
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (41) adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+             …
+             xorg-xkbcomp-1.5.0-1  xorg-xprop-1.2.8-1  timeshift-26.09.0-1
+
+Tamanho total download:    21,59 MiB
+Tamanho total instalado:  122,39 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+<p>O uso é pela janela (ilustrativo aqui): escolher o tipo, o disco e a agenda. Pelo terminal, <code>timeshift --create --comments "antes"</code> e <code>timeshift --list</code>. Com o <code>grub-btrfs</code>, o vigia usa <code>grub-btrfsd --timeshift-auto</code>.</p>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>snapper (+ snap-pac)</th><th>Timeshift</th></tr>
+<tr><td>Interface</td><td>Terminal (há a interface gráfica <code>btrfs-assistant</code>, no repositório extra)</td><td>Gráfica, simples</td></tr>
+<tr><td>Snapshot a cada pacman</td><td>Sim, com <code>snap-pac</code> (oficial)</td><td>Com <code>timeshift-autosnap</code> (AUR)</td></tr>
+<tr><td>Comparar e desfazer arquivo por arquivo</td><td>Sim (<code>status</code>, <code>diff</code>, <code>undochange</code>)</td><td>Não; restaura tudo</td></tr>
+<tr><td>Layout exigido</td><td>Flexível (o da Wiki: <code>@snapshots</code> em <code>/.snapshots</code>)</td><td><code>@</code> e <code>@home</code></td></tr>
+<tr><td>Funciona em ext4</td><td>Não</td><td>Sim (modo rsync)</td></tr>
+<tr><td>Para quem</td><td>Quem quer controle e automação no estilo Arch</td><td>Quem quer o "voltar no tempo" com cliques</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Restaurar: três tamanhos de problema</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Problema</th><th>Como restaurar</th></tr>
+<tr><td>Apaguei/estraguei <strong>um arquivo</strong></td><td>Copie de <code>/.snapshots/N/snapshot/caminho</code>, ou <code>snapper undochange N..0 /caminho/arquivo</code>.</td></tr>
+<tr><td>Uma <strong>atualização</strong> estragou algo, mas o sistema liga</td><td><code>snapper status PRE..POST</code> para ver o que mudou e <code>snapper undochange PRE..POST</code>. Cuidado: a base de dados do pacman também volta; confira com <code>pacman -Qkk</code>.</td></tr>
+<tr><td>O sistema <strong>não liga</strong></td><td>Boot no snapshot pelo <code>grub-btrfs</code> e <code>snapper rollback</code>; ou, do <a href="chroot-resgate.html">pendrive</a>, troque o subvolume <code>@</code> por um snapshot (passo a passo no <a href="projeto-snapshots.html">projeto</a>).</td></tr>
+</table>
+</div>
+<p>O <code>snapper rollback</code> só existe para a configuração da raiz: ele cria um snapshot gravável do escolhido e o torna o subvolume padrão do próximo boot. Na configuração de teste, ele se recusa (veja abaixo).</p>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:pacman +-Ql +snapper,out:snapper-timeline.timer" data-solucao="pacman -Ql snapper | grep timer">
+<p class="try-task"><strong>Missão:</strong> descubra quais timers do systemd o pacote <code>snapper</code> instala. Dica: <code>pacman -Ql snapper</code> lista os arquivos; filtre com <code>grep timer</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Sem permissões."</strong>
+<pre class="term">$ snapper -c teste list
+Sem permissões.
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> você rodou como usuário comum e a configuração não libera ninguém além do root.</p>
+<p><strong>Como resolver:</strong> use <code>sudo snapper …</code>, ou libere seu grupo: <code>sudo snapper -c root set-config ALLOW_GROUPS=wheel SYNC_ACL=yes</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A configuração "root" não existe</strong>
+<pre class="term">$ snapper list
+A configuração "root" não existe. Provavelmente, o snapper não está configurado.
+Consulte "man snapper" para obter mais instruções.</pre>
+<p><strong>O que aconteceu:</strong> sem <code>-c</code>, o snapper procura a configuração <code>root</code>, que ainda não foi criada.</p>
+<p><strong>Como resolver:</strong> <code>snapper list-configs</code> mostra as que existem; use <code>-c nome</code>, ou crie a da raiz com <code>snapper -c root create-config /</code>. Um nome que não existe dá <code>Configuração desconhecida.</code></p>
+</div>
+
+<div class="cenario">
+<strong>"subvolume is not a btrfs subvolume"</strong>
+<pre class="term">#> snapper -c log create-config /mnt/a8/etc
+Erro de E/S (subvolume is not a btrfs subvolume).</pre>
+<p><strong>O que aconteceu:</strong> o caminho é uma pasta comum, não um subvolume. O snapper só fotografa subvolumes Btrfs (ou volumes LVM finos).</p>
+<p><strong>Como resolver:</strong> confira com <code>btrfs subvolume show caminho</code>; crie um subvolume para esses dados. Recriar uma configuração com o mesmo nome dá <code>Falha ao criar a configuração (config already exists).</code></p>
+</div>
+
+<div class="cenario">
+<strong>"Instantâneo inválido."</strong>
+<pre class="term">#> snapper -c teste undochange 0..1
+Instantâneo inválido.</pre>
+<p><strong>O que aconteceu:</strong> a ordem ou o número está errado. Para voltar ao estado do snapshot 1, a forma é <code>undochange 1..0</code> ("desfaça o que mudou de 1 até agora").</p>
+</div>
+
+<div class="cenario">
+<strong>rollback num subvolume que não é a raiz</strong>
+<pre class="term">#> snapper -c projeto rollback 2
+O comando 'rollback' não pode ser usado num subvolume não-root /mnt/a8.</pre>
+<p><strong>O que aconteceu:</strong> o <code>rollback</code> só funciona na configuração de <code>/</code>. Para outros subvolumes, use <code>undochange</code> ou troque o subvolume à mão (no <a href="projeto-snapshots.html">projeto</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Disco cheio sem motivo aparente</strong>
+<p><strong>O que aconteceu:</strong> snapshots antigos seguram blocos de arquivos que você já apagou (como visto acima).</p>
+<p><strong>Como confirmar:</strong> <code>sudo snapper list</code> (muitos snapshots? sem algoritmo de limpeza?) e <code>sudo btrfs filesystem usage /</code>.</p>
+<p><strong>Como resolver:</strong> apague faixas antigas (<code>snapper delete 10-40</code>), confira se o <code>snapper-cleanup.timer</code> está ativo e reduza os <code>*_LIMIT</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (como root)</th><th>O que faz</th></tr>
+<tr><td><code>btrfs subvolume snapshot -r ORIGEM DESTINO</code></td><td>Snapshot só de leitura (sem <code>-r</code>: gravável)</td></tr>
+<tr><td><code>snapper -c NOME create-config /caminho</code></td><td>Cria uma configuração</td></tr>
+<tr><td><code>snapper list-configs</code></td><td>Lista as configurações</td></tr>
+<tr><td><code>snapper -c NOME list</code></td><td>Lista os snapshots</td></tr>
+<tr><td><code>snapper -c NOME create -d "texto" -c number</code></td><td>Cria um snapshot</td></tr>
+<tr><td><code>snapper -c NOME create --command "cmd"</code></td><td>Par pre/post em volta de um comando</td></tr>
+<tr><td><code>snapper -c NOME status A..B</code></td><td>Arquivos que mudaram</td></tr>
+<tr><td><code>snapper -c NOME diff A..B [arquivo]</code></td><td>Diferenças de conteúdo</td></tr>
+<tr><td><code>snapper -c NOME undochange A..B [arquivo]</code></td><td>Desfaz as mudanças de A até B</td></tr>
+<tr><td><code>snapper -c NOME delete N</code> / <code>N-M</code></td><td>Apaga snapshots</td></tr>
+<tr><td><code>snapper rollback [N]</code></td><td>Volta a raiz para o snapshot N (próximo boot)</td></tr>
+<tr><td><code>snapper -c NOME delete-config</code></td><td>Apaga a configuração e seus snapshots</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ver o que mudou</h3>
+<p>Mostre os arquivos alterados entre o snapshot 12 e o estado atual, na configuração <code>root</code>:</p>
+<div class="ex-code">snapper <input data-answer="status" aria-label="subcomando"> <input data-answer="12..0" aria-label="faixa"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Snapshot só de leitura</h3>
+<p>Complete para criar um snapshot <strong>só de leitura</strong> do <code>/home</code>:</p>
+<div class="ex-code">btrfs subvolume snapshot <input data-answer="-r" aria-label="opção"> /home /.snapshots/home-hoje</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você apagou 5 GiB de vídeos, mas o espaço livre não aumentou. A causa mais provável num sistema com snapper é:</p>
+<label><input type="radio" name="q3"> A compressão zstd.</label>
+<label><input type="radio" name="q3"> Snapshots antigos ainda guardam os blocos dos vídeos.</label>
+<label><input type="radio" name="q3"> O <code>rm</code> não funciona no Btrfs.</label>
+<label><input type="radio" name="q3"> A lixeira do KDE.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O que o <code>snap-pac</code> faz?</p>
+<label><input type="radio" name="q4"> Atualiza o snapper.</label>
+<label><input type="radio" name="q4"> Faz backup em outro disco.</label>
+<label><input type="radio" name="q4"> Coloca os snapshots no menu do GRUB.</label>
+<label><input type="radio" name="q4"> Cria snapshots pre/post em volta de cada transação do pacman.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. No <code>snapper status</code>, a linha <code>c..... /etc/pacman.conf</code> quer dizer:</p>
+<label><input type="radio" name="q5"> O conteúdo do arquivo mudou; permissões e dono não.</label>
+<label><input type="radio" name="q5"> O arquivo foi criado.</label>
+<label><input type="radio" name="q5"> O arquivo foi copiado.</label>
+<label><input type="radio" name="q5"> Só as permissões mudaram.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Snapshot = foto instantânea de um subvolume; começa sem ocupar espaço e cresce conforme o original muda.</li>
+  <li>Apagar arquivos não libera espaço enquanto um snapshot os guarda.</li>
+  <li>snapper: <code>create-config</code>, <code>create -d</code>, <code>list</code>, <code>status</code>, <code>diff</code>, <code>undochange</code>, <code>delete</code>; o 0 é "agora".</li>
+  <li><code>snap-pac</code> = par pre/post a cada pacman; <code>grub-btrfs</code> = boot nos snapshots.</li>
+  <li>Timeshift é a opção gráfica; snapper é a mais flexível. Nenhum dos dois é backup.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o snapper completo (configurações, timers, <code>snap-pac</code>, layout sugerido e restauração) está em <a href="https://wiki.archlinux.org/title/Snapper">Snapper</a> (<a href="https://wiki.archlinux.org/title/Snapper_(Portugu%C3%AAs)">em português</a>); os snapshots do próprio Btrfs em <a href="https://wiki.archlinux.org/title/Btrfs#Snapshots">Btrfs: Snapshots</a>; o Timeshift em <a href="https://wiki.archlinux.org/title/Timeshift">Timeshift</a>; e uma comparação de ferramentas em <a href="https://wiki.archlinux.org/title/System_backup">System backup</a> e <a href="https://wiki.archlinux.org/title/Synchronization_and_backup_programs">Synchronization and backup programs</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

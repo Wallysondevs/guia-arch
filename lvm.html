@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch LVM — volumes físicos, grupos e volumes lógicos | Guia Arch</title>
+<meta name="description" content="LVM no Arch Linux: pvcreate, vgcreate, lvcreate, pvs/vgs/lvs, lvextend -r, snapshots LVM com merge, LVM on LUKS e o hook lvm2 do mkinitcpio, com saídas reais em arquivos-imagem.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">LVM</span></h1>
+
+<p class="intro">Partições comuns têm tamanho fixo: se a raiz encher e a home sobrar, mudar isso é trabalhoso e arriscado. O <strong>LVM</strong> (<em>Logical Volume Manager</em>, gerenciador de volumes lógicos) junta discos num "reservatório" de espaço e tira dele "partições" virtuais que você cresce com um comando, com o sistema ligado. Ele também é a forma clássica de ter várias partições dentro de um único volume criptografado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são PV, VG, LV e extents.</li>
+  <li>Criar tudo com <code>pvcreate</code>, <code>vgcreate</code> e <code>lvcreate</code>, e ler <code>pvs</code>, <code>vgs</code> e <code>lvs</code>.</li>
+  <li>Aumentar um volume e o sistema de arquivos juntos com <code>lvextend -r</code>.</li>
+  <li>Snapshots LVM e como voltar com <code>lvconvert --merge</code>.</li>
+  <li>LVM on LUKS e o hook <code>lvm2</code> do mkinitcpio.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>As três camadas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sigla</th><th>Nome</th><th>O que é</th><th>Comparação</th></tr>
+<tr><td><strong>PV</strong></td><td><em>Physical Volume</em> (volume físico)</td><td>Um disco ou partição preparado para o LVM</td><td>Cada conta bancária que você tem</td></tr>
+<tr><td><strong>VG</strong></td><td><em>Volume Group</em> (grupo de volumes)</td><td>O reservatório: a soma do espaço de um ou mais PVs</td><td>Todo o dinheiro, somado</td></tr>
+<tr><td><strong>LV</strong></td><td><em>Logical Volume</em> (volume lógico)</td><td>Um pedaço do VG, usado como partição (formata e monta)</td><td>Os envelopes: aluguel, mercado, viagem</td></tr>
+</table>
+</div>
+<p>O espaço do VG é dividido em blocos iguais, os <strong>extents</strong> (por padrão de 4 MiB). Um LV é só uma lista de extents, que podem estar em qualquer PV. Por isso dá para crescer um LV usando espaço de outro disco.</p>
+
+<pre class="file" data-file="As camadas no laboratório">/dev/loop3 (PV, 1 GiB) ─┐
+                        ├─ vg_a8 (VG, ~2 GiB) ─┬─ dados  (LV) → ext4 em /mnt/a8
+/dev/loop4 (PV, 1 GiB) ─┘                       └─ backup (LV)
+</pre>
+
+<hr>
+
+<h2>O laboratório: dois discos de mentira</h2>
+<p>Dois arquivos-imagem de 1 GiB, cada um num dispositivo de loop (veja <a href="btrfs.html">Btrfs</a> para o <code>truncate</code> e o <code>losetup</code>). Os comandos do LVM vêm no pacote <code>lvm2</code>.</p>
+<pre class="term">#> truncate -s 1G /var/tmp/a8/lvm1.img /var/tmp/a8/lvm2.img
+#> losetup -f --show /var/tmp/a8/lvm1.img
+/dev/loop3
+#> losetup -f --show /var/tmp/a8/lvm2.img
+/dev/loop4</pre>
+
+<hr>
+
+<h2>1. Volumes físicos: pvcreate</h2>
+<dl class="anatomy">
+  <dt>pvcreate</dt><dd>Grava no começo de cada dispositivo um rótulo LVM (<em>physical volume create</em>).</dd>
+  <dt>/dev/loop3 /dev/loop4</dt><dd>Um ou mais dispositivos. Num computador real, partições como <code>/dev/sda3</code>.</dd>
+</dl>
+<pre class="term">#> pvcreate /dev/loop3 /dev/loop4
+  Physical volume "/dev/loop3" successfully created.
+  Physical volume "/dev/loop4" successfully created.
+#> echo $?
+0
+#> pvs
+  PV         VG Fmt  Attr PSize PFree
+  /dev/loop3    lvm2 ---  1,00g 1,00g        « ainda sem VG
+  /dev/loop4    lvm2 ---  1,00g 1,00g</pre>
+<p>As mensagens do LVM ficam em inglês, recuadas com dois espaços. Os números usam a vírgula do pt_BR. <code>pvs</code> é o resumo dos PVs: <code>Fmt lvm2</code> é o formato, <code>PSize</code> o tamanho e <code>PFree</code> o que está livre.</p>
+
+<h2>2. O grupo: vgcreate</h2>
+<dl class="anatomy">
+  <dt>vgcreate</dt><dd>Cria um grupo de volumes.</dd>
+  <dt>vg_a8</dt><dd>O nome do grupo (vira <code>/dev/vg_a8/</code>).</dd>
+  <dt>/dev/loop3 /dev/loop4</dt><dd>Os PVs que entram no grupo.</dd>
+</dl>
+<pre class="term">#> vgcreate vg_a8 /dev/loop3 /dev/loop4
+  Volume group "vg_a8" successfully created
+#> vgs
+  VG    #PV #LV #SN Attr    VSize VFree
+  vg_a8   2   0   0 wz--n-- 1,99g 1,99g</pre>
+<p><code>#PV</code> discos, <code>#LV</code> volumes lógicos, <code>#SN</code> snapshots. <code>VSize</code> é 1,99 GiB e não 2: cada PV guarda metadados no começo. Em <code>Attr</code>, o <code>w</code> é gravável (<em>writeable</em>), o <code>z</code> é redimensionável (<em>resizable</em>) e o <code>n</code> é a política de alocação normal.</p>
+
+<h2>3. Os volumes lógicos: lvcreate</h2>
+<dl class="anatomy">
+  <dt>lvcreate</dt><dd>Cria um volume lógico.</dd>
+  <dt>-L 600M</dt><dd>Tamanho fixo (<code>M</code>, <code>G</code>…). Ou <code>-l</code> (L minúsculo) em extents ou porcentagem: <code>-l 50%FREE</code>, <code>-l 100%FREE</code>.</dd>
+  <dt>-n dados</dt><dd>O nome do LV.</dd>
+  <dt>vg_a8</dt><dd>De qual grupo tirar o espaço.</dd>
+</dl>
+<pre class="term">#> lvcreate -L 600M -n dados vg_a8
+  Logical volume "dados" created.
+#> lvcreate -l 50%FREE -n backup vg_a8
+  Logical volume "backup" created.
+#> lvs
+  LV     VG    Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  backup vg_a8 -wi-a----- 720,00m
+  dados  vg_a8 -wi-a----- 600,00m
+#> ls -l /dev/vg_a8/
+total 0
+lrwxrwxrwx 1 root root 7 16 out 13:30 backup -&gt; ../dm-1
+lrwxrwxrwx 1 root root 7 16 out 13:30 dados -&gt; ../dm-0
+#> lsblk /dev/loop3 /dev/loop4
+NAME           MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+loop3            7:3    0   1G  0 loop
+└─vg_a8-dados  253:0    0 600M  0 lvm
+loop4            7:4    0   1G  0 loop
+└─vg_a8-backup 253:1    0 720M  0 lvm  </pre>
+
+<p>O <code>50%FREE</code> pegou metade do que sobrava (1,99 GiB − 600 MiB ≈ 1,4 GiB → 720 MiB). Cada LV tem dois nomes que apontam para o mesmo lugar: <code>/dev/vg_a8/dados</code> e <code>/dev/mapper/vg_a8-dados</code>. O <code>lsblk</code> mostra em qual PV cada LV ficou.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Posição do Attr (<code>-wi-a-----</code>)</th><th>Significado</th></tr>
+<tr><td>1ª: <code>-</code></td><td>Tipo: <code>-</code> normal, <code>o</code> origem de snapshot, <code>s</code> snapshot</td></tr>
+<tr><td>2ª: <code>w</code></td><td>Gravável (<code>r</code> = só leitura)</td></tr>
+<tr><td>3ª: <code>i</code></td><td>Alocação "herdada" do VG (<em>inherit</em>)</td></tr>
+<tr><td>5ª: <code>a</code></td><td>Ativo (pode ser usado)</td></tr>
+<tr><td>6ª: <code>o</code></td><td>Aberto (montado ou em uso)</td></tr>
+</table>
+</div>
+
+<p>Agora o LV é como qualquer partição:</p>
+<pre class="term">#> mkfs.ext4 -q -L dados /dev/vg_a8/dados
+#> mount --mkdir /dev/vg_a8/dados /mnt/a8
+#> echo "planilha de gastos" &gt; /mnt/a8/gastos.txt
+#> df -h /mnt/a8
+Sist. Arq.               Tam. Usado Disp. Uso% Montado em
+/dev/mapper/vg_a8-dados  574M  176K  532M   1% /mnt/a8</pre>
+
+<hr>
+
+<h2>Crescer com o sistema ligado: lvextend -r</h2>
+<p>O grande trunfo do LVM. Repare no espaço livre de cada PV antes:</p>
+<pre class="term">#> pvs
+  PV         VG    Fmt  Attr PSize    PFree
+  /dev/loop3 vg_a8 lvm2 a--  1020,00m 420,00m
+  /dev/loop4 vg_a8 lvm2 a--  1020,00m 300,00m</pre>
+
+<dl class="anatomy">
+  <dt>lvextend</dt><dd>Aumenta um LV.</dd>
+  <dt>-r</dt><dd><code>--resizefs</code>: aumenta também o sistema de arquivos de dentro, na mesma hora. Sem isso, o LV cresce mas o ext4 continua do tamanho antigo.</dd>
+  <dt>-L +300M</dt><dd>Mais 300 MiB (com <code>+</code>). Sem o <code>+</code>, é o tamanho final. <code>-l +100%FREE</code> usa tudo o que sobrou.</dd>
+  <dt>vg_a8/dados</dt><dd>Qual LV (grupo/volume).</dd>
+</dl>
+
+<pre class="term">#> lvextend -r -L +300M vg_a8/dados
+  File system ext4 found on vg_a8/dados mounted at /mnt/a8.
+  Size of logical volume vg_a8/dados changed from 600,00 MiB (150 extents) to 900,00 MiB (225 extents).
+  Extending file system ext4 to 900,00 MiB (943718400 bytes) on vg_a8/dados...
+resize2fs /dev/vg_a8/dados
+resize2fs 1.47.4 (6-Mar-2025)
+Sistema de ficheiros em /dev/vg_a8/dados está montado em /mnt/a8; requerido redimensionamento em linha
+old_desc_blocks = 1, new_desc_blocks = 1
+O sistema de ficheiros em /dev/vg_a8/dados tem agora 230400 (4k) blocos.
+
+resize2fs done
+  Extended file system ext4 on vg_a8/dados.
+  Logical volume vg_a8/dados successfully resized.
+#> echo $?
+0
+#> df -h /mnt/a8
+Sist. Arq.               Tam. Usado Disp. Uso% Montado em
+/dev/mapper/vg_a8-dados  868M  176K  815M   1% /mnt/a8          « cresceu montado
+#> pvs
+  PV         VG    Fmt  Attr PSize    PFree
+  /dev/loop3 vg_a8 lvm2 a--  1020,00m 120,00m      « os 300 MiB saíram daqui
+  /dev/loop4 vg_a8 lvm2 a--  1020,00m 300,00m</pre>
+
+<p>O LVM primeiro aumentou o LV (de 150 para 225 extents de 4 MiB) e depois chamou o <code>resize2fs</code>, o programa do ext4. As mensagens do <code>resize2fs</code> saem em português de Portugal ("sistema de ficheiros", "em linha" = com o sistema montado), porque a tradução do e2fsprogs é essa. Crescer um ext4 ou Btrfs montado é seguro. <strong>Diminuir</strong> (<code>lvreduce -r</code>) é mais delicado: o ext4 só diminui desmontado (na raiz, só pelo pendrive), o XFS não diminui nunca, e um backup antes é obrigatório.</p>
+
+<hr>
+
+<h2>Snapshots LVM</h2>
+<p>O LVM também tira "fotos", mas de um jeito diferente do Btrfs: o snapshot é um LV à parte com um tamanho que você escolhe. Ele guarda a versão <strong>antiga</strong> de cada bloco que muda no original. Primeiro, liberamos espaço removendo o LV <code>backup</code>:</p>
+
+<dl class="anatomy">
+  <dt>lvcreate -s</dt><dd><code>--snapshot</code>: cria um snapshot.</dd>
+  <dt>-L 200M</dt><dd>Espaço para guardar as mudanças. Se encher, o snapshot fica inválido.</dd>
+  <dt>-n dados-antes</dt><dd>O nome do snapshot.</dd>
+  <dt>vg_a8/dados</dt><dd>A origem.</dd>
+</dl>
+
+<pre class="term">#> lvremove -y vg_a8/backup
+  Logical volume "backup" successfully removed.
+#> lvcreate -s -L 200M -n dados-antes vg_a8/dados
+  Logical volume "dados-antes" created.
+#> lvs vg_a8
+  LV          VG    Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  dados       vg_a8 owi-aos--- 900,00m
+  dados-antes vg_a8 swi-a-s--- 200,00m      dados  0,95                                   </pre>
+<p>Agora o <code>dados</code> é <code>o</code> (origem) e o <code>dados-antes</code> é <code>s</code> (snapshot) da origem <code>dados</code>. <code>Data%</code> é quanto dos 200 MiB já foi usado com blocos antigos. Estrague o original e espie o snapshot (montado só para leitura):</p>
+
+<pre class="term">#> rm /mnt/a8/gastos.txt
+#> echo "tudo errado" &gt; /mnt/a8/erro.txt
+#> ls /mnt/a8
+erro.txt
+lost+found
+#> mount --mkdir -o ro /dev/vg_a8/dados-antes /mnt/a8-snap
+#> ls /mnt/a8-snap
+gastos.txt
+lost+found
+#> cat /mnt/a8-snap/gastos.txt
+planilha de gastos
+#> umount /mnt/a8-snap</pre>
+
+<h3>Voltar tudo: lvconvert --merge</h3>
+<p>Para devolver o LV inteiro ao estado do snapshot, faça o <strong>merge</strong>. Com o LV desmontado, ele acontece na hora; montado, fica agendado para a próxima ativação (no caso da raiz, o próximo boot).</p>
+<pre class="term">#> umount /mnt/a8
+#> lvconvert --merge vg_a8/dados-antes
+  Merging of volume vg_a8/dados-antes started.
+  vg_a8/dados: Merged: 99,01%
+  vg_a8/dados: Merged: 100,00%
+#> echo $?
+0
+#> lvs vg_a8
+  LV    VG    Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  dados vg_a8 -wi-a----- 900,00m                         « o snapshot foi consumido
+#> mount /dev/vg_a8/dados /mnt/a8
+#> ls /mnt/a8
+gastos.txt
+lost+found                                                « o erro.txt sumiu
+#> cat /mnt/a8/gastos.txt
+planilha de gastos</pre>
+
+<h3>Snapshot LVM × snapshot Btrfs</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>LVM (clássico)</th><th>Btrfs</th></tr>
+<tr><td>Tamanho</td><td>Fixo, escolhido na criação; se encher, o snapshot é perdido</td><td>Cresce sozinho conforme o original muda</td></tr>
+<tr><td>Desempenho</td><td>Cada escrita no original copia o bloco antigo: fica mais lento com vários snapshots</td><td>Quase sem custo (CoW nativo)</td></tr>
+<tr><td>Funciona com</td><td>Qualquer sistema de arquivos (ext4, XFS…)</td><td>Só Btrfs</td></tr>
+<tr><td>Uso típico</td><td>Foto rápida antes de uma mudança grande, para backup consistente</td><td>Muitas fotos automáticas (snapper)</td></tr>
+</table>
+</div>
+<p>Existe ainda o LVM <em>thin</em> (volumes "finos", <code>lvcreate --thin</code>), com snapshots que crescem sob demanda; o snapper também sabe usá-los.</p>
+
+<h3>Detalhes: vgdisplay e lvdisplay</h3>
+<pre class="term">#> vgdisplay vg_a8
+  --- Volume group ---
+  VG Name               vg_a8
+  System ID
+  Format                lvm2
+  Metadata Areas        2
+  Metadata Sequence No  10
+  VG Access             read/write
+  VG Status             resizable
+  MAX LV                0
+  Cur LV                1
+  Open LV               1
+  Max PV                0
+  Cur PV                2
+  Act PV                2
+  VG Size               1,99 GiB
+  PE Size               4,00 MiB              « o tamanho de um extent
+  Total PE              510
+  Alloc PE / Size       225 / 900,00 MiB
+  Free  PE / Size       285 / 1,11 GiB        « o que ainda dá para distribuir
+  VG UUID               rmEzvU-q4Ul-mZRB-K2EC-oWds-q8Hl-zmVxiq
+
+#> lvdisplay vg_a8/dados
+  --- Logical volume ---
+  LV Path                /dev/vg_a8/dados
+  LV Name                dados
+  VG Name                vg_a8
+  LV UUID                Q4OzNH-1q1H-Unjk-d10R-t9D5-ry9z-ecS5JF
+  LV Write Access        read/write
+  LV Creation host, time notebook, 2026-10-16 13:30:35 -0300
+  LV Status              available
+  # open                 1
+  LV Size                900,00 MiB
+  Current LE             225
+  Segments               1
+  Allocation             inherit
+  Read ahead sectors     auto
+  - currently set to     256
+  Block device           253:0</pre>
+<p><code>pvs</code>, <code>vgs</code> e <code>lvs</code> são os resumos do dia a dia; <code>pvdisplay</code>, <code>vgdisplay</code> e <code>lvdisplay</code> são as fichas completas.</p>
+
+<h3>Desmontando o laboratório</h3>
+<pre class="term">#> umount /mnt/a8
+#> vgremove -y vg_a8
+  Logical volume "dados" successfully removed.
+  Volume group "vg_a8" successfully removed
+#> pvremove /dev/loop3 /dev/loop4
+  Labels on physical volume "/dev/loop3" successfully wiped.
+  Labels on physical volume "/dev/loop4" successfully wiped.
+#> losetup -d /dev/loop3 /dev/loop4
+#> rm /var/tmp/a8/lvm1.img /var/tmp/a8/lvm2.img</pre>
+<p>A ordem é a inversa da criação: LVs (o <code>vgremove</code> leva junto), VG, PVs. Sem o <code>-y</code>, o <code>vgremove</code> pergunta <code>Do you really want to remove volume group "vg_a8" containing 1 logical volumes? [y/n]:</code>.</p>
+
+<hr>
+
+<h2>LVM on LUKS</h2>
+<p>Juntando com a aula de <a href="luks.html">LUKS</a>: a partição inteira é cifrada uma vez, e <strong>dentro</strong> dela fica um PV com os LVs da swap, da raiz e da home. Uma senha no boot abre tudo, e você ainda pode redimensionar os volumes depois. Montamos essa pilha de verdade numa imagem de 1 GiB já formatada com LUKS:</p>
+
+<pre class="term">#> printf '%s' 'arch-teste-123' | cryptsetup open /dev/loop1 cryptlvm -
+#> pvcreate -y /dev/mapper/cryptlvm
+  Wiping ext4 signature on /dev/mapper/cryptlvm.
+  Physical volume "/dev/mapper/cryptlvm" successfully created.
+#> vgcreate vg_cripto_a8 /dev/mapper/cryptlvm
+  Volume group "vg_cripto_a8" successfully created
+#> lvcreate -L 200M -n swap vg_cripto_a8
+  Logical volume "swap" created.
+#> lvcreate -L 500M -n raiz vg_cripto_a8
+  Logical volume "raiz" created.
+#> lvcreate -l 100%FREE -n home vg_cripto_a8
+  Logical volume "home" created.
+#> lsblk /dev/loop1
+NAME                  MAJ:MIN RM  SIZE RO TYPE  MOUNTPOINTS
+loop1                   7:1    0    1G  0 loop
+└─cryptlvm            253:0    0 1008M  0 crypt                « 1 senha
+  ├─vg_cripto_a8-swap 253:1    0  200M  0 lvm
+  ├─vg_cripto_a8-raiz 253:2    0  500M  0 lvm
+  └─vg_cripto_a8-home 253:3    0  304M  0 lvm
+#> lvs vg_cripto_a8
+  LV   VG           Attr       LSize   Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+  home vg_cripto_a8 -wi-a----- 304,00m
+  raiz vg_cripto_a8 -wi-a----- 500,00m
+  swap vg_cripto_a8 -wi-a----- 200,00m                                                    </pre>
+
+<p>O <code>Wiping ext4 signature</code> aparece porque essa imagem tinha sido usada antes com um ext4 dentro; o <code>-y</code> confirmou a limpeza (sem ele, o <code>pvcreate</code> pergunta). Para fechar a pilha, a ordem é: desativar os LVs, depois fechar o LUKS:</p>
+<pre class="term">#> vgchange -an vg_cripto_a8
+  0 logical volume(s) in volume group "vg_cripto_a8" now active
+#> cryptsetup close cryptlvm</pre>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Esquema</th><th>Como é</th><th>Quando</th></tr>
+<tr><td><strong>LVM on LUKS</strong></td><td>Partição → LUKS → PV → LVs</td><td>O mais comum: uma senha, swap cifrada junto, volumes flexíveis. Limitação: tudo fica num disco só.</td></tr>
+<tr><td><strong>LUKS on LVM</strong></td><td>Discos → PVs → LVs → LUKS em cada LV</td><td>Quando o VG espalha por vários discos, ou só alguns volumes precisam de cifra. Uma senha por LV (ou arquivos de chave).</td></tr>
+<tr><td>LUKS sem LVM</td><td>Partição → LUKS → ext4/Btrfs</td><td>O mais simples. Com Btrfs, os subvolumes já fazem o papel dos LVs.</td></tr>
+<tr><td>LVM sem LUKS</td><td>Partições → PVs → LVs</td><td>Servidores e máquinas fixas onde a flexibilidade importa e a cifra não.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O hook lvm2 do mkinitcpio</h2>
+<p>Se a <strong>raiz</strong> está num LV, o initramfs precisa ativar o LVM antes de montá-la: é o hook <code>lvm2</code>, entre <code>block</code> e <code>filesystems</code>. Com LVM on LUKS, ele vem <strong>depois</strong> do <code>sd-encrypt</code> (primeiro abre o LUKS, depois enxerga o PV de dentro). Esta parte é <strong>ilustrativa</strong> (o <code>/etc/mkinitcpio.conf</code> da máquina não muda), mas a imagem de teste abaixo foi gerada de verdade, a partir de uma cópia em <code>/tmp</code>:</p>
+
+<pre class="term">#> sed -i 's/block sd-encrypt filesystems/block sd-encrypt lvm2 filesystems/' /tmp/a8/mkinitcpio.conf
+#> grep -n '^HOOKS' /tmp/a8/mkinitcpio.conf
+55:HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt lvm2 filesystems fsck)
+#> mkinitcpio -c /tmp/a8/mkinitcpio.conf -g /tmp/a8/initramfs-teste.img
+==> Starting build: '7.2.10-arch1-1'
+  -> Running build hook: [base]
+  -> Running build hook: [systemd]
+  -> Running build hook: [autodetect]
+  -> Running build hook: [microcode]
+  -> Running build hook: [modconf]
+  -> Running build hook: [kms]
+  -> Running build hook: [keyboard]
+  -> Running build hook: [sd-vconsole]
+  -> Running build hook: [block]
+  -> Running build hook: [sd-encrypt]
+==> WARNING: Possibly missing firmware for module: 'qat_6xxx'
+  -> Running build hook: [lvm2]                         « o LVM entra aqui
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/tmp/a8/initramfs-teste.img'
+  -> Early uncompressed CPIO image generation successful
+==> Initcpio image generation successful
+#> lsinitcpio /tmp/a8/initramfs-teste.img | grep -E 'bin/lvm|dm-mod|lvm2'
+usr/lib/modules/7.2.10-arch1-1/kernel/drivers/md/dm-mod.ko.zst
+usr/bin/lvm</pre>
+
+<p>(A cópia <code>/tmp/a8/mkinitcpio.conf</code> já tinha o <code>sd-encrypt</code>, da aula de <a href="luks.html">LUKS</a>.) No sistema real: editar o <code>/etc/mkinitcpio.conf</code>, rodar <code>mkinitcpio -P</code> e, nos parâmetros do kernel, abrir o LUKS e apontar a raiz para o LV, por exemplo <code>rd.luks.name=UUID-DO-LUKS=cryptlvm root=/dev/vg_cripto_a8/raiz</code> (ilustrativo; veja <a href="bootloader.html">Bootloader</a> para o <code>/etc/default/grub</code>). A swap entra no <a href="fstab.html">fstab</a> como <code>/dev/vg_cripto_a8/swap none swap defaults 0 0</code>. O hook <code>lvm2</code> vem no próprio pacote <code>mkinitcpio</code>, mas usa os programas do pacote <code>lvm2</code>, que precisa estar instalado (inclua-o no <code>pacstrap</code>).</p>
+
+<hr>
+
+<h2>Experimente</h2>
+<div class="try" data-goal="ran:pacman +-Qo,out:lvm2" data-solucao="pacman -Qo /usr/bin/lvcreate">
+<p class="try-task"><strong>Missão:</strong> descubra qual pacote instalou o comando <code>/usr/bin/lvcreate</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Insufficient free space"</strong>
+<pre class="term">#> lvextend -L +5G vg_a8/dados
+  Insufficient free space: 1280 extents needed, but only 105 available
+#> echo $?
+5</pre>
+<p><strong>O que aconteceu:</strong> o VG não tem espaço livre para isso (5 GiB = 1280 extents de 4 MiB; só havia 105).</p>
+<p><strong>Como confirmar:</strong> <code>vgs</code> (coluna <code>VFree</code>).</p>
+<p><strong>Como resolver:</strong> peça menos (<code>-l +100%FREE</code> usa tudo o que há), diminua outro LV, ou acrescente um disco: <code>pvcreate /dev/sdb1</code> e <code>vgextend vg_a8 /dev/sdb1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"WARNING: ext4 signature detected … Wipe it? [y/n]"</strong>
+<pre class="term">#> pvcreate /dev/mapper/cryptlvm
+WARNING: ext4 signature detected on /dev/mapper/cryptlvm at offset 1080. Wipe it? [y/n]:
+…
+  Aborted wiping of ext4.
+  1 existing signature left on the device.</pre>
+<p><strong>O que aconteceu:</strong> o dispositivo tinha um sistema de arquivos. O LVM pergunta antes de apagar. No laboratório, a pergunta recebeu as linhas seguintes do script como resposta (cada uma virou <code>WARNING: Invalid input</code>) e acabou em "não".</p>
+<p><strong>Como resolver:</strong> confira com <code>lsblk -f</code> que pode apagar e responda <code>y</code>, ou use <code>pvcreate -y</code>, ou limpe antes com <code>wipefs -a /dev/X</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Hook 'lvm' cannot be found"</strong>
+<pre class="term">#> mkinitcpio -c /tmp/a8/mkinitcpio-errado.conf -g /tmp/a8/initramfs-errado.img
+…
+  -> Running build hook: [sd-encrypt]
+==> WARNING: Possibly missing firmware for module: 'qat_6xxx'
+==> ERROR: Hook 'lvm' cannot be found
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/tmp/a8/initramfs-errado.img'
+==> WARNING: errors were encountered during the build. The image may not be complete.
+#> echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> o nome do hook é <code>lvm2</code>, não <code>lvm</code>. O <code>mkinitcpio</code> gera a imagem mesmo assim, mas <strong>sem</strong> o LVM: com a raiz num LV, esse sistema não liga.</p>
+<p><strong>Como resolver:</strong> corrija o nome e rode de novo; nunca reinicie depois de um <code>mkinitcpio</code> que terminou com <code>ERROR</code> ou código diferente de 0. Os hooks disponíveis estão em <code>ls /usr/lib/initcpio/install/</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Os LVs não aparecem (sem /dev/VG/…)</strong>
+<p><strong>O que aconteceu:</strong> o VG não foi ativado: o disco foi conectado depois, o LUKS de baixo ainda está fechado, ou (no pendrive de resgate) ninguém rodou o LVM.</p>
+<p><strong>Como confirmar:</strong> <code>lvs</code>: sem o <code>a</code> na 5ª posição do <code>Attr</code>, o LV está inativo.</p>
+<p><strong>Como resolver:</strong> abra o LUKS antes, se houver, e ative com <code>vgchange -ay</code>. No <a href="chroot-resgate.html">resgate com chroot</a>, esse é o passo entre o <code>cryptsetup open</code> e o <code>mount</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (como root)</th><th>O que faz</th></tr>
+<tr><td><code>pvcreate /dev/X</code> / <code>pvs</code> / <code>pvdisplay</code></td><td>Cria / resume / detalha volumes físicos</td></tr>
+<tr><td><code>vgcreate VG /dev/X …</code> / <code>vgs</code> / <code>vgdisplay</code></td><td>Cria / resume / detalha grupos</td></tr>
+<tr><td><code>vgextend VG /dev/Y</code></td><td>Acrescenta um disco ao grupo</td></tr>
+<tr><td><code>lvcreate -L 10G -n nome VG</code></td><td>Cria um LV (<code>-l 100%FREE</code>: tudo o que sobra)</td></tr>
+<tr><td><code>lvs</code> / <code>lvdisplay</code></td><td>Resume / detalha os LVs</td></tr>
+<tr><td><code>lvextend -r -L +5G VG/nome</code></td><td>Aumenta LV e sistema de arquivos</td></tr>
+<tr><td><code>lvreduce -r -L -2G VG/nome</code></td><td>Diminui (ext4 desmontado; XFS não diminui)</td></tr>
+<tr><td><code>lvcreate -s -L 2G -n snap VG/nome</code></td><td>Snapshot LVM</td></tr>
+<tr><td><code>lvconvert --merge VG/snap</code></td><td>Volta o original ao estado do snapshot</td></tr>
+<tr><td><code>vgchange -ay</code> / <code>-an</code></td><td>Ativa / desativa os LVs</td></tr>
+<tr><td><code>lvremove</code>, <code>vgremove</code>, <code>pvremove</code></td><td>Remove (nessa ordem)</td></tr>
+<tr><td><code>HOOKS=(… block sd-encrypt lvm2 filesystems …)</code></td><td>Initramfs para raiz em LVM (on LUKS)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar o volume lógico</h3>
+<p>Crie um LV chamado <code>home</code> com todo o espaço livre do grupo <code>vg0</code>:</p>
+<div class="ex-code">lvcreate -l <input data-answer="100%FREE" aria-label="tamanho"> -n home <input data-answer="vg0" aria-label="grupo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Crescer junto com o sistema de arquivos</h3>
+<p>Aumente <code>vg0/raiz</code> em 10 GiB, incluindo o ext4:</p>
+<div class="ex-code">lvextend <input data-answer="-r|--resizefs" aria-label="opção"> -L <input data-answer="+10G" aria-label="tamanho"> vg0/raiz</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Na ordem PV, VG, LV, o que você formata com <code>mkfs</code>?</p>
+<label><input type="radio" name="q3"> O PV.</label>
+<label><input type="radio" name="q3"> O LV.</label>
+<label><input type="radio" name="q3"> O VG.</label>
+<label><input type="radio" name="q3"> Os três.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Num LVM on LUKS com a raiz num LV, qual é a ordem certa dos hooks?</p>
+<label><input type="radio" name="q4"> <code>block lvm2 sd-encrypt filesystems</code></label>
+<label><input type="radio" name="q4"> <code>lvm2 block filesystems sd-encrypt</code></label>
+<label><input type="radio" name="q4"> <code>block sd-encrypt lvm2 filesystems</code></label>
+<label><input type="radio" name="q4"> <code>sd-encrypt filesystems lvm2 block</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que acontece se o espaço de um snapshot LVM clássico (<code>-L 200M</code>) encher?</p>
+<label><input type="radio" name="q5"> O snapshot fica inválido e não serve mais para voltar.</label>
+<label><input type="radio" name="q5"> Ele cresce sozinho.</label>
+<label><input type="radio" name="q5"> O LV original para de aceitar gravações.</label>
+<label><input type="radio" name="q5"> O LVM faz o merge automaticamente.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>PV (disco) → VG (reservatório) → LV (partição virtual, que você formata e monta).</li>
+  <li><code>pvs</code>, <code>vgs</code>, <code>lvs</code> para conferir; <code>lvextend -r</code> cresce LV e sistema de arquivos com tudo ligado.</li>
+  <li>Snapshot LVM: tamanho fixo, volta com <code>lvconvert --merge</code>.</li>
+  <li>LVM on LUKS: uma senha abre swap, raiz e home; hooks <code>block sd-encrypt lvm2 filesystems</code>.</li>
+  <li>Para desmontar: LVs → VG → PVs (e <code>vgchange -an</code> antes de fechar o LUKS).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o LVM completo está em <a href="https://wiki.archlinux.org/title/LVM">LVM</a> (<a href="https://wiki.archlinux.org/title/LVM_(Portugu%C3%AAs)">em português</a>); a instalação com LVM e LUKS em <a href="https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system#LVM_on_LUKS">Encrypting an entire system: LVM on LUKS</a>; os hooks em <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a> (<a href="https://wiki.archlinux.org/title/Mkinitcpio_(Portugu%C3%AAs)">em português</a>); e os volumes finos em <a href="https://wiki.archlinux.org/title/LVM#Thin_provisioning">LVM: Thin provisioning</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
