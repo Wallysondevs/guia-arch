@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch hooks do pacman — tarefas automáticas antes e depois de instalar | Guia Arch</title>
+<meta name="description" content="Hooks do pacman (libalpm): o que são, onde ficam (/usr/share/libalpm/hooks e /etc/pacman.d/hooks), a sintaxe [Trigger] e [Action], PreTransaction e PostTransaction, os hooks reais do mkinitcpio e do systemd, e três hooks seus: grub-mkconfig, órfãos e paccache.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Hooks do <span class="hl">pacman</span></h1>
+
+<p class="intro">Um <strong>hook</strong> ("gancho") é uma tarefa que o pacman executa sozinho antes ou depois de instalar, atualizar ou remover pacotes, quando certos pacotes ou arquivos mudam. É por causa deles que, ao atualizar o kernel, a imagem de boot é refeita sem você pedir, e que o systemd "percebe" serviços novos. E você pode escrever os seus.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Reconhecer os hooks na saída do pacman.</li>
+  <li>Onde eles ficam: <code>/usr/share/libalpm/hooks/</code> e <code>/etc/pacman.d/hooks/</code>.</li>
+  <li>A sintaxe: <code>[Trigger]</code>, <code>[Action]</code>, <code>PreTransaction</code> e <code>PostTransaction</code>.</li>
+  <li>Ler os hooks reais do mkinitcpio, do systemd e do openssh.</li>
+  <li>Escrever três hooks seus: <code>grub-mkconfig</code> quando o kernel muda, listar órfãos e limpar o cache com <code>paccache</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Você já viu hooks rodando</h2>
+
+<p>Toda instalação termina com uma lista de tarefas. Na instalação do <code>yay-bin</code> (aula <a href="makepkg.html">makepkg</a>) foi uma só:</p>
+
+<pre class="term">#> pacman -U --noconfirm /home/ana/aur/yay-bin/yay-bin-*.pkg.tar.zst
+…
+instalando yay-bin-debug...
+:: Executando hooks pós-transação...
+(1/1) Arming ConditionNeedsUpdate...</pre>
+
+<p>Quando a VM instalou dezenas de pacotes de uma vez (incluindo o kernel <code>linux-lts</code>), foram dezoito. Do log real da instalação (encurtado):</p>
+
+<pre class="term">:: Executando hooks pós-transação...
+( 1/18) Configuring dynamic linker run-time bindings...
+( 2/18) Creating system user accounts...
+Creating group 'avahi' with GID 968.
+…
+( 3/18) Creating temporary files...
+( 4/18) Reloading system manager configuration...      « systemd: "leia os serviços novos"
+( 5/18) Reloading user manager configuration...
+( 6/18) Updating the MIME type database...
+( 7/18) Reloading device manager configuration...
+( 8/18) Arming ConditionNeedsUpdate...
+( 9/18) Updating fontconfig configuration...
+(10/18) Updating module dependencies...
+(11/18) Updating linux initcpios...                     « mkinitcpio: refaz o initramfs
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux-lts.preset: 'default'
+…
+==&gt; Initcpio image generation successful
+(12/18) Updating the appstream cache...
+…
+(18/18) Updating the info directory file...</pre>
+
+<p>As descrições ficam em inglês porque vêm escritas dentro de cada hook. Cada linha é um arquivo <code>.hook</code>, de um pacote diferente, que "acordou" porque algo na transação o interessava.</p>
+
+<div class="note">
+<strong>Hook do pacman × hook do mkinitcpio</strong>
+<p>As linhas <code>Running build hook: [base]</code>, <code>[systemd]</code>… dentro do item 11 são outra coisa: os "hooks" do <a href="mkinitcpio.html">mkinitcpio</a>, que decidem o que vai dentro do initramfs. O nome é o mesmo; o mecanismo, não.</p>
+</div>
+
+<hr>
+
+<h2>Onde ficam</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>De quem</th></tr>
+<tr><td><code>/usr/share/libalpm/hooks/</code></td><td>Dos pacotes. Não edite: a próxima atualização sobrescreve.</td></tr>
+<tr><td><code>/etc/pacman.d/hooks/</code></td><td><strong>Seus.</strong> Um arquivo aqui com o mesmo nome de um dos pacotes <strong>substitui</strong> o dele.</td></tr>
+</table>
+</div>
+
+<p>O nome <em>libalpm</em> é a biblioteca do pacman (<em>Arch Linux Package Management</em>): os hooks são dela, então valem para qualquer programa que a use (pacman, yay, paru). A pasta dos seus hooks vem do <code>pacman.conf</code> e, numa instalação nova, ainda não existe:</p>
+
+<pre class="term">$ pacman-conf HookDir
+/etc/pacman.d/hooks/
+$ ls /etc/pacman.d/hooks/
+ls: não foi possível acessar '/etc/pacman.d/hooks/': Arquivo ou diretório inexistente
+$ ls /usr/share/libalpm/hooks/
+10-glibc-locale-gen.hook                60-depmod.hook
+10-glibc-remove-locale-archive.hook     60-mkinitcpio-remove.hook
+10-openssh-mark-sshd-for-restart.hook   70-openssh-restart-sshd.hook
+11-glibc-ldconfig.hook                  80-cronie.hook
+11-glibc-remove-ldconfig-cache.hook     90-mkinitcpio-install.hook
+12-glibc-iconvconfig.hook               90-update-appstream-cache.hook
+12-glibc-remove-iconvconfig-cache.hook  accounts-daemon-restart.hook
+20-systemd-sysusers.hook                dbus-reload.hook
+21-systemd-tmpfiles.hook                dconf-update.hook
+25-systemd-binfmt.hook                  detect-old-perl-modules.hook
+25-systemd-catalog.hook                 fontconfig.hook
+25-systemd-hwdb.hook                    gdk-pixbuf-query-loaders.hook
+25-systemd-sysctl.hook                  gdk-pixbuf-remove-loaders-cache.hook
+30-systemd-daemon-reload-system.hook    gio-querymodules.hook
+30-systemd-daemon-reload-user.hook      gio-remove-module-cache.hook
+30-update-mime-database.hook            glib-compile-schemas.hook
+35-systemd-enqueue-marked.hook          glib-remove-compiled-schemas.hook
+35-systemd-udev-reload.hook             man-db-remove-cache.hook
+35-systemd-update.hook                  shared-mime-info-remove-cache.hook
+36-systemd-modules-load.hook            texinfo-install.hook
+40-fontconfig-config.hook               texinfo-remove.hook
+40-update-ca-trust.hook                 vimdoc.hook</pre>
+
+<p>O número no começo do nome não é obrigatório: serve para controlar a <strong>ordem</strong>. Os hooks de um mesmo momento rodam em ordem alfabética do nome do arquivo, então <code>10-…</code> roda antes de <code>90-…</code>. O <code>90-mkinitcpio-install</code> tem 90 para rodar depois de quase tudo (os módulos e o firmware já precisam estar no lugar).</p>
+
+<hr>
+
+<h2>A anatomia de um hook</h2>
+
+<p>O mais simples, do systemd:</p>
+
+<pre class="term">$ cat /usr/share/libalpm/hooks/30-systemd-daemon-reload-system.hook
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/systemd/system/*
+
+[Action]
+Description = Reloading system manager configuration...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/systemd-hook daemon-reload-system
+$ pacman -Qo /usr/share/libalpm/hooks/30-systemd-daemon-reload-system.hook
+/usr/share/libalpm/hooks/30-systemd-daemon-reload-system.hook pertence a systemd 262-1</pre>
+
+<p>Em português: "<strong>se</strong> a transação instalar, atualizar ou remover algum arquivo em <code>/usr/lib/systemd/system/</code> (onde ficam os <code>.service</code>), <strong>então</strong>, no fim, rode o script que faz <code>systemctl daemon-reload</code>". É por isso que você não precisa rodar <code>daemon-reload</code> depois de instalar o nginx (veja <a href="systemd.html">systemctl e Serviços</a>).</p>
+
+<h3>[Trigger]: quando acordar</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Chave</th><th>Valores</th><th>Significado</th></tr>
+<tr><td><code>Type</code></td><td><code>Package</code> ou <code>Path</code></td><td>Olhar <strong>nomes de pacotes</strong> ou <strong>caminhos de arquivos</strong> que estão na transação</td></tr>
+<tr><td><code>Operation</code></td><td><code>Install</code>, <code>Upgrade</code>, <code>Remove</code></td><td>Que tipo de mudança. Pode repetir a linha para mais de um</td></tr>
+<tr><td><code>Target</code></td><td>Nome ou caminho, aceita <code>*</code> e <code>?</code></td><td>O que vigiar. Caminhos <strong>sem a barra inicial</strong> (<code>usr/lib/…</code>, não <code>/usr/lib/…</code>). Um <code>!</code> na frente exclui. Pode repetir.</td></tr>
+</table>
+</div>
+
+<p>Um hook pode ter vários <code>[Trigger]</code>: basta <strong>um</strong> deles combinar para o hook rodar (uma vez só).</p>
+
+<h3>[Action]: o que fazer</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Chave</th><th>Significado</th></tr>
+<tr><td><code>Description</code></td><td>O texto que aparece em <code>(n/N) …</code></td></tr>
+<tr><td><code>When</code></td><td><code>PreTransaction</code> (antes de mexer em qualquer arquivo) ou <code>PostTransaction</code> (depois de tudo). Obrigatória.</td></tr>
+<tr><td><code>Exec</code></td><td>O comando, com <strong>caminho absoluto</strong>. Não passa por um shell: <code>|</code>, <code>&amp;&amp;</code> e <code>$VAR</code> não funcionam, a não ser com <code>/usr/bin/bash -c "…"</code>. Obrigatória.</td></tr>
+<tr><td><code>Depends</code></td><td>Pacote de que o comando precisa (o hook não roda se ele não estiver instalado)</td></tr>
+<tr><td><code>NeedsTargets</code></td><td>Manda para a entrada padrão do comando a lista do que acionou o hook (um por linha)</td></tr>
+<tr><td><code>AbortOnFail</code></td><td>Só em <code>PreTransaction</code>: se o comando falhar, cancela a transação inteira</td></tr>
+</table>
+</div>
+
+<h3>Um hook maior: o do mkinitcpio</h3>
+
+<pre class="term">$ cat /usr/share/libalpm/hooks/90-mkinitcpio-install.hook
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/initcpio/*
+Target = usr/lib/firmware/*
+Target = usr/lib/modules/*/extramodules/
+Target = usr/src/*/dkms.conf
+Target = usr/lib/systemd/systemd
+Target = usr/lib/systemd/systemd-udevd
+Target = usr/bin/cryptsetup
+Target = usr/bin/lvm
+Target = usr/bin/mdadm
+Target = usr/bin/pdata_tools
+Target = usr/lib/libcryptsetup.so
+Target = usr/lib/libp11-kit.so
+Target = usr/lib/libpcsclite.so
+Target = usr/lib/modprobe.d/
+
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/lib/modules/*/vmlinuz             « um kernel novo
+
+[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Target = mkinitcpio
+Target = mkinitcpio-git
+
+[Action]
+Description = Updating linux initcpios...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/mkinitcpio install
+NeedsTargets                                   « o script recebe a lista do que mudou
+$ pacman -Qo /usr/share/libalpm/hooks/90-mkinitcpio-install.hook
+/usr/share/libalpm/hooks/90-mkinitcpio-install.hook pertence a mkinitcpio 42.2-1</pre>
+
+<p>Três gatilhos: qualquer coisa que vai <strong>dentro</strong> do initramfs mudou (firmware, módulos, systemd, cryptsetup, lvm…); um kernel novo chegou; ou o próprio mkinitcpio foi atualizado. O par dele, <code>60-mkinitcpio-remove.hook</code>, roda <strong>antes</strong> (<code>When = PreTransaction</code>) quando um kernel é removido, para apagar o initramfs correspondente enquanto o kernel ainda está lá.</p>
+
+<h3>Antes e depois trabalhando juntos: o openssh</h3>
+
+<pre class="term">$ cat /usr/share/libalpm/hooks/10-openssh-mark-sshd-for-restart.hook /usr/share/libalpm/hooks/70-openssh-restart-sshd.hook
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = openssh
+
+[Action]
+Depends = systemd
+Description = Marking sshd.service for restart...
+When = PreTransaction
+Exec = /usr/bin/systemctl --runtime set-property sshd.service Markers=needs-restart
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = openssh
+
+[Action]
+Description = Restart a running sshd.service
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/systemd-hook restart sshd.service</pre>
+
+<p>Quando o pacote <code>openssh</code> é <strong>atualizado</strong>: antes, marca o <code>sshd</code> como "precisa reiniciar"; depois, reinicia o serviço (se estiver rodando), para o servidor SSH passar a usar o programa novo.</p>
+
+<hr>
+
+<h2>Escrevendo os seus</h2>
+
+<p>Os três exemplos abaixo foram escritos na VM em <code>/tmp/a5/hooks/</code>, para estudo. <strong>Não</strong> foram instalados no <code>/etc/pacman.d/hooks/</code> da VM (um hook errado ali afetaria todos os outros testes); no seu Arch, a instalação é o passo final de cada um.</p>
+
+<h3>1. Refazer o menu do GRUB quando o kernel mudar</h3>
+
+<p>Um fato que pega muita gente: o pacman <strong>não</strong> roda o <code>grub-mkconfig</code> sozinho. Quando a VM ganhou o <code>linux-lts</code>, foi preciso rodar à mão para o novo kernel aparecer no menu (veja <a href="bootloader.html">Bootloader</a> e <a href="kernels.html">Kernels</a>):</p>
+
+<pre class="term">#> grub-mkconfig -o /boot/grub/grub.cfg
+Gerando o arquivo de configuração do grub...
+Imagem Linux encontrada: /boot/vmlinuz-linux
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux.img
+Imagem Linux encontrada: /boot/vmlinuz-linux-lts
+Imagem initrd encontrada: /boot/intel-ucode.img /boot/initramfs-linux-lts.img
+…
+concluído</pre>
+
+<p>Um hook resolve:</p>
+
+<pre class="file" data-file="/tmp/a5/hooks/95-grub-mkconfig.hook">[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/modules/*/vmlinuz
+
+[Action]
+Description = Atualizando o menu do GRUB (grub.cfg)...
+When = PostTransaction
+Depends = grub
+Exec = /usr/bin/grub-mkconfig -o /boot/grub/grub.cfg</pre>
+
+<dl class="anatomy">
+  <dt>Target = usr/lib/modules/*/vmlinuz</dt><dd>Todo pacote de kernel do Arch (<code>linux</code>, <code>linux-lts</code>, <code>linux-zen</code>…) instala o kernel nesse caminho; é o mesmo gatilho que o mkinitcpio usa.</dd>
+  <dt>95-</dt><dd>Roda depois do <code>90-mkinitcpio-install</code>, quando o initramfs novo já existe.</dd>
+  <dt>Depends = grub</dt><dd>Se um dia você trocar para o systemd-boot e remover o GRUB, o hook não roda.</dd>
+</dl>
+
+<p>Para instalar no seu sistema (<strong>ilustrativo</strong>):</p>
+
+<pre class="file" data-file="ilustrativo: instalar o hook">sudo mkdir -p /etc/pacman.d/hooks
+sudo cp 95-grub-mkconfig.hook /etc/pacman.d/hooks/</pre>
+
+<p>Na próxima atualização de kernel, a lista do pacman ganha a linha <code>(n/N) Atualizando o menu do GRUB (grub.cfg)...</code> seguida da saída do <code>grub-mkconfig</code>.</p>
+
+<h3>2. Avisar sobre órfãos depois de remover</h3>
+
+<pre class="file" data-file="/tmp/a5/hooks/orfaos.hook">[Trigger]
+Type = Package
+Operation = Remove
+Target = *
+
+[Action]
+Description = Procurando pacotes órfãos...
+When = PostTransaction
+Exec = /usr/bin/bash -c "/usr/bin/pacman -Qdt || /usr/bin/echo '==&gt; Nenhum órfão.'"</pre>
+
+<p><code>Target = *</code> com <code>Operation = Remove</code>: qualquer remoção. Como o <code>Exec</code> não passa por um shell, o <code>||</code> só funciona dentro do <code>bash -c</code>. O <code>pacman -Qdt</code> lista os órfãos (veja <a href="cache-orfaos.html">Cache e Órfãos</a>) e devolve código 1 quando não há nenhum; aí entra o <code>echo</code>. Dá para testar o comando sozinho, antes de instalar o hook:</p>
+
+<pre class="term" data-cwd="/tmp/a5/hooks">$ /usr/bin/bash -c "/usr/bin/pacman -Qdt || /usr/bin/echo '==&gt; Nenhum órfão.'"
+==&gt; Nenhum órfão.</pre>
+
+<div class="tip">
+<strong>Teste sempre o Exec primeiro</strong>
+<p>Rodar a linha do <code>Exec</code> no terminal (com <code>sudo</code>, se o comando precisar de root, porque os hooks rodam como root) é o jeito mais simples de achar erros antes que eles apareçam no meio de uma atualização.</p>
+</div>
+
+<div class="try" data-goal="contains:~/hooks/orfaos.hook=[Trigger],contains:~/hooks/orfaos.hook=Operation = Remove,contains:~/hooks/orfaos.hook=When = PostTransaction" data-solucao="mkdir -p hooks;;printf '[Trigger]\nType = Package\nOperation = Remove\nTarget = *\n\n[Action]\nDescription = Procurando pacotes órfãos...\nWhen = PostTransaction\nExec = /usr/bin/pacman -Qdt\n' &gt; hooks/orfaos.hook;;cat hooks/orfaos.hook">
+<p class="try-task"><strong>Missão:</strong> crie a pasta <code>~/hooks</code> e, dentro dela, um <code>orfaos.hook</code> com um <code>[Trigger]</code> para <strong>remoção</strong> de qualquer pacote e um <code>[Action]</code> que roda <strong>depois</strong> da transação o comando <code>/usr/bin/pacman -Qdt</code> (use <code>printf</code> com <code>\n</code>; uma configuração por linha, como no exemplo acima). Confira com <code>cat</code>.</p>
+</div>
+
+<h3>3. Limpar o cache com o paccache</h3>
+
+<p>O cache do pacman (<code>/var/cache/pacman/pkg</code>) cresce para sempre. O <code>paccache</code>, do pacote <code>pacman-contrib</code>, apaga versões antigas. O pacote traz um <strong>timer</strong> semanal, mas <strong>não</strong> traz um hook:</p>
+
+<pre class="term">$ pacman -Ql pacman-contrib | grep -E "paccache|hook"
+pacman-contrib /usr/bin/paccache
+pacman-contrib /usr/lib/systemd/system/paccache.service
+pacman-contrib /usr/lib/systemd/system/paccache.timer</pre>
+
+<p>Quem prefere limpar a cada transação escreve o seu:</p>
+
+<pre class="file" data-file="/tmp/a5/hooks/paccache.hook">[Trigger]
+Type = Package
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = *
+
+[Action]
+Description = Limpando o cache de pacotes (mantém as 2 últimas versões)...
+When = PostTransaction
+Depends = pacman-contrib
+Exec = /usr/bin/paccache -rk2</pre>
+
+<p>O <code>-r</code> remove e o <code>-k2</code> mantém as duas versões mais recentes de cada pacote (para você poder <a href="downgrade.html">voltar uma versão</a>). Teste antes com <code>-d</code> (<em>dry run</em>, "ensaio": só mostra o que apagaria):</p>
+
+<pre class="term">$ paccache -dk2
+==&gt; no candidate packages found for pruning
+$ echo $?
+0</pre>
+
+<p>Na VM, cada pacote tinha uma única versão no cache, então não havia nada para apagar. Hook ou timer? O timer (<code>sudo systemctl enable --now paccache.timer</code>, veja <a href="timers.html">Timers</a>) roda uma vez por semana e não deixa as atualizações mais lentas; o hook mantém o cache sempre enxuto. Os dois juntos não fazem sentido.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Algo que depende do que mudou na transação (kernel novo, pacote X atualizado)</td><td>Hook <code>PostTransaction</code></td></tr>
+<tr><td>Impedir uma transação perigosa (ex.: sem espaço em <code>/boot</code>)</td><td>Hook <code>PreTransaction</code> com <code>AbortOnFail</code></td></tr>
+<tr><td>Algo periódico, que não depende de instalar nada</td><td>Um <a href="timers.html">timer do systemd</a></td></tr>
+<tr><td>Algo que só um pacote seu precisa ao ser instalado</td><td>O script <code>.install</code> do PKGBUILD (veja <a href="aur-seguranca.html">AUR com Segurança</a>)</td></tr>
+<tr><td>Desligar um hook de pacote</td><td>Um link com o mesmo nome para <code>/dev/null</code> em <code>/etc/pacman.d/hooks/</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O hook não roda</strong>
+<p><strong>Causas comuns:</strong> o arquivo não termina em <code>.hook</code>; está em outra pasta; o <code>Target</code> de um <code>Type = Path</code> começa com <code>/</code> (tem que ser <code>usr/…</code>); o <code>Operation</code> não cobre o caso (só <code>Upgrade</code>, e você instalou pela primeira vez); o pacote de <code>Depends</code> não está instalado.</p>
+<p><strong>Como confirmar:</strong> <code>ls /etc/pacman.d/hooks/</code>, <code>pacman-conf HookDir</code>, e releia o <code>[Trigger]</code> contra o que a transação fez.</p>
+</div>
+
+<div class="cenario">
+<strong>O comando do hook falha</strong>
+<p><strong>O que acontece:</strong> o pacman mostra a saída de erro do comando e segue (num <code>PostTransaction</code>, os pacotes já foram instalados). Só um <code>PreTransaction</code> com <code>AbortOnFail</code> cancela a transação.</p>
+<p><strong>Como resolver:</strong> rode a linha do <code>Exec</code> no terminal, como root, e corrija. Lembre: caminho absoluto (<code>/usr/bin/…</code>) e nada de <code>|</code>, <code>&amp;&amp;</code>, <code>||</code> fora de um <code>bash -c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A atualização ficou lenta</strong>
+<p><strong>O que aconteceu:</strong> um hook com <code>Target = *</code> roda em toda transação. Se o comando é pesado, você sente a cada <code>pacman -S</code>.</p>
+<p><strong>Como resolver:</strong> restrinja o <code>Target</code> (pacotes ou caminhos específicos) ou troque o hook por um timer.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Descrição</th></tr>
+<tr><td><code>/usr/share/libalpm/hooks/</code></td><td>Hooks dos pacotes</td></tr>
+<tr><td><code>/etc/pacman.d/hooks/</code></td><td>Seus hooks (mesmo nome = substitui)</td></tr>
+<tr><td><code>[Trigger]</code>: <code>Type</code>, <code>Operation</code>, <code>Target</code></td><td>Quando o hook acorda</td></tr>
+<tr><td><code>[Action]</code>: <code>Description</code>, <code>When</code>, <code>Exec</code></td><td>O que ele faz (obrigatórias: <code>When</code> e <code>Exec</code>)</td></tr>
+<tr><td><code>Depends</code>, <code>NeedsTargets</code>, <code>AbortOnFail</code></td><td>Opções do <code>[Action]</code></td></tr>
+<tr><td><code>pacman-conf HookDir</code></td><td>Mostra a pasta dos seus hooks</td></tr>
+<tr><td><code>man 5 alpm-hooks</code></td><td>O manual do formato</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Depois de tudo</h3>
+<p>Complete a linha para o hook rodar no fim da transação:</p>
+<div class="ex-code">When = <input data-answer="PostTransaction" aria-label="momento"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A sua pasta</h3>
+<p>Onde ficam os hooks que você escreve?</p>
+<div class="ex-code"><input data-answer="/etc/pacman.d/hooks|/etc/pacman.d/hooks/" aria-label="pasta"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Caminho no gatilho</h3>
+<p>Complete o <code>Target</code> para vigiar os arquivos de serviço do systemd:</p>
+<div class="ex-code">Target = <input data-answer="usr/lib/systemd/system/*" aria-label="alvo"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>Exec = /usr/bin/pacman -Qdt || echo nada</code> não funciona como esperado?</p>
+<label><input type="radio" name="q4"> Porque o pacman não pode rodar dentro de um hook.</label>
+<label><input type="radio" name="q4"> Porque o <code>Exec</code> não passa por um shell; o <code>||</code> precisa de <code>/usr/bin/bash -c "…"</code>.</label>
+<label><input type="radio" name="q4"> Porque falta <code>sudo</code>.</label>
+<label><input type="radio" name="q4"> Porque <code>echo</code> não existe.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O pacman roda o <code>grub-mkconfig</code> sozinho quando você instala um kernel novo?</p>
+<label><input type="radio" name="q5"> Sim, sempre.</label>
+<label><input type="radio" name="q5"> Sim, o mkinitcpio faz isso.</label>
+<label><input type="radio" name="q5"> Não, a não ser que você crie um hook para isso.</label>
+<label><input type="radio" name="q5"> Só no linux-lts.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Hooks são tarefas do pacman ligadas a pacotes ou caminhos que mudaram numa transação.</li>
+  <li>Os dos pacotes ficam em <code>/usr/share/libalpm/hooks/</code>; os seus, em <code>/etc/pacman.d/hooks/</code>.</li>
+  <li><code>[Trigger]</code> (<code>Type</code>, <code>Operation</code>, <code>Target</code> sem <code>/</code>) e <code>[Action]</code> (<code>When</code>, <code>Exec</code> com caminho absoluto e sem shell).</li>
+  <li><code>PreTransaction</code> roda antes de mexer nos arquivos; <code>PostTransaction</code>, depois.</li>
+  <li>Teste o <code>Exec</code> no terminal antes de instalar o hook.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a seção <a href="https://wiki.archlinux.org/title/Pacman#Hooks">pacman § Hooks</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)#Hooks">pacman (Português) § Hooks</a>) resume o formato, e o manual completo é o <code>alpm-hooks(5)</code> (<code>man 5 alpm-hooks</code>, também em <a href="https://man.archlinux.org/man/alpm-hooks.5">man.archlinux.org</a>). Exemplos prontos aparecem em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">Pacman/Tips and tricks</a> (como limpar o cache) e em <a href="https://wiki.archlinux.org/title/GRUB">GRUB</a>; o mecanismo do initramfs está em <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
