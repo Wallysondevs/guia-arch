@@ -196,18 +196,20 @@ drwxr-xr-x 4 root     root     4096 16 out 13:39 ..
 <p>Repare que o shell do <code>teste-a6</code> é <code>/usr/bin/bash</code>, e o da ana, <code>/bin/bash</code>. No Arch, <code>/bin</code> é um link para <code>/usr/bin</code>: é o mesmo programa. O padrão vem de <code>/etc/default/useradd</code>, que só o root lê:</p>
 
 <pre class="term">$ sudo useradd -D
-GROUP=1000
+GROUP=982
 GROUPS=
 HOME=/home
 INACTIVE=-1
 EXPIRE=
-SHELL=/usr/bin/bash
-SKEL=/etc/skel
+SHELL=/usr/bin/bash               « o shell padrão
+SKEL=/etc/skel                    « de onde vêm os arquivos iniciais
 USRSKEL=/usr/etc/skel
-CREATE_MAIL_SPOOL=yes
+CREATE_MAIL_SPOOL=no              « não cria caixa de correio (lembre disso no userdel)
 BTRFS_SUBVOLUME_HOME=no
 BTRFS_SUBVOLUME_SYSTEM=no
 LOG_INIT=yes</pre>
+
+<p>Sem <code>sudo</code>, o <code>useradd -D</code> não consegue ler o arquivo (ele é <code>rw-------</code>) e mostra os padrões de fábrica do programa (<code>SHELL=/bin/bash</code>, <code>CREATE_MAIL_SPOOL=yes</code>), que <strong>não</strong> são os que o Arch usa. O <code>GROUP=982</code> (o grupo <code>users</code>) só valeria com <code>USERGROUPS_ENAB no</code>; no Arch, cada usuário ganha o próprio grupo.</p>
 
 <h3>Definir a senha: passwd</h3>
 <p>Um usuário criado não tem senha (o <code>!</code>): ninguém consegue entrar como ele. O <code>passwd</code> define:</p>
@@ -241,8 +243,9 @@ Número de dias de avisos antes da expiração da senha	: -1</pre>
 <p><code>su - nome</code> (<em>substitute user</em>) abre um shell como outro usuário, pedindo a senha <strong>dele</strong>. O <code>-</code> faz um login completo (vai para a pasta dele, lê o <code>.bash_profile</code>):</p>
 
 <pre class="term">$ su - teste-a6
-Senha:
-$ whoami
+Senha: </pre>
+
+<pre class="term" data-user="teste-a6">$ whoami
 teste-a6
 $ pwd
 /home/teste-a6
@@ -414,7 +417,7 @@ $ echo $?
 <pre class="term">Info: The account is locked due to 3 failed logins.
 Info: (3 minutes left to unlock)
 Password: </pre>
-<p><strong>O que aconteceu:</strong> o Arch usa o <code>pam_faillock</code>: 3 senhas erradas seguidas travam a conta por 10 minutos (mesmo a senha certa é recusada nesse tempo).</p>
+<p><strong>O que aconteceu:</strong> o Arch liga o <code>pam_faillock</code> por padrão: 3 senhas erradas em 15 minutos travam a conta por 10 minutos (mesmo a senha certa é recusada nesse tempo). Vale para senha (login, <code>sudo</code>, polkit); entrar por SSH com chave continua funcionando, e o root não é travado.</p>
 <p><strong>Como confirmar:</strong> <code>sudo faillock --user ana</code> lista as tentativas (hora, origem como <code>sudo</code> ou <code>/dev/pts/0</code>).</p>
 <p><strong>Como resolver:</strong> espere o tempo indicado, ou, como root, <code>faillock --user ana --reset</code>. Os limites ficam em <code>/etc/security/faillock.conf</code>.</p>
 </div>
