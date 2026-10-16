@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch PKGBUILD — escrever um pacote do zero | Guia Arch</title>
+<meta name="description" content="Escreva um PKGBUILD do zero para um script Bash: variáveis (pkgname, pkgver, pkgrel, arch, depends, source, sha256sums), funções prepare, build, check e package, $srcdir e $pkgdir, updpkgsums, .SRCINFO, namcap e o teste com pacman -U, tudo com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Escrever um <span class="hl">PKGBUILD</span></h1>
+
+<p class="intro">Até aqui você <strong>leu</strong> receitas dos outros. Agora vai escrever a sua. Um <strong>PKGBUILD</strong> é um script Bash com algumas variáveis (o que é o pacote) e algumas funções (como montá-lo). Com ele, qualquer programa (até um script seu de dez linhas) vira um pacote que o pacman instala, lista, atualiza e remove direitinho, sem arquivos esquecidos pelo sistema.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As variáveis de um PKGBUILD: <code>pkgname pkgver pkgrel pkgdesc arch url license depends makedepends source sha256sums</code>.</li>
+  <li>As funções <code>prepare</code>, <code>build</code>, <code>check</code> e <code>package</code>, e as pastas <code>$srcdir</code> e <code>$pkgdir</code>.</li>
+  <li>Gerar as somas com <code>updpkgsums</code> e o <code>.SRCINFO</code> com <code>makepkg --printsrcinfo</code>.</li>
+  <li>Conferir com <code>namcap</code> e testar a instalação com <code>pacman -U</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Por que empacotar, se dá para copiar?</h2>
+
+<p>Você poderia copiar um script para <code>/usr/local/bin</code> e pronto. O problema aparece depois: em outra máquina você não lembra o que copiou; para remover, não sabe quais arquivos eram dele; e o pacman, que cuida de todo o resto do sistema, não sabe que aquilo existe. Um pacote resolve tudo isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Copiar à mão</th><th>Pacote</th></tr>
+<tr><td>Saber o que está instalado</td><td>Só lembrando</td><td><code>pacman -Q ola</code>, <code>pacman -Ql ola</code></td></tr>
+<tr><td>De quem é um arquivo</td><td>?</td><td><code>pacman -Qo /usr/bin/ola</code></td></tr>
+<tr><td>Remover</td><td>Caçar os arquivos</td><td><code>sudo pacman -R ola</code></td></tr>
+<tr><td>Dependências</td><td>Você instala e esquece por quê</td><td>Declaradas e instaladas junto</td></tr>
+<tr><td>Instalar em outro PC</td><td>Repetir tudo</td><td><code>sudo pacman -U ola-1.0-1-any.pkg.tar.zst</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O programa: ola</h2>
+
+<p>Vamos empacotar um script pequeno, <code>ola</code>, que cumprimenta alguém. O arquivo se chama <code>ola.in</code> porque ainda não está pronto: a versão está escrita como <code>@VERSAO@</code> e o PKGBUILD vai trocar pelo número certo (o <code>.in</code> é uma convenção para "arquivo de entrada, a ser processado").</p>
+
+<pre class="file" data-file="ola.in">#!/usr/bin/env bash
+# ola — diz olá no terminal (exemplo do Guia Arch)
+versao=@VERSAO@
+
+case ${1-} in
+  -h|--help)
+    echo "Uso: ola [NOME]"
+    echo "Diz olá para NOME (sem NOME, para você)."
+    exit 0 ;;
+  -V|--version)
+    echo "ola $versao"
+    exit 0 ;;
+esac
+
+echo "Olá, ${1:-$USER}!"</pre>
+
+<p>Na mesma pasta fica um arquivo <code>LICENSE</code> com o texto da licença MIT (todo pacote deve instalar a licença do programa). A pasta de trabalho deste exemplo, na VM, é <code>/tmp/a5/ola</code>; use a que quiser, por exemplo <code>~/pacotes/ola</code>.</p>
+
+<hr>
+
+<h2>O PKGBUILD completo</h2>
+
+<pre class="file" data-file="/tmp/a5/ola/PKGBUILD"># Maintainer: Ana &lt;ana@notebook&gt;
+pkgname=ola
+pkgver=1.0
+pkgrel=1
+pkgdesc="Diz olá no terminal (exemplo do Guia Arch)"
+arch=('any')
+url="https://example.com/ola"
+license=('MIT')
+depends=('bash')
+source=('ola.in' 'LICENSE')
+sha256sums=('471492c49ecd1c40ec7cdc72a76dba60e315476bbb6d2fb88f8f3e3f1ba757da'
+            '9c0aba2dd3610a99dbd3f3d14411293990385021d09ab087777faa0f68f41bb5')
+
+prepare() {
+  sed "s/@VERSAO@/$pkgver/" ola.in &gt; ola
+}
+
+check() {
+  bash -n ola
+  test "$(bash ola Teste)" = "Olá, Teste!"
+}
+
+package() {
+  install -Dm755 ola "$pkgdir/usr/bin/ola"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}</pre>
+
+<p>Vamos por partes.</p>
+
+<h3>As variáveis</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Neste exemplo</th><th>Para que serve</th></tr>
+<tr><td><code>pkgname</code></td><td><code>ola</code></td><td>Nome do pacote: minúsculas, números e <code>@ . _ + -</code>; não pode começar com <code>-</code> ou <code>.</code></td></tr>
+<tr><td><code>pkgver</code></td><td><code>1.0</code></td><td>Versão do <strong>programa</strong> (a do autor). Sem hífen.</td></tr>
+<tr><td><code>pkgrel</code></td><td><code>1</code></td><td>Versão da <strong>receita</strong>. Volta a <code>1</code> quando o <code>pkgver</code> muda; sobe (<code>2</code>, <code>3</code>…) quando só a receita mudou.</td></tr>
+<tr><td><code>pkgdesc</code></td><td><code>"Diz olá…"</code></td><td>Descrição curta, uma linha. Não repita o nome do pacote nela (o namcap reclama).</td></tr>
+<tr><td><code>arch</code></td><td><code>('any')</code></td><td><code>any</code> para scripts e dados; <code>('x86_64')</code> para programas compilados.</td></tr>
+<tr><td><code>url</code></td><td>…</td><td>Site do programa.</td></tr>
+<tr><td><code>license</code></td><td><code>('MIT')</code></td><td>Licença, com o nome padrão <a href="https://spdx.org/licenses/">SPDX</a> (<code>MIT</code>, <code>GPL-3.0-or-later</code>, <code>Apache-2.0</code>…).</td></tr>
+<tr><td><code>depends</code></td><td><code>('bash')</code></td><td>O que precisa estar instalado para o programa <strong>rodar</strong>.</td></tr>
+<tr><td><code>makedepends</code></td><td><em>(não tem)</em></td><td>O que só é preciso para <strong>compilar</strong> (ex.: <code>('cargo')</code> no <code>paru</code>, <code>('go')</code> no <code>yay</code>). Não precisa listar o que vem no <code>base-devel</code>.</td></tr>
+<tr><td><code>optdepends</code></td><td><em>(não tem)</em></td><td>Opcionais, no formato <code>'pacote: para que serve'</code>.</td></tr>
+<tr><td><code>source</code></td><td><code>('ola.in' 'LICENSE')</code></td><td>Os arquivos de entrada. Nomes simples = arquivos ao lado do PKGBUILD; endereços <code>https://…</code> são baixados; <code>git+https://…</code> clona.</td></tr>
+<tr><td><code>sha256sums</code></td><td>Duas somas</td><td>Uma por item de <code>source</code>, <strong>na mesma ordem</strong>.</td></tr>
+</table>
+</div>
+
+<p>Outras que você vai encontrar em receitas maiores: <code>provides</code> e <code>conflicts</code> (como no <code>yay-bin</code>, que "fornece" <code>yay</code>), <code>backup</code> (arquivos de configuração que o pacman preserva e transforma em <code>.pacnew</code>, veja <a href="pacnew.html">.pacnew e .pacsave</a>), <code>install</code> (o script <code>.install</code>), <code>validpgpkeys</code> (veja <a href="makepkg.html">makepkg</a>) e <code>epoch</code> (força uma versão a ser considerada mais nova, quando o autor muda o esquema de numeração).</p>
+
+<h3>As funções e as pastas</h3>
+
+<p>O makepkg chama as funções nesta ordem, cada uma dentro da pasta <code>$srcdir</code> (a <code>src/</code>, onde os arquivos de <code>source</code> foram colocados):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Para quê</th><th>No ola</th></tr>
+<tr><td><code>prepare()</code></td><td>Ajustar o código antes de compilar: aplicar patches, trocar textos</td><td>Troca <code>@VERSAO@</code> por <code>1.0</code> e grava o resultado em <code>ola</code></td></tr>
+<tr><td><code>build()</code></td><td>Compilar (<code>./configure</code>, <code>make</code>, <code>cargo build</code>…)</td><td>Não tem: um script não se compila</td></tr>
+<tr><td><code>check()</code></td><td>Rodar os testes. Se falhar, o pacote não é criado</td><td>Confere a sintaxe (<code>bash -n</code>) e a saída</td></tr>
+<tr><td><code>package()</code></td><td><strong>Obrigatória.</strong> Copiar os arquivos para <code>$pkgdir</code>, que imita a raiz <code>/</code> do sistema</td><td>Instala em <code>$pkgdir/usr/bin/ola</code> e a licença</td></tr>
+</table>
+</div>
+
+<p>Para um programa que se compila, o <code>build()</code> é onde o trabalho acontece. Um exemplo real, da receita do <code>ncurses5-compat-libs</code> no AUR (encurtado):</p>
+
+<pre class="file" data-file="trecho real: build() e package() do ncurses5-compat-libs">build() {
+  cd "${srcdir}/${_pkgname}-${pkgver}"
+  ./configure "${configure_options[@]}" --enable-widec
+  make
+}
+
+package() {
+  cd "${srcdir}/${_pkgname}-${pkgver}"
+  make DESTDIR="$pkgdir" install.libs        # "instale, mas dentro de $pkgdir"
+  install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}</pre>
+
+<dl class="anatomy">
+  <dt>install</dt><dd>Copia um arquivo já com a permissão certa (o comando <code>install</code> do coreutils, não o <code>pacman</code>).</dd>
+  <dt>-D</dt><dd>Cria as pastas do caminho de destino que não existirem.</dd>
+  <dt>-m755</dt><dd>Permissão do arquivo: <code>755</code> para programas (todos executam), <code>644</code> para dados e textos.</dd>
+  <dt>"$pkgdir/usr/bin/ola"</dt><dd>O destino <strong>dentro do pacote</strong>. Esquecer o <code>$pkgdir</code> é o erro clássico: o comando tentaria escrever no <code>/usr/bin</code> de verdade (e falharia, porque você não é root).</dd>
+</dl>
+
+<div class="warning">
+<strong>Onde os arquivos devem ir</strong>
+<p>Pacotes instalam em <code>/usr</code> (<code>/usr/bin</code>, <code>/usr/share/…</code>, <code>/usr/lib</code>), e configuração em <code>/etc</code>. Nunca em <code>/usr/local</code> (é seu, para coisas fora do pacman), <code>/home</code>, <code>/opt</code> sem motivo, ou <code>/bin</code> e <code>/sbin</code> (no Arch são atalhos para <code>/usr/bin</code>).</p>
+</div>
+
+<h3>Um PKGBUILD é só Bash</h3>
+
+<p>O makepkg "carrega" o PKGBUILD com o Bash. Teste: o script abaixo tem as mesmas variáveis e monta o nome do arquivo que o makepkg vai criar.</p>
+
+<div class="tryscript" data-file="pkgbuild-teste.sh" data-goal="out:ola-1.0-2-any.pkg.tar.zst">
+<p class="try-task"><strong>Missão:</strong> você corrigiu só a receita, sem mudar o programa. Mude o que for preciso para o pacote novo se chamar <code>ola-1.0-2-any.pkg.tar.zst</code> e clique em Rodar.</p>
+<pre class="script">#!/usr/bin/env bash
+# as variáveis de um PKGBUILD são variáveis comuns do Bash
+pkgname=ola
+pkgver=1.0
+pkgrel=1
+arch=('any')
+
+echo "Pacote: $pkgname-$pkgver-$pkgrel-${arch[0]}.pkg.tar.zst"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+# as variáveis de um PKGBUILD são variáveis comuns do Bash
+pkgname=ola
+pkgver=1.0
+pkgrel=2
+arch=('any')
+
+echo "Pacote: $pkgname-$pkgver-$pkgrel-${arch[0]}.pkg.tar.zst"
+</pre>
+</div>
+
+<hr>
+
+<h2>As somas: updpkgsums</h2>
+
+<p>Ninguém calcula somas à mão. Comece com <code>sha256sums=()</code> vazio. O makepkg se recusa a continuar:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ makepkg
+==&gt; Criando o pacote: ola 1.0-1 (sex 16 out 2026 13:30:03)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Verificando as dependências de tempo de compilação...
+==&gt; Obtendo fontes...
+  -&gt; Encontrado ola.in
+  -&gt; Encontrado LICENSE
+==&gt; ERRO: Verificações de integridade faltando para: source
+$ echo $?
+1</pre>
+
+<p>O <code>updpkgsums</code> (do pacote <code>pacman-contrib</code>) calcula as somas e <strong>reescreve a linha no PKGBUILD</strong>:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ updpkgsums
+==&gt; Obtendo fontes...
+  -&gt; Encontrado ola.in
+  -&gt; Encontrado LICENSE
+==&gt; Gerando somas de verificação para os arquivos fonte...
+$ grep -A1 sha256sums PKGBUILD
+sha256sums=('471492c49ecd1c40ec7cdc72a76dba60e315476bbb6d2fb88f8f3e3f1ba757da'
+            '9c0aba2dd3610a99dbd3f3d14411293990385021d09ab087777faa0f68f41bb5')</pre>
+
+<p>Rode o <code>updpkgsums</code> de novo sempre que mudar um arquivo de <code>source</code> ou a versão. Se esquecer, o makepkg avisa:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ echo "# comentário novo" &gt;&gt; ola.in
+$ makepkg -f
+…
+==&gt; Validando source arquivos com sha256sums...
+    ola.in ... FALHOU                « o arquivo mudou, a soma não
+    LICENSE ... Passou
+==&gt; ERRO: Um ou mais arquivos não passaram na verificação de validade!
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>Gerar o pacote</h2>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ makepkg
+==&gt; Criando o pacote: ola 1.0-1 (sex 16 out 2026 13:30:06)
+==&gt; Verificando as dependências de tempo de execução...
+==&gt; Verificando as dependências de tempo de compilação...
+==&gt; Obtendo fontes...
+  -&gt; Encontrado ola.in
+  -&gt; Encontrado LICENSE
+==&gt; Validando source arquivos com sha256sums...
+    ola.in ... Passou
+    LICENSE ... Passou
+==&gt; Extraindo fontes...
+==&gt; Iniciando prepare()...          « a troca do @VERSAO@
+==&gt; Iniciando check()...            « os testes passaram (senão, parava aqui)
+==&gt; Entrando no ambiente de fakeroot...
+==&gt; Iniciando package()...
+==&gt; Organizando a instalação...
+  -&gt; Removendo arquivos libtool...
+  -&gt; Removendo arquivos de biblioteca estática...
+  -&gt; Expurgando arquivos indesejados...
+  -&gt; Removendo símbolos desnecessários dos executáveis e bibliotecas...
+  -&gt; Comprimindo páginas de man e info...
+==&gt; Verificando problemas de empacotamento...
+==&gt; Criando o pacote "ola"...
+  -&gt; Gerando o arquivo .PKGINFO...
+  -&gt; Gerando o arquivo .BUILDINFO...
+  -&gt; Gerando o arquivo .MTREE ...
+  -&gt; Compactando o pacote...
+==&gt; Saindo do ambiente de fakeroot.
+==&gt; Compilação concluída: ola 1.0-1 (sex 16 out 2026 13:30:10)
+$ echo $?
+0
+$ ls
+LICENSE  ola-1.0-1-any.pkg.tar.zst  ola.in  pkg  PKGBUILD  src</pre>
+
+<h3>Por dentro: src/ e pkg/</h3>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ ls -l src
+total 4
+lrwxrwxrwx 1 ana ana  19 16 out 13:30 LICENSE -&gt; /tmp/a5/ola/LICENSE     « arquivos locais viram atalhos
+-rw-r--r-- 1 ana ana 293 16 out 13:30 ola                                  « criado pelo prepare()
+lrwxrwxrwx 1 ana ana  18 16 out 13:30 ola.in -&gt; /tmp/a5/ola/ola.in
+$ tree pkg
+pkg
+├── ola
+│   └── usr
+│       ├── bin
+│       │   └── ola
+│       └── share
+│           └── licenses
+│               └── ola
+│                   └── LICENSE
+└── ola-debug
+    └── usr
+        ├── lib
+        │   └── debug
+        └── src
+            └── debug
+                └── ola
+
+14 directories, 2 files</pre>
+
+<p><code>pkg/ola/</code> é o <code>$pkgdir</code>: exatamente o que vai para o sistema, a partir da raiz. A <code>pkg/ola-debug/</code> é a tentativa do pacote de depuração (a opção <code>debug</code> do <code>makepkg.conf</code>); como não há nada compilado, ficou vazia e nenhum <code>ola-debug</code> foi criado. Dá para testar o programa direto da pasta:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ pkg/ola/usr/bin/ola --version
+ola 1.0                   « o prepare() funcionou
+$ pkg/ola/usr/bin/ola
+Olá, ana!
+$ pkg/ola/usr/bin/ola --help
+Uso: ola [NOME]
+Diz olá para NOME (sem NOME, para você).</pre>
+
+<h3>O pacote pronto</h3>
+
+<p>O pacman lê um arquivo de pacote sem instalar, com o <code>p</code> (<em>package file</em>):</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ pacman -Qlp ola-1.0-1-any.pkg.tar.zst
+ola /usr/
+ola /usr/bin/
+ola /usr/bin/ola
+ola /usr/share/
+ola /usr/share/licenses/
+ola /usr/share/licenses/ola/
+ola /usr/share/licenses/ola/LICENSE
+$ pacman -Qip ola-1.0-1-any.pkg.tar.zst
+Nome                 : ola
+Versão               : 1.0-1
+Descrição            : Diz olá no terminal (exemplo do Guia Arch)
+Arquitetura          : any
+URL                  : https://example.com/ola
+Licenças             : MIT
+Grupos               : Nenhum
+Provê                : Nenhum
+Depende de           : bash
+Depend. opcionais    : Nenhum
+Conflita com         : Nenhum
+Substitui            : Nenhum
+Tamanho compactado   : 5,97 KiB
+Tamanho instalado    : 1,32 KiB
+Empacotador          : Unknown Packager          « defina PACKAGER (veja abaixo)
+Data da compilação   : sex 16 out 2026 13:30:05
+Script de instalação : Não
+Validado por         : Nenhum
+Assinaturas          : Nenhum
+$ tar -tf ola-1.0-1-any.pkg.tar.zst
+.BUILDINFO           « como foi compilado (versões das ferramentas, flags)
+.MTREE               « lista de arquivos com permissões e somas
+.PKGINFO             « os dados do pacote (o que o -Qip mostrou)
+usr/
+usr/bin/
+usr/bin/ola
+usr/share/
+usr/share/licenses/
+usr/share/licenses/ola/
+usr/share/licenses/ola/LICENSE</pre>
+
+<p>O "Unknown Packager" some quando você define <code>PACKAGER</code> no seu <code>makepkg.conf</code> (veja <a href="makepkg.html">makepkg</a>). Para testar uma vez, dá para passar na linha de comando:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ PACKAGER="Ana &lt;ana@notebook&gt;" makepkg -f 2&gt;&amp;1 | tail -2
+==&gt; Saindo do ambiente de fakeroot.
+==&gt; Compilação concluída: ola 1.0-1 (sex 16 out 2026 13:30:40)
+$ pacman -Qip ola-1.0-1-any.pkg.tar.zst | grep Empacotador
+Empacotador          : Ana &lt;ana@notebook&gt;</pre>
+
+<hr>
+
+<h2>Conferir: namcap</h2>
+
+<p>O <a href="aur-seguranca.html">namcap</a> confere a receita e o pacote. Para o <code>ola</code>, nenhuma reclamação (silêncio = tudo certo):</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ namcap PKGBUILD
+$ namcap ola-1.0-1-any.pkg.tar.zst
+$ echo $?
+0</pre>
+
+<p>Os avisos mais comuns ao escrever as primeiras receitas: <code>Missing Maintainer tag</code> (falta o comentário <code># Maintainer:</code>), <code>Description should not contain the package name</code>, licença fora do padrão SPDX, e <code>Dependency included, but may not be needed</code> (que em scripts muitas vezes é um falso alarme). O <a href="projeto-pacote.html">projeto de empacotamento</a> mostra alguns deles acontecendo de verdade.</p>
+
+<hr>
+
+<h2>O .SRCINFO</h2>
+
+<p>O <code>.SRCINFO</code> é o PKGBUILD "traduzido" para texto simples, para que programas (o site do AUR, o yay) leiam os dados sem executar Bash. Ele é gerado, nunca escrito à mão:</p>
+
+<pre class="term" data-cwd="/tmp/a5/ola">$ makepkg --printsrcinfo &gt; .SRCINFO
+$ cat .SRCINFO
+pkgbase = ola
+	pkgdesc = Diz olá no terminal (exemplo do Guia Arch)
+	pkgver = 1.0
+	pkgrel = 1
+	url = https://example.com/ola
+	arch = any
+	license = MIT
+	depends = bash
+	source = ola.in
+	source = LICENSE
+	sha256sums = 471492c49ecd1c40ec7cdc72a76dba60e315476bbb6d2fb88f8f3e3f1ba757da
+	sha256sums = 9c0aba2dd3610a99dbd3f3d14411293990385021d09ab087777faa0f68f41bb5
+
+pkgname = ola</pre>
+
+<p>Só é obrigatório para publicar no AUR (o servidor recusa um envio sem ele, ou com ele desatualizado). Regere sempre que mudar o PKGBUILD.</p>
+
+<hr>
+
+<h2>Testar a instalação</h2>
+
+<p>Instale com <code>pacman -U</code>. Na VM do guia, a instalação foi só mostrada (o pacman respondeu "n" no fim):</p>
+
+<pre class="term" data-user="root">#> pacman -U /tmp/a5/ola/ola-1.0-1-any.pkg.tar.zst
+carregando pacotes...
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) ola-1.0-1
+
+Tamanho total instalado:  0,00 MiB        « 1,32 KiB arredondado
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>Depois de instalar, tudo o que você aprendeu em <a href="pacman.html">pacman</a> vale para ele: <code>pacman -Qi ola</code>, <code>pacman -Qo /usr/bin/ola</code>, <code>sudo pacman -R ola</code>. E ele aparece em <code>pacman -Qm</code>, porque não veio de um repositório (a não ser que você crie o seu, veja <a href="repositorio-local.html">Seu Próprio Repositório</a>).</p>
+
+<h3>Uma versão nova</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que mudou</th><th>pkgver</th><th>pkgrel</th></tr>
+<tr><td>O programa (nova versão do autor)</td><td>Sobe (<code>1.0</code> → <code>1.1</code>)</td><td>Volta a <code>1</code></td></tr>
+<tr><td>Só a receita (dependência corrigida, caminho errado)</td><td>Igual</td><td>Sobe (<code>1</code> → <code>2</code>)</td></tr>
+<tr><td>Nada, mas você quer recompilar</td><td>Igual</td><td>Igual (<code>makepkg -f</code>)</td></tr>
+</table>
+</div>
+
+<p>Depois de mudar: <code>updpkgsums</code>, <code>makepkg</code>, <code>namcap</code>, <code>makepkg --printsrcinfo &gt; .SRCINFO</code>. O pacman só considera "atualização" um pacote com <code>pkgver-pkgrel</code> maior que o instalado.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Verificações de integridade faltando para: source"</strong>
+<p><strong>O que aconteceu:</strong> não há somas no PKGBUILD (ou há menos somas que arquivos).</p>
+<p><strong>Como resolver:</strong> <code>updpkgsums</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"ola.in ... FALHOU"</strong>
+<p><strong>O que aconteceu:</strong> você mudou um arquivo de <code>source</code> depois de calcular as somas.</p>
+<p><strong>Como resolver:</strong> <code>updpkgsums</code> e <code>makepkg -f</code>. (Num pacote de outra pessoa, é o contrário: não atualize a soma sem saber por que o arquivo mudou.)</p>
+</div>
+
+<div class="cenario">
+<strong>"Uma falha ocorreu em check()"</strong>
+<p><strong>O que aconteceu:</strong> um comando do <code>check()</code> terminou com erro. O makepkg roda as funções com <code>set -e</code>: o primeiro comando que falhar para tudo.</p>
+<p><strong>Como resolver:</strong> leia a saída logo acima da mensagem; é a do teste que falhou. Um caso real está no <a href="projeto-pacote.html">projeto de empacotamento</a>. Para gerar o pacote sem os testes (só para investigar), <code>makepkg --nocheck</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"install: não foi possível criar arquivo comum '/usr/bin/ola': Permissão negada"</strong>
+<p><strong>O que aconteceu:</strong> faltou o <code>$pkgdir</code> no destino do <code>install</code>, e o comando tentou escrever no sistema de verdade.</p>
+<p><strong>Como resolver:</strong> todo destino em <code>package()</code> começa com <code>"$pkgdir"</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>updpkgsums</code></td><td>Calcula e grava as somas no PKGBUILD</td></tr>
+<tr><td><code>makepkg</code> / <code>makepkg -f</code></td><td>Gera / regera o pacote</td></tr>
+<tr><td><code>makepkg --nocheck</code></td><td>Pula o <code>check()</code></td></tr>
+<tr><td><code>makepkg --printsrcinfo &gt; .SRCINFO</code></td><td>Gera o <code>.SRCINFO</code></td></tr>
+<tr><td><code>namcap PKGBUILD</code> / <code>namcap *.pkg.tar.zst</code></td><td>Confere receita / pacote</td></tr>
+<tr><td><code>pacman -Qip arquivo</code> / <code>-Qlp</code></td><td>Informações / arquivos de um pacote sem instalar</td></tr>
+<tr><td><code>sudo pacman -U arquivo</code></td><td>Instala o pacote</td></tr>
+<tr><td><code>install -Dm755 origem "$pkgdir/destino"</code></td><td>Copia para dentro do pacote com permissão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A pasta do pacote</h3>
+<p>Complete o destino correto para instalar o programa em <code>/usr/bin</code>:</p>
+<div class="ex-code">install -Dm755 ola "<input data-answer="$pkgdir|${pkgdir}" aria-label="variável">/usr/bin/ola"</div>
+</div>
+
+<div class="exercise">
+<h3>2. As somas</h3>
+<p>Qual comando calcula as somas e as grava no PKGBUILD?</p>
+<div class="ex-code"><input data-answer="updpkgsums" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>3. O .SRCINFO</h3>
+<p>Complete:</p>
+<div class="ex-code">makepkg <input data-answer="--printsrcinfo" aria-label="opção"> &gt; .SRCINFO</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O autor lançou a versão 1.1 do programa. Como ficam <code>pkgver</code> e <code>pkgrel</code>?</p>
+<label><input type="radio" name="q4"> <code>pkgver=1.0</code>, <code>pkgrel=2</code></label>
+<label><input type="radio" name="q4"> <code>pkgver=1.1</code>, <code>pkgrel=1</code></label>
+<label><input type="radio" name="q4"> <code>pkgver=1.1</code>, <code>pkgrel=2</code></label>
+<label><input type="radio" name="q4"> <code>pkgver=1.0-1.1</code>, <code>pkgrel=1</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual função é obrigatória em todo PKGBUILD?</p>
+<label><input type="radio" name="q5"> <code>prepare()</code></label>
+<label><input type="radio" name="q5"> <code>build()</code></label>
+<label><input type="radio" name="q5"> <code>check()</code></label>
+<label><input type="radio" name="q5"> <code>package()</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>PKGBUILD = variáveis (o que é) + funções (como montar), em Bash.</li>
+  <li><code>pkgver</code> é do programa; <code>pkgrel</code> é da receita.</li>
+  <li><code>prepare</code> → <code>build</code> → <code>check</code> → <code>package</code>; só <code>package()</code> é obrigatória.</li>
+  <li><code>$srcdir</code> = onde estão as fontes; <code>$pkgdir</code> = a raiz falsa que vira o pacote.</li>
+  <li><code>updpkgsums</code>, <code>makepkg</code>, <code>namcap</code>, <code>makepkg --printsrcinfo &gt; .SRCINFO</code>, <code>pacman -U</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a referência de cada variável e função está em <a href="https://wiki.archlinux.org/title/PKGBUILD">PKGBUILD</a> (em português: <a href="https://wiki.archlinux.org/title/PKGBUILD_(Portugu%C3%AAs)">PKGBUILD (Português)</a>). O passo a passo para criar pacotes está em <a href="https://wiki.archlinux.org/title/Creating_packages">Creating packages</a>, e as regras que os pacotes do Arch seguem (nomes, pastas, licenças), em <a href="https://wiki.archlinux.org/title/Arch_package_guidelines">Arch package guidelines</a>, com páginas específicas por linguagem (<a href="https://wiki.archlinux.org/title/Python_package_guidelines">Python</a>, <a href="https://wiki.archlinux.org/title/Rust_package_guidelines">Rust</a>, <a href="https://wiki.archlinux.org/title/Go_package_guidelines">Go</a>…). O formato do <code>.SRCINFO</code> tem a página <a href="https://wiki.archlinux.org/title/.SRCINFO">.SRCINFO</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
