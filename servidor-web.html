@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch nginx — servidor web no Arch Linux | Guia Arch</title>
+<meta name="description" content="Monte um servidor web com nginx no Arch Linux: o nginx.conf do Arch (sem sites-enabled), systemctl start, curl -I, sua página em /usr/share/nginx/html, server blocks, nginx -t, logs, HTTPS com certbot e firewall.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Servidor Web (nginx)</span></h1>
+
+<p class="intro">Um <strong>servidor web</strong> é um programa que fica esperando pedidos na rede e responde com páginas, imagens ou dados. O <code>nginx</code> (pronuncia-se "engine-x") é um dos mais usados no mundo: leve, rápido e configurado por um arquivo de texto. No Arch ele vem "cru", do jeito que o projeto nginx o distribui: sem as pastas e atalhos que o Debian e o Ubuntu acrescentam.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que acontece quando o navegador pede uma página (porta, pedido, resposta, código de status).</li>
+  <li>Ligar e desligar o nginx com <code>systemctl</code> e testar com <code>curl -I</code>.</li>
+  <li>Ler o <code>/etc/nginx/nginx.conf</code> do Arch e por que ele não tem <code>sites-enabled</code>.</li>
+  <li>Publicar uma página, criar um <code>server</code> block, testar com <code>nginx -t</code> e ler os logs.</li>
+  <li>Os passos de HTTPS (certbot) e de firewall, e os erros reais mais comuns.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>Antes desta aula</strong>
+<p>Você vai usar <code>systemctl</code> (veja <a href="systemd.html">systemctl e Serviços</a>), <code>journalctl</code> (<a href="journal.html">Logs</a>) e <code>sudo</code> (<a href="sudo-usuarios.html">sudo, root e Usuários</a>). Na VM do guia o pacote <code>nginx</code> já está instalado e o serviço está <strong>parado e desabilitado</strong>: é assim que o Arch deixa todo serviço depois de instalado.</p>
+</div>
+
+<hr>
+
+<h2>Como uma página chega até você</h2>
+<p>Pense numa lanchonete. O cliente (o <strong>navegador</strong>) vai até o balcão certo (o <strong>endereço</strong> e a <strong>porta</strong>), faz um pedido ("quero a página <code>/index.html</code>") e recebe uma resposta com um número na frente: <code>200</code> (aqui está), <code>404</code> (não temos isso), <code>403</code> (não posso te dar), <code>500</code> (a cozinha pegou fogo).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th><th>No nginx do Arch</th></tr>
+<tr><td>Porta</td><td>O "balcão" onde o programa atende. HTTP usa a 80; HTTPS, a 443.</td><td><code>listen 80;</code></td></tr>
+<tr><td>Raiz (<em>document root</em>)</td><td>A pasta de onde saem os arquivos.</td><td><code>/usr/share/nginx/html</code></td></tr>
+<tr><td>Código de status</td><td>O número da resposta: 2xx deu certo, 3xx redirecionou, 4xx erro do pedido, 5xx erro do servidor.</td><td>Aparece no <code>curl -I</code> e no log</td></tr>
+<tr><td><code>server</code> block</td><td>Um "site" dentro do nginx: porta, nome e pasta.</td><td>Fica dentro de <code>http { … }</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O estado inicial: instalado e parado</h2>
+<p>No Arch, instalar um serviço <strong>não</strong> o liga. Esta é uma diferença grande para o Debian, onde o <code>apt install nginx</code> já deixa o servidor rodando. Confira:</p>
+
+<dl class="anatomy">
+  <dt>systemctl</dt><dd>O controlador de serviços do systemd.</dd>
+  <dt>status</dt><dd>Mostra o estado do serviço e as últimas linhas do log dele.</dd>
+  <dt>nginx</dt><dd>O nome da unidade (<code>nginx.service</code>; o <code>.service</code> pode ser omitido).</dd>
+</dl>
+
+<pre class="term">$ systemctl status nginx
+○ nginx.service - nginx web server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)   « disabled: não liga no boot
+     Active: inactive (dead)                                                              « parado agora
+$ echo $?
+3                                        « 3 = o serviço não está rodando</pre>
+
+<p>O círculo vazio <code>○</code> quer dizer parado. Na linha <code>Loaded</code>, o primeiro <code>disabled</code> diz que o serviço não liga no boot e o <code>preset: disabled</code> diz que essa é a política padrão do Arch para ele. O código de saída <code>3</code> é o jeito do <code>systemctl status</code> dizer "não está ativo" (útil em scripts).</p>
+
+<p>Se você tentar acessar o servidor agora, ninguém atende:</p>
+
+<pre class="term">$ curl -I http://localhost
+curl: (7) Failed to connect to localhost:80 after 0 ms: Could not connect to server
+$ echo $?
+7                                        « 7 = não conseguiu conectar</pre>
+
+<hr>
+
+<h2>Ligar o nginx</h2>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>Ligar serviços do sistema exige administrador.</dd>
+  <dt>systemctl start</dt><dd>Liga <strong>agora</strong> (não mexe no boot).</dd>
+  <dt>nginx</dt><dd>O serviço.</dd>
+</dl>
+
+<pre class="term">$ sudo systemctl start nginx
+[sudo] senha para ana:
+$ echo $?
+0
+$ systemctl status nginx
+● nginx.service - nginx web server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:21:18 -03; 19ms ago            « rodando
+ Invocation: c0fe203951eb4ba7acd13b764ee6ee8b
+    Process: 1375 ExecStart=/usr/bin/nginx (code=exited, status=0/SUCCESS)
+   Main PID: 1385 (nginx)
+      Tasks: 2 (limit: 4621)
+     Memory: 4.5M (peak: 4.6M)                                                        « bem leve
+        CPU: 49ms
+     CGroup: /system.slice/nginx.service
+             ├─1385 "nginx: master process /usr/bin/nginx"                            « o chefe (root)
+             └─1386 "nginx: worker process"                                           « quem atende
+
+out 16 13:21:18 notebook systemd[1]: Starting nginx web server...
+out 16 13:21:18 notebook nginx[1375]: 2026/10/16 13:21:18 [warn] 1375#1375: could not build optimal types_hash, you should increase either types_hash_max_size: 1024 or types_hash_bucket_size: 64; ignoring types_hash_bucket_size
+out 16 13:21:18 notebook systemd[1]: Started nginx web server.</pre>
+
+<p>Repare em três coisas:</p>
+<ul>
+  <li>O <code>start</code> não imprime nada quando dá certo (código <code>0</code>). Quem conta o resultado é o <code>status</code>.</li>
+  <li>O nginx roda como <strong>dois processos</strong>: o <em>master</em> (lê a configuração, abre a porta 80) e o <em>worker</em> (atende os pedidos). Quantos workers existem depende de <code>worker_processes</code>; o Arch deixa <code>1</code>.</li>
+  <li>A linha <code>[warn] could not build optimal types_hash</code> é um <strong>aviso</strong>, não um erro: o nginx ligou. Ele aparece no nginx do Arch com a configuração de fábrica. Mais abaixo, em "Quando não funciona", você vê como calá-lo.</li>
+</ul>
+
+<p>Quem é o dono de cada processo? E em que porta ele escuta?</p>
+
+<pre class="term">$ ps -C nginx -o user,pid,cmd
+USER         PID CMD
+root        1385 nginx: master process /usr/bin/nginx
+http        1386 nginx: worker process                    « usuário http, sem privilégios
+$ sudo ss -tlnp | grep nginx
+LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=1386,fd=4),("nginx",pid=1385,fd=4))</pre>
+
+<p>No Arch, o usuário sem privilégios dos servidores web se chama <code>http</code> (no Debian é <code>www-data</code>). O <code>0.0.0.0:80</code> quer dizer "porta 80 em todos os endereços da máquina". As letras de <code>ss -tlnp</code>: <strong>t</strong>cp, <strong>l</strong>istening (escutando), <strong>n</strong>úmeros (não traduz porta em nome), <strong>p</strong>rocesso (precisa de root para mostrar).</p>
+
+<h3>Testar com curl -I</h3>
+
+<dl class="anatomy">
+  <dt>curl</dt><dd>Um cliente web de linha de comando (<em>client URL</em>).</dd>
+  <dt>-I</dt><dd>Pede só o <strong>cabeçalho</strong> da resposta (método HEAD), sem o corpo da página.</dd>
+  <dt>http://localhost</dt><dd>A própria máquina, porta 80 (padrão do http).</dd>
+</dl>
+
+<pre class="term">$ curl -I http://localhost
+HTTP/1.1 200 OK                                   « 200 = deu certo
+Server: nginx/1.30.5                              « quem respondeu (e a versão)
+Date: Fri, 16 Oct 2026 16:21:27 GMT               « sempre em GMT (UTC)
+Content-Type: text/html                           « tipo do conteúdo
+Content-Length: 896                               « tamanho em bytes
+Last-Modified: Wed, 16 Sep 2026 08:43:41 GMT
+Connection: keep-alive
+ETag: "6aaa56bd-380"
+Accept-Ranges: bytes
+</pre>
+
+<p>Sem o <code>-I</code>, o <code>curl</code> mostra a página inteira, que é a de boas-vindas do nginx:</p>
+
+<pre class="term">$ curl http://localhost
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;
+…                                                 « (encurtado)
+&lt;h1&gt;Welcome to nginx!&lt;/h1&gt;
+&lt;p&gt;If you see this page, nginx is successfully installed and working.
+…</pre>
+
+<div class="tip">
+<strong>No navegador</strong>
+<p>Abrir <code>http://localhost</code> no Firefox da própria máquina mostra a mesma página "Welcome to nginx!". De outro computador da rede, use o IP da máquina (<code>ip a</code> mostra; veja <a href="rede.html">NetworkManager e iwd</a>), desde que o firewall deixe passar a porta 80.</p>
+</div>
+
+<div class="try" data-goal="svc:nginx=active" data-solucao="sudo systemctl start nginx">
+<p class="try-task"><strong>Missão:</strong> o nginx está parado. Ligue-o (a senha da ana é <code>ana</code>) e confira com <code>systemctl status nginx</code>.</p>
+</div>
+
+<hr>
+
+<h2>O nginx.conf do Arch</h2>
+<p>Toda a configuração mora em <strong>um arquivo</strong>: <code>/etc/nginx/nginx.conf</code>. Veja a pasta:</p>
+
+<pre class="term">$ ls -l /etc/nginx/
+total 76
+-rw-r--r-- 1 root root  1077 16 set 05:43 fastcgi.conf
+-rw-r--r-- 1 root root  1007 16 set 05:43 fastcgi_params
+-rw-r--r-- 1 root root  2837 16 set 05:43 koi-utf
+-rw-r--r-- 1 root root  2223 16 set 05:43 koi-win
+-rw-r--r-- 1 root root 38661 24 ago 01:21 mime.types       « extensão → tipo (html, png, css…)
+drwxr-xr-x 2 root root  4096 16 set 05:43 modules.d        « módulos extras (vazia)
+-rw-r--r-- 1 root root  2717 16 set 05:43 nginx.conf       « O arquivo principal
+-rw-r--r-- 1 root root   636 16 set 05:43 scgi_params
+-rw-r--r-- 1 root root   664 16 set 05:43 uwsgi_params
+-rw-r--r-- 1 root root  3611 16 set 05:43 win-utf</pre>
+
+<div class="note">
+<strong>Cadê o sites-available e o sites-enabled?</strong>
+<p>Não existem. As pastas <code>sites-available/</code>, <code>sites-enabled/</code> e o atalho <code>default</code> são uma invenção do <strong>Debian</strong> (herdada pelo Ubuntu). O Arch segue a filosofia de entregar o programa como o autor o faz (<em>vanilla</em>), então você recebe o <code>nginx.conf</code> original do projeto nginx. Se quiser o estilo Debian, você mesmo cria a pasta e uma linha <code>include</code> (veja "Um site novo: server block").</p>
+</div>
+
+<p>O arquivo é longo porque quase tudo está comentado (<code>#</code>). Tirando os comentários, sobra isto (o arquivo real da VM, com as linhas em branco removidas):</p>
+
+<pre class="file" data-file="/etc/nginx/nginx.conf">#user http;
+worker_processes  1;
+
+# Load all installed modules
+include modules.d/*.conf;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+
+    server {
+        listen       80;
+        server_name  localhost;
+
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+        }
+
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   /usr/share/nginx/html;
+        }
+    }
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>#user http;</code></td><td>Comentada, mas o nginx do Arch já foi compilado para usar o usuário <code>http</code> nos workers (o <code>ps</code> acima confirma).</td></tr>
+<tr><td><code>worker_processes 1;</code></td><td>Um processo atendente. <code>auto</code> usa um por núcleo de CPU.</td></tr>
+<tr><td><code>include modules.d/*.conf;</code></td><td>Carrega módulos instalados à parte (pacotes <code>nginx-mod-*</code>).</td></tr>
+<tr><td><code>events { worker_connections 1024; }</code></td><td>Até 1024 conexões simultâneas por worker.</td></tr>
+<tr><td><code>http { … }</code></td><td>Tudo o que é web fica aqui dentro.</td></tr>
+<tr><td><code>include mime.types;</code></td><td>Ensina ao nginx que <code>.html</code> é <code>text/html</code>, <code>.png</code> é <code>image/png</code>…</td></tr>
+<tr><td><code>server { listen 80; … }</code></td><td>O site padrão, na porta 80.</td></tr>
+<tr><td><code>location / { root …; index …; }</code></td><td>Para qualquer caminho, procure o arquivo em <code>/usr/share/nginx/html</code>; numa pasta, entregue <code>index.html</code>.</td></tr>
+<tr><td><code>error_page 500 502 503 504 /50x.html;</code></td><td>Página mostrada quando o servidor falha.</td></tr>
+</table>
+</div>
+
+<p>Regras de sintaxe que mais derrubam iniciantes: <strong>toda diretiva termina com <code>;</code></strong>, blocos usam <code>{ }</code> e a ordem dos blocos importa (<code>server</code> sempre dentro de <code>http</code>).</p>
+
+<hr>
+
+<h2>Sua primeira página</h2>
+<p>A pasta raiz é <code>/usr/share/nginx/html</code> e pertence ao root:</p>
+
+<pre class="term">$ ls -l /usr/share/nginx/html/
+total 8
+-rw-r--r-- 1 root root 497 16 set 05:43 50x.html
+-rw-r--r-- 1 root root 896 16 set 05:43 index.html</pre>
+
+<p>Crie um arquivo seu. Como a pasta é do root, o redirecionamento <code>&gt;</code> precisa acontecer num shell de root; por isso usamos <code>sudo tee</code> (o <code>sudo echo … &gt; arquivo</code> <strong>não</strong> funciona, porque o <code>&gt;</code> é feito pelo seu shell, como ana):</p>
+
+<pre class="term">$ echo '&lt;h1&gt;Olá do Arch!&lt;/h1&gt;' | sudo tee /usr/share/nginx/html/ola.html
+&lt;h1&gt;Olá do Arch!&lt;/h1&gt;
+$ curl http://localhost/ola.html
+&lt;h1&gt;Olá do Arch!&lt;/h1&gt;
+$ curl -s -o /dev/null -w '%{http_code}\n' http://localhost/nada.html
+404                                               « o arquivo não existe</pre>
+
+<dl class="anatomy">
+  <dt>-s</dt><dd><em>silent</em>: sem barra de progresso.</dd>
+  <dt>-o /dev/null</dt><dd>Joga o corpo da resposta fora.</dd>
+  <dt>-w '%{http_code}\n'</dt><dd><em>write-out</em>: imprime só o código de status. Ótimo para scripts de monitoramento.</dd>
+</dl>
+
+<div class="warning">
+<strong>Arquivos de pacote × arquivos seus</strong>
+<p><code>index.html</code> e <code>50x.html</code> pertencem ao pacote <code>nginx</code>:</p>
+<pre class="term">$ pacman -Qo /usr/share/nginx/html/index.html /srv/http
+/usr/share/nginx/html/index.html pertence a nginx 1.30.5-1
+/srv/http/ pertence a filesystem 2025.10.12-1</pre>
+<p>Se você os editar, uma atualização pode sobrescrevê-los. Para um site de verdade, use uma pasta sua, como <code>/srv/http/meusite</code> (o Arch já cria <code>/srv/http</code>, a pasta "de casa" do usuário <code>http</code>).</p>
+</div>
+
+<hr>
+
+<h2>Um site novo: server block</h2>
+<p>Um <code>server</code> block é um site. Vamos criar um segundo, na porta 8080, no estilo "uma pasta com um arquivo por site". São quatro passos.</p>
+
+<ol class="passo">
+<li><strong>A pasta e a página</strong>
+<pre class="term">$ sudo mkdir -p /srv/http/meusite
+$ echo '&lt;h1&gt;Meu site na porta 8080&lt;/h1&gt;' | sudo tee /srv/http/meusite/index.html
+&lt;h1&gt;Meu site na porta 8080&lt;/h1&gt;</pre></li>
+<li><strong>O arquivo do site</strong> em <code>/etc/nginx/sites-enabled/meusite.conf</code> (crie a pasta com <code>sudo mkdir /etc/nginx/sites-enabled</code> e edite com <code>sudo nano</code>):
+<pre class="file" data-file="/etc/nginx/sites-enabled/meusite.conf">server {
+    listen 8080;
+    server_name localhost;
+    root /srv/http/meusite;
+    index index.html;
+}
+</pre></li>
+<li><strong>Uma linha <code>include</code></strong> dentro de <code>http { }</code> no <code>nginx.conf</code>, logo abaixo de <code>default_type</code> (aproveitamos para calar o aviso do <code>types_hash</code>):
+<pre class="file" data-file="/etc/nginx/nginx.conf (trecho)">http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    types_hash_max_size 4096;
+    include sites-enabled/*.conf;
+</pre></li>
+<li><strong>Testar, recarregar e conferir</strong>
+<pre class="term">$ sudo nginx -t
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+$ sudo systemctl reload nginx
+$ curl http://localhost:8080
+&lt;h1&gt;Meu site na porta 8080&lt;/h1&gt;
+$ sudo ss -tlnp | grep nginx
+LISTEN 0      511          0.0.0.0:8080      0.0.0.0:*    users:(("nginx",pid=2299,fd=8),("nginx",pid=1385,fd=8))
+LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=2299,fd=4),("nginx",pid=1385,fd=4))</pre></li>
+</ol>
+
+<p>Agora o nginx atende nas duas portas. Repare que o aviso do <code>types_hash</code> sumiu do <code>nginx -t</code>.</p>
+
+<div class="tip">
+<strong>Vários sites na mesma porta</strong>
+<p>Em vez de portas diferentes, servidores de verdade usam o <strong>nome</strong>: dois blocos com <code>listen 80;</code> e <code>server_name blog.exemplo.com;</code> / <code>server_name loja.exemplo.com;</code>. O nginx olha o cabeçalho <code>Host</code> do pedido para escolher o bloco. Para testar sem DNS: <code>curl -H 'Host: blog.exemplo.com' http://localhost</code>.</p>
+</div>
+
+<h3>reload × restart</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>systemctl reload nginx</code></td><td>Relê a configuração sem derrubar conexões (manda <code>nginx -s reload</code>)</td><td>Mudou um site, um <code>location</code>, um certificado</td></tr>
+<tr><td><code>systemctl restart nginx</code></td><td>Para e liga de novo</td><td>Mudou algo que só vale na partida (módulos, <code>worker_processes</code>) ou o reload falhou</td></tr>
+<tr><td><code>nginx -t</code></td><td>Só testa a sintaxe, não muda nada</td><td><strong>Sempre</strong>, antes de reload ou restart</td></tr>
+</table>
+</div>
+
+<h3>O que nginx -t faz com um erro</h3>
+<p>Tire o <code>;</code> do fim de <code>listen 8080</code> e teste:</p>
+
+<pre class="term">$ sudo nginx -t
+2026/10/16 13:21:48 [emerg] 2123#2123: invalid parameter "server_name" in /etc/nginx/sites-enabled/meusite.conf:3
+nginx: configuration file /etc/nginx/nginx.conf test failed
+$ echo $?
+1
+$ sudo systemctl reload nginx
+Job for nginx.service failed.
+See "systemctl status nginx.service" and "journalctl -xeu nginx.service" for details.
+$ systemctl status nginx | head -3
+● nginx.service - nginx web server
+     Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; preset: disabled)
+     Active: active (running) since Fri 2026-10-16 13:21:18 -03; 29s ago      « continua no ar!</pre>
+
+<p>A mensagem aponta a <strong>linha 3</strong>, mas o erro está na linha 2: sem o <code>;</code>, o nginx leu <code>listen 8080 server_name localhost</code> como uma diretiva só e estranhou o "parâmetro" <code>server_name</code>. Procure o erro <strong>na linha indicada e na anterior</strong>. E repare na boa notícia: um <code>reload</code> que falha deixa a configuração antiga funcionando. Um <code>restart</code> com o arquivo quebrado, ao contrário, deixaria o site fora do ar. Por isso: <code>nginx -t</code> antes, sempre.</p>
+
+<hr>
+
+<h2>Logs: quem pediu o quê</h2>
+<p>No Arch, o nginx grava <strong>dois</strong> tipos de registro em lugares diferentes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Log</th><th>Onde fica no Arch</th><th>Como ler</th></tr>
+<tr><td>Acessos (cada pedido)</td><td><code>/var/log/nginx/access.log</code></td><td><code>sudo tail -f /var/log/nginx/access.log</code></td></tr>
+<tr><td>Erros</td><td>No <strong>journal</strong> do systemd (o nginx do Arch manda os erros para a saída de erro, que o systemd recolhe). Não existe <code>error.log</code> até você configurar um.</td><td><code>journalctl -u nginx</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ sudo tail -n 3 /var/log/nginx/access.log
+127.0.0.1 - - [16/Oct/2026:13:25:14 -0300] "HEAD / HTTP/1.1" 200 0 "-" "curl/8.23.0"
+127.0.0.1 - - [16/Oct/2026:13:25:14 -0300] "GET /ola.html HTTP/1.1" 200 23 "-" "curl/8.23.0"
+127.0.0.1 - - [16/Oct/2026:13:25:14 -0300] "GET /nada.html HTTP/1.1" 404 153 "-" "curl/8.23.0"
+$ sudo tail -n 3 /var/log/nginx/error.log
+tail: não foi possível abrir '/var/log/nginx/error.log' para leitura: Arquivo ou diretório inexistente
+$ journalctl -u nginx -n 1 --no-pager
+out 16 13:25:14 notebook nginx[19624]: 2026/10/16 13:25:14 [error] 19624#19624: *3 open() "/usr/share/nginx/html/nada.html" failed (2: No such file or directory), client: 127.0.0.1, server: localhost, request: "GET /nada.html HTTP/1.1", host: "localhost"</pre>
+
+<p>Uma linha do <code>access.log</code>, parte por parte:</p>
+<dl class="anatomy">
+  <dt>127.0.0.1</dt><dd>IP de quem pediu (aqui, a própria máquina).</dd>
+  <dt>- -</dt><dd>Identidade e usuário (vazios sem login HTTP).</dd>
+  <dt>[16/Oct/2026:13:21:34 -0300]</dt><dd>Data e hora, com o fuso.</dd>
+  <dt>"GET /nada.html HTTP/1.1"</dt><dd>Método, caminho pedido e versão do protocolo.</dd>
+  <dt>404</dt><dd>Código de status da resposta.</dd>
+  <dt>153</dt><dd>Bytes enviados (a página de erro).</dd>
+  <dt>"-" "curl/8.23.0"</dt><dd>De qual página o visitante veio (<em>referer</em>) e qual programa ele usou (<em>user agent</em>).</dd>
+</dl>
+
+<p>Para contar erros 404 do dia, o que você aprendeu de <code>grep</code> e <code>awk</code> serve: <code>sudo awk '$9 == 404' /var/log/nginx/access.log | wc -l</code>. O pacote do nginx também instala <code>/etc/logrotate.d/nginx</code>, usado se você instalar o <code>logrotate</code>.</p>
+
+<hr>
+
+<h2>Ligar no boot e desligar</h2>
+<pre class="term">$ sudo systemctl enable nginx
+Created symlink '/etc/systemd/system/multi-user.target.wants/nginx.service' → '/usr/lib/systemd/system/nginx.service'.
+$ systemctl is-enabled nginx
+enabled
+$ sudo systemctl disable nginx
+Removed '/etc/systemd/system/multi-user.target.wants/nginx.service'.
+$ sudo systemctl stop nginx
+$ systemctl is-active nginx
+inactive</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Comando</th></tr>
+<tr><td>Ligar agora (não no boot)</td><td><code>sudo systemctl start nginx</code></td></tr>
+<tr><td>Ligar no boot (não agora)</td><td><code>sudo systemctl enable nginx</code></td></tr>
+<tr><td>As duas coisas</td><td><code>sudo systemctl enable --now nginx</code></td></tr>
+<tr><td>Desligar agora e no boot</td><td><code>sudo systemctl disable --now nginx</code></td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="sudo systemctl start nginx;;ana" data-goal="svc:nginx=active,svc:nginx=enabled" data-solucao="sudo systemctl enable nginx">
+<p class="try-task"><strong>Missão:</strong> o nginx já está rodando, mas não liga sozinho no boot. Faça-o ligar no boot (senha <code>ana</code>) e confira com <code>systemctl is-enabled nginx</code>.</p>
+</div>
+
+<hr>
+
+<h2>HTTPS com certbot (ilustrativo)</h2>
+<p>HTTPS é o HTTP com criptografia (o cadeado do navegador). Para isso o servidor precisa de um <strong>certificado</strong> assinado por uma autoridade. A <em>Let's Encrypt</em> dá certificados de graça, e o <code>certbot</code> é o programa que os pede e renova.</p>
+
+<div class="warning">
+<strong>Por que esta parte é ilustrativa</strong>
+<p>A Let's Encrypt só entrega certificado para um <strong>domínio de verdade</strong> (como <code>meusite.com.br</code>) que aponta para o seu servidor e responde na porta 80 pela internet. A VM do guia não tem nada disso. Por isso aqui só a instalação é real (vista com o <code>previa</code>, sem instalar); o resto mostra os comandos e o que eles fazem.</p>
+</div>
+
+<pre class="term">#> previa -S certbot certbot-nginx
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (16) python-acme-5.8.0-1  python-certifi-2026.07.22-1
+             python-cffi-2.1.1-1  python-configargparse-1.8.0-1
+             python-cryptography-50.0.2-1  python-distro-1.9.0-4
+             python-idna-3.20-1  python-josepy-2.2.0-2
+             python-parsedatetime-2.6-11  python-pycparser-3.11-1
+             python-pyopenssl-26.4.0-1  python-pyrfc3339-2.1.1-1
+             python-requests-2.34.2-1
+             certbot-5.8.0-1  certbot-nginx-5.8.0-1
+
+Tamanho total download:    4,29 MiB
+Tamanho total instalado:  23,45 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>O <code>certbot</code> é escrito em Python, por isso vêm 14 bibliotecas <code>python-*</code> junto. O <code>certbot-nginx</code> é o plugin que sabe editar o <code>nginx.conf</code>. Com um domínio de verdade, o caminho seria:</p>
+
+<pre class="file" data-file="ilustrativo: HTTPS num servidor com domínio">sudo pacman -S certbot certbot-nginx
+sudo certbot --nginx -d meusite.com.br          # pede o certificado e edita o server block
+sudo systemctl enable --now certbot-renew.timer # renovação automática (se o seu pacote trouxer o timer)
+sudo certbot renew --dry-run                    # testa a renovação sem mudar nada
+</pre>
+
+<p>O certificado fica em <code>/etc/letsencrypt/live/meusite.com.br/</code>, e o <code>server</code> block ganha <code>listen 443 ssl;</code>, <code>ssl_certificate</code> e <code>ssl_certificate_key</code>, parecido com o bloco "HTTPS server" comentado no fim do <code>nginx.conf</code> do Arch. Os certificados valem 90 dias; por isso a renovação precisa ser automática. Se o seu certbot não trouxer um timer, crie um (veja <a href="timers.html">Timers e Tarefas</a>).</p>
+
+<hr>
+
+<h2>Firewall: abrir só o necessário</h2>
+<p>O Arch vem <strong>sem firewall ativo</strong>. Se você ativar um (nftables ou ufw), lembre de liberar as portas do servidor web, senão ninguém de fora acessa. Com o ufw, a ideia é:</p>
+
+<pre class="file" data-file="ilustrativo: liberar o servidor web no ufw">sudo ufw allow 22/tcp     # o SSH primeiro, para não se trancar fora!
+sudo ufw allow 80/tcp     # http
+sudo ufw allow 443/tcp    # https
+</pre>
+
+<p>Não ative o firewall sem ler a aula <a href="firewall.html">Firewall (nftables e ufw)</a>: num servidor remoto, ativá-lo sem liberar a porta 22 corta o seu próprio acesso por <a href="ssh.html">SSH</a>.</p>
+
+<hr>
+
+<h2>Outros servidores web no Arch</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Ponto forte</th><th>Qual usar?</th></tr>
+<tr><td><code>nginx</code></td><td>Leve, ótimo para arquivos estáticos e como <em>proxy reverso</em> (repassar pedidos para um app em outra porta)</td><td>A escolha padrão para quase tudo</td></tr>
+<tr><td><code>apache</code></td><td>O mais antigo; configuração por pasta com <code>.htaccess</code>; serviço <code>httpd</code></td><td>Quando o software exige Apache (vários painéis e apps PHP antigos)</td></tr>
+<tr><td><code>caddy</code></td><td>HTTPS automático, configuração curtíssima</td><td>Servidor caseiro com domínio, sem querer mexer com certbot</td></tr>
+<tr><td><code>python -m http.server 8000</code></td><td>Já vem com o Python; serve a pasta atual</td><td>Só para testes rápidos, nunca em produção</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Could not connect to server"</strong>
+<pre class="term">$ curl -I http://localhost
+curl: (7) Failed to connect to localhost:80 after 0 ms: Could not connect to server</pre>
+<p><strong>O que aconteceu:</strong> ninguém está escutando na porta 80. No Arch, a causa número 1 é o serviço nunca ter sido ligado (instalar não liga).</p>
+<p><strong>Como confirmar:</strong> <code>systemctl is-active nginx</code> responde <code>inactive</code>; <code>sudo ss -tlnp | grep :80</code> não mostra nada.</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl start nginx</code> (ou <code>enable --now</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"bind() … failed (98: Address already in use)"</strong>
+<pre class="term">#> nginx
+2026/10/16 13:22:06 [emerg] 2459#2459: bind() to 0.0.0.0:80 failed (98: Address already in use)
+…                                                 « o nginx tenta 5 vezes
+2026/10/16 13:22:06 [emerg] 2459#2459: still could not bind()
+#> echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> outro programa já ocupa a porta. Acima, foi um <code>nginx</code> rodado à mão com o serviço já ligado; também acontece com Apache e nginx instalados juntos, ou um container publicando a porta 80.</p>
+<p><strong>Como confirmar:</strong> <code>sudo ss -tlnp | grep ':80 '</code> mostra quem está na porta.</p>
+<p><strong>Como resolver:</strong> pare o outro programa ou mude o <code>listen</code>. Não rode <code>nginx</code> à mão: use sempre <code>systemctl</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Erro 403 Forbidden</strong>
+<pre class="term">$ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080
+403
+$ journalctl -u nginx -n 1 --no-pager
+out 16 13:21:59 notebook nginx[2299]: 2026/10/16 13:21:59 [error] 2299#2299: *10 open() "/srv/http/meusite/index.html" failed (13: Permission denied), client: 127.0.0.1, server: localhost, request: "GET / HTTP/1.1", host: "localhost:8080"</pre>
+<p><strong>O que aconteceu:</strong> o worker roda como <code>http</code> e não consegue ler o arquivo (aqui ele estava com modo <code>600</code>, só o dono lê). Outra causa clássica: o site dentro de <code>/home/ana</code>, que no Arch tem modo <strong>700</strong>, e o <code>http</code> não entra lá.</p>
+<p><strong>Como resolver:</strong> deixe os arquivos legíveis por todos (<code>chmod 644</code> nos arquivos, <code>755</code> nas pastas) e prefira <code>/srv/http</code> a <code>/home</code>. Veja <a href="permissoes.html">Permissões</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"could not build optimal types_hash"</strong>
+<pre class="term">$ sudo nginx -t
+2026/10/16 13:21:34 [warn] 1705#1705: could not build optimal types_hash, you should increase either types_hash_max_size: 1024 or types_hash_bucket_size: 64; ignoring types_hash_bucket_size
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful</pre>
+<p><strong>O que aconteceu:</strong> só um aviso (<code>[warn]</code>): a tabela de tipos do <code>mime.types</code> é maior que o tamanho padrão.</p>
+<p><strong>Como resolver:</strong> acrescente <code>types_hash_max_size 4096;</code> dentro de <code>http { }</code>, como fizemos no server block.</p>
+</div>
+
+<div class="cenario">
+<strong>"Job for nginx.service failed"</strong>
+<p><strong>O que aconteceu:</strong> erro de sintaxe ou porta ocupada no <code>start</code>/<code>reload</code>.</p>
+<p><strong>Como confirmar:</strong> <code>sudo nginx -t</code> aponta arquivo e linha; <code>journalctl -xeu nginx</code> mostra a mensagem completa (<code>[emerg] …</code>).</p>
+<p><strong>Como resolver:</strong> corrija a linha indicada (ou a anterior: <code>;</code> esquecido) e repita.</p>
+</div>
+
+<div class="cenario">
+<strong>"Access denied as the requested operation requires interactive authentication"</strong>
+<pre class="term">$ systemctl start nginx
+Failed to start nginx.service: Access denied as the requested operation requires interactive authentication. However, interactive authentication has not been enabled by the calling program.
+See system logs and 'systemctl status nginx.service' for details.</pre>
+<p><strong>O que aconteceu:</strong> faltou o <code>sudo</code> (a mensagem acima é de uma sessão sem terminal; num terminal gráfico o systemd pode abrir uma janela pedindo senha).</p>
+<p><strong>Como resolver:</strong> <code>sudo systemctl start nginx</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / arquivo</th><th>Para quê</th></tr>
+<tr><td><code>sudo systemctl enable --now nginx</code></td><td>Liga agora e no boot</td></tr>
+<tr><td><code>sudo systemctl reload nginx</code></td><td>Relê a configuração sem derrubar</td></tr>
+<tr><td><code>sudo nginx -t</code></td><td>Testa a configuração</td></tr>
+<tr><td><code>curl -I http://localhost</code></td><td>Só o cabeçalho da resposta</td></tr>
+<tr><td><code>curl -s -o /dev/null -w '%{http_code}\n' URL</code></td><td>Só o código de status</td></tr>
+<tr><td><code>sudo ss -tlnp</code></td><td>Quem escuta em qual porta</td></tr>
+<tr><td><code>/etc/nginx/nginx.conf</code></td><td>Configuração (única, sem <code>sites-enabled</code> de fábrica)</td></tr>
+<tr><td><code>/usr/share/nginx/html</code></td><td>Raiz do site padrão (arquivos do pacote)</td></tr>
+<tr><td><code>/srv/http</code></td><td>Lugar para os seus sites</td></tr>
+<tr><td><code>/var/log/nginx/access.log</code></td><td>Log de acessos</td></tr>
+<tr><td><code>journalctl -u nginx</code></td><td>Erros do nginx</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ligar agora e no boot</h3>
+<p>Complete com um comando só:</p>
+<div class="ex-code">sudo systemctl <input data-answer="enable --now|enable  --now" aria-label="subcomando e opção"> nginx</div>
+</div>
+
+<div class="exercise">
+<h3>2. Antes do reload</h3>
+<p>Qual comando testa a configuração do nginx sem aplicar nada?</p>
+<div class="ex-code">sudo <input data-answer="nginx -t" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você procurou <code>/etc/nginx/sites-enabled</code> no Arch e não achou. Por quê?</p>
+<label><input type="radio" name="q3"> A instalação do nginx falhou.</label>
+<label><input type="radio" name="q3"> O Arch entrega o nginx como o projeto original, e essa pasta é uma convenção do Debian.</label>
+<label><input type="radio" name="q3"> Ela só aparece depois do <code>systemctl start</code>.</label>
+<label><input type="radio" name="q3"> Ela fica em <code>/usr/share/nginx</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O site responde <code>403</code> e o journal diz <code>(13: Permission denied)</code>. A causa mais provável?</p>
+<label><input type="radio" name="q4"> O nginx está parado.</label>
+<label><input type="radio" name="q4"> Falta um <code>;</code> no <code>nginx.conf</code>.</label>
+<label><input type="radio" name="q4"> O usuário <code>http</code> não consegue ler o arquivo ou entrar na pasta.</label>
+<label><input type="radio" name="q4"> A porta 80 está ocupada.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Onde ficam os <strong>erros</strong> do nginx no Arch, sem configuração extra?</p>
+<label><input type="radio" name="q5"> No journal: <code>journalctl -u nginx</code>.</label>
+<label><input type="radio" name="q5"> Em <code>/var/log/nginx/error.log</code>.</label>
+<label><input type="radio" name="q5"> Em <code>/etc/nginx/error.log</code>.</label>
+<label><input type="radio" name="q5"> Em <code>/var/log/messages</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No Arch, instalar não liga: <code>sudo systemctl enable --now nginx</code>.</li>
+  <li>Teste com <code>curl -I http://localhost</code>; <code>200</code> é sucesso.</li>
+  <li>A configuração é um só arquivo, <code>/etc/nginx/nginx.conf</code>; <code>sites-enabled</code> só existe se você criar.</li>
+  <li><code>sudo nginx -t</code> antes de <code>reload</code>; um reload que falha mantém a configuração antiga.</li>
+  <li>Acessos em <code>/var/log/nginx/access.log</code>; erros em <code>journalctl -u nginx</code>.</li>
+  <li>Workers rodam como <code>http</code>: use <code>/srv/http</code> e permissões de leitura.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Nginx">nginx</a> cobre tudo desta aula e mais (PHP com <code>php-fpm</code>, proxy reverso, o truque do <code>sites-enabled</code>); veja também <a href="https://wiki.archlinux.org/title/Certbot">Certbot</a> para HTTPS, <a href="https://wiki.archlinux.org/title/Apache_HTTP_Server">Apache HTTP Server</a> e <a href="https://wiki.archlinux.org/title/Caddy">Caddy</a> para as alternativas, e a lista geral em <a href="https://wiki.archlinux.org/title/Web_server">Web server</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
