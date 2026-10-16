@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch archinstall — o instalador guiado oficial | Guia Arch</title>
+<meta name="description" content="O archinstall, instalador guiado que vem na ISO do Arch: quando usar no lugar da instalação manual, como iniciar, cada item do menu com capturas reais (idioma, espelhos, disco, sistema de arquivos, bootloader, perfil, kernels, rede, usuários), salvar e carregar a configuração em JSON e as limitações.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">archinstall</span></h1>
+
+<p class="intro">O <code>archinstall</code> é o instalador guiado oficial do Arch: um programa em menus de texto que já vem na ISO e faz, sozinho, tudo o que você fez à mão nas aulas anteriores (particionar, formatar, <code>pacstrap</code>, fstab, idioma, usuários, bootloader). Você escolhe as opções num menu, aperta <strong>Install</strong> e espera. Nesta aula você conhece cada tela, com capturas reais, e aprende quando ele é a escolha certa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Quando usar o <code>archinstall</code> e quando instalar à mão.</li>
+  <li>Como iniciá-lo e navegar pelos menus.</li>
+  <li>O que cada item do menu configura, e a aula manual que corresponde a ele.</li>
+  <li>Salvar as escolhas num arquivo JSON e repetir a instalação com <code>--config</code>.</li>
+  <li>As limitações e onde procurar quando algo dá errado.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>De onde vêm as informações</strong>
+<p>As capturas são reais: o coordenador do guia rodou o <strong>archinstall 4.3</strong> que vem na ISO <code>2026.06.01</code>, numa VM VirtualBox com UEFI e um disco vazio de 20 GiB, com os menus em inglês (o idioma padrão). As telas que não foram capturadas (usuários, aplicativos, rede, o fim da instalação) estão descritas a partir do código-fonte do archinstall 4.5 (a versão do repositório em outubro de 2026) e marcadas como <strong>não conferidas na tela</strong>. O archinstall muda bastante entre versões: os nomes e a ordem dos itens podem ser outros na sua ISO.</p>
+</div>
+
+<hr>
+
+<h2>archinstall ou instalação manual?</h2>
+<p>O resultado pode ser o mesmo sistema. A diferença está no caminho e no que você aprende nele:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Instalação manual (este guia)</th><th>archinstall</th></tr>
+<tr><td>Tempo</td><td>30 a 60 minutos, digitando cada comando</td><td>10 a 20 minutos, a maior parte esperando os downloads</td></tr>
+<tr><td>O que você aprende</td><td>Para que serve cada peça: fstab, chroot, locale, initramfs, bootloader</td><td>Quase nada sobre o funcionamento; você só escolhe opções</td></tr>
+<tr><td>Controle</td><td>Total: qualquer layout de disco, qualquer pacote</td><td>As opções do menu (que são muitas, mas não todas)</td></tr>
+<tr><td>Erros</td><td>Você vê cada mensagem na hora</td><td>Ficam num log (<code>/var/log/archinstall/install.log</code>)</td></tr>
+<tr><td>Repetir em várias máquinas</td><td>Repetir os comandos (ou um script seu)</td><td>Salva um JSON e repete com <code>--config</code></td></tr>
+<tr><td>Ideal para</td><td>Aprender, a primeira instalação "de verdade", configurações incomuns</td><td>Quem já fez a manual e quer rapidez; instalar várias VMs iguais</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>A recomendação do guia</strong>
+<p>Faça a instalação manual pelo menos uma vez, numa máquina virtual (o <a href="projeto-instalacao.html">projeto Instalação Completa do Zero</a> é exatamente isso). Quando algo quebrar no futuro, você vai saber o que é um fstab e como entrar com <code>arch-chroot</code>, e o <code>archinstall</code> não ensina isso. Depois, use-o à vontade.</p>
+</div>
+
+<hr>
+
+<h2>Iniciar o archinstall</h2>
+<p>Ligue o pendrive do Arch, como em <a href="ambiente-live.html">O Ambiente Live</a>, e garanta a internet (com cabo funciona sozinho; Wi-Fi com <code>iwctl</code>). O <code>archinstall</code> baixa tudo da internet e não funciona sem ela. Depois é só digitar o nome:</p>
+
+<dl class="anatomy">
+  <dt>archinstall</dt><dd>Inicia o instalador guiado (pacote <code>archinstall</code>, já presente na ISO). Sem opções, abre o menu principal.</dd>
+</dl>
+
+<figure>
+<img src="img/archinstall-atualizando.png" alt="Tela do live: mensagem de boas-vindas do Arch, o prompt root@archiso ~ # archinstall e as linhas Fetching Arch Linux package database... e New version available: archinstall 4.3-1 -> 4.5-1" loading="lazy">
+<figcaption>O live logo depois do <code>archinstall</code>: ele consulta os repositórios e avisa que existe uma versão mais nova.</figcaption>
+</figure>
+
+<p>De cima para baixo:</p>
+<ul>
+  <li><code>archiso login: root (automatic login)</code>: o live entra como root sozinho.</li>
+  <li>As linhas de boas-vindas lembram o <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a>, o <code>iwctl</code> (Wi-Fi) e o <code>mmcli</code> (modem 4G); cabo e Wi-Fi já autenticado ganham endereço sozinhos (DHCP).</li>
+  <li><code>root@archiso ~ # archinstall</code>: o comando digitado, no prompt do zsh do live.</li>
+  <li><code>Fetching Arch Linux package database...</code>: o archinstall baixa a lista de pacotes para validar o que você escolher.</li>
+  <li><code>New version available: archinstall 4.3-1 -&gt; 4.5-1</code>: a ISO tem a versão 4.3, o repositório já tem a 4.5. O aviso também aparece no topo do menu.</li>
+</ul>
+
+<div class="note">
+<strong>Atualizar o archinstall antes de usar?</strong>
+<p>Versões novas corrigem defeitos, então muita gente atualiza só ele no live: <code>pacman -Sy archinstall</code> e roda <code>archinstall</code> de novo. No live isso é aceitável porque ele é descartável e some ao desligar. No sistema instalado, <code>-Sy pacote</code> é uma <strong>atualização parcial</strong> e é perigoso (veja <a href="atualizar.html">Atualizar o Sistema</a>). As capturas desta aula são da 4.3, sem atualizar.</p>
+</div>
+
+<hr>
+
+<h2>O menu principal</h2>
+
+<figure>
+<img src="img/archinstall-menu.png" alt="Menu principal do archinstall: lista à esquerda (Archinstall language, Locales, Mirrors and repositories, Disk configuration, Swap, Bootloader, Kernels, Hostname, Authentication, Profile, Applications, Network configuration, Pacman, Additional packages, Timezone, Automatic time sync (NTP), Save configuration, Install, Abort), painel à direita com Language: English (100%) e barra de atalhos embaixo" loading="lazy">
+<figcaption>O menu principal do archinstall 4.3.</figcaption>
+</figure>
+
+<p>A tela tem três partes:</p>
+<ul>
+  <li><strong>À esquerda</strong>, a lista de itens. Você anda com as setas e entra num item com <kbd>Enter</kbd>. Não há ordem obrigatória: configure o que quiser e volte ao menu.</li>
+  <li><strong>À direita</strong>, o valor atual do item destacado. Na captura, <code>Language: English (100%)</code>: o idioma dos menus e quanto dele está traduzido.</li>
+  <li><strong>Embaixo</strong>, os atalhos: <kbd>↑</kbd> <kbd>↓</kbd> andam; <kbd>Ctrl</kbd>+<kbd>C</kbd> (<code>^c Reset</code>) volta o item ao padrão; <kbd>Esc</kbd> cancela; <kbd>/</kbd> procura na lista; <kbd>Ctrl</kbd>+<kbd>Q</kbd> sai; <kbd>F1</kbd> mostra ou esconde a ajuda.</li>
+</ul>
+
+<p>Cada item corresponde a um passo que você já fez à mão. A tabela mostra o valor padrão (visto nas capturas), o que escolher para chegar ao sistema da VM do guia e o nome do item quando o archinstall está em português (tradução do archinstall 4.5):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Em pt-BR</th><th>Padrão</th><th>Para ficar igual ao guia</th><th>Aula manual</th></tr>
+<tr><td>Archinstall language</td><td>Idioma do Archinstall</td><td>English</td><td>Só muda os menus (pode escolher português)</td><td>—</td></tr>
+<tr><td>Locales</td><td>Localidades</td><td><code>us</code>, <code>en_US.UTF-8</code>, <code>UTF-8</code></td><td>Teclado <code>br-abnt2</code>, idioma <code>pt_BR.UTF-8</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td>Mirrors and repositories</td><td>Mirrors e repositórios</td><td>(nenhuma região)</td><td>Região <em>Brazil</em></td><td><a href="pacstrap.html">pacstrap</a></td></tr>
+<tr><td>Disk configuration</td><td>Configuração do disco</td><td>(vazio: obrigatório)</td><td>Layout padrão, ext4 (veja abaixo)</td><td><a href="particionar.html">Particionar</a>, <a href="formatar-montar.html">Formatar</a></td></tr>
+<tr><td>Swap</td><td>Swap</td><td>zram ligado, <code>zstd</code></td><td>(o guia usa partição de swap; zram também serve)</td><td><a href="swap-zram.html">Swap e zram</a></td></tr>
+<tr><td>Bootloader</td><td>Inicializador</td><td>Systemd-boot, UKI ligado</td><td>Grub</td><td><a href="bootloader.html">Bootloader</a></td></tr>
+<tr><td>Kernels</td><td>Kernels</td><td><code>linux</code></td><td><code>linux</code></td><td><a href="kernels.html">Kernels</a></td></tr>
+<tr><td>Hostname</td><td>Nome do computador (hostname)</td><td><code>archlinux</code></td><td><code>notebook</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td>Authentication</td><td>Autenticação</td><td>(vazio: obrigatório)</td><td>Senha do root e a usuária <code>ana</code> com sudo</td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td>Profile</td><td>Perfil</td><td>(nenhum)</td><td><em>Minimal</em> (o guia não instala desktop)</td><td><a href="desktop.html">Desktop</a></td></tr>
+<tr><td>Applications</td><td>Aplicativos</td><td>(nada)</td><td>Nada</td><td>—</td></tr>
+<tr><td>Network configuration</td><td>Configuração de rede</td><td>(nenhuma)</td><td>NetworkManager</td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td>Pacman</td><td>Pacman</td><td><code>Color: True</code></td><td>(o guia não mexeu)</td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td>Additional packages</td><td>Pacotes adicionais</td><td>(nenhum)</td><td><code>sudo nano vim man-db man-pages texinfo openssh</code></td><td><a href="pacstrap.html">pacstrap</a></td></tr>
+<tr><td>Timezone</td><td>Fuso horário</td><td><code>UTC</code></td><td><code>America/Sao_Paulo</code></td><td><a href="configurar.html">Configurar</a></td></tr>
+<tr><td>Automatic time sync (NTP)</td><td>Sincronização automática de tempo (NTP)</td><td>Enabled</td><td>Enabled (melhor que o guia, que esqueceu o NTP; veja <a href="primeiro-boot.html">Primeiro Boot</a>)</td><td>—</td></tr>
+</table>
+</div>
+
+<h3>Os valores padrão, item por item</h3>
+<p>Antes de mexer em qualquer coisa, vale olhar o painel da direita de cada item. Estas são as telas reais, com o item destacado:</p>
+
+<figure>
+<img src="img/archinstall-item-locales.png" alt="Menu do archinstall com Locales destacado; à direita: Keyboard layout: us, Locale language: en_US.UTF-8, Locale encoding: UTF-8" loading="lazy">
+<figcaption><strong>Locales</strong>: teclado americano (<code>us</code>), idioma inglês dos EUA, codificação UTF-8. Entre no item e troque o <em>Keyboard layout</em> para <code>br-abnt2</code> e o <em>Locale language</em> para <code>pt_BR.UTF-8</code>; é o equivalente ao <code>locale.gen</code>, <code>locale.conf</code> e <code>vconsole.conf</code>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-swap.png" alt="Menu com Swap destacado; à direita: Swap on zram: Enabled, Compression algorithm: zstd" loading="lazy">
+<figcaption><strong>Swap</strong>: em vez de uma partição, o archinstall usa <strong>zram</strong>, uma swap comprimida na própria memória RAM (com o algoritmo <code>zstd</code>). Por isso o layout de disco dele não tem partição de swap. Diferenças em <a href="swap-zram.html">Swap e zram</a>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-bootloader.png" alt="Menu com Bootloader destacado; à direita: Bootloader: Systemd-boot, UKI: Enabled" loading="lazy">
+<figcaption><strong>Bootloader</strong>: em UEFI, o padrão é o <strong>systemd-boot</strong>, com <strong>UKI</strong> (<em>Unified Kernel Image</em>: kernel, initramfs e opções num arquivo <code>.efi</code> só). As opções do archinstall 4.5 são Systemd-boot, Grub, Efistub, Limine, Refind e "No bootloader". Para ficar igual ao guia, escolha <strong>Grub</strong>. Comparação em <a href="bootloader.html">Bootloader</a>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-kernels.png" alt="Menu com Kernels destacado; à direita: Kernel: linux" loading="lazy">
+<figcaption><strong>Kernels</strong>: só o <code>linux</code>. Dá para marcar mais de um (<code>linux-lts</code>, <code>linux-zen</code>, <code>linux-hardened</code>); um segundo kernel é uma boa reserva. Veja <a href="kernels.html">Kernels</a>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-hostname.png" alt="Menu com Hostname destacado; à direita: Hostname: archlinux" loading="lazy">
+<figcaption><strong>Hostname</strong>: <code>archlinux</code>. Troque pelo nome da sua máquina (no guia, <code>notebook</code>); vira o <code>/etc/hostname</code>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-pacman.png" alt="Menu com Pacman destacado; à direita: Color: True" loading="lazy">
+<figcaption><strong>Pacman</strong>: liga as cores na saída do pacman (<code>Color</code> no <code>/etc/pacman.conf</code>). Na versão 4.5 também ajusta os downloads paralelos.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-fuso.png" alt="Menu com Timezone destacado; à direita: Timezone: UTC" loading="lazy">
+<figcaption><strong>Timezone</strong>: <code>UTC</code>. Troque para o seu fuso (use <kbd>/</kbd> para procurar <code>Sao_Paulo</code>); é o link <code>/etc/localtime</code>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-item-ntp.png" alt="Menu com Automatic time sync (NTP) destacado; à direita: NTP: Enabled" loading="lazy">
+<figcaption><strong>Automatic time sync (NTP)</strong>: ligado. O archinstall ativa a sincronização do relógio pela internet, coisa que a instalação manual do guia não fez.</figcaption>
+</figure>
+
+<hr>
+
+<h2>Configurar o disco</h2>
+<p>É o único item que <strong>apaga dados</strong>, então vale ir com calma. Ao entrar em <em>Disk configuration</em>, aparece um submenu:</p>
+
+<figure>
+<img src="img/archinstall-disco-submenu.png" alt="Submenu com Partitioning destacado e ← Back" loading="lazy">
+<figcaption>O submenu do disco antes de escolher qualquer coisa: só <em>Partitioning</em> e <em>Back</em>.</figcaption>
+</figure>
+
+<p>Em <em>Partitioning</em>, o archinstall pergunta o tipo de configuração:</p>
+
+<figure>
+<img src="img/archinstall-disco-tipo.png" alt="Tela Select a disk configuration com as opções Use a best-effort default partition layout, Manual Partitioning e Pre-mounted configuration" loading="lazy">
+<figcaption>"Select a disk configuration": as três formas de preparar o disco.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><strong>Use a best-effort default partition layout</strong></td><td>Apaga o disco escolhido e cria um layout padrão (EFI + raiz).</td><td>Disco vazio ou que pode ser apagado inteiro. É o caminho mais simples.</td></tr>
+<tr><td><strong>Manual Partitioning</strong></td><td>Um editor de partições dentro do archinstall: você cria, apaga e escolhe o sistema de arquivos de cada uma.</td><td>Manter outras partições (dual boot), tamanhos próprios.</td></tr>
+<tr><td><strong>Pre-mounted configuration</strong></td><td>Não mexe no disco: usa o que você já montou em <code>/mnt</code>.</td><td>Você particionou e montou à mão (como nas aulas) e quer que o archinstall faça só o resto.</td></tr>
+</table>
+</div>
+
+<p>Com o layout padrão, ele pede o disco. A lista mostra cada disco com modelo, caminho, tamanho e espaço livre:</p>
+
+<figure>
+<img src="img/archinstall-disco-selecionar.png" alt="Tela Select disks for the installation com uma linha: [ ] ATA VBOX HARDDISK /dev/sda scsi 20 GiB 20479 512 False; embaixo, área Partitions vazia" loading="lazy">
+<figcaption>"Select disks for the installation": o disco virtual de 20 GiB, ainda sem partições.</figcaption>
+</figure>
+
+<p>O <code>[ ]</code> é uma caixa de marcar: <kbd>Espaço</kbd> marca o disco e <kbd>Enter</kbd> confirma (veja a barra de baixo: <code>space Toggle</code>, <code>Confirm</code>). As colunas: <em>Model</em> (o nome do disco), <em>Path</em> (<code>/dev/sda</code>), <em>Type</em>, <em>Size</em>, <em>Free space</em> (em MiB), <em>Sector size</em> (512 bytes) e <em>Read only</em>. Num computador de verdade, <strong>confira o modelo e o tamanho</strong>: escolher o disco errado apaga o disco errado.</p>
+
+<p>Depois vem o sistema de arquivos da raiz:</p>
+
+<figure>
+<img src="img/archinstall-disco-sistema-arquivos.png" alt="Tela Select main filesystem com btrfs destacado, ext4, xfs e f2fs" loading="lazy">
+<figcaption>"Select main filesystem": btrfs (o primeiro da lista), ext4, xfs ou f2fs.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>ext4</strong>: o mesmo do guia. Simples, maduro, o mais usado.</li>
+  <li><strong>btrfs</strong>: permite <strong>subvolumes</strong> e <strong>snapshots</strong> (fotografias do sistema para voltar atrás). O archinstall então pergunta se quer a estrutura padrão de subvolumes e se quer compressão. Veja <a href="btrfs.html">Btrfs e Subvolumes</a> e <a href="snapshots.html">Snapshots</a>.</li>
+  <li><strong>xfs</strong> e <strong>f2fs</strong>: casos específicos (servidores com arquivos enormes; memória flash).</li>
+</ul>
+
+<p>Com ext4 e um disco de 64 GiB ou mais, o archinstall ainda pergunta se você quer uma partição <code>/home</code> separada (pelo código da versão 4.5; no disco de 20 GiB da captura, a pergunta não aparece). Pronto, ele mostra o plano:</p>
+
+<figure>
+<img src="img/archinstall-disco-resumo.png" alt="Submenu com Partitioning, LVM, Disk encryption e Back; à direita: Configuration: Use a best-effort default partition layout, /dev/sda: ATA VBOX HARDDISK, Wipe: True, e uma tabela com duas partições a criar: 2048 a 2099200, 1 GiB, fat32, /boot, flags boot, esp; e 2099200 a 41940992, 19 GiB, ext4, /" loading="lazy">
+<figcaption>O layout proposto: 1 GiB FAT32 em <code>/boot</code> (partição EFI) e 19 GiB ext4 na raiz. <strong>Wipe: True</strong>.</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Partição 1</th><th>Partição 2</th></tr>
+<tr><td>Status</td><td><code>create</code> (será criada)</td><td><code>create</code></td></tr>
+<tr><td>Start / End</td><td>setor 2048 a 2099200</td><td>setor 2099200 a 41940992</td></tr>
+<tr><td>Size</td><td>1 GiB</td><td>19 GiB (o resto do disco)</td></tr>
+<tr><td>FS type</td><td>fat32</td><td>ext4</td></tr>
+<tr><td>Mountpoint</td><td><code>/boot</code></td><td><code>/</code></td></tr>
+<tr><td>Flags</td><td><code>boot, esp</code> (é a partição EFI)</td><td>—</td></tr>
+</table>
+</div>
+
+<p>Compare com o guia (aula <a href="particionar.html">Particionar</a>): a mesma partição EFI de 1 GiB começando no setor 2048, a mesma raiz ext4, mas <strong>sem partição de swap</strong> (o archinstall usa zram). Agora o submenu ganhou dois itens: <em>LVM</em> (<a href="lvm.html">LVM</a>) e <em>Disk encryption</em> (criptografar a raiz com LUKS; veja <a href="luks.html">Criptografia</a>).</p>
+
+<div class="warning">
+<strong>Wipe: True quer dizer "apagar tudo"</strong>
+<p>Nada é apagado enquanto você está nos menus: o disco só é tocado depois do <em>Install</em> e de uma contagem regressiva ("Starting device modifications in…"), que dá para interromper com <kbd>Ctrl</kbd>+<kbd>C</kbd>. Mas, passada a contagem, o disco marcado é zerado. Em computador com dados, faça backup antes.</p>
+</div>
+
+<figure>
+<img src="img/archinstall-menu-disco-pronto.png" alt="Menu principal com Disk configuration destacado; à direita: Configuration type: Use a best-effort default partition layout" loading="lazy">
+<figcaption>De volta ao menu principal: o painel confirma o tipo de configuração escolhido.</figcaption>
+</figure>
+
+<hr>
+
+<h2>Perfil: com ou sem interface gráfica</h2>
+<p>O <strong>perfil</strong> decide o "tipo" de sistema. Em <em>Profile</em>, entre em <em>Type</em>:</p>
+
+<figure>
+<img src="img/archinstall-perfil-menu.png" alt="Submenu do perfil com Type destacado e ← Back" loading="lazy">
+<figcaption>O submenu <em>Profile</em>.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-perfil-tipo.png" alt="Tela Select a profile type com Desktop destacado, Minimal, Server e Xorg" loading="lazy">
+<figcaption>"Select a profile type".</figcaption>
+</figure>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>O que instala</th></tr>
+<tr><td><strong>Desktop</strong></td><td>Uma interface gráfica completa (você escolhe qual na próxima tela).</td></tr>
+<tr><td><strong>Minimal</strong></td><td>Nada além do básico: o mesmo tipo de sistema só-texto do guia.</td></tr>
+<tr><td><strong>Server</strong></td><td>Serviços prontos para servidor (por exemplo, Docker, nginx, MariaDB, Cockpit).</td></tr>
+<tr><td><strong>Xorg</strong></td><td>Só o servidor gráfico X, sem ambiente, para você montar o seu.</td></tr>
+</table>
+</div>
+
+<p>Em <em>Desktop</em>, aparece a lista de ambientes e gerenciadores de janelas. O painel da direita mostra o tipo e os pacotes que cada um instala:</p>
+
+<figure>
+<img src="img/archinstall-perfil-desktops.png" alt="Lista de desktops: Awesome destacado, Bspwm, Budgie, Cinnamon, Cosmic, Cutefish, Deepin, Enlightenment, GNOME, Hyprland, i3-wm, KDE Plasma, Labwc, Lxqt, Mate, Niri, Qtile, River, Sway, Xfce4, Xmonad; à direita: Environment type: Xorg Window Manager e os pacotes alacritty, awesome, feh, gnu-free-fonts, slock, terminus-font, ttf-liberation, xorg-xrandr, xsel, xterm" loading="lazy">
+<figcaption>A lista de desktops da 4.3, com o Awesome destacado: um gerenciador de janelas para Xorg e os 10 pacotes que ele traria.</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-perfil-kde.png" alt="A mesma lista com KDE Plasma destacado; à direita: Environment type: Wayland Desktop Environment, Installed packages: plasma-meta" loading="lazy">
+<figcaption>KDE Plasma: "Wayland Desktop Environment", um pacote só, o <code>plasma-meta</code> (um <strong>metapacote</strong>, que puxa o Plasma inteiro como dependências).</figcaption>
+</figure>
+
+<figure>
+<img src="img/archinstall-perfil-gnome.png" alt="A mesma lista com GNOME destacado; à direita: Environment type: Wayland Desktop Environment, Installed packages: gnome, gnome-tweaks" loading="lazy">
+<figcaption>GNOME: o grupo <code>gnome</code> e o <code>gnome-tweaks</code> (ajustes extras).</figcaption>
+</figure>
+
+<p>A lista permite marcar mais de um (<code>space Toggle</code>). Depois de escolher um desktop, o archinstall pergunta o <strong>driver de vídeo</strong> e a <strong>tela de login gráfica</strong> (o <em>greeter</em>, como o SDDM do KDE ou o GDM do GNOME); essas telas não foram capturadas. Instalar um desktop à mão, entendendo cada pacote, é o assunto de <a href="desktop.html">Instalar um Desktop</a>.</p>
+
+<hr>
+
+<h2>Usuários, aplicativos e rede (não conferidos na tela)</h2>
+<p>Estes itens foram descritos pelo código do archinstall 4.5; na sua versão, os textos podem variar.</p>
+
+<h3>Authentication</h3>
+<ul>
+  <li><strong>Root password</strong>: a senha do root (o <code>passwd</code> da instalação manual).</li>
+  <li><strong>User account</strong>: cria usuários. Para cada um, pergunta o nome, a senha e <em>Should "ana" be a superuser (sudo)?</em>. Responder sim equivale ao <code>useradd -G wheel</code> + <code>visudo</code> do guia.</li>
+  <li><strong>U2F login setup</strong>: login com chave de segurança física (opcional).</li>
+</ul>
+<p>O archinstall não deixa instalar sem pelo menos uma senha de root <strong>ou</strong> um usuário com sudo: o menu acusa <em>Either root-password or at least 1 user with sudo privileges must be specified</em>.</p>
+
+<h3>Applications</h3>
+<p>Extras que o archinstall instala e ativa: <em>Bluetooth</em>, <em>Audio</em> (servidor de som: PipeWire ou PulseAudio; com um desktop, escolha PipeWire), <em>Print service</em> (impressoras, CUPS) e, na 4.5, <em>Power management</em>, <em>Firewall</em> e <em>Additional fonts</em>.</p>
+
+<h3>Network configuration</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção (4.5)</th><th>O que faz</th></tr>
+<tr><td>Copy ISO network configuration to installation</td><td>Copia a configuração de rede do live (systemd-networkd). Simples, mas ruim para Wi-Fi em notebook.</td></tr>
+<tr><td>Use Network Manager (default backend)</td><td>Instala e ativa o NetworkManager. <strong>O mesmo do guia</strong>; a melhor escolha para quase todos.</td></tr>
+<tr><td>Use Network Manager (iwd backend)</td><td>NetworkManager usando o <code>iwd</code> para o Wi-Fi.</td></tr>
+<tr><td>Use standalone iwd</td><td>Só o <code>iwd</code>, sem NetworkManager.</td></tr>
+<tr><td>Manual configuration</td><td>IP fixo, gateway e DNS digitados à mão.</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Não deixe a rede em branco</strong>
+<p>Sem nenhuma opção, o archinstall avisa <em>No network configuration selected. Network will need to be set up manually on the installed system.</em> e o sistema liga <strong>sem internet</strong>, o mesmo problema de esquecer o <code>systemctl enable NetworkManager</code> (veja <a href="primeiro-boot.html">Primeiro Boot</a>).</p>
+</div>
+
+<h3>Additional packages</h3>
+<p>Uma lista de pacotes extras, separados por espaço, como o fim da linha do <code>pacstrap</code>. Para chegar ao sistema do guia: <code>sudo nano vim man-db man-pages texinfo openssh</code> (o <code>sudo</code> já vem se você criou um usuário com sudo).</p>
+
+<hr>
+
+<h2>Install: o que acontece</h2>
+<ol class="passo">
+  <li><strong>Escolha <em>Install</em>.</strong> Se faltar algo obrigatório (disco, autenticação), o archinstall avisa e volta ao menu. Senão, mostra um resumo das escolhas e pede confirmação.</li>
+  <li><strong>Contagem regressiva.</strong> "Starting device modifications in…": última chance de cancelar com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</li>
+  <li><strong>Instalação.</strong> Ele particiona, formata, monta, roda o <code>pacstrap</code>, gera o fstab, configura idioma, usuários, rede e bootloader: tudo o que você fez nas aulas, na mesma ordem. As mensagens passam na tela e vão para <code>/var/log/archinstall/install.log</code>.</li>
+  <li><strong>Fim.</strong> Aparece <em>Installation completed in …</em> e <em>What would you like to do next?</em>, com três opções: <em>Exit archinstall</em>, <em>Reboot system</em> e <em>chroot into installation for post-installation configurations</em> (entra com <code>arch-chroot</code> no sistema novo, para ajustes finais).</li>
+</ol>
+
+<p>Daí em diante, é como no fim da instalação manual: reinicie, tire o pendrive e confira tudo como em <a href="primeiro-boot.html">Primeiro Boot</a>. (Os passos 1, 2 e 4 vêm do código da 4.5; não foram capturados.)</p>
+
+<hr>
+
+<h2>Salvar e repetir: a configuração em JSON</h2>
+<p>O item <em>Save configuration</em> grava as escolhas em dois arquivos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Contém</th><th>Cuidado</th></tr>
+<tr><td><code>user_configuration.json</code></td><td>Tudo menos senhas: idioma, disco, bootloader, perfil, pacotes, fuso…</td><td>Inclui o layout do disco (com o caminho, como <code>/dev/sda</code>).</td></tr>
+<tr><td><code>user_credentials.json</code></td><td>Senhas do root e dos usuários.</td><td>O archinstall oferece criptografar este arquivo com uma senha. Não o publique.</td></tr>
+</table>
+</div>
+
+<p>O menu pergunta a pasta onde salvar (um pendrive montado, por exemplo). Mesmo sem você pedir, o archinstall 4.5 grava a configuração em <code>/var/log/archinstall/</code> do live antes de instalar e copia o log de instalação para o mesmo caminho no sistema novo.</p>
+
+<p>Um trecho do arquivo de exemplo que vem no próprio pacote (<code>examples/config-sample.json</code>, archinstall 4.5), com as chaves que correspondem aos itens do menu:</p>
+
+<pre class="file" data-file="user_configuration.json (trecho do exemplo oficial)">{
+  "archinstall-language": "English",
+  "audio_config": {
+    "audio": "pipewire"
+  },
+  "bootloader_config": {
+    "bootloader": "Systemd-boot",
+    "uki": false,
+    "removable": false
+  },
+  "hostname": "archlinux",
+  "kernels": [
+    "linux"
+  ],
+  "locale_config": {
+    "kb_layout": "us",
+    "sys_enc": "UTF-8",
+    "sys_lang": "en_US"
+  },
+  "ntp": true,
+  "packages": [],
+  "swap": {
+    "enabled": true,
+    "algorithm": "zstd"
+  },
+  "timezone": "UTC",
+  …
+}
+</pre>
+
+<p>Para o sistema do guia, você trocaria <code>"bootloader": "Grub"</code>, <code>"hostname": "notebook"</code>, <code>"kb_layout": "br-abnt2"</code>, <code>"sys_lang": "pt_BR"</code> e <code>"timezone": "America/Sao_Paulo"</code>. Depois, numa outra máquina (ou numa VM nova), o archinstall carrega o arquivo e abre o menu já preenchido:</p>
+
+<dl class="anatomy">
+  <dt>archinstall</dt><dd>O instalador.</dd>
+  <dt>--config user_configuration.json</dt><dd>Carrega as escolhas salvas (também aceita uma URL com <code>--config-url</code>).</dd>
+  <dt>--creds user_credentials.json</dt><dd>Carrega as senhas (opcional; sem ele, você as digita no menu).</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que faz</th></tr>
+<tr><td><code>--config ARQUIVO</code> / <code>--config-url URL</code></td><td>Carrega a configuração em JSON.</td></tr>
+<tr><td><code>--creds ARQUIVO</code></td><td>Carrega as senhas.</td></tr>
+<tr><td><code>--dry-run</code></td><td>Passa pelos menus, gera os arquivos de configuração e <strong>sai sem instalar</strong>. Ótimo para treinar.</td></tr>
+<tr><td><code>--silent</code></td><td>Não pergunta nada: com <code>--config</code>, instala direto. Perigoso: apaga o disco sem confirmação.</td></tr>
+<tr><td><code>--advanced</code></td><td>Mostra opções avançadas nos menus.</td></tr>
+<tr><td><code>--debug</code></td><td>Mais detalhes no log.</td></tr>
+</table>
+</div>
+
+<p>(As opções vêm do <code>archinstall --help</code> da versão 4.5; confira na sua com <code>archinstall --help</code>.) O formato do JSON muda entre versões: um arquivo salvo numa versão pode precisar de ajustes em outra.</p>
+
+<hr>
+
+<h2>Limitações</h2>
+<ul>
+  <li><strong>Você aprende pouco.</strong> Quando algo quebrar, o conserto é o mesmo da instalação manual (pendrive, montar, <code>arch-chroot</code>), e você vai precisar das aulas anteriores.</li>
+  <li><strong>Escolhas próprias.</strong> O padrão dele não é o da Arch Wiki: systemd-boot com UKI, zram em vez de partição de swap, Btrfs no topo da lista. Não está errado, mas é diferente do que você lê nos tutoriais.</li>
+  <li><strong>Layouts limitados.</strong> Esquemas incomuns (RAID, vários discos, LUKS com detalhes específicos) pedem a instalação manual ou <em>Pre-mounted configuration</em>.</li>
+  <li><strong>Muda rápido.</strong> Menus, nomes e o formato do JSON mudam de uma versão para outra (entre a 4.3 da ISO e a 4.5 apareceu, por exemplo, o item <em>Additional firmware</em>).</li>
+  <li><strong>Erros menos claros.</strong> Quando falha, a mensagem na tela é curta; o detalhe fica em <code>/var/log/archinstall/install.log</code>.</li>
+</ul>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O archinstall para logo no começo, sem conseguir baixar nada</strong>
+<p><strong>O que aconteceu:</strong> sem internet, ele não baixa a lista de pacotes. </p>
+<p><strong>Como resolver:</strong> confira com <code>ping -c 3 archlinux.org</code> e conecte como em <a href="ambiente-live.html">O Ambiente Live</a> (Wi-Fi com <code>iwctl</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Either root-password or at least 1 user with sudo privileges must be specified"</strong>
+<p><strong>O que aconteceu:</strong> você tentou instalar sem senha de root e sem nenhum usuário com sudo: ninguém conseguiria administrar o sistema.</p>
+<p><strong>Como resolver:</strong> em <em>Authentication</em>, defina a senha do root ou crie um usuário respondendo sim ao "superuser (sudo)".</p>
+</div>
+
+<div class="cenario">
+<strong>A instalação parou com erro no meio</strong>
+<p><strong>Como confirmar:</strong> leia o fim do log: <code>tail -n 50 /var/log/archinstall/install.log</code>. Erros de download (espelho lento ou fora do ar) são os mais comuns.</p>
+<p><strong>Como resolver:</strong> escolha outros espelhos (região <em>Brazil</em> ou <em>Worldwide</em>), atualize o próprio archinstall (<code>pacman -Sy archinstall</code>, no live) e rode de novo, de preferência com <code>--config</code> para não refazer as escolhas. Se o erro continuar, a instalação manual mostra exatamente qual passo falha.</p>
+</div>
+
+<div class="cenario">
+<strong>Instalou, mas ligou sem rede</strong>
+<p><strong>O que aconteceu:</strong> o item <em>Network configuration</em> ficou em branco.</p>
+<p><strong>Como resolver:</strong> se o <code>networkmanager</code> não foi instalado, volte ao pendrive e use <code>arch-chroot</code> para instalá-lo e ativá-lo, como em <a href="primeiro-boot.html">Primeiro Boot</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / tecla</th><th>O que faz</th></tr>
+<tr><td><code>archinstall</code></td><td>Abre o instalador guiado (no live).</td></tr>
+<tr><td><code>pacman -Sy archinstall</code></td><td>Atualiza o archinstall no live (só no live!).</td></tr>
+<tr><td><code>archinstall --config ARQ --creds ARQ</code></td><td>Repete uma instalação salva.</td></tr>
+<tr><td><code>archinstall --dry-run</code></td><td>Gera a configuração sem instalar.</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Andar e entrar nos itens.</td></tr>
+<tr><td><kbd>Espaço</kbd></td><td>Marcar/desmarcar (discos, desktops, kernels).</td></tr>
+<tr><td><kbd>/</kbd></td><td>Procurar na lista (fusos, espelhos, teclados).</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Esc</kbd> / <kbd>Ctrl</kbd>+<kbd>Q</kbd></td><td>Voltar o item ao padrão / cancelar / sair.</td></tr>
+<tr><td><code>/var/log/archinstall/install.log</code></td><td>O log da instalação.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Repetir a instalação</h3>
+<p>Complete para iniciar o archinstall com as escolhas salvas no arquivo <code>user_configuration.json</code>:</p>
+<div class="ex-code">archinstall <input data-answer="--config user_configuration.json" aria-label="opção e arquivo" size="32"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Só treinar</h3>
+<p>Complete para passar pelos menus e gerar a configuração <strong>sem instalar nada</strong>:</p>
+<div class="ex-code">archinstall <input data-answer="--dry-run" aria-label="opção" size="10"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Você particionou, formatou e montou tudo em <code>/mnt</code> à mão e quer que o archinstall faça só o resto. Qual configuração de disco escolher?</p>
+<label><input type="radio" name="q3"> Use a best-effort default partition layout</label>
+<label><input type="radio" name="q3"> Pre-mounted configuration</label>
+<label><input type="radio" name="q3"> Manual Partitioning</label>
+<label><input type="radio" name="q3"> Disk encryption</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O layout padrão do archinstall não criou partição de swap. Por quê?</p>
+<label><input type="radio" name="q4"> Porque o disco era pequeno demais.</label>
+<label><input type="radio" name="q4"> Porque o Arch não usa swap.</label>
+<label><input type="radio" name="q4"> Porque, por padrão, ele usa swap em zram (na memória).</label>
+<label><input type="radio" name="q4"> Porque o ext4 não aceita swap.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual bootloader o archinstall sugere numa máquina UEFI, e o que escolher para ficar igual a este guia?</p>
+<label><input type="radio" name="q5"> Sugere systemd-boot; para ficar igual ao guia, escolha Grub.</label>
+<label><input type="radio" name="q5"> Sugere Grub; o guia também usa Grub.</label>
+<label><input type="radio" name="q5"> Sugere Limine; o guia usa systemd-boot.</label>
+<label><input type="radio" name="q5"> Não instala bootloader; você instala depois.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual arquivo <strong>não</strong> deve ser compartilhado com outras pessoas?</p>
+<label><input type="radio" name="q6"> <code>user_configuration.json</code></label>
+<label><input type="radio" name="q6"> <code>config-sample.json</code></label>
+<label><input type="radio" name="q6"> <code>/etc/hostname</code></label>
+<label><input type="radio" name="q6"> <code>user_credentials.json</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>archinstall</code> vem na ISO; rode-o no live, com internet.</li>
+  <li>O menu tem um item para cada passo da instalação manual; o painel da direita mostra o valor atual.</li>
+  <li>Padrões a trocar para o sistema do guia: Locales (<code>br-abnt2</code>, <code>pt_BR.UTF-8</code>), Bootloader (Grub), Hostname, Timezone, Network (NetworkManager), Authentication.</li>
+  <li>Disco: layout padrão = EFI de 1 GiB + raiz; <strong>Wipe: True</strong> apaga o disco depois do Install.</li>
+  <li><em>Save configuration</em> gera <code>user_configuration.json</code> e <code>user_credentials.json</code>; <code>--config</code> repete a instalação.</li>
+  <li>Use depois de ter feito a instalação manual ao menos uma vez.</li>
+</ul>
+
+<h2>Na Arch Wiki</h2>
+<p>A página <a href="https://wiki.archlinux.org/title/Archinstall">archinstall</a> da Arch Wiki explica o instalador e como atualizá-lo no live; a documentação completa (com todas as chaves do JSON) fica no site do projeto, <a href="https://archinstall.archlinux.page/">archinstall.archlinux.page</a>, e o código em <a href="https://github.com/archlinux/archinstall">github.com/archlinux/archinstall</a>. Para comparar com o caminho manual, leia o <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> (em português: <a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">Guia de instalação</a>) e, sobre as escolhas padrão dele, <a href="https://wiki.archlinux.org/title/Zram">zram</a> e <a href="https://wiki.archlinux.org/title/Unified_kernel_image">Unified kernel image</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
