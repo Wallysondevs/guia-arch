@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch chaves e assinaturas — pacman-key, archlinux-keyring e SigLevel | Guia Arch</title>
+<meta name="description" content="Por que os pacotes do Arch Linux são assinados, pacman-key --init e --populate, o archlinux-keyring e o timer de sincronização, SigLevel no pacman.conf, e os erros reais de assinatura inválida, confiança desconhecida e pacote corrompido, com as soluções.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Chaves e <span class="hl">Assinaturas</span></h1>
+
+<p class="intro">Cada pacote oficial do Arch é <strong>assinado digitalmente</strong> pela pessoa que o empacotou. Antes de instalar, o pacman confere a assinatura com um <strong>chaveiro</strong> de chaves confiáveis. É o que garante que o pacote veio mesmo do Arch e não foi alterado no caminho. Quando o chaveiro fica velho, aparecem os erros de assinatura mais famosos do Arch, e eles têm solução simples.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que os pacotes são assinados e como funciona a verificação.</li>
+  <li>O chaveiro do pacman: <code>pacman-key --init</code>, <code>--populate</code>, <code>--list-keys</code> e o pacote <code>archlinux-keyring</code>.</li>
+  <li>A opção <code>SigLevel</code> do <code>pacman.conf</code>.</li>
+  <li>Os erros reais ("é inválida", "tem confiança desconhecida", "está corrompido") e como resolver.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Por que assinar</h2>
+
+<p>Você baixa pacotes de <a href="espelhos.html">espelhos</a>: servidores de universidades e voluntários, que o Arch não controla. Um espelho invadido, ou alguém no meio do caminho da sua rede, poderia trocar um pacote por uma versão com vírus. A assinatura impede isso:</p>
+
+<ol class="passo">
+  <li>Cada empacotador do Arch tem um par de chaves (padrão OpenPGP, o do <code>gpg</code>): uma <strong>privada</strong>, que só ele tem, e uma <strong>pública</strong>, que todo mundo pode ter.</li>
+  <li>Ao publicar <code>htop-3.5.3-1-x86_64.pkg.tar.zst</code>, ele gera com a chave privada um arquivinho de assinatura, <code>….pkg.tar.zst.sig</code>.</li>
+  <li>O seu pacman tem as chaves públicas dos empacotadores (o chaveiro, em <code>/etc/pacman.d/gnupg</code>). Com elas, confere que a assinatura bate com o arquivo.</li>
+  <li>Qualquer alteração no pacote, mesmo de 1 byte, faz a conta não bater: o pacman recusa.</li>
+</ol>
+
+<p>É como um lacre com carimbo: o espelho só transporta a caixa; quem garante o conteúdo é o carimbo de quem fechou. Você pode conferir uma assinatura à mão com <code>pacman-key --verify</code>. Saídas reais, com o pacote do <code>htop</code> do cache e uma cópia em que trocamos 4 bytes:</p>
+
+<pre class="term">#> pacman-key --verify htop-3.5.3-1-x86_64.pkg.tar.zst.sig
+==&gt; Checking htop-3.5.3-1-x86_64.pkg.tar.zst.sig... (detached)
+gpg: Assinatura feita em dom 16 ago 2026 13:16:16 -03
+gpg:        usando a chave EDDSA de 0429897DE5F3BDAC537A30696D42BDD116E0068F
+gpg: Assinatura válida de "Christian Hesse &lt;eworm@archlinux.org&gt;" [completa]     « confere
+#> echo $?
+0
+#> pacman-key --verify estragado.pkg.tar.zst.sig
+==&gt; Checking estragado.pkg.tar.zst.sig... (detached)
+gpg: Assinatura feita em dom 16 ago 2026 13:16:16 -03
+gpg:        usando a chave EDDSA de 0429897DE5F3BDAC537A30696D42BDD116E0068F
+gpg: Assinatura INVÁLIDA de "Christian Hesse &lt;eworm@archlinux.org&gt;" [completa]   « o arquivo foi mexido
+==&gt; ERRO: A verificação de assinatura para estragado.pkg.tar.zst.sig falhou.
+#> echo $?
+1</pre>
+
+<p>O <code>[completa]</code> é o nível de confiança na chave (explicado abaixo). No uso normal você não roda isso: o pacman confere sozinho, na etapa <code>verificando integridade de pacotes...</code> de toda instalação.</p>
+
+<hr>
+
+<h2>O chaveiro do pacman</h2>
+
+<p>O pacman tem um chaveiro só dele, separado do seu <code>~/.gnupg</code>, em <code>/etc/pacman.d/gnupg</code>. Ele é preparado em dois passos, que na instalação o <code>pacstrap -K</code> faz por você (veja <a href="pacstrap.html">Espelhos e pacstrap</a>).</p>
+
+<h3>pacman-key --init</h3>
+
+<p>Cria o chaveiro e uma <strong>chave mestra local</strong>, única da sua máquina. Ela é o "você" no sistema de confiança: as chaves do Arch são confiáveis porque a sua chave mestra as assina. Saída real (num chaveiro de teste em <code>/tmp/a4/gnupg</code>, com <code>--gpgdir</code>; sem essa opção, o padrão é <code>/etc/pacman.d/gnupg</code>):</p>
+
+<pre class="term">#> pacman-key --gpgdir /tmp/a4/gnupg --init
+gpg: /tmp/a4/gnupg/trustdb.gpg: trustdb criada
+gpg: nenhumas chaves plenamente confiáveis encontradas
+gpg: starting migration from earlier GnuPG versions
+gpg: porting secret keys from '/tmp/a4/gnupg/secring.gpg' to gpg-agent
+gpg: migration succeeded
+==&gt; Gerando chave mestra do pacman. Isso pode levar algum tempo.
+gpg: Generating pacman keyring master key...
+gpg: pasta '/tmp/a4/gnupg/openpgp-revocs.d' criada
+gpg: certificado de revogação armazenado como '/tmp/a4/gnupg/openpgp-revocs.d/777B664F82D93A701D6672634781A659F562CF71.rev'
+gpg: Done
+==&gt; Atualizando base de dados de confiança...
+gpg: marginals needed: 3  completes needed: 1  trust model: pgp
+gpg: profundidade: 0 válidas:   1 assinadas:   0 confiáveis: 0-, 0i, 0n, 0m, 0c, 1p</pre>
+
+<p>A mistura de português e inglês é do próprio <code>gpg</code>, que tem só parte das mensagens traduzidas. A linha que importa é <code>Gerando chave mestra do pacman</code>. O "pode levar algum tempo" é verdade em máquinas sem fonte de aleatoriedade (VMs recém-ligadas): mexa o mouse ou digite em outro terminal.</p>
+
+<h3>pacman-key --populate</h3>
+
+<p>Importa as chaves dos empacotadores do Arch, que vêm no pacote <strong><code>archlinux-keyring</code></strong>, e as assina com a chave mestra:</p>
+
+<pre class="term">#> pacman-key --gpgdir /tmp/a4/gnupg --populate
+==&gt; Anexando chaves de archlinux.gpg...
+==&gt; Assinando localmente chaves confiáveis no chaveiro...
+  -&gt; 5 chaves assinadas localmente.                « as 5 chaves principais do Arch
+==&gt; Importando valores de confiança do proprietário...
+gpg: setting ownertrust to 4
+…
+==&gt; Desabilitando chaves revogadas no chaveiro...
+  -&gt; 38 chaves desabilitadas                       « de ex-empacotadores: não valem mais
+==&gt; Atualizando base de dados de confiança...
+…
+gpg: próxima verificação da trustdb a 2026-10-26</pre>
+
+<p>A confiança funciona em cadeia: você confia na sua chave mestra; ela assina as <strong>5 chaves principais</strong> (<em>main keys</em>) do Arch; essas assinam as chaves de cada empacotador. Por isso não é preciso confiar em cada empacotador à mão.</p>
+
+<h3>O pacote archlinux-keyring</h3>
+
+<pre class="term">$ pacman -Qi archlinux-keyring | grep -E "^(Versão|Data da compilação)"
+Versão               : 20260909-1                 « a versão é a data: 9 de setembro de 2026
+Data da compilação   : qua 09 set 2026 04:45:27</pre>
+
+<p>Quando entra um empacotador novo, ou uma chave expira ou é revogada, sai uma versão nova do <code>archlinux-keyring</code>. Ao ser instalado ou atualizado, ele roda o <code>--populate</code> sozinho (na instalação da VM, a linha <code>==&gt; Appending keys from archlinux.gpg...</code> apareceu logo depois de <code>installing archlinux-keyring...</code>). Ou seja: <strong>atualizando o sistema, o chaveiro se atualiza</strong>.</p>
+
+<p>Além disso, o pacote traz um timer que, uma vez por semana, busca na internet as versões mais novas das chaves que você já tem (via WKD, um jeito de publicar chaves no site do próprio domínio):</p>
+
+<pre class="term">$ systemctl status archlinux-keyring-wkd-sync.timer --no-pager
+● archlinux-keyring-wkd-sync.timer - Refresh existing PGP keys of archlinux-keyring regularly
+     Loaded: loaded (/usr/lib/systemd/system/archlinux-keyring-wkd-sync.timer; static)    « ligado de fábrica
+     Active: active (waiting) since Fri 2026-10-16 13:06:46 -03; 22min ago
+ Invocation: 42265adef4ed4da6bae3ec1d73c7b87a
+    Trigger: Fri 2026-10-23 05:58:47 -03; 6 days left                                      « próxima execução
+   Triggers: ● archlinux-keyring-wkd-sync.service</pre>
+
+<h3>Ver as chaves</h3>
+
+<pre class="term">#> pacman-key --list-keys | head -12
+/etc/pacman.d/gnupg/pubring.gpg
+-------------------------------
+pub   rsa4096 2026-10-16 [SC]                                   « a chave mestra local, criada na instalação
+      BFBDF82322D207663E214B7FA4C900C8CB4BE992
+uid         [   plena  ] Pacman Keyring Master Key &lt;pacman@localhost&gt;
+
+pub   rsa2048 2011-08-12 [SC]                                   « a chave de um empacotador
+      02FD1C7A934E614545849F19A6234074498E9CEE
+      Revocável por: DD12A30E507068C7B405C18ED51C8A5363B4835B
+      Revocável por: BDF456E33168B3A87FEF7191829E9C732C3FFEBC
+uid         [ completa ] Christian Hesse &lt;eworm@archlinux.org&gt;
+sub   rsa2048 2011-08-12 [E]
+#> pacman-key --list-keys | grep -c "^pub"
+183                                                             « 183 chaves no chaveiro da VM</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na listagem</th><th>Quer dizer</th></tr>
+<tr><td><code>pub</code> / <code>sub</code></td><td>Chave principal / subchave. Muitos empacotadores assinam com uma subchave (<code>[S]</code> = <em>sign</em>), como a <code>ed25519</code> que aparece no <code>--verify</code> acima.</td></tr>
+<tr><td><code>[SC]</code>, <code>[E]</code>, <code>[S]</code></td><td>Para que a chave serve: assinar (<em>sign</em>), certificar outras chaves (<em>certify</em>), cifrar (<em>encrypt</em>).</td></tr>
+<tr><td><code>[ plena ]</code></td><td>Confiança total: só a sua chave mestra.</td></tr>
+<tr><td><code>[ completa ]</code></td><td>Válida: assinada pela cadeia de confiança. É o que o pacman exige.</td></tr>
+<tr><td><code>[desconhec.]</code></td><td>Sem caminho de confiança (por exemplo, um e-mail pessoal do empacotador ao lado do <code>@archlinux.org</code>).</td></tr>
+</table>
+</div>
+
+<p>Como ana, sem <code>sudo</code>, a listagem funciona, com um aviso na primeira linha: <code>gpg: Nota: trustdb sem permissão de escrita</code>. Os outros comandos do <code>pacman-key</code> (<code>--init</code>, <code>--populate</code>…) precisam de root.</p>
+
+<hr>
+
+<h2>SigLevel: quanto o pacman exige</h2>
+
+<p>No <code>/etc/pacman.conf</code> real da VM:</p>
+
+<pre class="file" data-file="/etc/pacman.conf (trecho)"># By default, pacman accepts packages signed by keys that its local keyring
+# trusts (see pacman-key and its man page), as well as unsigned packages.
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+#RemoteFileSigLevel = Required</pre>
+
+<dl class="anatomy">
+  <dt>SigLevel = Required</dt><dd>Para pacotes dos repositórios: a assinatura é <strong>obrigatória</strong> e precisa ser de uma chave confiável.</dd>
+  <dt>DatabaseOptional</dt><dd>Para os catálogos (<code>core.db</code>…): confere se houver assinatura, mas aceita sem. Os catálogos oficiais do Arch não são assinados; a segurança está nos pacotes.</dd>
+  <dt>LocalFileSigLevel = Optional</dt><dd>Para <code>pacman -U arquivo</code> (pacotes que você mesmo tem, como os do <a href="makepkg.html">makepkg</a>): confere se houver <code>.sig</code>; sem <code>.sig</code>, instala.</dd>
+  <dt>RemoteFileSigLevel</dt><dd>Para <code>pacman -U https://…</code> (comentado: vale o padrão).</dd>
+</dl>
+
+<div class="warning">
+<strong>Nunca "resolva" com SigLevel = Never</strong>
+<p>Na internet há quem sugira trocar para <code>SigLevel = Never</code> quando aparece um erro de assinatura. Isso <strong>desliga a verificação de tudo</strong>: o pacman passa a instalar qualquer arquivo que um espelho mandar. O erro quase sempre se resolve atualizando o chaveiro (abaixo). <code>TrustAll</code> e <code>Never</code> só fazem sentido num repositório local seu, dentro do bloco dele (veja <a href="repositorio-local.html">Seu Próprio Repositório</a>).</p>
+</div>
+
+<hr>
+
+<h2>Os erros de assinatura</h2>
+
+<p>Para mostrar os erros com saídas reais sem estragar a VM, usamos um cache e um chaveiro de teste e o <code>pacman -Sw</code> (que só baixa, não instala).</p>
+
+<h3>"tem confiança desconhecida" (o clássico)</h3>
+
+<p>Com um chaveiro <strong>vazio</strong> (só <code>--init</code>, sem <code>--populate</code>), o pacman não conhece a chave do empacotador. Ele oferece baixar a chave, mas, mesmo importada, ela não tem caminho de confiança:</p>
+
+<pre class="term">#> pacman -Sw htop
+…
+:: Obtendo pacotes...
+ htop-3.5.3-1-x86_64 sendo baixado...
+verificando chaveiro...
+baixando chaves necessárias...
+:: Importar a chave PGP 6D42BDD116E0068F, "Christian Hesse &lt;eworm@archlinux.org&gt;"? [S/n]
+verificando integridade de pacotes...
+:: Arquivo /tmp/a4/sigcache2/htop-3.5.3-1-x86_64.pkg.tar.zst está corrompido (pacote inválido ou corrompido (assinatura PGP)).
+Deseja apagá-lo? [S/n]
+erro: htop: a assinatura de "Christian Hesse &lt;eworm@archlinux.org&gt;" tem confiança desconhecida
+erro: falha ao efetuar a transação (pacote inválido ou corrompido (assinatura PGP))
+
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.</pre>
+
+<p>No seu sistema, o mesmo acontece quando o chaveiro está <strong>velho</strong>: você ficou meses sem atualizar, entrou um empacotador novo, e o pacote dele chega antes do <code>archlinux-keyring</code> que traz a chave dele. Repare: o pacman diz "corrompido", mas o arquivo está perfeito. O problema é a chave.</p>
+
+<p>Depois de rodar o <code>--populate</code> no chaveiro de teste, o mesmo comando passou sem nenhum erro:</p>
+
+<pre class="term">#> pacman -Sw htop
+…
+verificando chaveiro...
+verificando integridade de pacotes...                « sem erros</pre>
+
+<h3>"é inválida" (arquivo alterado)</h3>
+
+<p>Agora o chaveiro está certo, mas o arquivo no cache foi alterado (a cópia com 4 bytes trocados):</p>
+
+<pre class="term">#> pacman -Sw htop
+resolvendo dependências...
+
+Pacotes (1) htop-3.5.3-1
+
+Tamanho total download:  0,00 MiB                   « já estava no cache: não baixou de novo
+
+:: Continuar o download? [S/n]
+verificando chaveiro...
+verificando integridade de pacotes...
+:: Arquivo /tmp/a4/sigcache/htop-3.5.3-1-x86_64.pkg.tar.zst está corrompido (pacote inválido ou corrompido (assinatura PGP)).
+Deseja apagá-lo? [S/n]
+erro: htop: a assinatura de "Christian Hesse &lt;eworm@archlinux.org&gt;" é inválida
+erro: falha ao efetuar a transação (pacote inválido ou corrompido (assinatura PGP))
+
+Ocorreram erros e, portanto, nenhum pacote foi atualizado.</pre>
+
+<p>Aqui o arquivo está mesmo estragado: download interrompido, disco com defeito, ou um espelho servindo lixo. Respondendo <code>S</code> à pergunta, o pacman apaga o arquivo do cache; na próxima tentativa, baixa de novo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Causa mais comum</th><th>Solução</th></tr>
+<tr><td><code>tem confiança desconhecida</code></td><td>Chaveiro velho</td><td>Atualizar o <code>archlinux-keyring</code> primeiro</td></tr>
+<tr><td><code>é desconhecida</code> / <code>faltando chave necessária no chaveiro</code></td><td>A chave não está no chaveiro (velho, ou você recusou importar)</td><td>Idem</td></tr>
+<tr><td><code>é inválida</code> + <code>está corrompido</code></td><td>Arquivo danificado no cache ou no espelho</td><td>Responder <code>S</code> (apagar) e repetir; se persistir, trocar de espelho</td></tr>
+<tr><td><code>expirou</code> / <code>foi revogada</code></td><td>Chave de empacotador vencida ou retirada</td><td>Atualizar o <code>archlinux-keyring</code></td></tr>
+</table>
+</div>
+
+<h3>A solução: o archlinux-keyring primeiro</h3>
+
+<pre class="term">$ sudo pacman -Sy archlinux-keyring       « atualiza o catálogo e SÓ o chaveiro
+$ sudo pacman -Su                         « agora o resto, com as chaves novas</pre>
+
+<p>Este é o único <code>-Sy pacote</code> que a Arch Wiki recomenda, porque o <code>-Su</code> vem <strong>logo em seguida</strong> (veja por que <code>-Sy pacote</code> sozinho é perigoso em <a href="atualizar.html">Atualizar o Sistema</a>). Em sistemas parados há muito tempo, se nem o <code>archlinux-keyring</code> novo passar na verificação, há o último recurso: recriar o chaveiro do zero.</p>
+
+<pre class="term">$ sudo rm -r /etc/pacman.d/gnupg          « apaga o chaveiro (só o do pacman)
+$ sudo pacman-key --init
+$ sudo pacman-key --populate
+$ sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</pre>
+
+<p>Esses comandos são ilustrativos aqui (na VM, o chaveiro está em dia). Também resolve quando o chaveiro foi corrompido (por exemplo, por um desligamento durante a atualização).</p>
+
+<hr>
+
+<h2>Chaves de terceiros e do AUR</h2>
+
+<ul>
+  <li><strong>Repositórios de terceiros</strong> (fora do Arch) publicam a própria chave. Você a importa e assina localmente: <code>sudo pacman-key --recv-keys ID</code> e <code>sudo pacman-key --lsign-key ID</code>. Só faça isso com quem você confia: assinar a chave é dizer "aceito qualquer pacote que ela assinar".</li>
+  <li><strong>AUR:</strong> os pacotes do AUR não são assinados pelo Arch. Alguns PKGBUILDs conferem a assinatura do <strong>código-fonte</strong> do programa (a lista <code>validpgpkeys</code>). Essa conferência é feita pelo <code>makepkg</code> com o <strong>seu</strong> chaveiro pessoal (<code>gpg --recv-keys ID</code>, sem <code>sudo</code>), não com o do pacman. Veja <a href="makepkg.html">Compilar do AUR</a> e <a href="aur-seguranca.html">AUR com Segurança</a>.</li>
+</ul>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"tem confiança desconhecida" durante o -Syu</strong>
+<pre class="term">erro: htop: a assinatura de "Christian Hesse &lt;eworm@archlinux.org&gt;" tem confiança desconhecida</pre>
+<p><strong>O que aconteceu:</strong> o chaveiro está mais velho que o pacote.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Q archlinux-keyring</code> (a versão é a data) e há quanto tempo você não atualiza (<code>grep "full system upgrade" /var/log/pacman.log | tail -1</code>).</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"está corrompido … Deseja apagá-lo?"</strong>
+<p><strong>O que aconteceu:</strong> a verificação falhou. Pode ser chave (veja acima) ou arquivo danificado.</p>
+<p><strong>Como resolver:</strong> responda <code>S</code>, deixe o pacman apagar e repita. Se a mensagem junto for "é inválida" de novo, troque de espelho (<a href="espelhos.html">Espelhos</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>pacman-key demora "Gerando chave mestra" para sempre</strong>
+<p><strong>O que aconteceu:</strong> falta aleatoriedade (entropia) para criar a chave, comum logo depois de ligar uma VM.</p>
+<p><strong>Como resolver:</strong> espere, ou gere atividade (digitar, mexer o mouse, usar o disco) em outro terminal.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro: faltando chave necessária no chaveiro" num pacman -U</strong>
+<pre class="term">#> pacman -U htop-3.5.3-1-x86_64.pkg.tar.zst
+carregando pacotes...
+:: Importar a chave PGP 6D42BDD116E0068F? [S/n] n
+erro: faltando chave necessária no chaveiro
+erro: '/tmp/a4/sig/htop-3.5.3-1-x86_64.pkg.tar.zst': erro inesperado</pre>
+<p><strong>O que aconteceu:</strong> o arquivo tem <code>.sig</code> ao lado, então o pacman confere; a chave não está no chaveiro e você recusou importar.</p>
+<p><strong>Como resolver:</strong> se é um pacote oficial, o chaveiro está velho (veja acima). Se é de terceiros, importe e assine a chave dele, se confiar.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo pacman-key --init</code></td><td>Cria o chaveiro e a chave mestra local</td></tr>
+<tr><td><code>sudo pacman-key --populate</code></td><td>Importa e confia nas chaves do <code>archlinux-keyring</code></td></tr>
+<tr><td><code>pacman-key --list-keys</code></td><td>Lista as chaves</td></tr>
+<tr><td><code>pacman-key --verify arquivo.sig</code></td><td>Confere uma assinatura à mão</td></tr>
+<tr><td><code>sudo pacman-key --recv-keys ID</code> + <code>--lsign-key ID</code></td><td>Importa e confia numa chave de terceiros</td></tr>
+<tr><td><code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code></td><td>A solução dos erros de chave</td></tr>
+<tr><td><code>systemctl status archlinux-keyring-wkd-sync.timer</code></td><td>Atualização semanal das chaves</td></tr>
+<tr><td><code>SigLevel = Required DatabaseOptional</code></td><td>O padrão do Arch (não mude para <code>Never</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Preparar o chaveiro</h3>
+<p>Complete a sequência de criação do chaveiro numa instalação nova:</p>
+<div class="ex-code">sudo pacman-key <input data-answer="--init" aria-label="primeiro"> &amp;&amp; sudo pacman-key <input data-answer="--populate|--populate archlinux" aria-label="segundo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O pacote das chaves</h3>
+<p>Qual pacote traz as chaves dos empacotadores do Arch?</p>
+<div class="ex-code">sudo pacman -Sy <input data-answer="archlinux-keyring" aria-label="pacote"> &amp;&amp; sudo pacman -Su</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Depois de 6 meses sem atualizar, o <code>-Syu</code> dá "a assinatura de … tem confiança desconhecida". O que fazer?</p>
+<label><input type="radio" name="q3"> Trocar <code>SigLevel</code> para <code>Never</code>.</label>
+<label><input type="radio" name="q3"> Reinstalar o Arch.</label>
+<label><input type="radio" name="q3"> Atualizar primeiro o <code>archlinux-keyring</code> e depois o resto.</label>
+<label><input type="radio" name="q3"> Apagar o cache com <code>pacman -Scc</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que o pacman confere assinaturas, se os espelhos usam HTTPS?</p>
+<label><input type="radio" name="q4"> O HTTPS protege só o caminho; a assinatura garante que o conteúdo veio do empacotador do Arch, mesmo que o espelho seja comprometido.</label>
+<label><input type="radio" name="q4"> Porque o HTTPS não funciona no Arch.</label>
+<label><input type="radio" name="q4"> Para deixar o download mais rápido.</label>
+<label><input type="radio" name="q4"> Não confere: assinatura é só para o AUR.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Pacotes oficiais são assinados; o pacman confere com o chaveiro em <code>/etc/pacman.d/gnupg</code>.</li>
+  <li><code>pacman-key --init</code> cria a chave mestra; <code>--populate</code> confia nas chaves do <code>archlinux-keyring</code>.</li>
+  <li>O <code>archlinux-keyring</code> se atualiza com o sistema; o <code>archlinux-keyring-wkd-sync.timer</code> renova as chaves toda semana.</li>
+  <li>Erros de chave: <code>sudo pacman -Sy archlinux-keyring &amp;&amp; sudo pacman -Su</code>. Arquivo "é inválida": apague e baixe de novo.</li>
+  <li>Nunca <code>SigLevel = Never</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Pacman/Package_signing">Pacman/Package signing</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman/Package_signing_(Portugu%C3%AAs)">Pacman/Package signing (Português)</a>) explica o chaveiro, o <code>SigLevel</code> e a seção de solução de problemas; a página <a href="https://wiki.archlinux.org/title/GnuPG">GnuPG</a> cobre o <code>gpg</code> e as chaves pessoais usadas pelo <code>makepkg</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
