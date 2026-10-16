@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pacman × apt × dnf × zypper — tabela de equivalências | Guia Arch</title>
+<meta name="description" content="Referência rápida: as ações de pacotes no pacman (Arch), apt (Debian/Ubuntu), dnf (Fedora) e zypper (openSUSE) lado a lado, e todas as flags do pacman agrupadas por operação, com exemplo e link para a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Referência: <span class="hl">pacman × apt × dnf</span></h1>
+
+<p class="intro">Uma página para consultar, não para ler de cima a baixo. Na primeira parte, as ações comuns de pacotes em quatro famílias de distribuições, lado a lado. Na segunda, as flags do <code>pacman</code> agrupadas por operação, cada uma com um exemplo e a aula que a explica.</p>
+
+<div class="note">
+<strong>Como ler o pacman</strong>
+<p>Todo comando do pacman tem <strong>uma operação</strong> (letra maiúscula) e zero ou mais <strong>opções</strong> (minúsculas), que podem ser grudadas: <code>-Syu</code> = <code>-S</code> + <code>-y</code> + <code>-u</code>. As operações: <code>-S</code> <em>sync</em> (repositórios), <code>-R</code> <em>remove</em>, <code>-Q</code> <em>query</em> (o que está instalado), <code>-U</code> <em>upgrade</em> (arquivo local), <code>-F</code> <em>files</em>, <code>-D</code> <em>database</em>, <code>-T</code> <em>deptest</em>. A mesma letra minúscula muda de sentido conforme a operação: <code>-Ss</code> é <em>search</em>, <code>-Rs</code> é <em>recursive</em>. Em dúvida: <code>pacman -S -h</code>, <code>pacman -Q -h</code>… (ajuda em português) ou <code>man pacman</code>.</p>
+</div>
+
+<div class="warning">
+<strong>Duas regras que valem para toda a tabela</strong>
+<p>1. Comandos que mudam o sistema precisam de <code>sudo</code> (omitido nas tabelas). 2. No Arch, nunca atualize a lista sem atualizar o sistema: <code>pacman -Sy pacote</code> é uma <strong>atualização parcial</strong>. Use <code>pacman -Syu</code> (ou <code>pacman -Syu pacote</code>). Veja <a href="atualizar.html">Atualizar o Sistema</a>.</p>
+</div>
+
+<hr>
+
+<h2>Ações comuns nas quatro famílias</h2>
+
+<h3>Atualizar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>Arch (pacman)</th><th>Debian/Ubuntu (apt)</th><th>Fedora (dnf)</th><th>openSUSE (zypper)</th></tr>
+<tr><td>Atualizar a lista de pacotes</td><td><code>pacman -Sy</code> (só junto com <code>-u</code>!)</td><td><code>apt update</code></td><td><code>dnf makecache</code></td><td><code>zypper refresh</code></td></tr>
+<tr><td>Atualizar o sistema</td><td><code>pacman -Syu</code></td><td><code>apt update &amp;&amp; apt upgrade</code></td><td><code>dnf upgrade</code></td><td><code>zypper update</code> (Tumbleweed: <code>zypper dup</code>)</td></tr>
+<tr><td>Atualização completa (pode remover)</td><td><code>pacman -Syu</code></td><td><code>apt full-upgrade</code></td><td><code>dnf distro-sync</code></td><td><code>zypper dup</code></td></tr>
+<tr><td>Forçar baixar as listas</td><td><code>pacman -Syyu</code></td><td>—</td><td><code>dnf makecache --refresh</code></td><td><code>zypper refresh -f</code></td></tr>
+<tr><td>Ver o que tem atualização</td><td><code>checkupdates</code> (pacman-contrib) ou <code>pacman -Qu</code></td><td><code>apt list --upgradable</code></td><td><code>dnf check-update</code></td><td><code>zypper list-updates</code></td></tr>
+<tr><td>Voltar uma versão</td><td><code>pacman -U /var/cache/pacman/pkg/…</code> ou <a href="downgrade.html">downgrade</a></td><td><code>apt install pacote=versão</code></td><td><code>dnf downgrade pacote</code></td><td><code>zypper install --oldpackage pacote=versão</code></td></tr>
+<tr><td>Segurar um pacote (não atualizar)</td><td><code>IgnorePkg</code> no <code>pacman.conf</code></td><td><code>apt-mark hold</code></td><td><code>dnf versionlock add</code> (plugin)</td><td><code>zypper addlock</code></td></tr>
+</table>
+</div>
+
+<h3>Instalar e remover</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>pacman</th><th>apt</th><th>dnf</th><th>zypper</th></tr>
+<tr><td>Instalar</td><td><code>pacman -S pacote</code></td><td><code>apt install pacote</code></td><td><code>dnf install pacote</code></td><td><code>zypper install pacote</code></td></tr>
+<tr><td>Instalar só se faltar</td><td><code>pacman -S --needed pacote</code></td><td><code>apt install pacote</code> (já é assim)</td><td><code>dnf install pacote</code></td><td><code>zypper install pacote</code></td></tr>
+<tr><td>Reinstalar</td><td><code>pacman -S pacote</code></td><td><code>apt reinstall pacote</code></td><td><code>dnf reinstall pacote</code></td><td><code>zypper install -f pacote</code></td></tr>
+<tr><td>Instalar arquivo local</td><td><code>pacman -U arq.pkg.tar.zst</code></td><td><code>apt install ./arq.deb</code></td><td><code>dnf install ./arq.rpm</code></td><td><code>zypper install ./arq.rpm</code></td></tr>
+<tr><td>Instalar de uma URL</td><td><code>pacman -U https://…/arq.pkg.tar.zst</code></td><td>—</td><td><code>dnf install https://…/arq.rpm</code></td><td><code>zypper install https://…</code></td></tr>
+<tr><td>Só baixar</td><td><code>pacman -Sw pacote</code></td><td><code>apt download pacote</code></td><td><code>dnf download pacote</code></td><td><code>zypper install -d pacote</code></td></tr>
+<tr><td>Remover (mantém dependências)</td><td><code>pacman -R pacote</code></td><td><code>apt remove pacote</code></td><td><code>dnf remove pacote</code></td><td><code>zypper remove pacote</code></td></tr>
+<tr><td>Remover com dependências órfãs</td><td><code>pacman -Rs pacote</code></td><td><code>apt remove pacote &amp;&amp; apt autoremove</code></td><td><code>dnf remove pacote</code></td><td><code>zypper remove -u pacote</code></td></tr>
+<tr><td>Remover também as configurações</td><td><code>pacman -Rns pacote</code></td><td><code>apt purge pacote</code></td><td>— (rpm guarda <code>.rpmsave</code>)</td><td>—</td></tr>
+<tr><td>Remover órfãos</td><td><code>pacman -Rns $(pacman -Qdtq)</code></td><td><code>apt autoremove</code></td><td><code>dnf autoremove</code></td><td><code>zypper packages --unneeded</code> + remove</td></tr>
+<tr><td>Instalar grupo / meta-pacote</td><td><code>pacman -S grupo</code> / <code>pacman -S meta-pacote</code></td><td><code>apt install meta-pacote</code> / <code>tasksel</code></td><td><code>dnf group install grupo</code></td><td><code>zypper install -t pattern nome</code></td></tr>
+</table>
+</div>
+
+<h3>Consultar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>pacman</th><th>apt / dpkg</th><th>dnf / rpm</th><th>zypper / rpm</th></tr>
+<tr><td>Procurar nos repositórios</td><td><code>pacman -Ss texto</code></td><td><code>apt search texto</code></td><td><code>dnf search texto</code></td><td><code>zypper search texto</code></td></tr>
+<tr><td>Procurar nos instalados</td><td><code>pacman -Qs texto</code></td><td><code>apt list --installed | grep texto</code></td><td><code>dnf list --installed | grep texto</code></td><td><code>zypper search -i texto</code></td></tr>
+<tr><td>Informações (repositório)</td><td><code>pacman -Si pacote</code></td><td><code>apt show pacote</code></td><td><code>dnf info pacote</code></td><td><code>zypper info pacote</code></td></tr>
+<tr><td>Informações (instalado)</td><td><code>pacman -Qi pacote</code></td><td><code>dpkg -s pacote</code></td><td><code>rpm -qi pacote</code></td><td><code>rpm -qi pacote</code></td></tr>
+<tr><td>Listar instalados</td><td><code>pacman -Q</code></td><td><code>apt list --installed</code></td><td><code>dnf list --installed</code></td><td><code>zypper search -i</code></td></tr>
+<tr><td>Instalados por você</td><td><code>pacman -Qe</code></td><td><code>apt-mark showmanual</code></td><td><code>dnf repoquery --userinstalled</code></td><td>—</td></tr>
+<tr><td>Arquivos de um pacote</td><td><code>pacman -Ql pacote</code></td><td><code>dpkg -L pacote</code></td><td><code>rpm -ql pacote</code></td><td><code>rpm -ql pacote</code></td></tr>
+<tr><td>Dono de um arquivo</td><td><code>pacman -Qo /caminho</code></td><td><code>dpkg -S /caminho</code></td><td><code>rpm -qf /caminho</code></td><td><code>rpm -qf /caminho</code></td></tr>
+<tr><td>Quem fornece um arquivo (não instalado)</td><td><code>pacman -F arquivo</code> (depois de <code>-Fy</code>)</td><td><code>apt-file search arquivo</code></td><td><code>dnf provides arquivo</code></td><td><code>zypper search --provides arquivo</code></td></tr>
+<tr><td>Dependências de um pacote</td><td><code>pacman -Si pacote</code> / <code>pactree pacote</code></td><td><code>apt depends pacote</code></td><td><code>dnf repoquery --requires pacote</code></td><td><code>zypper info --requires pacote</code></td></tr>
+<tr><td>Quem depende dele</td><td><code>pacman -Qi pacote</code> ("Necessário para") / <code>pactree -r</code></td><td><code>apt rdepends pacote</code></td><td><code>dnf repoquery --whatrequires pacote</code></td><td><code>zypper search --requires pacote</code></td></tr>
+<tr><td>Verificar arquivos instalados</td><td><code>pacman -Qkk pacote</code></td><td><code>dpkg -V pacote</code> / <code>debsums</code></td><td><code>rpm -V pacote</code></td><td><code>rpm -V pacote</code></td></tr>
+<tr><td>Pacotes de fora dos repositórios</td><td><code>pacman -Qm</code></td><td><code>apt list '?obsolete'</code></td><td><code>dnf list --extras</code></td><td><code>zypper packages --orphaned</code></td></tr>
+</table>
+</div>
+
+<h3>Cache, repositórios e configuração</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>pacman</th><th>apt</th><th>dnf</th><th>zypper</th></tr>
+<tr><td>Limpar o cache (versões velhas)</td><td><code>paccache -r</code> / <code>pacman -Sc</code></td><td><code>apt autoclean</code></td><td><code>dnf clean packages</code></td><td><code>zypper clean</code></td></tr>
+<tr><td>Limpar todo o cache</td><td><code>pacman -Scc</code></td><td><code>apt clean</code></td><td><code>dnf clean all</code></td><td><code>zypper clean -a</code></td></tr>
+<tr><td>Onde fica o cache</td><td><code>/var/cache/pacman/pkg</code></td><td><code>/var/cache/apt/archives</code></td><td><code>/var/cache/libdnf5</code></td><td><code>/var/cache/zypp/packages</code></td></tr>
+<tr><td>Lista de repositórios</td><td><code>/etc/pacman.conf</code> + <code>/etc/pacman.d/mirrorlist</code></td><td><code>/etc/apt/sources.list.d/</code></td><td><code>/etc/yum.repos.d/</code></td><td><code>/etc/zypp/repos.d/</code></td></tr>
+<tr><td>Listar repositórios</td><td><code>pacman-conf --repo-list</code></td><td><code>apt policy</code></td><td><code>dnf repolist</code></td><td><code>zypper repos</code></td></tr>
+<tr><td>Escolher espelhos rápidos</td><td><code>reflector</code></td><td><code>netselect-apt</code></td><td><code>fastestmirror</code> (no <code>dnf.conf</code>)</td><td>automático (MirrorCache)</td></tr>
+<tr><td>Histórico</td><td><code>/var/log/pacman.log</code></td><td><code>/var/log/apt/history.log</code></td><td><code>dnf history</code></td><td><code>/var/log/zypp/history</code></td></tr>
+<tr><td>Config. nova do pacote</td><td><code>.pacnew</code> (<code>pacdiff</code>)</td><td>pergunta / <code>.dpkg-dist</code></td><td><code>.rpmnew</code></td><td><code>.rpmnew</code></td></tr>
+<tr><td>Repositório da comunidade</td><td>AUR (<code>yay</code>, <code>paru</code>)</td><td>PPA (Ubuntu)</td><td>COPR (<code>dnf copr enable</code>)</td><td>OBS (<code>opi</code>)</td></tr>
+</table>
+</div>
+
+<p>Comandos do apt seguem o apt 3 do Debian 13; os do dnf, o dnf5 do Fedora atual. Detalhes e casos especiais: <a href="arch-x-outras.html">Arch × Debian × Fedora</a> e a Rosetta da Arch Wiki (link no fim).</p>
+
+<hr>
+
+<h2>Flags do pacman, por operação</h2>
+<p>Exemplos reais da VM do guia quando o resultado é curto:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/ls
+/usr/bin/ls pertence a coreutils 9.12-2
+$ pacman -Qs ^nginx
+local/nginx 1.30.5-1
+    Lightweight HTTP server and IMAP/POP3 proxy server
+$ pacman -Ss '^htop$'
+extra/htop 3.5.3-1 [instalado]
+    Interactive process viewer
+$ pacman -Qdt
+$ echo $?
+1                                            « nenhum órfão (lista vazia = código 1)
+$ pacman -Qm
+downgrade 12.0.4-1
+paru-bin 2.1.0-1
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1                       « vieram do AUR, não de um repositório
+$ pacman -Qk bash
+bash: total de 269 arquivos,  0 arquivo em falta
+$ pacman -T bash nao-existe
+nao-existe                                   « -T imprime só as dependências que FALTAM
+$ echo $?
+127</pre>
+
+<h3>-S (sync): repositórios</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Flag</th><th>Significado</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>-S</code></td><td>Instala dos repositórios</td><td><code>pacman -S htop</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-y</code> / <code>-yy</code></td><td><em>refresh</em>: baixa as listas / força baixar</td><td><code>pacman -Syu</code></td><td><a href="atualizar.html">Atualizar</a></td></tr>
+<tr><td><code>-u</code> / <code>-uu</code></td><td><em>sysupgrade</em>: atualiza tudo / permite voltar versões</td><td><code>pacman -Syuu</code> (depois de trocar de espelho "do futuro")</td><td><a href="atualizar.html">Atualizar</a></td></tr>
+<tr><td><code>-s</code></td><td><em>search</em>: procura (aceita regex)</td><td><code>pacman -Ss '^htop$'</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-i</code> / <code>-ii</code></td><td><em>info</em>: detalhes / com quem depende dele</td><td><code>pacman -Si nginx</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-g</code> / <code>-gg</code></td><td>Membros de um grupo / todos os grupos</td><td><code>pacman -Sg gnome</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-l</code></td><td>Lista um repositório</td><td><code>pacman -Sl core</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-w</code></td><td><em>downloadonly</em>: só baixa para o cache</td><td><code>pacman -Syuw</code> (baixa agora, instala depois)</td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-c</code> / <code>-cc</code></td><td><em>clean</em>: limpa versões não instaladas / limpa tudo</td><td><code>pacman -Sc</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-p</code></td><td><em>print</em>: mostra o que faria (URLs ou nomes)</td><td><code>pacman -Sp htop</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-q</code></td><td><em>quiet</em>: só os nomes</td><td><code>pacman -Ssq fonts</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>--needed</code></td><td>Não reinstala o que já está atualizado</td><td><code>pacman -S --needed base-devel git</code></td><td><a href="makepkg.html">makepkg</a></td></tr>
+<tr><td><code>--asdeps</code> / <code>--asexplicit</code></td><td>Instala marcando como dependência / explícito</td><td><code>pacman -S --asdeps python-pip</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>--ignore</code> / <code>--ignoregroup</code></td><td>Pula um pacote/grupo nesta atualização</td><td><code>pacman -Syu --ignore linux</code></td><td><a href="downgrade.html">downgrade</a></td></tr>
+<tr><td><code>--overwrite</code></td><td>Sobrescreve arquivos em conflito (cuidado)</td><td><code>pacman -Syu --overwrite '/usr/lib/python3*/*'</code></td><td><a href="problemas-update.html">Erros de Atualização</a></td></tr>
+<tr><td><code>--noconfirm</code></td><td>Não pergunta (scripts; perigoso em uso diário)</td><td><code>pacman -S --noconfirm htop</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-d</code> / <code>-dd</code></td><td>Ignora versão de dependências / todas (perigoso)</td><td>— (evite)</td><td><a href="problemas-update.html">Erros de Atualização</a></td></tr>
+</table>
+</div>
+
+<h3>-R (remove)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Flag</th><th>Significado</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>-R</code></td><td>Remove o pacote</td><td><code>pacman -R htop</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-s</code> / <code>-ss</code></td><td><em>recursive</em>: leva as dependências que ficaram sem uso / inclusive as explícitas</td><td><code>pacman -Rs htop</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-n</code></td><td><em>nosave</em>: não guarda <code>.pacsave</code> das configurações</td><td><code>pacman -Rns htop</code></td><td><a href="pacnew.html">.pacnew e .pacsave</a></td></tr>
+<tr><td><code>-c</code></td><td><em>cascade</em>: remove também quem depende dele (confira a lista!)</td><td><code>pacman -Rc gtk3</code> (leva muita coisa)</td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-u</code></td><td><em>unneeded</em>: só remove se ninguém depender</td><td><code>pacman -Ru pacote</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-d</code> / <code>-dd</code></td><td>Ignora dependências (quebra coisas)</td><td><code>pacman -Rdd pacote</code> (só em resgate)</td><td><a href="problemas-update.html">Erros de Atualização</a></td></tr>
+<tr><td><code>-p</code></td><td>Mostra o que removeria</td><td><code>pacman -Rsp htop</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+</table>
+</div>
+
+<h3>-Q (query): o que está instalado</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Flag</th><th>Significado</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>-Q</code></td><td>Lista instalados (ou um: nome e versão)</td><td><code>pacman -Q bash</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-i</code> / <code>-ii</code></td><td>Detalhes / com arquivos de backup</td><td><code>pacman -Qi nginx</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-l</code></td><td>Arquivos do pacote</td><td><code>pacman -Ql nginx</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-o</code></td><td><em>owns</em>: de quem é o arquivo</td><td><code>pacman -Qo /usr/bin/ls</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-s</code></td><td>Procura nos instalados</td><td><code>pacman -Qs nginx</code></td><td><a href="pacman.html">pacman</a></td></tr>
+<tr><td><code>-e</code></td><td><em>explicit</em>: instalados por você</td><td><code>pacman -Qe</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-d</code></td><td><em>deps</em>: instalados como dependência</td><td><code>pacman -Qd</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-t</code> / <code>-tt</code></td><td><em>unrequired</em>: que ninguém exige / ignorando opcionais</td><td><code>pacman -Qdt</code> (órfãos)</td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-m</code> / <code>-n</code></td><td><em>foreign</em> (fora dos repositórios: AUR) / <em>native</em></td><td><code>pacman -Qm</code></td><td><a href="aur.html">AUR</a></td></tr>
+<tr><td><code>-u</code></td><td><em>upgrades</em>: desatualizados (pela lista local)</td><td><code>pacman -Qu</code></td><td><a href="atualizar.html">Atualizar</a></td></tr>
+<tr><td><code>-k</code> / <code>-kk</code></td><td><em>check</em>: arquivos faltando / propriedades alteradas</td><td><code>pacman -Qk bash</code></td><td><a href="manutencao.html">Manutenção</a></td></tr>
+<tr><td><code>-g</code></td><td>Instalados de um grupo</td><td><code>pacman -Qg plasma</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-c</code></td><td><em>changelog</em> do pacote (quando existe)</td><td><code>pacman -Qc pacote</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-p</code></td><td>Consulta um arquivo <code>.pkg.tar.zst</code> em vez do banco</td><td><code>pacman -Qip arq.pkg.tar.zst</code></td><td><a href="makepkg.html">makepkg</a></td></tr>
+<tr><td><code>-q</code></td><td>Só os nomes (para scripts)</td><td><code>pacman -Qdtq</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+</table>
+</div>
+
+<h3>-U, -F, -D, -T</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Significado</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>-U</code></td><td><em>upgrade</em>: instala um arquivo de pacote local ou URL</td><td><code>pacman -U yay-bin-*.pkg.tar.zst</code></td><td><a href="makepkg.html">makepkg</a>, <a href="downgrade.html">downgrade</a></td></tr>
+<tr><td><code>-Fy</code></td><td>Baixa o banco de arquivos dos repositórios</td><td><code>pacman -Fy</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-F</code></td><td>Que pacote (mesmo não instalado) tem este arquivo</td><td><code>pacman -F bin/lsblk</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-Fl</code></td><td>Arquivos de um pacote não instalado</td><td><code>pacman -Fl nginx</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-Fx</code></td><td>Procura por regex</td><td><code>pacman -Fx 'bin/ss$'</code></td><td><a href="pacman-avancado.html">pacman Avançado</a></td></tr>
+<tr><td><code>-D --asdeps</code> / <code>--asexplicit</code></td><td>Muda o "motivo da instalação" de um pacote já instalado</td><td><code>pacman -D --asexplicit python</code></td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>-Dk</code> / <code>-Dkk</code></td><td>Confere a consistência do banco local / com os repositórios</td><td><code>pacman -Dk</code></td><td><a href="manutencao.html">Manutenção</a></td></tr>
+<tr><td><code>-T</code></td><td><em>deptest</em>: imprime as dependências que faltam</td><td><code>pacman -T bash nao-existe</code></td><td><a href="pkgbuild.html">PKGBUILD</a></td></tr>
+</table>
+</div>
+
+<h3>Opções comuns a todas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Para quê</th></tr>
+<tr><td><code>--root</code>, <code>--sysroot</code>, <code>--dbpath</code></td><td>Operar em outro sistema montado (resgate, <code>pacstrap</code>); veja <a href="chroot-resgate.html">Resgate com chroot</a></td></tr>
+<tr><td><code>--cachedir</code></td><td>Cache em outro lugar (ex.: um pendrive com pacotes)</td></tr>
+<tr><td><code>--config</code></td><td>Outro <code>pacman.conf</code></td></tr>
+<tr><td><code>--color always|never|auto</code></td><td>Cores (ou a linha <code>Color</code> do <code>pacman.conf</code>)</td></tr>
+<tr><td><code>--debug</code>, <code>-v</code></td><td>Diagnóstico: mostra configuração, espelhos e decisões</td></tr>
+<tr><td><code>--confirm</code> / <code>--noconfirm</code></td><td>Sempre perguntar / nunca perguntar</td></tr>
+<tr><td><code>--disable-download-timeout</code></td><td>Conexões lentas que caem com "tempo esgotado"</td></tr>
+</table>
+</div>
+
+<h3>Ferramentas que completam o pacman</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pacote</th><th>Para quê</th></tr>
+<tr><td><code>checkupdates</code></td><td><code>pacman-contrib</code></td><td>Lista atualizações sem mexer no banco (seguro, sem root)</td></tr>
+<tr><td><code>paccache</code></td><td><code>pacman-contrib</code></td><td>Limpa o cache guardando N versões</td></tr>
+<tr><td><code>pacdiff</code></td><td><code>pacman-contrib</code></td><td>Compara e mescla <code>.pacnew</code></td></tr>
+<tr><td><code>pactree</code></td><td><code>pacman-contrib</code></td><td>Árvore de dependências (<code>-r</code> = reversa)</td></tr>
+<tr><td><code>pacman-key</code></td><td><code>pacman</code></td><td>Chaves de assinatura; veja <a href="chaves.html">Chaves</a></td></tr>
+<tr><td><code>pacman-conf</code></td><td><code>pacman</code></td><td>Lê a configuração efetiva</td></tr>
+<tr><td><code>makepkg</code></td><td><code>pacman</code></td><td>Constrói pacotes a partir de um PKGBUILD</td></tr>
+<tr><td><code>reflector</code></td><td><code>reflector</code></td><td>Escolhe espelhos; veja <a href="espelhos.html">Espelhos</a></td></tr>
+<tr><td><code>yay</code> / <code>paru</code></td><td>AUR</td><td>pacman + AUR com a mesma sintaxe; veja <a href="yay-paru.html">yay e paru</a></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong><code>base-devel</code> é meta-pacote, não grupo</strong>
+<pre class="term">$ pacman -Sg base-devel
+erro: grupo de pacotes "base-devel" não foi encontrado</pre>
+<p>Tutoriais antigos mostram <code>pacman -S base-devel</code> perguntando quais membros instalar. Hoje ele é um meta-pacote: instala tudo, sem perguntar.</p>
+</div>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Pacman/Rosetta">Pacman/Rosetta</a> é a tabela-mãe desta página (também com Gentoo, Void, Alpine e outros; em pt-BR: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)/Rosetta_(Portugu%C3%AAs)">Pacman/Rosetta (Português)</a>); <a href="https://wiki.archlinux.org/title/Pacman">pacman</a> e <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a> explicam cada flag com exemplos; e o manual completo está em <code>man pacman</code> e <code>man pacman.conf</code>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
