@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Quiz — 36 perguntas práticas | Guia Arch</title>
+<meta name="description" content="Quiz do Guia Arch: 36 perguntas práticas sobre instalação, pacman, AUR, systemd, discos, boot, servidores e segurança no Arch Linux, com placar, explicação e link para a aula.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Quiz</span></h1>
+
+<p class="intro">Trinta e seis perguntas práticas: doze de cada nível. Cada uma corrige na hora; abra "Por quê?" para ver a explicação e o link para a aula. Quase todas pedem para interpretar uma situação ou uma saída real do terminal, não para decorar.</p>
+
+<p>Acertos: <strong id="placar">0 de 36</strong></p>
+
+<h2>Nível 1 · Iniciante</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que quer dizer <code>BUILD_ID=rolling</code> no <code>/etc/os-release</code> do Arch?</p>
+<label><input type="radio" name="q1"> Que esta é uma versão de testes.</label>
+<label><input type="radio" name="q1"> Que não há versões do sistema: ele é atualizado continuamente.</label>
+<label><input type="radio" name="q1"> Que a ISO foi gerada hoje.</label>
+<label><input type="radio" name="q1"> Que o kernel é o LTS.</label>
+<details><summary>Por quê?</summary><p>No modelo <em>rolling release</em> não existe "Arch 2" ou "Arch 3": um <code>pacman -Syu</code> traz tudo para o estado atual. Revise: <a href="rolling-release.html">Rolling Release</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. No ambiente live, você digitou isto. O que fazer?</p>
+<pre class="term" data-host="archiso" data-user="root">#> loadkeys br-abnt3
+loadkeys: Unable to open file: br-abnt3: No such file or directory</pre>
+<label><input type="radio" name="q2"> Baixar o mapa de teclado da internet.</label>
+<label><input type="radio" name="q2"> Instalar o pacote <code>kbd</code>.</label>
+<label><input type="radio" name="q2"> Usar o nome certo: <code>loadkeys br-abnt2</code>.</label>
+<label><input type="radio" name="q2"> Reiniciar o live.</label>
+<details><summary>Por quê?</summary><p>O mapa não existe com esse nome; o teclado brasileiro ABNT2 é <code>br-abnt2</code>. Revise: <a href="ambiente-live.html">O Ambiente Live</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. Qual partição a UEFI precisa para dar boot?</p>
+<label><input type="radio" name="q3"> Uma ESP (FAT32, tipo "EFI System").</label>
+<label><input type="radio" name="q3"> Uma partição ext4 chamada boot.</label>
+<label><input type="radio" name="q3"> Uma partição swap.</label>
+<label><input type="radio" name="q3"> Nenhuma: a UEFI lê o disco inteiro.</label>
+<details><summary>Por quê?</summary><p>A UEFI só lê FAT; os bootloaders ficam na ESP. No guia: <code>/dev/sda1</code>, 1 GiB, montada em <code>/boot</code>. Revise: <a href="particionar.html">Particionar o Disco</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O <code>pacstrap</code> parou com isto. O que aconteceu?</p>
+<pre class="term" data-host="archiso" data-user="root">error: target not found: networkmanger
+==> ERROR: Failed to install packages to new root</pre>
+<label><input type="radio" name="q4"> Faltou internet.</label>
+<label><input type="radio" name="q4"> O disco está cheio.</label>
+<label><input type="radio" name="q4"> O chaveiro está velho.</label>
+<label><input type="radio" name="q4"> O nome do pacote está errado (<code>networkmanager</code>).</label>
+<details><summary>Por quê?</summary><p>"target not found" = o pacman não achou um pacote com esse nome. Nada foi instalado; corrija e repita. Revise: <a href="pacstrap.html">Espelhos e pacstrap</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. O que faz o <code>arch-chroot /mnt</code>?</p>
+<label><input type="radio" name="q5"> Formata a partição montada em <code>/mnt</code>.</label>
+<label><input type="radio" name="q5"> Entra no sistema instalado em <code>/mnt</code>, que passa a ser o <code>/</code> dos comandos.</label>
+<label><input type="radio" name="q5"> Reinicia no sistema novo.</label>
+<label><input type="radio" name="q5"> Copia o live para o disco.</label>
+<details><summary>Por quê?</summary><p>É assim que se configura fuso, idioma, usuários e bootloader do sistema novo, ainda dentro do live. Revise: <a href="configurar.html">Configurar o Sistema</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Depois de instalar um segundo kernel (<code>linux-lts</code>), o GRUB passou a iniciar com ele. Por quê?</p>
+<label><input type="radio" name="q6"> O <code>linux</code> foi removido.</label>
+<label><input type="radio" name="q6"> O LTS é sempre preferido pelo Arch.</label>
+<label><input type="radio" name="q6"> O padrão do GRUB virou o primeiro kernel na ordem que o <code>grub-mkconfig</code> gerou.</label>
+<label><input type="radio" name="q6"> A UEFI escolheu o kernel mais estável.</label>
+<details><summary>Por quê?</summary><p>Com dois kernels, a ordenação deixou o LTS em primeiro. <code>GRUB_TOP_LEVEL="/boot/vmlinuz-linux"</code> + <code>grub-mkconfig</code> resolve. Revise: <a href="bootloader.html">Bootloader</a>, <a href="kernels.html">Kernels</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. A ana rodou isto. O que fazer?</p>
+<pre class="term">$ pacman -S fastfetch
+erro: você não pode realizar esta operação a menos que seja root.</pre>
+<label><input type="radio" name="q7"> <code>sudo pacman -S fastfetch</code></label>
+<label><input type="radio" name="q7"> <code>pacman -Sy fastfetch</code></label>
+<label><input type="radio" name="q7"> Apagar <code>/var/lib/pacman/db.lck</code>.</label>
+<label><input type="radio" name="q7"> Usar o <code>yay</code>.</label>
+<details><summary>Por quê?</summary><p>Instalar muda o sistema e exige root. Revise: <a href="pacman.html">pacman: o Básico</a>, <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">8. Qual é o jeito certo de atualizar o Arch?</p>
+<label><input type="radio" name="q8"> <code>pacman -Sy</code> e depois instalar só o que precisa.</label>
+<label><input type="radio" name="q8"> <code>pacman -U</code> em cada pacote.</label>
+<label><input type="radio" name="q8"> Reinstalar o sistema a cada mês.</label>
+<label><input type="radio" name="q8"> <code>sudo pacman -Syu</code>, de uma vez.</label>
+<details><summary>Por quê?</summary><p>O Arch só suporta o sistema atualizado por inteiro; <code>-Sy</code> sem <code>-u</code> é atualização parcial. Revise: <a href="atualizar.html">Atualizar o Sistema</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">9. No Arch, qual grupo dá direito ao <code>sudo</code> (depois de descomentar a linha no sudoers)?</p>
+<label><input type="radio" name="q9"> <code>sudo</code></label>
+<label><input type="radio" name="q9"> <code>wheel</code></label>
+<label><input type="radio" name="q9"> <code>admin</code></label>
+<label><input type="radio" name="q9"> <code>root</code></label>
+<details><summary>Por quê?</summary><p>No Arch (e no Fedora) é <code>wheel</code>; o grupo <code>sudo</code> é do Debian/Ubuntu. Revise: <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">10. O pacman parou com "não foi possível travar a base de dados" e <code>pgrep -a pacman</code> não mostra nada. O que fazer?</p>
+<label><input type="radio" name="q10"> Reinstalar o pacman.</label>
+<label><input type="radio" name="q10"> Esperar: outro pacman está rodando.</label>
+<label><input type="radio" name="q10"> Apagar a trava que sobrou: <code>sudo rm /var/lib/pacman/db.lck</code>.</label>
+<label><input type="radio" name="q10"> Rodar <code>pacman -Syu --force</code>.</label>
+<details><summary>Por quê?</summary><p>Sem outro pacman rodando, a trava é resto de um pacman interrompido (na VM do guia, um desligamento forçado). Só apague nessa situação. Revise: <a href="atualizar.html">Atualizar</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">11. Instalei o Arch e só aparece "notebook login:" numa tela preta. Deu errado?</p>
+<label><input type="radio" name="q11"> Não: o Arch não instala interface gráfica sozinho; você escolhe e instala uma.</label>
+<label><input type="radio" name="q11"> Sim: a placa de vídeo não funcionou.</label>
+<label><input type="radio" name="q11"> Sim: faltou o GRUB.</label>
+<label><input type="radio" name="q11"> Sim: precisa reinstalar com archinstall.</label>
+<details><summary>Por quê?</summary><p>É o sistema mínimo funcionando. Revise: <a href="desktop.html">Instalar um Desktop</a>, <a href="projeto-desktop.html">Montar um Desktop KDE</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">12. O sistema congelou totalmente. Qual a forma mais segura de reiniciar antes de apertar o botão?</p>
+<label><input type="radio" name="q12"> Tirar da tomada.</label>
+<label><input type="radio" name="q12"> Ctrl+Alt+Del várias vezes.</label>
+<label><input type="radio" name="q12"> Esperar uma hora.</label>
+<label><input type="radio" name="q12"> A sequência Alt+SysRq (REISUB), se estiver habilitada.</label>
+<details><summary>Por quê?</summary><p>REISUB pede ao kernel para encerrar processos, gravar o disco e desmontar antes de reiniciar. Revise: <a href="travamentos.html">Quando o Sistema Trava</a>.</p></details>
+</div>
+
+<h2>Nível 2 · Intermediário</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">13. O que mostra <code>pacman -Qdt</code>?</p>
+<label><input type="radio" name="q13"> Pacotes desatualizados.</label>
+<label><input type="radio" name="q13"> Órfãos: instalados como dependência e que ninguém mais usa.</label>
+<label><input type="radio" name="q13"> Pacotes do AUR.</label>
+<label><input type="radio" name="q13"> Pacotes com arquivos faltando.</label>
+<details><summary>Por quê?</summary><p><code>-d</code> = dependências, <code>-t</code> = não exigidos. Lista vazia devolve código 1. Revise: <a href="cache-orfaos.html">Cache e Órfãos</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">14. Depois de uma atualização apareceu <code>/etc/pacman.conf.pacnew</code>. O que é?</p>
+<label><input type="radio" name="q14"> Um backup do seu arquivo antes da atualização.</label>
+<label><input type="radio" name="q14"> Um arquivo corrompido para apagar.</label>
+<label><input type="radio" name="q14"> A versão nova do pacote, que não substituiu o seu arquivo modificado; você precisa mesclar.</label>
+<label><input type="radio" name="q14"> Uma configuração que o pacman já aplicou.</label>
+<details><summary>Por quê?</summary><p>O pacman nunca sobrescreve uma configuração que você mudou; compare com <code>pacdiff</code>. Revise: <a href="pacnew.html">.pacnew e .pacsave</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">15. Uma atualização falha com "a assinatura de … tem confiança desconhecida". Primeiro passo?</p>
+<label><input type="radio" name="q15"> <code>sudo pacman -Sy archlinux-keyring</code> e depois <code>sudo pacman -Su</code>.</label>
+<label><input type="radio" name="q15"> Desligar a verificação de assinaturas no <code>pacman.conf</code>.</label>
+<label><input type="radio" name="q15"> Trocar de distribuição.</label>
+<label><input type="radio" name="q15"> Apagar <code>/etc/pacman.d/gnupg</code>.</label>
+<details><summary>Por quê?</summary><p>O chaveiro velho não conhece a chave de um empacotador novo. Nunca desligue a verificação. Revise: <a href="chaves.html">Chaves e Assinaturas</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">16. Por que <code>sudo pacman -S yay</code> dá "alvo não encontrado"?</p>
+<label><input type="radio" name="q16"> Falta rodar <code>pacman -Sy</code>.</label>
+<label><input type="radio" name="q16"> O yay foi removido do Arch.</label>
+<label><input type="radio" name="q16"> Falta o grupo <code>wheel</code>.</label>
+<label><input type="radio" name="q16"> O yay está no AUR, que o pacman não acessa.</label>
+<details><summary>Por quê?</summary><p>Do AUR se baixa a receita (<code>git clone</code>) e se constrói com <code>makepkg -si</code>. Revise: <a href="aur.html">O que é o AUR</a>, <a href="makepkg.html">makepkg</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">17. Antes de construir um pacote do AUR, o que você deve sempre fazer?</p>
+<label><input type="radio" name="q17"> Rodar o <code>makepkg</code> como root.</label>
+<label><input type="radio" name="q17"> Ler o PKGBUILD (de onde vem o código, o que os comandos fazem).</label>
+<label><input type="radio" name="q17"> Desligar o firewall.</label>
+<label><input type="radio" name="q17"> Instalar com <code>--noconfirm</code>.</label>
+<details><summary>Por quê?</summary><p>O AUR não tem revisão prévia; já houve pacotes com malware. Revise: <a href="aur-seguranca.html">AUR com Segurança</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">18. Você deu <code>sudo systemctl start sshd</code> e, depois do reboot, o SSH não respondia. Por quê?</p>
+<label><input type="radio" name="q18"> O sshd só funciona com firewall.</label>
+<label><input type="radio" name="q18"> A senha expirou.</label>
+<label><input type="radio" name="q18"> <code>start</code> liga só agora; para o boot é <code>enable</code> (ou <code>enable --now</code>).</label>
+<label><input type="radio" name="q18"> O systemd apaga os serviços no reboot.</label>
+<details><summary>Por quê?</summary><p>No Arch nenhum serviço liga sozinho; <code>enable</code> cria o link para o boot. Revise: <a href="systemd.html">systemctl e Serviços</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">19. Qual comando mostra só as mensagens de erro do boot atual?</p>
+<label><input type="radio" name="q19"> <code>journalctl -b -p err</code></label>
+<label><input type="radio" name="q19"> <code>journalctl -f</code></label>
+<label><input type="radio" name="q19"> <code>cat /var/log/messages</code></label>
+<label><input type="radio" name="q19"> <code>dmesg -n 1</code></label>
+<details><summary>Por quê?</summary><p><code>-b</code> = este boot; <code>-p err</code> = prioridade erro ou pior. O Arch não tem <code>/var/log/messages</code>. Revise: <a href="journal.html">Logs (journalctl)</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">20. O que este erro quer dizer?</p>
+<pre class="term">$ systemd-analyze calendar 'segunda 08:00'
+Failed to parse calendar specification 'segunda 08:00': Argumento inválido</pre>
+<label><input type="radio" name="q20"> O timer já existe.</label>
+<label><input type="radio" name="q20"> Falta <code>sudo</code>.</label>
+<label><input type="radio" name="q20"> Horários precisam de segundos.</label>
+<label><input type="radio" name="q20"> Os dias da semana vão em inglês: <code>Mon 08:00</code>.</label>
+<details><summary>Por quê?</summary><p>O <code>OnCalendar=</code> entende <code>Mon</code>, <code>Tue</code>… Teste sempre com <code>systemd-analyze calendar</code>. Revise: <a href="timers.html">Timers e Tarefas</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">21. Qual a ordem segura para usar SSH só com chave?</p>
+<label><input type="radio" name="q21"> Desligar a senha, reiniciar o sshd, depois copiar a chave.</label>
+<label><input type="radio" name="q21"> Gerar a chave, copiar com <code>ssh-copy-id</code>, testar o login com chave, só então desligar a senha.</label>
+<label><input type="radio" name="q21"> Ligar o firewall antes de tudo.</label>
+<label><input type="radio" name="q21"> Copiar a chave privada para o servidor.</label>
+<details><summary>Por quê?</summary><p>Desligar a senha antes de testar a chave tranca você para fora. A chave privada nunca sai do cliente. Revise: <a href="ssh.html">SSH</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">22. Você editou o <code>/etc/fstab</code>. Como testar antes de reiniciar?</p>
+<label><input type="radio" name="q22"> <code>genfstab -U /</code></label>
+<label><input type="radio" name="q22"> <code>fsck /etc/fstab</code></label>
+<label><input type="radio" name="q22"> <code>sudo mount -a</code> (e <code>findmnt --verify</code>)</label>
+<label><input type="radio" name="q22"> Não há como: só reiniciando.</label>
+<details><summary>Por quê?</summary><p><code>mount -a</code> monta tudo o que falta; um erro aparece agora, não no boot (que cairia no <em>emergency mode</em>). Revise: <a href="fstab.html">mount e fstab</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">23. Depois de atualizar, o <code>paru</code> não abre: "error while loading shared libraries: libalpm.so.15". Por quê?</p>
+<label><input type="radio" name="q23"> Ele foi compilado contra a biblioteca antiga do pacman, que a atualização trocou; recompile o pacote do AUR.</label>
+<label><input type="radio" name="q23"> O disco está cheio.</label>
+<label><input type="radio" name="q23"> O AUR está fora do ar.</label>
+<label><input type="radio" name="q23"> Falta o grupo <code>wheel</code>.</label>
+<details><summary>Por quê?</summary><p>Pacotes do AUR não são reconstruídos pelo Arch quando uma biblioteca muda. Revise: <a href="yay-paru.html">yay e paru</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">24. Para que serve o microcode (<code>intel-ucode</code>/<code>amd-ucode</code>)?</p>
+<label><input type="radio" name="q24"> Acelerar a placa de vídeo.</label>
+<label><input type="radio" name="q24"> Substituir o kernel.</label>
+<label><input type="radio" name="q24"> Gerar o initramfs.</label>
+<label><input type="radio" name="q24"> Carregar no boot correções do próprio processador (estabilidade e segurança).</label>
+<details><summary>Por quê?</summary><p>O fabricante corrige falhas da CPU por microcode; o bootloader o carrega antes do kernel. Revise: <a href="microcode.html">Microcode</a>.</p></details>
+</div>
+
+<h2>Nível 3 · Avançado</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">25. O que o snapper faz, com o hook do pacman, a cada atualização?</p>
+<label><input type="radio" name="q25"> Apaga os snapshots antigos.</label>
+<label><input type="radio" name="q25"> Tira um snapshot antes e outro depois da transação, para você poder voltar.</label>
+<label><input type="radio" name="q25"> Compacta o Btrfs.</label>
+<label><input type="radio" name="q25"> Impede a atualização se houver erro.</label>
+<details><summary>Por quê?</summary><p>Os pares "pre/post" permitem desfazer uma atualização problemática. Revise: <a href="snapshots.html">Snapshots (snapper)</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">26. Você usa raiz criptografada (LUKS) e o boot não pede a senha, caindo num shell de emergência. Suspeito número 1?</p>
+<label><input type="radio" name="q26"> O <code>/etc/fstab</code>.</label>
+<label><input type="radio" name="q26"> O NetworkManager.</label>
+<label><input type="radio" name="q26"> Os HOOKS do <code>mkinitcpio.conf</code> (falta <code>sd-encrypt</code>/<code>encrypt</code>) ou o parâmetro do kernel.</label>
+<label><input type="radio" name="q26"> O microcode.</label>
+<details><summary>Por quê?</summary><p>Quem pede a senha é o initramfs; sem o hook, ele nem tenta abrir o LUKS. Revise: <a href="luks.html">Criptografia (LUKS)</a>, <a href="mkinitcpio.html">mkinitcpio</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">27. O sistema não dá boot. Qual a sequência para consertar a partir do pendrive?</p>
+<label><input type="radio" name="q27"> Dar boot no live, montar a raiz em <code>/mnt</code> e a ESP em <code>/mnt/boot</code>, <code>arch-chroot /mnt</code> e consertar.</label>
+<label><input type="radio" name="q27"> Rodar <code>pacstrap</code> de novo por cima.</label>
+<label><input type="radio" name="q27"> Formatar a ESP.</label>
+<label><input type="radio" name="q27"> Instalar de novo com archinstall.</label>
+<details><summary>Por quê?</summary><p>Dentro do chroot você roda pacman, <code>mkinitcpio -P</code> e <code>grub-install</code> como se estivesse no sistema. Revise: <a href="chroot-resgate.html">Resgate com chroot</a>, <a href="recuperar-boot.html">Recuperar o Boot</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">28. No PKGBUILD, o que vai na função <code>package()</code>?</p>
+<label><input type="radio" name="q28"> O download do código.</label>
+<label><input type="radio" name="q28"> A compilação.</label>
+<label><input type="radio" name="q28"> Os testes.</label>
+<label><input type="radio" name="q28"> A cópia dos arquivos para <code>$pkgdir</code>, que vira o conteúdo do pacote.</label>
+<details><summary>Por quê?</summary><p>Ordem: <code>prepare()</code>, <code>build()</code>, <code>check()</code>, <code>package()</code>. Nunca instale direto em <code>/usr</code>. Revise: <a href="pkgbuild.html">Escrever um PKGBUILD</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">29. No Arch, você procurou <code>/etc/nginx/sites-enabled</code> e não existe. Por quê?</p>
+<label><input type="radio" name="q29"> O nginx não foi instalado direito.</label>
+<label><input type="radio" name="q29"> O Arch empacota o nginx como o projeto original; essa pasta é convenção do Debian.</label>
+<label><input type="radio" name="q29"> Ela só aparece depois do primeiro <code>start</code>.</label>
+<label><input type="radio" name="q29"> Ela está em <code>/usr/share/nginx</code>.</label>
+<details><summary>Por quê?</summary><p>Se quiser o estilo Debian, crie a pasta e um <code>include</code> no <code>nginx.conf</code>. Revise: <a href="servidor-web.html">Servidor Web (nginx)</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">30. O que esta saída diz?</p>
+<pre class="term">$ podman top dorminhoco user huser pid args
+USER        HUSER       PID         COMMAND
+root        1000        1           sleep 600</pre>
+<label><input type="radio" name="q30"> O container roda como root no Arch.</label>
+<label><input type="radio" name="q30"> O container travou.</label>
+<label><input type="radio" name="q30"> É "root" dentro do container, mas a ana (uid 1000) para o kernel: Podman rootless.</label>
+<label><input type="radio" name="q30"> O processo tem PID 1000 no Arch.</label>
+<details><summary>Por quê?</summary><p><code>USER</code> é o usuário dentro do container; <code>HUSER</code>, no host. Revise: <a href="containers.html">Docker e Podman</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">31. Na VM do guia, <code>ls -l /dev/kvm</code> diz "Arquivo ou diretório inexistente" e <code>systemd-detect-virt</code> responde <code>oracle</code>. Conclusão?</p>
+<label><input type="radio" name="q31"> O Arch está dentro do VirtualBox sem virtualização aninhada; não dá para criar VMs aceleradas nele.</label>
+<label><input type="radio" name="q31"> Falta instalar o <code>qemu-desktop</code>.</label>
+<label><input type="radio" name="q31"> Falta entrar no grupo <code>libvirt</code>.</label>
+<label><input type="radio" name="q31"> O kernel não tem KVM.</label>
+<details><summary>Por quê?</summary><p><code>/dev/kvm</code> só existe com VT-x/AMD-V disponível; <code>oracle</code> = VirtualBox. Revise: <a href="kvm.html">Máquinas Virtuais (KVM)</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">32. No <code>systemd-analyze blame</code>, <code>dev-sda1.device</code> aparece com 16 s. O que concluir?</p>
+<label><input type="radio" name="q32"> O disco está morrendo.</label>
+<label><input type="radio" name="q32"> É preciso desabilitar o <code>sda1</code>.</label>
+<label><input type="radio" name="q32"> O fsck demorou 16 s.</label>
+<label><input type="radio" name="q32"> É o tempo de espera até o dispositivo aparecer, em paralelo; olhe os serviços e a <code>critical-chain</code>.</label>
+<details><summary>Por quê?</summary><p>Unidades <code>.device</code> esperam junto com o resto; filtre com <code>grep -v '\.device'</code>. Revise: <a href="desempenho.html">Desempenho</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">33. A ana errou a senha 3 vezes num <code>sudo</code>. Agora a senha certa é recusada. O que está acontecendo?</p>
+<label><input type="radio" name="q33"> A senha foi trocada automaticamente.</label>
+<label><input type="radio" name="q33"> O <code>pam_faillock</code> travou a conta por 10 minutos.</label>
+<label><input type="radio" name="q33"> O sudo foi desinstalado.</label>
+<label><input type="radio" name="q33"> O teclado mudou para inglês.</label>
+<details><summary>Por quê?</summary><p>Padrão do Arch: 3 falhas em 15 min = 10 min de bloqueio; <code>faillock --user ana --reset</code> (root) libera. Revise: <a href="seguranca.html">Segurança</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">34. Como testar um arquivo de regras do nftables <strong>sem aplicá-lo</strong>?</p>
+<label><input type="radio" name="q34"> <code>sudo nft -f arquivo</code></label>
+<label><input type="radio" name="q34"> <code>sudo systemctl start nftables</code></label>
+<label><input type="radio" name="q34"> <code>sudo nft -c -f arquivo</code></label>
+<label><input type="radio" name="q34"> <code>sudo ufw status</code></label>
+<details><summary>Por quê?</summary><p><code>-c</code> (<em>check</em>) confere a sintaxe e não muda nada; o erro aponta linha e coluna. Revise: <a href="projeto-servidor.html">Servidor Caseiro</a>, <a href="firewall.html">Firewall</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">35. Você escreveu um hook com nome errado no <code>mkinitcpio.conf</code> e viu isto. O que acontece se reiniciar assim?</p>
+<pre class="term">==> ERROR: Hook 'filesytems' cannot be found
+==> WARNING: errors were encountered during the build. The image may not be complete.</pre>
+<label><input type="radio" name="q35"> O initramfs pode ficar incompleto e o boot falhar; corrija e rode <code>mkinitcpio -P</code> antes de reiniciar.</label>
+<label><input type="radio" name="q35"> Nada: o mkinitcpio corrige sozinho.</label>
+<label><input type="radio" name="q35"> O GRUB some.</label>
+<label><input type="radio" name="q35"> O pacman é desinstalado.</label>
+<details><summary>Por quê?</summary><p>"The image may not be complete" é sério: sem o hook certo, o kernel pode não achar a raiz. Revise: <a href="mkinitcpio.html">mkinitcpio e initramfs</a>.</p></details>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">36. O que o Manjaro muda de mais importante em relação ao Arch?</p>
+<label><input type="radio" name="q36"> Usa o apt.</label>
+<label><input type="radio" name="q36"> Não usa systemd.</label>
+<label><input type="radio" name="q36"> Não tem acesso a pacotes gráficos.</label>
+<label><input type="radio" name="q36"> Tem repositórios próprios, com os pacotes chegando semanas depois, o que às vezes quebra pacotes do AUR.</label>
+<details><summary>Por quê?</summary><p>EndeavourOS usa os repositórios do Arch; o Manjaro, os seus. Os fóruns do Arch não dão suporte a derivadas. Revise: <a href="arch-x-outras.html">Arch × Debian × Fedora</a>.</p></details>
+</div>
+
+<div class="tip">
+<strong>Terminou?</strong>
+<p>Role até o topo para ver o placar. Errou alguma? Abra "Por quê?" e siga o link para a aula. Para treinar os erros reais, veja <a href="problemas.html">Solução de Problemas</a>.</p>
+</div>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
