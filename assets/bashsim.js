@@ -35,9 +35,11 @@
    (exit volta para a ana).
 
    LIMITAÇÕES CONHECIDAS (diferenças em relação ao Arch real da VM):
-   - Não há rede, editores, man/info, tar/gzip, AUR (yay, paru,
-     makepkg), discos de verdade (fdisk, mkfs, mount), reboot. Para eles,
-     uma mensagem "(simulador) …" (nunca uma saída inventada).
+   - Não há rede, editores, man/info, AUR (yay, paru, makepkg), discos de
+     verdade (fdisk, mkfs, mount), reboot. Para eles, uma mensagem
+     "(simulador) …" (nunca uma saída inventada).
+   - tar/gzip/xz/zstd/bzip2 guardam o conteúdo original dentro do nó; o
+     tamanho do .tar é exato, o dos compactados é uma estimativa.
    - O pacman conhece os pacotes instalados na VM e uma parte do
      repositório (os que as aulas usam e as dependências deles); "-Ss"
      procura só nessa parte. Transações (-S, -R, -U, -Syu) mudam só o
@@ -51,9 +53,10 @@
      não há SIGCHLD/SIGWINCH nem Ctrl+Z (suspender).
    - A ordem de saída entre processos paralelos e de >( ) pode diferir da
      real (no Bash real ela também varia de uma execução para outra).
-   - find, du e grep -r usam a ordem do disco da VM para os arquivos
-     iniciais; arquivos novos saem na ordem de criação (ext4) ou na
-     ordem inversa (/tmp, tmpfs).
+   - find, du, grep -r, tar -c, chmod/chown -R e o mv entre sistemas de
+     arquivos usam a ordem do disco da VM para os arquivos iniciais;
+     arquivos novos saem na ordem de criação (ext4; o real usa a ordem do
+     hash do diretório, imprevisível) ou na ordem inversa (/tmp, tmpfs).
    - awk é o gawk 5.4 (o Arch não tem mawk) sem as extensões raras
      (@include, -M, funções de rede, arrays de arrays); sed, grep, sort,
      date e find cobrem as opções usadas no guia; "sh" é o próprio bash
@@ -9200,6 +9203,33 @@
     return n;
   }
 
+  /* ---------- gio (glib2): só o "gio trash" (sem gvfs, como na VM: --list/--restore/--empty não funcionam) ---------- */
+  var GIO_USO = "Uso:\n  gio COMANDO [ARGUMENTOS…]\n\nComandos:\n  help     Exibe a ajuda\n  version  Exibe a versão\n  cat      Concatena arquivos para a saída padrão\n  copy     Copia um ou mais arquivos\n  info     Mostra informações sobre locais\n  launch   Inicia um aplicativo a partir de um arquivo desktop\n  list     Lista o conteúdo dos locais\n  mime     Obtém ou define o manipulador para um tipo mime\n  mkdir    Cria diretórios\n  monitor  Monitora arquivos e diretórios por alterações\n  mount    Monta ou desmonta os locais\n  move     Move um ou mais arquivos\n  open     Abre arquivos com o aplicativo padrão\n  rename   Renomeia um arquivo\n  remove   Exclui um ou mais arquivos\n  save     Lê da entrada padrão e salva\n  set      Define um atributo de arquivo\n  trash    Move arquivos ou diretórios para a lixeira\n  tree     Lista o conteúdo de locais em uma árvore\n\nUse “gio help COMMAND” para obter ajuda detalhada.\n";
+  EXT.gio = function* (args, io) {
+    var sh = io.sh, sub = args[1];
+    if (!sub) { io.err(GIO_USO); return 1; }
+    if (sub === "help" || sub === "--help") { io.out(GIO_USO); return 0; }
+    if (sub === "version" || sub === "--version") { io.out("2.86.1\n"); return 0; }
+    if (sub !== "trash") { io.err("(simulador) \"gio " + sub + "\" não é simulado aqui; só o gio trash.\n"); return 1; }
+    var a = args.slice(2), st = 0;
+    if (a.some(function (x) { return /^--(list|restore|empty)$/.test(x); })) { io.err("gio: trash:: Operação sem suporte\n"); return 1; }
+    var home = contaDe(sh).home, k = sh.k;
+    function garantir(cam) { var partes = cam.split("/").filter(Boolean), no = sh.fs; for (var i = 0; i < partes.length; i++) { if (!no.c[partes[i]]) { no.c[partes[i]] = donoDe(sh, mkD(sh.uid, 448, k.clock)); no.mt = k.clock; } no = no.c[partes[i]]; } return no; }
+    a.filter(function (x) { return !/^-/.test(x); }).forEach(function (f) {
+      var r = sh.resolver(f, false), abs = sh.abs(f);
+      if (!r.no) { io.err("gio: file://" + abs + ": Erro ao mover para a lixeira o arquivo " + abs + ": " + errMsg(r.err || "ENOENT") + "\n"); st = 1; return; }
+      if (!sh.pode(r.pai, 2)) { io.err("gio: file://" + abs + ": Erro ao mover para a lixeira o arquivo " + abs + ": Permissão negada\n"); st = 1; return; }
+      var files = garantir(home + "/.local/share/Trash/files"), info = garantir(home + "/.local/share/Trash/info");
+      var base = r.nome, nome = base, n = 2, ponto = base.indexOf(".", 1);
+      while (files.c[nome] || info.c[nome + ".trashinfo"]) { nome = ponto > 0 ? base.slice(0, ponto) + "." + n + base.slice(ponto) : base + "." + n; n++; }
+      delete r.pai.c[r.nome]; r.pai.mt = k.clock;
+      files.c[nome] = r.no; files.mt = k.clock;
+      var t = tm(k.clock);
+      info.c[nome + ".trashinfo"] = donoDe(sh, mkF(sh.uid, 420, "[Trash Info]\nPath=" + abs.split("/").map(function (p) { return encodeURIComponent(p).replace(/%2F/g, "/"); }).join("/") + "\nDeletionDate=" + t.Y + "-" + dois(t.M + 1) + "-" + dois(t.D) + "T" + dois(t.h) + ":" + dois(t.m) + ":" + dois(t.s || 0) + "\n", k.clock)); info.mt = k.clock;
+    });
+    return st;
+  };
+
   /* ---------- tree 2.3.2 ---------- */
   EXT.tree = function* (args, io) {
     var sh = io.sh, o = { L: Infinity }, raizes = [], ign = null, pat = null;
@@ -10730,7 +10760,7 @@
       case "while": while (this.bool(this.ev(s.c))) { try { this.exec(s.s); } catch (e) { if (e === "break") break; if (e === "continue") continue; throw e; } } return;
       case "do": do { try { this.exec(s.s); } catch (e) { if (e === "break") break; if (e === "continue") continue; throw e; } } while (this.bool(this.ev(s.c))); return;
       case "for": if (s.a) this.exec(s.a); while (!s.b || this.bool(this.ev(s.b))) { try { this.exec(s.s); } catch (e) { if (e === "break") break; if (e !== "continue") throw e; } if (s.c) this.exec(s.c); } return;
-      case "forin": { var m = this.array(s.arr), ks = Array.from(m.keys()); for (var k = 0; k < ks.length; k++) { if (!m.has(ks[k])) continue; this.setVar(s.v, new SN(ks[k])); try { this.exec(s.s); } catch (e) { if (e === "break") break; if (e === "continue") continue; throw e; } } return; }
+      case "forin": { var m = this.array(s.arr), ks = ordemGawk(Array.from(m.keys())); for (var k = 0; k < ks.length; k++) { if (!m.has(ks[k])) continue; this.setVar(s.v, new SN(ks[k])); try { this.exec(s.s); } catch (e) { if (e === "break") break; if (e === "continue") continue; throw e; } } return; }
       case "break": throw "break";
       case "continue": throw "continue";
       case "next": throw "next";
@@ -10740,6 +10770,43 @@
       case "delete": { if (!s.idx) { if (hasOwn(this.arr, s.n)) this.arr[s.n].clear(); else this.arr[s.n] = new Map(); return; } this.array(s.n).delete(this.chave(s.idx)); return; }
     }
   };
+  /* Ordem do "for (k in a)" do gawk 5.4 (conferida com a VM). O tipo do array sai da PRIMEIRA chave inserida:
+     - inteira -> cint_array: as inteiras >= 0 saem em ordem crescente, DEPOIS das outras (que ficam num array
+       auxiliar, cujo tipo também sai da primeira chave que vai para ele: int_array ou str_array);
+     - texto -> str_array: tudo (até "10") numa tabela de espalhamento: hash sdbm de 32 bits com char com sinal,
+       13 baldes que crescem para 127, 1021… quando a média passa de 10 por balde; cada chave nova entra no
+       começo do seu balde. */
+  function hashGawk(k) { var b = utf8bytes(k), h = 0; for (var i = 0; i < b.length; i++) { var c = b[i] > 127 ? b[i] - 256 : b[i]; h = (c + (h << 6) + (h << 16) - h) >>> 0; } return h; }
+  function ordemStrGawk(chaves) {
+    var TAMS = [13, 127, 1021, 8191, 131071, 1048573], tam = 0, n = 0, bal = [];
+    chaves.forEach(function (k) {
+      var cod = hashGawk(k);
+      if (!tam || Math.floor(n / tam) > 10) {
+        var novo = TAMS.filter(function (t) { return t > tam; })[0] || tam, nb = [];
+        for (var i = 0; i < tam; i++) { var ch = bal[i]; while (ch) { var prox = ch.prox, h2 = ch.cod % novo; ch.prox = nb[h2]; nb[h2] = ch; ch = prox; } }
+        bal = nb; tam = novo;
+      }
+      var h = cod % tam; bal[h] = { k: k, cod: cod, prox: bal[h] }; n++;
+    });
+    var out = [];
+    for (var j = 0; j < tam; j++) { var c = bal[j]; while (c) { out.push(c.k); c = c.prox; } }
+    return out;
+  }
+  function ordemGawk(chaves) {
+    if (!chaves.length) return chaves;
+    var ehInt = function (k) { return /^(0|-?[1-9][0-9]{0,17})$/.test(k); }, cresc = function (x, y) { return x.length - y.length || (x < y ? -1 : x > y ? 1 : 0); };
+    if (!ehInt(chaves[0])) return ordemStrGawk(chaves);
+    var pos = [], resto = [];
+    chaves.forEach(function (k) { if (ehInt(k) && k[0] !== "-") pos.push(k); else resto.push(k); });
+    var aux = [];
+    if (resto.length) {
+      if (ehInt(resto[0])) { // int_array: as de texto primeiro, depois as inteiras (as mais novas antes)
+        var txt = resto.filter(function (k) { return !ehInt(k); }), ints = resto.filter(ehInt).reverse();
+        aux = ordemStrGawk(txt).concat(ints);
+      } else aux = ordemStrGawk(resto);
+    }
+    return aux.concat(pos.sort(cresc));
+  }
   EXT.awk = function* (args, io) {
     var usaLocale = false;
     var sh = io.sh, a = args.slice(1), fs = null, defs = [], fontes = [], i = 0, origem = "lin. de com.";

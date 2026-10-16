@@ -441,3 +441,28 @@ tar cf velho.tar site/index.html; tar tf velho.tar
 ### pend-tar-pkg
 tar -tf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
 tar -xOf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst .PKGINFO
+### pend-gio
+gio trash frutas.txt; echo $?
+ls -la .local/share/Trash .local/share/Trash/files .local/share/Trash/info | awk '{print $1, $NF}'
+sed 's/T[0-9:]*$/T(hora)/' .local/share/Trash/info/frutas.txt.trashinfo
+gio trash nada; echo $?
+touch frutas.txt; gio trash frutas.txt; ls .local/share/Trash/files
+gio trash --list; echo $?
+gio trash --empty; echo $?
+gio; echo $?
+### pend-gawk-forin
+awk '{c[$1]++} END{for (k in c) print k, c[k]}' Documentos/acesso.log
+awk -F, 'NR>1{c[$3]++} END{for (k in c) print k}' Documentos/alunos.csv
+awk '{c[$1]++} END{for (k in c) print k}' frutas.txt
+awk 'BEGIN{for(i=1;i<=200;i++) a["k" i]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{n=split("a b c d e f g h i j k l", v); for(k in v) printf k" "; print ""}'
+awk 'BEGIN{a["01"];a[1.5];a["a"];a[2];a[10];a[0]; for(k in a) printf k" "; print ""}'
+### pend-gawk-forin2
+awk 'BEGIN{a[10];a[0];a[2]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{a["a"];a[10];a[0];a[2]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{a[2];a["a"];a[10];a[0]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{a["a"];a[1];a[2];a[3];a[16];a[17];a[100]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{a[5];a["z"];a[6];a[64];a[63]; for(k in a) printf k" "; print ""}'
+awk 'BEGIN{a[3];a[1];a[2];a[10];a[-1];a["x"]; for(k in a) printf k" "; print ""}'
+awk '{a[$2]++} END{for(k in a) printf k" "; print ""}' <<< $'x 10\ny 3\nz 7\nw 10\nq 02'
+awk '{n[$1]+=$2} END{for (k in n) print k, n[k]}' <<< $'ana 3\nbia 5\ncaio 2\nana 1\ndani 7\nedu 4'
