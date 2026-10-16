@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch permissões — rwx, ls -l, chmod, chown, umask e a home 700 | Guia Arch</title>
+<meta name="description" content="Permissões de arquivos no Arch Linux: ler o ls -l (rwx, dono, grupo), chmod em octal e simbólico, chown e chgrp, umask 022 (de onde vem no Arch), pasta pessoal 700, setuid, sticky bit, e sudo × root, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1><span class="hl">Permissões</span> de arquivos</h1>
+
+<p class="intro">Todo arquivo e toda pasta no Linux têm um <strong>dono</strong>, um <strong>grupo</strong> e três conjuntos de permissões: o que o dono pode fazer, o que o grupo pode fazer e o que os outros podem fazer. É isso que impede a ana de ler as senhas do sistema, um usuário de abrir a pasta de outro e um script de rodar antes de você permitir.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler a coluna <code>-rw-r--r--</code> do <code>ls -l</code>.</li>
+  <li>O que r, w e x significam para <strong>arquivos</strong> e para <strong>pastas</strong> (não é a mesma coisa).</li>
+  <li>Mudar permissões com <code>chmod</code>, nos jeitos simbólico (<code>u+x</code>) e octal (<code>640</code>).</li>
+  <li>Mudar dono e grupo com <code>chown</code> e <code>chgrp</code>.</li>
+  <li>O <code>umask</code> do Arch (022), a pasta pessoal 700 e quando usar <code>sudo</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos foram feitos na VM do guia, numa pasta de teste <code>/tmp/a6</code>, apagada no fim. Se você ainda não sabe quem são usuários e grupos, veja antes <a href="usuarios.html">Usuários e Grupos</a>.</p>
+
+<hr>
+
+<h2>Lendo o ls -l</h2>
+
+<pre class="term" data-cwd="/tmp/a6">$ ls -l
+total 4
+-rw-r--r-- 1 ana ana  0 16 out 13:45 notas.txt
+-rw-r--r-- 1 ana ana 32 16 out 13:45 ola.sh
+drwxr-xr-x 2 ana ana 40 16 out 13:45 projetos</pre>
+
+<p>Peguemos a linha do <code>ola.sh</code>, parte por parte:</p>
+
+<dl class="anatomy">
+  <dt>-</dt><dd>Tipo: <code>-</code> arquivo comum, <code>d</code> pasta (<em>directory</em>), <code>l</code> link simbólico.</dd>
+  <dt>rw-</dt><dd>Permissões do <strong>dono</strong> (<em>user</em>): ler e escrever, sem executar.</dd>
+  <dt>r--</dt><dd>Permissões do <strong>grupo</strong> (<em>group</em>): só ler.</dd>
+  <dt>r--</dt><dd>Permissões dos <strong>outros</strong> (<em>others</em>): todo o resto do mundo, só ler.</dd>
+  <dt>1</dt><dd>Número de links (nomes) do arquivo. Para pastas, conta as subpastas.</dd>
+  <dt>ana ana</dt><dd>O <strong>dono</strong> e o <strong>grupo</strong> do arquivo.</dd>
+  <dt>32</dt><dd>Tamanho em bytes.</dd>
+  <dt>16 out 13:45</dt><dd>Última modificação. No Arch em português, o <strong>dia vem antes do mês</strong>.</dd>
+  <dt>ola.sh</dt><dd>O nome.</dd>
+</dl>
+
+<h3>r, w, x: arquivo × pasta</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Num arquivo</th><th>Numa pasta</th></tr>
+<tr><td><code>r</code> (<em>read</em>)</td><td>Ler o conteúdo (<code>cat</code>, abrir)</td><td>Listar os nomes (<code>ls</code>)</td></tr>
+<tr><td><code>w</code> (<em>write</em>)</td><td>Mudar o conteúdo</td><td>Criar, apagar e renomear arquivos <strong>dentro</strong> dela</td></tr>
+<tr><td><code>x</code> (<em>execute</em>)</td><td>Rodar como programa</td><td><strong>Entrar</strong> (<code>cd</code>) e acessar os arquivos de dentro</td></tr>
+<tr><td><code>-</code></td><td colspan="2">Permissão ausente</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Quem pode apagar um arquivo?</strong>
+<p>Quem tem <code>w</code> na <strong>pasta</strong>, não no arquivo. Apagar é "tirar o nome da lista da pasta". Por isso a ana pode apagar um arquivo só leitura que esteja na pasta dela (o <code>rm</code> pergunta antes).</p>
+</div>
+
+<h3>Quem é quem</h3>
+<p>O sistema confere na ordem: se você é o <strong>dono</strong>, valem as permissões do dono (e só elas); senão, se você está no <strong>grupo</strong>, valem as do grupo; senão, as dos <strong>outros</strong>. O root ignora quase tudo isso.</p>
+
+<hr>
+
+<h2>Executar: o primeiro chmod</h2>
+<p>O caso mais comum do dia a dia: você escreveu um script e ele não roda.</p>
+
+<pre class="term" data-cwd="/tmp/a6">$ printf '#!/bin/bash\necho Olá do script\n' &gt; ola.sh
+$ ./ola.sh
+bash: ./ola.sh: Permissão negada
+$ echo $?
+126                         « 126 = existe, mas não pode ser executado
+$ chmod u+x ola.sh
+$ ls -l ola.sh
+-rwxr--r-- 1 ana ana 32 16 out 13:45 ola.sh      « apareceu o x do dono
+$ ./ola.sh
+Olá do script</pre>
+
+<dl class="anatomy">
+  <dt>chmod</dt><dd><em>change mode</em>: muda as permissões ("modo").</dd>
+  <dt>u</dt><dd>De quem: <code>u</code> dono (<em>user</em>), <code>g</code> grupo, <code>o</code> outros, <code>a</code> todos (<em>all</em>).</dd>
+  <dt>+</dt><dd>O que fazer: <code>+</code> acrescenta, <code>-</code> tira, <code>=</code> define exatamente.</dd>
+  <dt>x</dt><dd>Quais permissões: <code>r</code>, <code>w</code>, <code>x</code> (juntas: <code>rw</code>).</dd>
+  <dt>ola.sh</dt><dd>Um ou mais arquivos.</dd>
+</dl>
+
+<div class="try" data-setup="printf '#!/bin/bash\necho oi\n' &gt; ola.sh" data-goal="exec:~/ola.sh" data-solucao="chmod u+x ola.sh">
+<p class="try-task"><strong>Missão:</strong> o arquivo <code>ola.sh</code> na sua pasta não roda (<code>./ola.sh</code> dá "Permissão negada"). Dê a você (o dono) permissão de execução e rode-o.</p>
+</div>
+
+<hr>
+
+<h2>chmod simbólico</h2>
+<p>O jeito "por letras" muda só o que você mandar e deixa o resto como está. Real, na VM:</p>
+
+<pre class="term" data-cwd="/tmp/a6">$ chmod go-rx projetos                   « tira r e x do grupo e dos outros
+$ ls -ld projetos
+drwx------ 2 ana ana 40 16 out 13:45 projetos
+$ chmod a+r notas.txt                    « todos podem ler
+$ ls -l notas.txt
+-rw-r--r-- 1 ana ana 0 16 out 13:45 notas.txt
+$ chmod u=rw,g=r,o= notas.txt            « define tudo de uma vez; "o=" = nada para os outros
+$ stat -c '%a %A %U:%G %n' notas.txt ola.sh projetos
+640 -rw-r----- ana:ana notas.txt
+744 -rwxr--r-- ana:ana ola.sh
+700 drwx------ ana:ana projetos</pre>
+
+<p>O <code>stat -c</code> com <code>%a</code> mostra a permissão em <strong>número</strong>, o jeito octal da próxima seção. O <code>ls -ld</code> (<code>-d</code>) mostra a própria pasta, não o conteúdo.</p>
+
+<hr>
+
+<h2>chmod octal (números)</h2>
+<p>Cada letra vale um número; somando, cada trio vira um dígito de 0 a 7:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Vale</th></tr>
+<tr><td><code>r</code></td><td>4</td></tr>
+<tr><td><code>w</code></td><td>2</td></tr>
+<tr><td><code>x</code></td><td>1</td></tr>
+</table>
+</div>
+
+<p><code>rw-</code> = 4+2+0 = <strong>6</strong>; <code>r--</code> = <strong>4</strong>; <code>---</code> = <strong>0</strong>. Então <code>rw-r-----</code> = <strong>640</strong>: dono, grupo, outros, nessa ordem.</p>
+
+<pre class="term" data-cwd="/tmp/a6">$ chmod 640 notas.txt
+$ ls -l notas.txt
+-rw-r----- 1 ana ana 0 16 out 13:45 notas.txt</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Letras</th><th>Uso típico</th></tr>
+<tr><td><code>644</code></td><td><code>rw-r--r--</code></td><td>Arquivo comum (o padrão)</td></tr>
+<tr><td><code>600</code></td><td><code>rw-------</code></td><td>Arquivo privado (chaves SSH, senhas)</td></tr>
+<tr><td><code>640</code></td><td><code>rw-r-----</code></td><td>O grupo lê, os outros não</td></tr>
+<tr><td><code>755</code></td><td><code>rwxr-xr-x</code></td><td>Programa ou pasta que todos usam (o padrão das pastas)</td></tr>
+<tr><td><code>700</code></td><td><code>rwx------</code></td><td>Pasta ou script só seu (a home no Arch)</td></tr>
+<tr><td><code>750</code></td><td><code>rwxr-x---</code></td><td>Pasta do dono, o grupo entra</td></tr>
+<tr><td><code>777</code></td><td><code>rwxrwxrwx</code></td><td>Todo mundo faz tudo. <strong>Quase sempre um erro.</strong></td></tr>
+</table>
+</div>
+
+<h3>Simbólico × octal: qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Melhor</th><th>Por quê</th></tr>
+<tr><td>Tornar um script executável</td><td><code>chmod +x</code> ou <code>u+x</code></td><td>Acrescenta só o x, sem mexer no resto</td></tr>
+<tr><td>Tirar uma permissão de um grupo</td><td><code>chmod o-r</code></td><td>Cirúrgico</td></tr>
+<tr><td>Deixar um arquivo exatamente "privado"</td><td><code>chmod 600</code></td><td>Define as nove permissões de uma vez</td></tr>
+<tr><td>Uma pasta e tudo dentro</td><td><code>chmod -R u+rwX,go-rwx pasta</code></td><td>O <code>X</code> maiúsculo dá x só às pastas (e ao que já era executável), não a todos os arquivos</td></tr>
+<tr><td>Copiar de uma receita da internet</td><td>O que a receita usar, mas <strong>entenda o número</strong> antes</td><td>Um <code>chmod -R 777</code> "para funcionar" abre tudo para todos</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Cuidado com chmod -R</strong>
+<p><code>-R</code> (recursivo) muda a pasta e <strong>tudo</strong> dentro dela. <code>sudo chmod -R 777 /</code> ou <code>sudo chmod -R 644 /usr</code> destroem o sistema (programas deixam de ser executáveis, o <code>sudo</code> para de funcionar). Nunca rode <code>chmod -R</code> com <code>sudo</code> em pastas do sistema.</p>
+</div>
+
+<hr>
+
+<h2>Dono e grupo: chown e chgrp</h2>
+<dl class="anatomy">
+  <dt>chown</dt><dd><em>change owner</em>: muda o dono (e, com <code>:</code>, o grupo). Só o root.</dd>
+  <dt>teste-a6</dt><dd>O novo dono. <code>ana:ana</code> = dono e grupo; <code>:wheel</code> = só o grupo.</dd>
+  <dt>chgrp</dt><dd><em>change group</em>: muda só o grupo. O dono do arquivo pode, mas só para um grupo <strong>do qual ele faz parte</strong>.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/a6">$ chown teste-a6 notas.txt
+chown: alterando o dono de 'notas.txt': Operação não permitida      « usuário comum não dá arquivos para outros
+$ chgrp wheel notas.txt                                             « a ana está no wheel: pode
+$ ls -l notas.txt
+-rw-r----- 1 ana wheel 0 16 out 13:45 notas.txt
+$ chgrp video notas.txt
+chgrp: alterando o grupo de 'notas.txt': Operação não permitida     « a ana não está no video</pre>
+
+<p>Com <code>sudo</code>, o <code>chown</code> funciona e não escreve nada:</p>
+
+<pre class="term">$ sudo chown teste-a6 /tmp/a6/notas.txt
+$ ls -l /tmp/a6/notas.txt
+-rw-r----- 1 teste-a6 wheel 0 16 out 13:45 /tmp/a6/notas.txt
+$ sudo chown ana:ana /tmp/a6/notas.txt          « de volta: dono e grupo de uma vez
+$ ls -l /tmp/a6/notas.txt
+-rw-r----- 1 ana ana 0 16 out 13:45 /tmp/a6/notas.txt</pre>
+
+<p>Um uso comum: copiou arquivos com <code>sudo</code> para a sua pasta e eles ficaram do root? <code>sudo chown -R ana:ana ~/pasta</code> devolve para você.</p>
+
+<hr>
+
+<h2>As permissões na prática: outro usuário</h2>
+<p>Para ver as permissões funcionando, nada melhor que um segundo usuário. Com o <code>teste-a6</code> (sem grupos extras) tentando mexer nos arquivos da ana, que estavam assim:</p>
+
+<pre class="term">$ stat -c '%a %A %U:%G %n' /tmp/a6/notas.txt /tmp/a6/ola.sh /tmp/a6/projetos /home/ana
+640 -rw-r----- ana:ana /tmp/a6/notas.txt
+744 -rwxr--r-- ana:ana /tmp/a6/ola.sh
+700 drwx------ ana:ana /tmp/a6/projetos
+700 drwx------ ana:ana /home/ana</pre>
+
+<pre class="term" data-user="teste-a6">$ cat /tmp/a6/notas.txt
+cat: /tmp/a6/notas.txt: Permissão negada                       « 640: "outros" não leem
+$ cat /tmp/a6/ola.sh
+#!/bin/bash                                                    « 744: "outros" leem (r--)
+echo Olá do script
+$ ls /tmp/a6/projetos
+ls: não foi possível abrir o diretório '/tmp/a6/projetos': Permissão negada     « 700
+$ ls /home/ana
+ls: não foi possível abrir o diretório '/home/ana': Permissão negada            « a home da ana</pre>
+
+<h3>A pasta pessoal 700 do Arch</h3>
+<p>No Arch, o <code>useradd -m</code> cria a pasta pessoal com <code>drwx------</code> (700): <strong>ninguém além do dono entra</strong>. Vem do <code>login.defs</code>:</p>
+
+<pre class="term">$ ls -ld /home/ana /tmp /root
+drwx------ 15 ana  ana  4096 16 out 13:45 /home/ana
+drwxr-x---  5 root root 4096 16 out 13:44 /root
+drwxrwxrwt 17 root root  360 16 out 13:45 /tmp
+$ grep -n '^UMASK\|^HOME_MODE' /etc/login.defs
+82:UMASK		022
+87:HOME_MODE	0700</pre>
+
+<p>No Debian e no Ubuntu, as homes costumavam ser 755 ou 750 (outros usuários podiam olhar). Se um dia você precisar que um serviço leia algo da sua pasta (um servidor web servindo <code>~/site</code>, por exemplo), ele vai dar "Permission denied" por causa desse 700. Em vez de abrir a home, coloque os arquivos em <code>/srv</code> (veja <a href="servidor-web.html">Servidor Web</a>).</p>
+
+<hr>
+
+<h2>umask: as permissões de quem nasce</h2>
+<p>Por que um arquivo novo nasce <code>rw-r--r--</code> (644) e uma pasta nova, <code>rwxr-xr-x</code> (755)? Por causa do <strong>umask</strong> (<em>user file-creation mask</em>), uma "máscara" que diz quais permissões <strong>tirar</strong> de tudo o que você cria.</p>
+
+<pre class="term">$ umask
+0022
+$ umask -S
+u=rwx,g=rx,o=rx           « o mesmo, em letras: o que SOBRA</pre>
+
+<p>A conta: arquivos partem de 666 (ninguém ganha x de nascença), pastas de 777. O umask <code>022</code> tira o <code>w</code> (2) do grupo e dos outros:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Ponto de partida</th><th>− umask 022</th><th>Resultado</th></tr>
+<tr><td>Arquivo</td><td>666 <code>rw-rw-rw-</code></td><td><code>----w--w-</code></td><td>644 <code>rw-r--r--</code></td></tr>
+<tr><td>Pasta</td><td>777 <code>rwxrwxrwx</code></td><td><code>----w--w-</code></td><td>755 <code>rwxr-xr-x</code></td></tr>
+<tr><td>Arquivo, umask 077</td><td>666</td><td><code>---rwxrwx</code></td><td>600 <code>rw-------</code></td></tr>
+</table>
+</div>
+
+<pre class="term" data-cwd="/tmp/a6">$ umask 077                       « só nesta sessão do terminal
+$ touch privado.txt; mkdir pasta-privada
+$ ls -ld privado.txt pasta-privada
+drwx------ 2 ana ana 40 16 out 13:45 pasta-privada
+-rw------- 1 ana ana  0 16 out 13:45 privado.txt
+$ umask 022                       « de volta ao padrão</pre>
+
+<h3>De onde vem o 022 no Arch</h3>
+<p>Em outras distros (e em guias antigos), o umask é definido no <code>/etc/profile</code>. No Arch atual, não: lá não há nenhuma linha <code>umask</code>. Quem aplica o valor é o PAM, no login, com o módulo <code>pam_umask</code>, que lê o <code>UMASK</code> do <code>/etc/login.defs</code>:</p>
+
+<pre class="term">$ grep -n umask /etc/profile /etc/bash.bashrc ~/.bashrc ~/.bash_profile
+$ grep -rn umask /etc/pam.d/
+/etc/pam.d/system-login:19:session    optional   pam_umask.so</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero mudar o umask…</th><th>Onde</th></tr>
+<tr><td>Só neste terminal</td><td><code>umask 077</code></td></tr>
+<tr><td>Para mim, sempre</td><td>Uma linha <code>umask 077</code> no <code>~/.bashrc</code></td></tr>
+<tr><td>Para todos os usuários</td><td><code>UMASK</code> em <code>/etc/login.defs</code> (027 ou 077 deixam os arquivos novos fechados para os outros)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Permissões especiais: s e t</h2>
+<p>Às vezes aparece uma letra diferente no lugar do <code>x</code>:</p>
+
+<pre class="term">$ ls -l /usr/bin/passwd /usr/bin/sudo
+-rwsr-xr-x 1 root root  80792 30 jul 07:04 /usr/bin/passwd
+-rwsr-xr-x 1 root root 261304 16 jun 06:31 /usr/bin/sudo
+$ ls -ld /tmp
+drwxrwxrwt 17 root root 360 16 out 13:45 /tmp</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Nome</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>s</code> no dono</td><td>setuid</td><td>O programa roda com os poderes do <strong>dono</strong> do arquivo (aqui, root), não de quem o chamou</td><td><code>passwd</code> (a ana troca a própria senha, que fica no <code>/etc/shadow</code> do root), <code>sudo</code></td></tr>
+<tr><td><code>s</code> no grupo</td><td>setgid</td><td>Numa pasta, os arquivos novos herdam o grupo da pasta</td><td><code>/var/log/journal</code> (<code>drwxr-sr-x+</code>)</td></tr>
+<tr><td><code>t</code> nos outros</td><td>sticky bit</td><td>Numa pasta onde todos escrevem, cada um só apaga o que é seu</td><td><code>/tmp</code> (<code>drwxrwxrwt</code>)</td></tr>
+<tr><td><code>+</code> no fim</td><td>ACL</td><td>Há permissões extras além das nove; veja com <code>getfacl</code></td><td><code>/var/log/journal</code> (veja <a href="journal.html">Logs</a>)</td></tr>
+</table>
+</div>
+
+<p>No modo octal, eles são um quarto dígito na frente: <code>chmod 4755</code> (setuid), <code>2755</code> (setgid), <code>1777</code> (sticky, como o <code>/tmp</code>). Você raramente vai precisar criá-los.</p>
+
+<div class="note">
+<strong>O /tmp do Arch fica na memória</strong>
+<p>No Arch, <code>/tmp</code> é um <code>tmpfs</code>: fica na RAM e é <strong>apagado a cada boot</strong> (por isso os tamanhos de pasta <code>40</code> e <code>360</code> no <code>ls</code>, diferentes dos 4096 de um disco). Bom para testes como os desta aula; ruim para guardar algo. Confira com <code>findmnt /tmp</code>.</p>
+</div>
+
+<hr>
+
+<h2>sudo × root</h2>
+<p>O root não liga para permissões (lê o <code>/etc/shadow</code>, entra em qualquer home). Há dois jeitos de usar esse poder:</p>
+
+<pre class="term">$ cat /etc/shadow
+cat: /etc/shadow: Permissão negada
+$ ls /root
+ls: não foi possível abrir o diretório '/root': Permissão negada
+$ sudo grep teste-a6 /etc/shadow | cut -c1-40
+[sudo] senha para ana:
+teste-a6:$y$j9T$ZL64caZUBHwNsX4UFKG9.1$Q</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>sudo comando</code></th><th>Shell de root (<code>sudo -i</code>, <code>su -</code>)</th></tr>
+<tr><td>Alcance</td><td>Um comando por vez</td><td>Tudo o que você digitar até o <code>exit</code></td></tr>
+<tr><td>Registro</td><td>Cada comando vai para o journal (<code>journalctl -t sudo</code>)</td><td>Só a entrada</td></tr>
+<tr><td>Risco</td><td>Menor: você pensa antes de cada <code>sudo</code></td><td>Maior: um <code>rm</code> errado não pede confirmação</td></tr>
+<tr><td>Arquivos criados</td><td>Ficam do root (cuidado na sua home)</td><td>Ficam do root</td></tr>
+<tr><td>Quando usar</td><td>O dia a dia</td><td>Sessões longas de manutenção, resgate</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>"Permissão negada" não se resolve com sudo automaticamente</strong>
+<p>Antes de pôr <code>sudo</code>, pergunte: o arquivo <em>deveria</em> ser meu? Se for da sua pasta e ficou do root (porque você usou <code>sudo</code> antes), o certo é <code>sudo chown ana:ana arquivo</code>, não usar <code>sudo</code> para sempre. Editar arquivos da sua home com <code>sudo nano</code> é a causa mais comum de "Permissão negada" depois.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Permissão negada" ao rodar um script (código 126)</strong>
+<p><strong>O que aconteceu:</strong> falta o <code>x</code>.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l script.sh</code> mostra <code>-rw-r--r--</code>.</p>
+<p><strong>Como resolver:</strong> <code>chmod +x script.sh</code>, ou rode com <code>bash script.sh</code> (aí só precisa de <code>r</code>). Se a pasta estiver num pendrive montado com <code>noexec</code>, nem o <code>chmod</code> resolve: rode com <code>bash</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida" no chown/chgrp</strong>
+<p><strong>O que aconteceu:</strong> só o root muda o dono; o dono só muda o grupo para um grupo em que ele está.</p>
+<p><strong>Como resolver:</strong> <code>sudo chown …</code>. Para o <code>chgrp</code>, confira os seus grupos com <code>id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"modo inválido"</strong>
+<pre class="term" data-cwd="/tmp/a6">$ chmod 999 notas.txt
+chmod: modo inválido: “999”
+Tente "chmod --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> cada dígito vai de 0 a 7 (4+2+1). No simbólico, as letras válidas são <code>ugoa</code>, <code>+-=</code> e <code>rwxXst</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Consigo ler o arquivo, mas não chego nele</strong>
+<p><strong>O que aconteceu:</strong> o arquivo é <code>644</code>, mas uma das pastas do caminho não tem <code>x</code> para você (como a home 700 de outro usuário). Sem <code>x</code> na pasta, não se passa por ela.</p>
+<p><strong>Como confirmar:</strong> <code>namei -l /caminho/completo/arquivo</code> mostra as permissões de cada pasta do caminho.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>ls -l</code> · <code>ls -ld pasta</code></td><td>Permissões, dono e grupo (da pasta em si, com <code>-d</code>)</td></tr>
+<tr><td><code>stat -c '%a %A %U:%G %n' arq</code></td><td>Permissão em número e letras</td></tr>
+<tr><td><code>chmod u+x arq</code> · <code>chmod go-w arq</code> · <code>chmod u=rw,go= arq</code></td><td>Simbólico: acrescenta, tira, define</td></tr>
+<tr><td><code>chmod 644 arq</code> · <code>600</code> · <code>755</code> · <code>700</code></td><td>Octal</td></tr>
+<tr><td><code>chmod -R u+rwX,go-rwx pasta</code></td><td>Recursivo (X: x só nas pastas)</td></tr>
+<tr><td><code>sudo chown dono:grupo arq</code> · <code>-R</code></td><td>Muda dono e grupo</td></tr>
+<tr><td><code>chgrp grupo arq</code></td><td>Muda o grupo (para um grupo seu)</td></tr>
+<tr><td><code>umask</code> · <code>umask -S</code> · <code>umask 077</code></td><td>Mostra / muda a máscara de criação</td></tr>
+<tr><td><code>namei -l caminho</code></td><td>Permissões de cada pasta do caminho</td></tr>
+<tr><td><code>getfacl arq</code></td><td>Mostra as ACLs (o <code>+</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. De letras para número</h3>
+<p>Qual o número de <code>rwxr-x---</code>?</p>
+<div class="ex-code">chmod <input data-answer="750" aria-label="número"> pasta</div>
+</div>
+
+<div class="exercise">
+<h3>2. Privado</h3>
+<p>Complete para deixar a sua chave <code>id_ed25519</code> legível e gravável só por você:</p>
+<div class="ex-code">chmod <input data-answer="600|u=rw,go=|u=rw,g=,o=" aria-label="modo"> ~/.ssh/id_ed25519</div>
+</div>
+
+<div class="exercise">
+<h3>3. Devolver para mim</h3>
+<p>A pasta <code>~/fotos</code> ficou do root. Complete para devolvê-la, com tudo dentro, à ana (dono e grupo):</p>
+<div class="ex-code">sudo chown <input data-answer="-R" aria-label="opção"> <input data-answer="ana:ana" aria-label="dono:grupo"> ~/fotos</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com umask <code>022</code>, com que permissão nasce um arquivo novo?</p>
+<label><input type="radio" name="q4"> <code>rwxr-xr-x</code> (755)</label>
+<label><input type="radio" name="q4"> <code>rw-r--r--</code> (644)</label>
+<label><input type="radio" name="q4"> <code>rw-------</code> (600)</label>
+<label><input type="radio" name="q4"> <code>rw-rw-rw-</code> (666)</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Outro usuário tenta <code>ls /home/ana</code> num Arch padrão. O que acontece?</p>
+<label><input type="radio" name="q5"> Ele vê os nomes, mas não abre os arquivos.</label>
+<label><input type="radio" name="q5"> Ele vê tudo.</label>
+<label><input type="radio" name="q5"> "Permissão negada": a home é 700.</label>
+<label><input type="radio" name="q5"> O sistema pede a senha da ana.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Numa pasta, o que a permissão <code>x</code> permite?</p>
+<label><input type="radio" name="q6"> Entrar nela e acessar os arquivos de dentro.</label>
+<label><input type="radio" name="q6"> Executar todos os arquivos dela.</label>
+<label><input type="radio" name="q6"> Listar os nomes.</label>
+<label><input type="radio" name="q6"> Apagar a pasta.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Três trios: dono, grupo, outros; cada um com <code>r</code> (4), <code>w</code> (2), <code>x</code> (1).</li>
+  <li>Em pastas, <code>r</code> lista, <code>w</code> cria/apaga dentro, <code>x</code> entra.</li>
+  <li><code>chmod u+x</code> (simbólico) muda um pedaço; <code>chmod 640</code> (octal) define tudo.</li>
+  <li><code>chown</code> é só do root; <code>chgrp</code> o dono faz para um grupo seu.</li>
+  <li>No Arch: umask <code>022</code> (via <code>pam_umask</code> e <code>login.defs</code>), home <code>700</code>, <code>/tmp</code> em memória com sticky bit.</li>
+  <li>Prefira <code>sudo comando</code> a ficar como root, e não "conserte" permissões com <code>sudo</code> ou <code>777</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/File_permissions_and_attributes">File permissions and attributes</a> (<a href="https://wiki.archlinux.org/title/File_permissions_and_attributes_(Portugu%C3%AAs)">em português</a>) explica tudo desta aula e também os atributos (<code>chattr</code>); o <code>umask</code> tem página própria em <a href="https://wiki.archlinux.org/title/Umask">Umask</a>; as ACLs, em <a href="https://wiki.archlinux.org/title/Access_Control_Lists">Access Control Lists</a>; e o uso do root, em <a href="https://wiki.archlinux.org/title/Sudo">Sudo</a> (<a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
