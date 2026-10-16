@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch grep — procurar texto dentro de arquivos | Guia Arch</title>
+<meta name="description" content="Aprenda o grep no Arch Linux: cada opção explicada (-i -v -n -c -r -l -w -o -E -A -B -C), cores do .bashrc do Arch, expressões regulares, códigos de saída, grep no pacman.conf e no pacman.log, e o ripgrep. Saídas reais e terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">grep</span></h1>
+
+<p class="intro">O <a href="find.html"><code>find</code></a> procura <strong>arquivos</strong>; o <code>grep</code> procura <strong>texto dentro</strong> dos arquivos. Ele lê linha por linha e mostra só as linhas que contêm o que você pediu. É a ferramenta para achar um erro num log de milhares de linhas, uma opção no <code>/etc/pacman.conf</code> ou um nome numa lista.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>grep</code> funciona: um filtro de linhas.</li>
+  <li>As opções do dia a dia: <code>-i</code>, <code>-v</code>, <code>-n</code>, <code>-c</code>, <code>-w</code>, <code>-o</code>, <code>-A</code>/<code>-B</code>/<code>-C</code>, <code>-r</code>, <code>-l</code>.</li>
+  <li>Expressões regulares básicas (<code>^</code>, <code>$</code>, <code>.</code>, <code>[ ]</code>) e a estendida com <code>-E</code>.</li>
+  <li>Os códigos de saída (0, 1 e 2) e o <code>-q</code> para scripts.</li>
+  <li>Usar o <code>grep</code> no <code>pacman.conf</code>, no <code>pacman.log</code> e no meio de um pipe; e conhecer o <code>ripgrep</code>.</li>
+</ul>
+</div>
+
+<p>O nome vem de um comando antigo do editor <code>ed</code>: <code>g/re/p</code>, ou <em>global / regular expression / print</em>, "em todo o arquivo, procure a expressão e mostre". O Arch traz o GNU grep no <code>base</code>:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/grep
+/usr/bin/grep pertence a grep 3.12-2
+$ grep --version | head -1
+grep (GNU grep) 3.12-modified</pre>
+
+<hr>
+
+<h2>O arquivo de exemplo</h2>
+<p>Nesta aula vamos usar o log de um pequeno site, <code>Documentos/acesso.log</code>. Cada linha é uma visita: quem visitou (o IP), quando, qual página e o resultado (<code>200</code> = deu certo, <code>403</code> = proibido, <code>404</code> = não encontrado).</p>
+
+<pre class="term">$ cat Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+192.168.0.10 - - [15/Oct/2026:09:06:44] "POST /login HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:07:02] "GET / HTTP/1.1" 200</pre>
+
+<p>Também vamos usar o <code>frutas.txt</code> (banana, maçã, laranja, banana, uva, maçã, banana, uma por linha), que está na pasta pessoal.</p>
+
+<hr>
+
+<h2>A forma mais simples</h2>
+
+<dl class="anatomy">
+  <dt>grep</dt><dd>O programa: filtra linhas.</dd>
+  <dt>403</dt><dd>O <strong>padrão</strong>: o texto que a linha precisa conter.</dd>
+  <dt>Documentos/acesso.log</dt><dd>O arquivo onde procurar.</dd>
+</dl>
+
+<pre class="term">$ grep 403 Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403</pre>
+
+<p>De seis linhas, só uma contém <code>403</code>, e é a única que aparece. O arquivo não muda: o <code>grep</code> só lê.</p>
+
+<h3>As cores já vêm ligadas no Arch</h3>
+<p>No seu terminal, o <code>403</code> aparece destacado em vermelho. Quem liga isso é o <code>~/.bashrc</code> que o Arch cria para todo usuário novo. Ele é curtinho, e uma das quatro linhas úteis é justamente um apelido (<em>alias</em>) para o <code>grep</code>:</p>
+
+<pre class="term">$ cat ~/.bashrc
+#
+# ~/.bashrc
+#
+
+# If not running interactively, don't do anything
+[[ $- != *i* ]] &amp;&amp; return
+
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'          « aqui
+PS1='[\u@\h \W]\$ '
+$ type grep
+grep está apelidada para `grep --color=auto'</pre>
+
+<p>Toda vez que você digita <code>grep</code>, o Bash roda <code>grep --color=auto</code>. O <code>auto</code> pinta só quando a saída é a tela; mandando para um arquivo ou um pipe, o texto sai limpo. (No Debian esse apelido vem comentado; no Arch, ativo. Veja <a href="bashrc.html">.bashrc, alias, PATH</a>.)</p>
+
+<div class="tip">
+<strong>Padrão com espaço? Use aspas</strong>
+<p>Sem aspas, a segunda palavra vira o nome de um arquivo:</p>
+<pre class="term">$ grep GET /admin Documentos/acesso.log
+grep: /admin: Arquivo ou diretório inexistente
+Documentos/acesso.log:192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+Documentos/acesso.log:192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+…
+$ grep "GET /admin" Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403</pre>
+<p>O primeiro procurou "GET" em dois arquivos: <code>/admin</code> (que não existe) e o log. Na dúvida, coloque o padrão sempre entre aspas.</p>
+</div>
+
+<div class="try" data-goal="ran:grep.*404,out:/fotos" data-solucao="grep 404 Documentos/acesso.log">
+<p class="try-task"><strong>Missão 1:</strong> descubra qual página deu erro <code>404</code> (página não encontrada) no arquivo <code>Documentos/acesso.log</code>.</p>
+</div>
+
+<hr>
+
+<h2>Uma opção por vez</h2>
+
+<h3><code>-i</code>: ignorar maiúsculas</h3>
+<p>Por padrão, <code>Banana</code> e <code>banana</code> são diferentes. Com <code>-i</code> (de <em>ignore case</em>), não:</p>
+<pre class="term">$ grep BANANA frutas.txt
+$ grep -i BANANA frutas.txt
+banana
+banana
+banana</pre>
+
+<h3><code>-n</code>: mostrar o número da linha</h3>
+<p>Útil para abrir o arquivo no editor direto na linha certa (no nano: <code>nano +3 arquivo</code>; veja <a href="editores.html">nano e vim</a>).</p>
+<pre class="term">$ grep -n admin Documentos/acesso.log
+3:192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403     « linha 3</pre>
+
+<h3><code>-c</code>: só contar</h3>
+<p>Em vez de mostrar as linhas, mostra <strong>quantas</strong> combinam (de <em>count</em>):</p>
+<pre class="term">$ grep -c 192.168.0.10 Documentos/acesso.log
+3</pre>
+
+<h3><code>-v</code>: inverter (o que NÃO contém)</h3>
+<p>Mostra as linhas que <strong>não</strong> combinam. Aqui, tudo o que não deu <code>200</code>, ou seja, só os problemas:</p>
+
+<dl class="anatomy">
+  <dt>grep</dt><dd>O programa.</dd>
+  <dt>-v</dt><dd>Inverte (de <em>invert</em>): mostra as linhas que <strong>não</strong> contêm o padrão.</dd>
+  <dt>" 200"</dt><dd>O padrão, com um espaço antes para não pegar "2000" por engano. Por causa do espaço, as aspas são obrigatórias.</dd>
+  <dt>Documentos/acesso.log</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ grep -v " 200" Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404</pre>
+
+<h3><code>-w</code> e <code>-x</code>: palavra inteira, linha inteira</h3>
+<p>O <code>grep</code> acha o padrão em <strong>qualquer lugar</strong> da linha, até no meio de uma palavra. Procurando "ana" em <code>frutas.txt</code>:</p>
+<pre class="term">$ grep ana frutas.txt
+banana                               « "ana" está dentro de "banana"
+banana
+banana
+$ grep -w ana frutas.txt
+$ echo $?
+1                                    « nenhuma linha tem a palavra "ana" sozinha
+$ grep -x uva frutas.txt
+uva                                  « a linha inteira é "uva"</pre>
+<p>Com <code>-w</code> (de <em>word</em>), o padrão precisa ser uma palavra inteira, separada por espaço ou pontuação. Com <code>-x</code>, a linha inteira precisa ser igual ao padrão.</p>
+
+<h3><code>-o</code>: só o trecho encontrado</h3>
+<p>Em vez da linha inteira, mostra só o pedaço que combinou (de <em>only matching</em>). Ótimo para extrair dados:</p>
+<pre class="term">$ grep -o "192.168.0.[0-9]*" Documentos/acesso.log
+192.168.0.10
+192.168.0.23
+192.168.0.10
+192.168.0.57
+192.168.0.10
+192.168.0.23</pre>
+<p>A lista tem repetições. Para contar quantas visitas cada IP fez, junte com <code>sort | uniq -c</code> (veja <a href="texto.html">sort, uniq, cut, wc, tr</a>).</p>
+
+<h3><code>-A</code>, <code>-B</code>, <code>-C</code>: linhas ao redor</h3>
+<p>Num log, a linha do erro nem sempre basta: você quer ver o que veio antes e depois. <code>-A 2</code> mostra 2 linhas depois (<em>after</em>), <code>-B 2</code> mostra 2 antes (<em>before</em>) e <code>-C 2</code> mostra 2 de cada lado (<em>context</em>).</p>
+<pre class="term">$ grep -n -A1 laranja frutas.txt
+3:laranja                            « ":" = linha que combinou
+4-banana                             « "-" = linha de contexto
+$ grep -B1 uva frutas.txt
+banana
+uva
+$ grep -C1 -n admin Documentos/acesso.log
+2-192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+3:192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+4-192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404</pre>
+
+<hr>
+
+<h2>Procurar em vários arquivos</h2>
+
+<h3>Vários arquivos de uma vez</h3>
+<p>Com mais de um arquivo, cada linha vem com o nome do arquivo na frente (para esconder, <code>-h</code>):</p>
+<pre class="term">$ grep -c banana frutas.txt Documentos/notas.txt
+frutas.txt:3
+Documentos/notas.txt:0</pre>
+
+<h3><code>-r</code>: procurar dentro de uma pasta inteira</h3>
+
+<dl class="anatomy">
+  <dt>grep</dt><dd>O programa.</dd>
+  <dt>-r</dt><dd>Recursivo: entra em todas as subpastas (de <em>recursive</em>).</dd>
+  <dt>"café"</dt><dd>O texto a procurar.</dd>
+  <dt>Documentos</dt><dd>A pasta onde começar.</dd>
+</dl>
+
+<pre class="term">$ grep -r "café" Documentos
+Documentos/notas.txt:Comprar café
+$ grep -rn "echo" Documentos
+Documentos/projetos/backup.sh:2:echo "Fazendo backup..."      « arquivo:linha:conteúdo
+$ grep -r --include="*.csv" -n Recife Documentos
+Documentos/alunos.csv:2:Ana,29,Recife,9.5</pre>
+
+<p>O <code>--include</code> limita a busca a certos nomes de arquivo (aqui, só os <code>.csv</code>).</p>
+
+<div class="warning">
+<strong><code>grep -r</code> só em pastas pequenas</strong>
+<p><code>grep -r texto /</code> lê <strong>o conteúdo</strong> de todos os arquivos do sistema, gigabytes de programas, imagens e pendrives. É ainda mais pesado que um <code>find /</code>. Comece na menor pasta possível (<code>~/projeto</code>, <code>/etc/ssh</code>) e, quando souber o arquivo, procure só nele.</p>
+</div>
+
+<h3><code>-l</code>: só o nome dos arquivos</h3>
+<p>Quando você só quer saber <strong>quais arquivos</strong> contêm o texto (de <em>list</em>):</p>
+<pre class="term">$ grep -rl "Olá" Documentos
+Documentos/projetos/site/index.html</pre>
+
+<div class="try" data-goal="contains:~/erros.txt=403,contains:~/erros.txt=404" data-solucao="grep -v &quot; 200&quot; Documentos/acesso.log &gt; erros.txt;;cat erros.txt">
+<p class="try-task"><strong>Missão 2:</strong> salve num arquivo <code>erros.txt</code> todas as linhas de <code>Documentos/acesso.log</code> que <strong>não</strong> terminaram com 200. Dica: <code>grep -v … &gt; erros.txt</code>. Depois confira com <code>cat erros.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>Expressões regulares básicas</h2>
+<p>O padrão do <code>grep</code> não é só texto: é uma <strong>expressão regular</strong> (<em>regex</em>), uma pequena linguagem para descrever textos. Alguns caracteres têm significado especial:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Símbolo</th><th>Significa</th><th>Exemplo</th><th>Combina com</th></tr>
+<tr><td><code>.</code></td><td>Qualquer caractere (um só)</td><td><code>b.n</code></td><td>ban, bin, b9n</td></tr>
+<tr><td><code>*</code></td><td>O anterior repetido 0 ou mais vezes</td><td><code>10*</code></td><td>1, 10, 1000</td></tr>
+<tr><td><code>^</code></td><td>Começo da linha</td><td><code>^b</code></td><td>linhas que começam com b</td></tr>
+<tr><td><code>$</code></td><td>Fim da linha</td><td><code>a$</code></td><td>linhas que terminam com a</td></tr>
+<tr><td><code>[abc]</code></td><td>Um dos caracteres da lista</td><td><code>[bm]</code></td><td>b ou m</td></tr>
+<tr><td><code>[0-9]</code></td><td>Uma faixa</td><td><code>[0-9][0-9]</code></td><td>dois dígitos</td></tr>
+<tr><td><code>[^0-9]</code></td><td>Qualquer um, menos os da lista</td><td><code>[^a-z]</code></td><td>o que não é letra minúscula</td></tr>
+<tr><td><code>\.</code></td><td>Um ponto de verdade</td><td><code>\.txt$</code></td><td>termina em ".txt"</td></tr>
+</table>
+</div>
+
+<pre class="term">$ grep "^[bm]" frutas.txt
+banana
+maçã
+banana
+maçã
+banana
+$ grep "a$" frutas.txt
+banana
+laranja
+banana
+uva
+banana
+$ grep "ma.ã" frutas.txt
+maçã                                 « o ponto pegou o "ç"
+maçã</pre>
+
+<p>O primeiro pede linhas que <strong>começam</strong> com b ou m; o segundo, linhas que <strong>terminam</strong> com a. No terceiro, o ponto valeu por um caractere acentuado: com <code>LANG=pt_BR.UTF-8</code>, o <code>grep</code> entende "ç" como uma letra só.</p>
+
+<h3>O ponto é "qualquer caractere": cuidado</h3>
+<pre class="term">$ grep -o "1.1" Documentos/acesso.log | head -3
+1:1                                  « veio de "09:01:12"!
+1.1
+1.1</pre>
+<p>Procurando "1.1" (de <code>HTTP/1.1</code>), o <code>grep</code> também achou "1:1" dentro da hora. Para o ponto valer só como ponto, escreva <code>"1\.1"</code> ou use <code>-F</code> (veja abaixo).</p>
+
+<h3><code>-E</code>: regex estendida (com "ou")</h3>
+<p>Com <code>-E</code> (de <em>extended</em>), você ganha <code>|</code> ("ou"), <code>+</code> (1 ou mais), <code>?</code> (opcional), <code>{n}</code> (repetir n vezes) e parênteses para agrupar, sem precisar de barras:</p>
+
+<dl class="anatomy">
+  <dt>grep</dt><dd>O programa.</dd>
+  <dt>-E</dt><dd>Usa a regex estendida.</dd>
+  <dt>"40[34]$"</dt><dd>"40", depois 3 ou 4, no fim da linha: pega 403 e 404.</dd>
+  <dt>Documentos/acesso.log</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ grep -E "40[34]$" Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+$ grep -E "POST|admin" Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+192.168.0.10 - - [15/Oct/2026:09:06:44] "POST /login HTTP/1.1" 200
+$ grep "POST|admin" Documentos/acesso.log
+$                                    « sem -E, o | é um caractere comum
+$ grep -oE "[0-9]{3}$" Documentos/acesso.log
+200
+200
+403
+404
+200
+200</pre>
+
+<div class="note">
+<strong>Quer procurar o texto exato, sem regex? <code>-F</code></strong>
+<p>Use <code>-F</code> (de <em>fixed</em>, "fixo"): <code>grep -F "1.1" arquivo</code> procura "1.1" de verdade. Os antigos <code>egrep</code> e <code>fgrep</code> ainda existem no Arch, mas reclamam a cada uso:</p>
+<pre class="term">$ egrep 404 Documentos/acesso.log
+egrep: warning: egrep is obsolescent; using grep -E
+192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404</pre>
+<p>Prefira <code>grep -E</code> e <code>grep -F</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:grep.*\^,out:laranja,out:uva" data-solucao="grep &quot;^[lu]&quot; frutas.txt">
+<p class="try-task"><strong>Missão 3:</strong> usando <code>^</code> e colchetes, mostre só as frutas de <code>frutas.txt</code> que começam com a letra <strong>l</strong> ou <strong>u</strong>.</p>
+</div>
+
+<hr>
+
+<h2>grep no dia a dia do Arch</h2>
+
+<h3>Ler um arquivo de configuração sem os comentários</h3>
+<p>O <code>/etc/pacman.conf</code> tem 100 linhas, a maioria comentários (<code>#</code>) e linhas vazias. Dois <code>grep -v</code> em sequência mostram só o que está valendo:</p>
+
+<pre class="term">$ grep -v "^#" /etc/pacman.conf | grep -v "^$"
+[options]
+HoldPkg     = pacman glibc
+Architecture = auto
+CheckSpace
+ParallelDownloads = 5
+DownloadUser = alpm
+SigLevel    = Required DatabaseOptional
+LocalFileSigLevel = Optional
+[core]
+Include = /etc/pacman.d/mirrorlist
+[extra]
+Include = /etc/pacman.d/mirrorlist</pre>
+
+<dl class="anatomy">
+  <dt>grep -v "^#"</dt><dd>Tira as linhas que <strong>começam</strong> com <code>#</code> (comentários).</dd>
+  <dt>|</dt><dd>Entrega o resultado para o próximo comando (veja <a href="pipes.html">Pipes e xargs</a>).</dd>
+  <dt>grep -v "^$"</dt><dd>Tira as linhas vazias: <code>^$</code> é "começo e fim colados", sem nada no meio.</dd>
+</dl>
+
+<p>Repare: a opção <code>Color</code> está comentada, por isso o <code>pacman</code> sai sem cores (veja <a href="pacman-avancado.html">pacman Avançado</a>). E só os repositórios <code>[core]</code> e <code>[extra]</code> estão ligados:</p>
+
+<pre class="term">$ grep "^\[" /etc/pacman.conf
+[options]
+[core]
+[extra]
+$ grep -n "PasswordAuthentication\|^Include" /etc/ssh/sshd_config
+2:Include /etc/ssh/sshd_config.d/*.conf
+59:#PasswordAuthentication yes
+80:# PasswordAuthentication.  Depending on your PAM configuration,
+84:# PAM authentication, then enable this but set PasswordAuthentication</pre>
+
+<p>No primeiro, a barra em <code>\[</code> diz que o colchete é um caractere comum, não o começo de uma lista. No segundo, <code>\|</code> é o "ou" da regex básica (sem <code>-E</code>). A opção do SSH está na linha 59, comentada, e a linha 2 avisa que os arquivos de <code>sshd_config.d</code> também contam (veja <a href="ssh.html">SSH</a>).</p>
+
+<div class="try" data-goal="ran:grep +-v,out:ParallelDownloads" data-solucao="grep -v &quot;^#&quot; /etc/pacman.conf | grep -v &quot;^$&quot;">
+<p class="try-task"><strong>Missão 4:</strong> mostre só as linhas que estão valendo no <code>/etc/pacman.conf</code>, sem comentários e sem linhas vazias. Quantos downloads em paralelo o pacman faz?</p>
+</div>
+
+<h3>Pesquisar o histórico do pacman</h3>
+<p>Tudo o que o <code>pacman</code> faz fica registrado em <code>/var/log/pacman.log</code>, um arquivo de texto. É o lugar certo para responder "quando eu instalei isso?":</p>
+
+<pre class="term">$ grep -c "\[ALPM\] installed" /var/log/pacman.log
+408                                  « pacotes instalados desde a instalação do sistema
+$ grep "\[ALPM\] installed" /var/log/pacman.log | tail -3
+[2026-10-16T13:00:23-0300] [ALPM] installed paru-bin (2.1.0-1)
+[2026-10-16T13:00:39-0300] [ALPM] installed fzf (0.74.5-1)
+[2026-10-16T13:00:48-0300] [ALPM] installed downgrade (12.0.4-1)
+$ grep -E "\[ALPM\] (installed|removed) (htop|nginx)" /var/log/pacman.log
+[2026-10-16T12:57:10-0300] [ALPM] installed htop (3.5.3-1)
+[2026-10-16T12:57:10-0300] [ALPM] installed nginx (1.30.5-1)</pre>
+
+<p>Depois de uma atualização, procurar <code>warning</code> e <code>pacnew</code> nesse log mostra os avisos que passaram rápido demais na tela (veja <a href="pacnew.html">.pacnew e .pacsave</a>).</p>
+
+<h3>Filtrar a saída de outros comandos</h3>
+<p>O <code>grep</code> também filtra a saída de <strong>outros comandos</strong>, pelo pipe:</p>
+
+<pre class="term">$ pacman -Qi bash | grep -i depende
+Depende de           : readline  libreadline.so=8-64  glibc  ncurses
+$ pacman -Ql bash | grep "bin/"
+bash /usr/bin/
+bash /usr/bin/bash
+bash /usr/bin/bashbug
+bash /usr/bin/rbash
+bash /usr/bin/sh</pre>
+
+<h3>A armadilha do <code>ps aux | grep</code></h3>
+<p>Procurando um programa na lista de processos, o próprio <code>grep</code> pode aparecer no resultado:</p>
+
+<pre class="term">$ ps aux | grep NetworkManager
+root         289  0.0  0.7 422460 27884 ?        Ssl  14:51   0:00 /usr/bin/NetworkManager --no-daemon
+ana        24563  0.0  0.1   6968  4412 pts/0    S+   15:10   0:00 grep --color=auto NetworkManager     « o próprio grep!</pre>
+
+<p>Isso acontece porque, no momento em que o <code>ps</code> tira a foto dos processos, o <code>grep</code> já está rodando, e a linha de comando dele contém "NetworkManager" (repare no <code>--color=auto</code> do apelido). Às vezes a linha não aparece, quando o <code>ps</code> é mais rápido. Duas saídas:</p>
+<ul>
+  <li>Use <code>pgrep -a NetworkManager</code>, feito exatamente para isso (veja <a href="processos.html">ps, pgrep, top, htop</a>).</li>
+  <li>Ou o truque <code>ps aux | grep "[N]etworkManager"</code>: a regex <code>[N]etworkManager</code> combina com "NetworkManager", mas a linha do grep contém "[N]etworkManager", que não combina com ela mesma.</li>
+</ul>
+
+<pre class="term">$ pgrep -a NetworkManager
+289 /usr/bin/NetworkManager --no-daemon</pre>
+
+<div class="try" data-goal="ran:pgrep.*NetworkManager" data-solucao="ps aux | grep NetworkManager;;pgrep -a NetworkManager">
+<p class="try-task"><strong>Missão 5:</strong> rode <code>ps aux | grep NetworkManager</code>. Depois descubra o processo do NetworkManager sem a armadilha, com <code>pgrep -a</code>.</p>
+</div>
+
+<hr>
+
+<h2>O que o grep devolve</h2>
+<p>O <code>grep</code> é um dos poucos comandos em que o código de saída diz se ele <strong>achou</strong> algo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Significado</th></tr>
+<tr><td><code>0</code></td><td>Achou pelo menos uma linha</td></tr>
+<tr><td><code>1</code></td><td>Não achou nada (não é erro!)</td></tr>
+<tr><td><code>2</code></td><td>Houve erro: arquivo inexistente, regex inválida…</td></tr>
+</table>
+</div>
+
+<pre class="term">$ grep uva frutas.txt
+uva
+$ echo $?
+0
+$ grep abacaxi frutas.txt
+$ echo $?
+1                                    « silêncio + 1 = não achou
+$ grep uva frutas.text
+grep: frutas.text: Arquivo ou diretório inexistente
+$ echo $?
+2</pre>
+
+<p>Em scripts, use <code>-q</code> (de <em>quiet</em>, "quieto"): não mostra nada, só devolve o código. Junto com o <code>&amp;&amp;</code> ("se deu certo, faça"):</p>
+<pre class="term">$ grep -q "Arch Linux" /etc/os-release &amp;&amp; echo "É Arch!"
+É Arch!</pre>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+
+<h3>Contar linhas que combinam</h3>
+<pre class="term">$ grep -c banana frutas.txt
+3
+$ grep banana frutas.txt | wc -l
+3</pre>
+<p>Os dois dão o mesmo resultado. O <code>-c</code> é mais curto; o <code>| wc -l</code> funciona com qualquer comando no lugar do <code>grep</code>.</p>
+
+<h3>ripgrep: um grep -r mais rápido (ilustrativo)</h3>
+<p>O <code>ripgrep</code> (comando <code>rg</code>) é um programa moderno, do repositório <code>extra</code>, feito para procurar em pastas inteiras: é recursivo por padrão, pula arquivos ocultos, binários e o que estiver no <code>.gitignore</code>, e é muito rápido. Não vem instalado:</p>
+
+<pre class="term">$ sudo pacman -S ripgrep
+…
+Pacotes (1) ripgrep-15.2.0-1
+
+Tamanho total download:   1,39 MiB
+Tamanho total instalado:  4,29 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>Na VM do guia nada foi instalado: a saída abaixo é do <code>rg</code> 15.2.0 real, rodado a partir do pacote baixado, dentro de <code>Documentos</code>. Ele agrupa os resultados por arquivo e já mostra o número da linha. No simulador, ele não existe.</p>
+
+<pre class="term" data-cwd="~/Documentos">$ rg 40
+acesso.log
+2:192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+3:192.168.0.10 - - [15/Oct/2026:09:02:03] "GET /admin HTTP/1.1" 403
+4:192.168.0.57 - - [15/Oct/2026:09:05:19] "GET /fotos HTTP/1.1" 404
+$ rg -w Ana
+alunos.csv
+2:Ana,29,Recife,9.5</pre>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td><code>grep</code></td><td><code>grep -n erro app.log</code></td><td>Um arquivo, ou a saída de outro comando. Sempre instalado.</td></tr>
+<tr><td><code>grep -r</code></td><td><code>grep -rn "erro" ~/projeto</code></td><td>Uma pasta inteira, sem instalar nada.</td></tr>
+<tr><td><code>grep -r --include</code></td><td><code>grep -rn --include="*.conf" porta .</code></td><td>Só certos tipos de arquivo.</td></tr>
+<tr><td><code>find … -exec grep</code></td><td><code>find . -name "*.log" -mtime -1 -exec grep -H erro {} +</code></td><td>Precisa dos filtros do <a href="find.html"><code>find</code></a>, como data e tamanho.</td></tr>
+<tr><td><code>rg</code></td><td><code>rg erro</code></td><td>Projetos grandes de código; quer velocidade e respeitar o <code>.gitignore</code>.</td></tr>
+<tr><td><code>pgrep</code></td><td><code>pgrep -a firefox</code></td><td>Procurar processos (no lugar de <code>ps aux | grep</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Não apareceu nada</strong>
+<pre class="term">$ grep Banana frutas.txt
+$
+$ grep -i "maca" frutas.txt
+$</pre>
+<p><strong>O que aconteceu:</strong> nenhuma linha tem "Banana" com B maiúsculo; e "maca" não acha "maçã", porque acento conta (o <code>-i</code> ignora maiúsculas, não acentos). Silêncio no <code>grep</code> não é erro: só quer dizer "não achei" (código 1).</p>
+<p><strong>Como confirmar:</strong> <code>echo $?</code> mostra 1. Se mostrar 2, é erro de verdade.</p>
+<p><strong>Como resolver:</strong> tente <code>-i</code>, confira a grafia (ou troque a letra duvidosa por um ponto: <code>"ma.ã"</code>) e se o arquivo é o certo.</p>
+</div>
+
+<div class="cenario">
+<strong>"É um diretório"</strong>
+<pre class="term">$ grep café Documentos
+grep: Documentos: É um diretório</pre>
+<p><strong>Como resolver:</strong> para procurar dentro da pasta, use <code>-r</code>: <code>grep -r café Documentos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ grep 403 acesso.log
+grep: acesso.log: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o arquivo está em outra pasta (<code>Documentos/acesso.log</code>). Também acontece quando o padrão tem espaço e está sem aspas: a segunda palavra vira "arquivo". Para esconder esse tipo de erro quando você passa vários arquivos, use <code>-s</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"( ou \( descasados" e "Expressão regular inválida"</strong>
+<pre class="term">$ grep -E "(erro" Documentos/acesso.log
+grep: ( ou \( descasados
+$ grep "[" frutas.txt
+grep: Expressão regular inválida</pre>
+<p><strong>O que aconteceu:</strong> na regex, <code>(</code> abre um grupo e <code>[</code> abre uma lista, e nenhum dos dois foi fechado.</p>
+<p><strong>Como resolver:</strong> para procurar esses caracteres literalmente, use <code>-F</code> (<code>grep -F "(erro" app.log</code>) ou uma barra antes (<code>grep "\[" arquivo</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"arquivo binário coincide com o padrão"</strong>
+<pre class="term">$ grep ELF /usr/bin/bash
+grep: /usr/bin/bash: arquivo binário coincide com o padrão</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não é texto (é um programa, imagem, PDF, pacote <code>.zst</code>…). O <code>grep</code> avisa que achou, mas não imprime a linha para não sujar o terminal.</p>
+<p><strong>Como resolver:</strong> normalmente não há o que resolver. Se precisar mesmo, <code>grep -a</code> trata o arquivo como texto. Para arquivos compactados, use <code>zgrep</code> (veja <a href="compactar.html">tar, zip, gzip</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-i</code></td><td>Ignora maiúsculas e minúsculas</td><td><code>grep -i erro log</code></td></tr>
+<tr><td><code>-n</code></td><td>Mostra o número da linha</td><td><code>grep -n erro log</code></td></tr>
+<tr><td><code>-c</code></td><td>Conta as linhas que combinam</td><td><code>grep -c erro log</code></td></tr>
+<tr><td><code>-v</code></td><td>Mostra as que <strong>não</strong> combinam</td><td><code>grep -v "^#" config</code></td></tr>
+<tr><td><code>-w</code></td><td>Só palavras inteiras</td><td><code>grep -w ana lista</code></td></tr>
+<tr><td><code>-x</code></td><td>Só se a linha inteira for igual ao padrão</td><td><code>grep -x uva frutas.txt</code></td></tr>
+<tr><td><code>-o</code></td><td>Mostra só o trecho encontrado</td><td><code>grep -o "[0-9]*" arq</code></td></tr>
+<tr><td><code>-m N</code></td><td>Para depois de N linhas encontradas</td><td><code>grep -m1 banana frutas.txt</code></td></tr>
+<tr><td><code>-r</code> / <code>-R</code></td><td>Procura dentro de pastas (<code>-R</code> segue links)</td><td><code>grep -r senha ~/projeto</code></td></tr>
+<tr><td><code>-l</code> / <code>-L</code></td><td>Só os nomes dos arquivos que combinam / que <strong>não</strong> combinam</td><td><code>grep -rl TODO .</code></td></tr>
+<tr><td><code>-h</code> / <code>-H</code></td><td>Esconde / mostra o nome do arquivo</td><td><code>grep -h erro *.log</code></td></tr>
+<tr><td><code>-A N</code> / <code>-B N</code> / <code>-C N</code></td><td>N linhas depois / antes / ao redor</td><td><code>grep -C 2 erro log</code></td></tr>
+<tr><td><code>-E</code></td><td>Regex estendida (<code>|</code> <code>+</code> <code>?</code> <code>{}</code> <code>()</code>)</td><td><code>grep -E "403|404" log</code></td></tr>
+<tr><td><code>-F</code></td><td>Texto fixo, sem regex</td><td><code>grep -F "a.b" arq</code></td></tr>
+<tr><td><code>-q</code></td><td>Silencioso: só o código de saída</td><td><code>grep -q x arq &amp;&amp; echo sim</code></td></tr>
+<tr><td><code>-s</code></td><td>Esconde mensagens de erro de arquivos</td><td><code>grep -s x *</code></td></tr>
+<tr><td><code>--include</code></td><td>Com <code>-r</code>, só arquivos com esse nome</td><td><code>--include="*.conf"</code></td></tr>
+<tr><td><code>--color=auto</code></td><td>Destaca o trecho (já ligado pelo apelido do <code>.bashrc</code> do Arch)</td><td><code>grep --color=auto erro log</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Contar ocorrências</h3>
+<p>Complete para mostrar <strong>quantas</strong> linhas de <code>acesso.log</code> contêm <code>GET</code>:</p>
+<div class="ex-code">grep <input data-answer="-c" aria-label="opção"> GET acesso.log</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem os comentários</h3>
+<p>Complete para mostrar só as linhas do <code>/etc/pacman.conf</code> que <strong>não</strong> começam com <code>#</code>:</p>
+<div class="ex-code">grep <input data-answer="-v" aria-label="opção"> "<input data-answer="^#" aria-label="padrão">" /etc/pacman.conf</div>
+</div>
+
+<div class="exercise">
+<h3>3. Pasta inteira com número da linha</h3>
+<p>Complete para procurar "senha" em todos os arquivos dentro de <code>~/projeto</code>, mostrando o número da linha:</p>
+<div class="ex-code">grep <input data-answer="-rn|-nr|-r -n|-n -r" aria-label="opções"> senha ~/projeto</div>
+</div>
+
+<div class="exercise">
+<h3>4. Quando instalei?</h3>
+<p>Complete para achar no histórico do pacman a linha em que o <code>htop</code> foi instalado:</p>
+<div class="ex-code">grep "installed htop" <input data-answer="/var/log/pacman.log" aria-label="arquivo"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. <code>grep erro app.log</code> não mostrou nada e <code>echo $?</code> mostrou <code>1</code>. O que isso significa?</p>
+<label><input type="radio" name="q5"> O arquivo <code>app.log</code> não existe.</label>
+<label><input type="radio" name="q5"> O <code>grep</code> travou.</label>
+<label><input type="radio" name="q5"> O arquivo existe, mas nenhuma linha contém "erro".</label>
+<label><input type="radio" name="q5"> Você não tem permissão para ler o arquivo.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Num Arch recém-instalado, por que o <code>grep</code> destaca o texto em cores?</p>
+<label><input type="radio" name="q6"> Porque o <code>grep</code> do Arch é uma versão diferente.</label>
+<label><input type="radio" name="q6"> Porque o <code>~/.bashrc</code> tem o apelido <code>alias grep='grep --color=auto'</code>.</label>
+<label><input type="radio" name="q6"> Porque o terminal pinta tudo o que é vermelho.</label>
+<label><input type="radio" name="q6"> Porque o <code>/etc/pacman.conf</code> tem a opção <code>Color</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Qual comando mostra as linhas que contêm "403" <strong>ou</strong> "404"?</p>
+<label><input type="radio" name="q7"> <code>grep "403|404" acesso.log</code></label>
+<label><input type="radio" name="q7"> <code>grep -v 200 acesso.log -o</code></label>
+<label><input type="radio" name="q7"> <code>grep -F "40[34]" acesso.log</code></label>
+<label><input type="radio" name="q7"> <code>grep -E "403|404" acesso.log</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>grep padrão arquivo</code> mostra as linhas que contêm o padrão; use aspas sempre que houver espaço ou símbolos.</li>
+  <li><code>-i</code> ignora maiúsculas, <code>-v</code> inverte, <code>-n</code> numera, <code>-c</code> conta, <code>-w</code> palavra inteira, <code>-o</code> só o trecho, <code>-A/-B/-C</code> contexto.</li>
+  <li><code>-r</code> procura em pastas (só pastas pequenas!) e <code>-l</code> mostra só os nomes dos arquivos.</li>
+  <li>Regex: <code>^</code> começo, <code>$</code> fim, <code>.</code> qualquer caractere, <code>[ ]</code> lista; <code>-E</code> libera <code>|</code>, <code>+</code>, <code>{}</code>; <code>-F</code> desliga tudo.</li>
+  <li>Código 0 = achou, 1 = não achou, 2 = erro. <code>-q</code> serve para scripts.</li>
+  <li>No Arch, as cores vêm do apelido no <code>.bashrc</code>; <code>grep -v "^#"</code> limpa arquivos de configuração e o <code>/var/log/pacman.log</code> guarda o histórico.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>grep</code> e as alternativas modernas, como o <code>ripgrep</code>, aparecem em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a>; as cores do <code>grep</code> e de outros comandos, em <a href="https://wiki.archlinux.org/title/Color_output_in_console#grep">Color output in console</a>; e o histórico do pacman (<code>/var/log/pacman.log</code>), em <a href="https://wiki.archlinux.org/title/Pacman#Configuration">pacman</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
