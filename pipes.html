@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Pipes e xargs — ligar comandos | Guia Arch</title>
+<meta name="description" content="Pipes no Arch Linux: o | passo a passo, filtros com sort, uniq, grep e cut, tee, xargs (-t, -n, -I {}, -0, -r), PIPESTATUS e pipefail, e pipes do dia a dia com pacman -Qq e pacman -Qi, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Pipes e xargs</span></h1>
+
+<p class="intro">O <strong>pipe</strong> (<code>|</code>, "cano" em inglês) liga a saída de um comando à entrada do próximo. Com ele, comandos pequenos viram uma linha de montagem: um lista, outro filtra, outro conta. É uma das ideias mais poderosas do Linux — e é assim que se faz perguntas ao <code>pacman</code> que ele sozinho não responde.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>|</code> conecta dois comandos, e a diferença entre <code>|</code> e <code>&gt;</code>.</li>
+  <li>A montar um pipe de várias etapas uma etapa por vez, conferindo cada resultado.</li>
+  <li>A ver e gravar ao mesmo tempo com <code>tee</code>.</li>
+  <li>A transformar linhas em argumentos com <code>xargs</code> (<code>-t</code>, <code>-n</code>, <code>-I {}</code>, <code>-0</code>).</li>
+  <li>O que um pipe devolve: <code>$?</code>, <code>PIPESTATUS</code> e <code>pipefail</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: saída de um vira entrada do outro</h2>
+<p>Na aula de <a href="redirecionamento.html">Redirecionamento</a> você viu que todo comando tem uma entrada (canal 0) e uma saída (canal 1). O pipe encaixa os dois:</p>
+
+<pre class="syntax">  comando1  ── saída ──►  |  ── entrada ──►  comando2  ──►  tela</pre>
+
+<p>O <code>comando1</code> não mostra nada na tela. Tudo o que ele produziria vai direto para o <code>comando2</code>, que trabalha em cima disso. Os dois rodam <strong>ao mesmo tempo</strong>: o segundo vai processando enquanto o primeiro ainda produz.</p>
+
+<h2>Seu primeiro pipe</h2>
+<p>Quantos arquivos há na pasta <code>Downloads</code>? O <code>ls</code> lista, e o <code>wc -l</code> conta linhas.</p>
+
+<dl class="anatomy">
+  <dt>ls Downloads</dt><dd>Lista os arquivos, um por linha (quando a saída não é a tela).</dd>
+  <dt>|</dt><dd>O pipe: entrega essa lista ao próximo comando.</dd>
+  <dt>wc -l</dt><dd>Conta as linhas que recebeu (<em>word count</em>, opção <code>-l</code> de <em>lines</em>).</dd>
+</dl>
+
+<pre class="term">$ ls Downloads
+archlinux-x86_64.iso  foto.jpg  fotos-viagem.zip  manual.pdf  musica.mp3
+$ ls Downloads | wc -l
+5                                « 5 linhas = 5 arquivos</pre>
+
+<p>O símbolo <code>|</code> fica, no teclado ABNT2, na tecla ao lado do <kbd>Z</kbd> (junto com a barra invertida): aperte <kbd>Shift</kbd> + essa tecla.</p>
+
+<h3>O mesmo, com o pacman</h3>
+<p>Quantos pacotes estão instalados no seu Arch? O <code>pacman -Qq</code> lista só os nomes (<code>-Q</code> = <em>query</em>, <code>q</code> = <em>quiet</em>), um por linha:</p>
+
+<pre class="term">$ pacman -Qq | wc -l
+408                              « pacotes instalados ao todo
+$ pacman -Qqe | wc -l
+45                               « só os instalados de propósito (explícitos)</pre>
+
+<div class="try" data-goal="out:408,ran:\|" data-solucao="pacman -Qq | wc -l">
+<p class="try-task"><strong>Missão:</strong> conte quantos pacotes estão instalados neste Arch, ligando o <code>pacman</code> ao <code>wc</code> com um pipe.</p>
+</div>
+
+<hr>
+
+<h2>Montando um pipe passo a passo</h2>
+<p>Ninguém escreve um pipe longo de uma vez. O jeito profissional é acrescentar <strong>uma etapa</strong>, rodar, olhar o resultado, e só então acrescentar a próxima. Vamos responder: qual fruta aparece mais vezes em <code>frutas.txt</code>?</p>
+
+<ol class="passo">
+<li><p>Veja os dados brutos.</p>
+<pre class="term">$ cat frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana</pre></li>
+<li><p>Ordene, para que as frutas iguais fiquem juntas.</p>
+<pre class="term">$ sort frutas.txt
+banana
+banana
+banana
+laranja
+maçã
+maçã
+uva</pre></li>
+<li><p>Conte as repetições. O <code>uniq -c</code> junta linhas iguais <strong>vizinhas</strong> e escreve quantas eram. Por isso o <code>sort</code> veio antes.</p>
+<pre class="term">$ sort frutas.txt | uniq -c
+      3 banana
+      1 laranja
+      2 maçã
+      1 uva</pre></li>
+<li><p>Ordene pela contagem, do maior para o menor: <code>-n</code> compara como número, <code>-r</code> inverte.</p>
+<pre class="term">$ sort frutas.txt | uniq -c | sort -nr
+      3 banana
+      2 maçã
+      1 uva
+      1 laranja</pre></li>
+<li><p>Fique só com a primeira linha.</p>
+<pre class="term">$ sort frutas.txt | uniq -c | sort -nr | head -n 1
+      3 banana                   « a resposta</pre></li>
+</ol>
+
+<dl class="anatomy">
+  <dt>sort frutas.txt</dt><dd>Ordena, juntando as linhas iguais.</dd>
+  <dt>| uniq -c</dt><dd>Conta cada grupo de linhas iguais.</dd>
+  <dt>| sort -nr</dt><dd>Ordena pelo número, do maior para o menor.</dd>
+  <dt>| head -n 1</dt><dd>Mostra só a primeira linha.</dd>
+</dl>
+
+<p>Esse mesmo "molde" (<code>sort | uniq -c | sort -nr</code>) responde muitas perguntas do dia a dia: quais IPs mais acessaram um site, quais comandos você mais usa, quais extensões dominam uma pasta. Os comandos <code>sort</code>, <code>uniq</code>, <code>cut</code> e <code>wc</code> são explicados um a um em <a href="texto.html">sort, uniq, cut, wc, tr</a>.</p>
+
+<div class="try" data-goal="contains:~/ranking.txt=3 banana,contains:~/ranking.txt=1 laranja" data-solucao="sort frutas.txt | uniq -c | sort -nr &gt; ranking.txt">
+<p class="try-task"><strong>Missão:</strong> monte o pipe acima etapa por etapa, rodando cada versão. No fim, grave o ranking completo (sem o <code>head</code>) no arquivo <code>ranking.txt</code>. Dica: use a seta <kbd>↑</kbd> para trazer o comando anterior e só acrescentar a próxima etapa.</p>
+</div>
+
+<h3>Outro exemplo: quem mais acessou o site?</h3>
+<p>O arquivo <code>Documentos/acesso.log</code> tem uma linha por acesso, e o primeiro "campo" é o IP do visitante:</p>
+
+<pre class="term">$ head -n 2 Documentos/acesso.log
+192.168.0.10 - - [15/Oct/2026:09:01:12] "GET / HTTP/1.1" 200
+192.168.0.23 - - [15/Oct/2026:09:01:40] "GET /contato HTTP/1.1" 200
+$ cut -d " " -f 1 Documentos/acesso.log | sort | uniq -c | sort -nr
+      3 192.168.0.10
+      2 192.168.0.23
+      1 192.168.0.57</pre>
+
+<p>O <code>cut -d " " -f 1</code> corta cada linha nos espaços (<code>-d</code>, de <em>delimiter</em>) e fica com o campo 1 (<code>-f</code>, de <em>field</em>). O resto é o mesmo molde. (Com o <a href="awk.html">awk</a> dá para fazer a contagem num comando só.)</p>
+
+<div class="try" data-goal="outre:^\s+3 192\.168\.0\.10$" data-solucao="cut -d &quot; &quot; -f 1 Documentos/acesso.log | sort | uniq -c | sort -nr">
+<p class="try-task"><strong>Missão:</strong> descubra qual IP mais acessou o site, montando o pipe aos poucos (a contagem deve aparecer na frente do IP, como acima).</p>
+</div>
+
+<hr>
+
+<h2>Pipes do dia a dia no Arch</h2>
+<p>O <code>pacman</code> responde muita coisa sozinho, mas com um pipe você faz perguntas novas. O <code>grep</code> (veja <a href="grep.html">grep</a>) é o parceiro mais comum: ele deixa passar só as linhas que contêm um texto.</p>
+
+<pre class="term">$ pacman -Qi bash | grep -E '^(Nome|Versão|Tamanho instalado)'
+Nome                 : bash
+Versão               : 5.3.20-1
+Tamanho instalado    : 9,59 MiB         « 3 campos das 25 linhas do -Qi
+$ pacman -Qi | grep '^Motivo' | sort | uniq -c
+    363 Motivo da instalação : Instalado como dependência de outro pacote
+     45 Motivo da instalação : Instalado explicitamente
+$ pacman -Ql sed | grep '/usr/bin/'
+sed /usr/bin/
+sed /usr/bin/sed                         « os programas que o pacote sed instala
+$ pacman -Qq | grep '^python' | head -n 5
+python
+python-attrs
+python-binaryornot
+python-boolean.py
+python-catalogus</pre>
+
+<p>O segundo exemplo usou o molde da contagem em cima do <code>pacman -Qi</code> (sem nome de pacote, ele mostra <strong>todos</strong>): dos 408 pacotes, 45 você instalou e 363 vieram como dependência. Os campos do <code>-Qi</code> estão em <a href="pacman.html">pacman: o Básico</a>.</p>
+
+<h3>Filtrar a saída de qualquer comando</h3>
+<pre class="term">$ ls -l Documentos | grep txt
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt</pre>
+
+<div class="warning">
+<strong>Cuidado: o grep encontra a si mesmo</strong>
+<p>Um uso clássico é procurar um programa na lista de processos. Repare na última linha:</p>
+<pre class="term">$ ps aux | grep journald
+root         197  0.1  0.7  51728 28388 ?        Ss   14:51   0:01 /usr/lib/systemd/systemd-journald
+ana        15508  0.0  0.1   6968  4376 ?        S    15:04   0:00 grep --color=auto journald    « o próprio grep</pre>
+<p>O <code>grep journald</code> também é um processo, e a linha de comando dele contém "journald" (o <code>--color=auto</code> vem do alias <code>grep</code> que o <code>.bashrc</code> do Arch cria). Duas soluções:</p>
+<ul>
+  <li><code>pgrep -a journal</code>, que foi feito para isso (veja <a href="processos.html">ps, pgrep, top</a>). Atenção: <code>pgrep -a journald</code> <strong>não acha nada</strong>, porque o nome do processo é cortado em 15 letras (<code>systemd-journal</code>); use <code>pgrep -af journald</code> para procurar na linha de comando inteira;</li>
+  <li><code>ps aux | grep "[j]ournald"</code>. O padrão <code>[j]ournald</code> casa com "journald", mas o texto do próprio grep agora é "[j]ournald", que não casa.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Ver e gravar ao mesmo tempo: <code>tee</code></h2>
+<p>Com <code>&gt;</code>, a saída vai para o arquivo e some da tela. O <code>tee</code> (nome de uma conexão hidráulica em forma de "T") divide o fluxo em dois: grava num arquivo <strong>e</strong> passa adiante. Ele vem no <code>coreutils</code>.</p>
+
+<pre class="syntax">  comando  ──►  tee arquivo.txt  ──►  tela (ou próximo comando)
+                     │
+                     ▼
+                arquivo.txt</pre>
+
+<dl class="anatomy">
+  <dt>ls Documentos</dt><dd>O comando.</dd>
+  <dt>| tee lista.txt</dt><dd>Grava em <code>lista.txt</code> e repete na tela.</dd>
+</dl>
+
+<pre class="term">$ ls Documentos | tee lista.txt
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt
+$ cat lista.txt
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt</pre>
+
+<p>Com <code>-a</code> (de <em>append</em>), o <code>tee</code> acrescenta em vez de substituir, como o <code>&gt;&gt;</code>. E, se você só quer gravar, sem o eco, descarte a tela com <code>&gt; /dev/null</code>:</p>
+
+<pre class="term">$ date | tee -a log.txt
+sex 16 out 2026 15:04:50 -03
+$ date | tee -a log.txt &gt; /dev/null     « grava, mas não mostra
+$ cat log.txt
+sex 16 out 2026 15:04:50 -03
+sex 16 out 2026 15:04:50 -03</pre>
+
+<h3>Escrever em arquivos do sistema</h3>
+<p>O <code>tee</code> é quem abre o arquivo. Como usuária comum, a ana não pode gravar em <code>/etc</code>:</p>
+
+<pre class="term">$ echo "vm.swappiness=10" | tee /etc/sysctl.d/99-swap.conf
+tee: /etc/sysctl.d/99-swap.conf: Permissão negada        « não gravou…
+vm.swappiness=10                                          « …mas mostrou na tela
+$ echo $?
+1</pre>
+
+<p>No Arch, a ana está no grupo <code>wheel</code> e pode usar <code>sudo</code>. Basta pôr o <code>sudo</code> na frente do <code>tee</code>: <code>echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swap.conf</code>. Por que precisa ser no <code>tee</code>, e não no <code>echo</code>, está explicado em <a href="redirecionamento.html">Redirecionamento</a>. (O que o <code>vm.swappiness</code> faz está em <a href="swap-zram.html">Swap e zram</a>.)</p>
+
+<hr>
+
+<h2>xargs: transformar linhas em argumentos</h2>
+<p>Alguns comandos leem a entrada (<code>sort</code>, <code>grep</code>, <code>wc</code>). Outros não: <code>mkdir</code>, <code>rm</code>, <code>cp</code>, <code>touch</code> e o próprio <code>pacman -Qi</code> só aceitam nomes como <strong>argumentos</strong>. Mandar algo para eles por pipe não funciona:</p>
+
+<pre class="term">$ cat pastas.txt
+fotos
+videos
+musicas
+$ cat pastas.txt | mkdir
+mkdir: falta operando                       « faltou o nome das pastas
+Tente "mkdir --help" para mais informações.
+$ echo $?
+1</pre>
+
+<p>O <code>mkdir</code> recebeu a lista pela entrada, mas não lê a entrada. Para ele, foi como digitar só <code>mkdir</code>, sem nome nenhum.</p>
+
+<p>O <code>xargs</code> (do pacote <code>findutils</code>, presente em todo Arch) resolve isso: ele lê as linhas e as coloca no <strong>fim</strong> do comando, como se você tivesse digitado.</p>
+
+<dl class="anatomy">
+  <dt>cat pastas.txt</dt><dd>Produz os nomes, um por linha.</dd>
+  <dt>| xargs</dt><dd>Lê esses nomes da entrada…</dd>
+  <dt>mkdir</dt><dd>…e roda <code>mkdir fotos videos musicas</code>.</dd>
+</dl>
+
+<pre class="term">$ cat pastas.txt | xargs mkdir
+$ ls -d fotos videos musicas
+fotos  musicas  videos</pre>
+
+<h3>Ver o comando que o xargs montou: <code>-t</code></h3>
+<p>A opção <code>-t</code> mostra o comando antes de rodar. É ótima para aprender e para conferir:</p>
+
+<pre class="term">$ cat pastas.txt | xargs -t mkdir -p
+mkdir -p fotos videos musicas               « é isto que o xargs executou</pre>
+
+<h3>Um item por vez: <code>-n 1</code> e <code>-I {}</code></h3>
+<p>Por padrão, o xargs coloca todos os itens num comando só. Com <code>-n 1</code>, roda uma vez para cada item. Com <code>-I {}</code>, você escolhe <strong>onde</strong> o item entra no comando (e ele também roda uma vez por linha):</p>
+
+<pre class="term">$ cat pastas.txt | xargs -n 1 echo "criando:"
+criando: fotos
+criando: videos
+criando: musicas
+$ cat pastas.txt | xargs -I {} mkdir {}-2026
+$ ls -d *-2026
+fotos-2026  musicas-2026  videos-2026</pre>
+
+<h3>xargs com o pacman</h3>
+<pre class="term">$ pacman -Qqm
+downgrade
+paru-bin
+yay-bin
+yay-bin-debug
+$ pacman -Qqm | xargs -n 1 echo "do AUR:"
+do AUR: downgrade                           « -m = pacotes de fora dos repositórios (o AUR)
+do AUR: paru-bin
+do AUR: yay-bin
+do AUR: yay-bin-debug
+$ pacman -Qqe | head -n 3 | xargs pacman -Qi | grep -E '^(Nome|Descrição)'
+Nome                 : arch-install-scripts
+Descrição            : Scripts to aid in installing Arch Linux
+Nome                 : base
+Descrição            : Minimal package set to define a basic Arch Linux installation
+Nome                 : base-devel
+Descrição            : Basic tools to build Arch Linux packages</pre>
+
+<p>No último, o <code>xargs</code> montou <code>pacman -Qi arch-install-scripts base base-devel</code>, e o <code>grep</code> filtrou dois campos de cada. (O <code>pacman</code> também tem a sua forma própria de ler nomes da entrada: o argumento <code>-</code>, como em <code>pacman -S --needed - &lt; lista</code>, visto em <a href="redirecionamento.html">Redirecionamento</a>.)</p>
+
+<h3>Entrada vazia: <code>-r</code></h3>
+<p>Quando não chega nada, o xargs roda o comando <strong>assim mesmo</strong>, sem argumentos. No Arch, um caso real: o <code>pacman -Qqdt</code> lista os órfãos (dependências que ninguém usa mais), e aqui não há nenhum:</p>
+
+<pre class="term">$ pacman -Qqdt
+$ echo $?
+1                                           « nenhum órfão
+$ pacman -Qqdt | xargs echo "órfãos:"
+órfãos:                                     « rodou o echo mesmo sem itens
+$ pacman -Qqdt | xargs -r echo "órfãos:"    « com -r, não roda nada</pre>
+
+<p>O <code>-r</code> (<em>no-run-if-empty</em>) evita surpresas, principalmente com comandos que fazem algo diferente quando não recebem argumentos. A limpeza de órfãos com pipe está em <a href="cache-orfaos.html">Cache e Órfãos</a>.</p>
+
+<h3>Nomes com espaço: <code>-d '\n'</code> e <code>-0</code></h3>
+<p>O xargs separa os itens por espaços. Um nome como "Meus Projetos" vira dois:</p>
+
+<pre class="term">$ echo "Meus Projetos" | xargs mkdir
+$ ls -d Meus Projetos
+Meus  Projetos                   « duas pastas, não uma
+$ echo "Meus Projetos" | xargs -d '\n' mkdir
+$ ls -d Meus*
+ Meus  'Meus Projetos'           « agora sim: uma pasta com espaço no nome</pre>
+
+<p>Use <code>xargs -d '\n'</code> para separar só por linha. Com o <code>find</code>, o par mais seguro é <code>find … -print0 | xargs -0</code>, que usa um separador invisível (o caractere nulo) que nunca aparece em nomes. Compare:</p>
+
+<pre class="term">$ touch "cache 1.tmp" "cache 2.tmp"
+$ find . -name "*.tmp" | xargs rm -v
+rm: não foi possível remover './cache': Arquivo ou diretório inexistente
+rm: não foi possível remover '2.tmp': Arquivo ou diretório inexistente
+rm: não foi possível remover './cache': Arquivo ou diretório inexistente
+rm: não foi possível remover '1.tmp': Arquivo ou diretório inexistente
+$ find . -name "*.tmp" -print0 | xargs -0 rm -v
+removido './cache 2.tmp'
+removido './cache 1.tmp'</pre>
+
+<div class="warning">
+<strong>Teste antes de apagar</strong>
+<p>Antes de qualquer <code>| xargs rm</code>, rode o pipe <strong>sem</strong> o <code>rm</code> (ou com <code>xargs -t echo rm</code>) e confira a lista. Um padrão errado no <code>find</code> apaga arquivos que você não queria (veja <a href="find.html">find</a> e <a href="remover.html">rm</a>).</p>
+</div>
+
+<div class="try" data-setup="printf 'fotos\nvideos\nmusicas\n' &gt; pastas.txt" data-goal="dir:~/fotos,dir:~/videos,dir:~/musicas,ran:xargs" data-solucao="cat pastas.txt | xargs -t mkdir">
+<p class="try-task"><strong>Missão:</strong> o arquivo <code>pastas.txt</code> já tem três nomes. Veja o conteúdo com <code>cat</code> e crie as três pastas usando <code>xargs</code>. Experimente também o <code>-t</code> para ver o comando montado.</p>
+</div>
+
+<hr>
+
+<h2>O que um pipe devolve: <code>PIPESTATUS</code> e <code>pipefail</code></h2>
+<p>O código de saída (<code>$?</code>) de um pipe é o do <strong>último</strong> comando. Os erros das etapas anteriores ficam escondidos:</p>
+
+<pre class="term">$ cat nada.txt | wc -l
+cat: nada.txt: Arquivo ou diretório inexistente
+0
+$ echo $?
+0                                « o wc deu certo, então o pipe "deu certo"</pre>
+
+<p>O Bash guarda o código de <strong>cada</strong> etapa no array <code>PIPESTATUS</code>, um número por comando, na ordem. Ele precisa ser lido logo depois do pipe (o próximo comando já o substitui):</p>
+
+<pre class="term">$ cat nada.txt | wc -l
+cat: nada.txt: Arquivo ou diretório inexistente
+0
+$ echo "${PIPESTATUS[@]}"
+1 0                              « cat falhou (1), wc deu certo (0)</pre>
+
+<p>Em scripts, ligue <code>set -o pipefail</code>: assim, se qualquer etapa falhar, o pipe inteiro devolve erro.</p>
+
+<pre class="term">$ set -o pipefail
+$ cat nada.txt | wc -l
+cat: nada.txt: Arquivo ou diretório inexistente
+0
+$ echo $?
+1                                « agora o erro do cat aparece no código
+$ set +o pipefail                « desliga</pre>
+
+<p>Repare também que a mensagem do <code>cat</code> apareceu na tela, e não foi para o <code>wc</code>. O pipe só leva o canal 1 (saída). Para levar os erros junto, use <code>2&gt;&amp;1 |</code> ou o atalho <code>|&amp;</code>:</p>
+
+<pre class="term">$ cat nada.txt |&amp; wc -l
+1                                « a linha de erro foi contada</pre>
+
+<div class="try" data-goal="outre:^1 0$" data-solucao="cat nada.txt | wc -l;;echo &quot;${PIPESTATUS[@]}&quot;">
+<p class="try-task"><strong>Missão:</strong> rode <code>cat nada.txt | wc -l</code> e, logo em seguida, mostre o código de cada etapa do pipe com o <code>PIPESTATUS</code>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de contar linhas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Observação</th></tr>
+<tr><td>Arquivo como argumento</td><td><code>wc -l frutas.txt</code></td><td>Mostra o número e o nome.</td></tr>
+<tr><td>Redirecionamento</td><td><code>wc -l &lt; frutas.txt</code></td><td>Só o número; ótimo em scripts.</td></tr>
+<tr><td>Pipe com cat</td><td><code>cat frutas.txt | wc -l</code></td><td>Funciona, mas o <code>cat</code> é desnecessário.</td></tr>
+<tr><td>Saída de outro comando</td><td><code>pacman -Qq | wc -l</code></td><td>Aqui o pipe é necessário: os dados vêm de um comando.</td></tr>
+<tr><td>grep</td><td><code>grep -c banana frutas.txt</code></td><td>Conta só as linhas que casam.</td></tr>
+<tr><td>awk</td><td><code>awk 'END {print NR}' frutas.txt</code></td><td>Útil quando o awk já está no pipe.</td></tr>
+</table>
+</div>
+
+<h3>Qual usar: <code>|</code>, <code>xargs</code> ou <code>-exec</code>?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>O próximo comando lê a entrada (<code>grep</code>, <code>sort</code>, <code>wc</code>, <code>awk</code>)</td><td><code>|</code> direto</td></tr>
+<tr><td>O próximo comando só aceita argumentos (<code>mkdir</code>, <code>rm</code>, <code>pacman -Qi</code>)</td><td><code>| xargs</code></td></tr>
+<tr><td>Os nomes vêm do <code>find</code></td><td><code>find … -exec cmd {} +</code> ou <code>-print0 | xargs -0</code></td></tr>
+<tr><td>O pacman deve ler a lista</td><td><code>pacman -S --needed - &lt; lista</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Apareceu um arquivo chamado "wc"</strong>
+<pre class="term">$ ls &gt; wc
+$ ls
+…  frutas.txt  …  wc</pre>
+<p><strong>O que aconteceu:</strong> foi usado <code>&gt;</code> no lugar de <code>|</code>. O <code>&gt;</code> manda a saída para um <strong>arquivo</strong>; o <code>|</code> manda para um <strong>comando</strong>.</p>
+<p><strong>Como resolver:</strong> apague o arquivo (<code>rm wc</code>) e use <code>ls | wc -l</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"falta operando" depois do pipe</strong>
+<pre class="term">$ find . -name "*.tmp" | rm
+rm: falta operando
+Tente "rm --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> o <code>rm</code> não lê a entrada; ele espera nomes como argumentos.</p>
+<p><strong>Como resolver:</strong> coloque o <code>xargs</code> no meio, <code>find . -name "*.tmp" -print0 | xargs -0 rm</code>, ou use o próprio <code>find . -name "*.tmp" -delete</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" no <code>tee</code></strong>
+<pre class="term">$ echo "vm.swappiness=10" | tee /etc/sysctl.d/99-swap.conf
+tee: /etc/sysctl.d/99-swap.conf: Permissão negada
+vm.swappiness=10</pre>
+<p><strong>O que aconteceu:</strong> o <code>tee</code> roda como a ana e não pode criar arquivos em <code>/etc</code>. O texto aparece na tela, o que engana: parece que deu certo.</p>
+<p><strong>Como resolver:</strong> <code>echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swap.conf</code>. Confira com <code>cat</code> depois.</p>
+</div>
+
+<div class="cenario">
+<strong>O pipe não mostrou o que eu esperava</strong>
+<p><strong>O que aconteceu:</strong> alguma etapa do meio filtrou demais (ou de menos). Exemplo real: <code>pgrep -a journald</code> volta vazio porque o nome do processo é <code>systemd-journal</code>.</p>
+<p><strong>Como resolver:</strong> rode cada etapa sozinha, da esquerda para a direita, e veja onde o resultado "some". Confira o <code>PIPESTATUS</code> para achar a etapa que falhou.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome com espaço virou dois itens</strong>
+<p>Se o xargs criou "Meus" e "Projetos" separados, use <code>xargs -d '\n'</code> ou, com o <code>find</code>, <code>-print0 | xargs -0</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Recurso</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>a | b</code></td><td>Saída de a vira entrada de b</td><td><code>pacman -Qq | wc -l</code></td></tr>
+<tr><td><code>a |&amp; b</code></td><td>Saída e erros de a para b</td><td><code>make |&amp; less</code></td></tr>
+<tr><td><code>tee arq</code></td><td>Grava e repassa</td><td><code>ls | tee lista.txt</code></td></tr>
+<tr><td><code>tee -a arq</code></td><td>Acrescenta e repassa</td><td><code>date | tee -a log.txt</code></td></tr>
+<tr><td><code>| sudo tee arq</code></td><td>Grava em arquivo do root</td><td><code>echo x | sudo tee /etc/a.conf</code></td></tr>
+<tr><td><code>xargs cmd</code></td><td>Linhas da entrada viram argumentos</td><td><code>cat lista | xargs mkdir</code></td></tr>
+<tr><td><code>xargs -t</code></td><td>Mostra o comando antes de rodar</td><td><code>xargs -t rm</code></td></tr>
+<tr><td><code>xargs -n 1</code></td><td>Um item por execução</td><td><code>xargs -n 1 echo</code></td></tr>
+<tr><td><code>xargs -I {}</code></td><td>Escolhe onde o item entra</td><td><code>xargs -I {} cp {} {}.bak</code></td></tr>
+<tr><td><code>xargs -0</code></td><td>Itens separados pelo caractere nulo</td><td><code>find -print0 | xargs -0</code></td></tr>
+<tr><td><code>xargs -d '\n'</code></td><td>Itens separados por linha</td><td><code>xargs -d '\n' mkdir</code></td></tr>
+<tr><td><code>xargs -r</code></td><td>Não roda nada se a entrada estiver vazia</td><td><code>pacman -Qqdt | xargs -r …</code></td></tr>
+<tr><td><code>${PIPESTATUS[@]}</code></td><td>Código de cada etapa do último pipe</td><td><code>echo "${PIPESTATUS[@]}"</code></td></tr>
+<tr><td><code>set -o pipefail</code></td><td>Pipe falha se qualquer etapa falhar</td><td>Use em scripts</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Contar arquivos</h3>
+<p>Complete para contar quantos itens há na pasta <code>Imagens</code>:</p>
+<div class="ex-code">ls Imagens | <input data-answer="wc -l" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O molde da contagem</h3>
+<p>Complete o pipe que conta quantas vezes cada linha aparece:</p>
+<div class="ex-code">sort frutas.txt | <input data-answer="uniq -c" aria-label="comando"> | sort -nr</div>
+</div>
+
+<div class="exercise">
+<h3>3. Gravar como root</h3>
+<p>Complete para gravar a linha num arquivo do sistema:</p>
+<div class="ex-code">echo "vm.swappiness=10" | <input data-answer="sudo tee" aria-label="comando"> /etc/sysctl.d/99-swap.conf</div>
+</div>
+
+<div class="exercise">
+<h3>4. Pacotes do AUR, um por vez</h3>
+<p>Complete para rodar o <code>echo</code> uma vez para cada pacote:</p>
+<div class="ex-code">pacman -Qqm | xargs <input data-answer="-n 1" aria-label="opção"> echo "do AUR:"</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que <code>cat pastas.txt | mkdir</code> não funciona?</p>
+<label><input type="radio" name="q5"> Porque o cat não pode ser usado em pipes.</label>
+<label><input type="radio" name="q5"> Porque falta o sudo.</label>
+<label><input type="radio" name="q5"> Porque o mkdir não lê a entrada; ele precisa dos nomes como argumentos, e o xargs faz essa ponte.</label>
+<label><input type="radio" name="q5"> Porque o arquivo precisa ter extensão .sh.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em <code>sort frutas.txt | uniq -c</code>, por que o <code>sort</code> vem antes?</p>
+<label><input type="radio" name="q6"> Porque o uniq só junta linhas iguais que estejam uma ao lado da outra.</label>
+<label><input type="radio" name="q6"> Porque o uniq só funciona com arquivos ordenados por tamanho.</label>
+<label><input type="radio" name="q6"> Porque o pipe sempre precisa começar com sort.</label>
+<label><input type="radio" name="q6"> Não precisa: a ordem não muda o resultado.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">7. Depois de <code>cat nada.txt | wc -l</code>, o <code>echo "${PIPESTATUS[@]}"</code> mostra <code>1 0</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q7"> O pipe teve 1 linha e 0 erros.</label>
+<label><input type="radio" name="q7"> O primeiro comando (cat) falhou com código 1; o segundo (wc) deu certo.</label>
+<label><input type="radio" name="q7"> O pipe inteiro devolveu 1.</label>
+<label><input type="radio" name="q7"> O pipefail está ligado.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>|</code> liga a saída de um comando à entrada do próximo; <code>&gt;</code> liga a um arquivo.</li>
+  <li>Monte pipes longos uma etapa por vez, olhando o resultado de cada uma. O molde <code>sort | uniq -c | sort -nr</code> conta repetições.</li>
+  <li><code>pacman -Qq | wc -l</code>, <code>pacman -Qi | grep …</code>: pipes respondem perguntas que o pacman sozinho não responde.</li>
+  <li><code>tee</code> grava e mostra ao mesmo tempo; para arquivos do sistema, <code>| sudo tee</code>.</li>
+  <li><code>xargs</code> transforma linhas em argumentos (<code>-t</code> mostra, <code>-n 1</code> um por vez, <code>-I {}</code> posição, <code>-0</code> nomes difíceis, <code>-r</code> entrada vazia).</li>
+  <li>O pipe só leva a saída (canal 1); o código é o do último comando. <code>PIPESTATUS</code> mostra cada etapa e <code>pipefail</code> faz qualquer falha contar.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> pipes e redirecionamentos são recursos do shell, descritos em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> (<a href="https://wiki.archlinux.org/title/Bash_(Portugu%C3%AAs)">em português</a>). A página <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a> é cheia de pipes com o pacman (listar pacotes por tamanho, remover órfãos com <code>pacman -Qdtq | pacman -Rns -</code>, reinstalar a partir de uma lista). O <code>xargs</code> é do pacote <a href="https://archlinux.org/packages/core/x86_64/findutils/">findutils</a> e o <code>tee</code>, do <a href="https://archlinux.org/packages/core/x86_64/coreutils/">coreutils</a>; os manuais completos estão em <code>man xargs</code> e <code>man tee</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
