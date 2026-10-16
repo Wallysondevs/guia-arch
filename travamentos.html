@@ -102,8 +102,8 @@ getty@.service  enabled enabled
 <p>Já logado no TTY, a sequência é: listar os processos que mais gastam, achar o nome, matar. Na VM, um <code>sleep</code> faz o papel do "programa travado":</p>
 
 <pre class="term">$ pgrep -a sleep
-5853 sleep 700          « PID (número do processo) e o comando
-$ kill 5853             « pede para ele terminar (sinal TERM)
+40536 sleep 700         « PID (número do processo) e o comando
+$ kill 40536            « pede para ele terminar (sinal TERM)
 $ pgrep -a sleep
 $ echo $?
 1                       « 1 = nenhum processo encontrado: ele morreu</pre>

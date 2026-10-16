@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch processos — ps, pgrep, top, htop, kill, pkill e killall | Guia Arch</title>
+<meta name="description" content="Ver e encerrar processos no Arch Linux: ps aux, ps -ef, pgrep -a, top, htop, kill e os sinais TERM e KILL, pkill e killall (pacote psmisc), com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Processos e <span class="hl">kill</span></h1>
+
+<p class="intro">Todo programa em execução é um <strong>processo</strong>: o navegador, o terminal, o <code>sshd</code> que espera conexões, até o comando <code>ls</code> enquanto lista. Nesta aula você aprende a ver quais processos existem, quanto cada um gasta e como encerrar o que travou, do jeito educado (<code>kill</code>) ao jeito à força (<code>kill -9</code>).</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são PID, processo pai e estado de um processo.</li>
+  <li>Listar processos com <code>ps aux</code>, <code>ps -ef</code> e <code>pgrep -a</code>.</li>
+  <li>Acompanhar em tempo real com <code>top</code> e <code>htop</code>.</li>
+  <li>Encerrar com <code>kill</code>, <code>pkill</code> e <code>killall</code>, e a diferença entre os sinais TERM e KILL.</li>
+  <li>Os erros reais ("Processo inexistente", "Operação não permitida", "nenhum processo localizado").</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O que é um processo</h2>
+<p>Pense numa cozinha: a <strong>receita</strong> é o programa (o arquivo <code>/usr/bin/sleep</code>, parado no disco); o <strong>prato sendo feito</strong> é o processo. Você pode cozinhar a mesma receita três vezes ao mesmo tempo: são três processos do mesmo programa. Cada processo tem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Atributo</th><th>O que é</th></tr>
+<tr><td><strong>PID</strong></td><td><em>Process ID</em>: o número do processo, único enquanto ele vive. É por ele que você o encerra.</td></tr>
+<tr><td><strong>PPID</strong></td><td><em>Parent PID</em>: quem o criou. Todo processo tem um pai; o avô de todos é o <code>systemd</code>, PID 1.</td></tr>
+<tr><td><strong>Dono</strong></td><td>O usuário que o rodou. Você só pode encerrar os seus (o root pode todos).</td></tr>
+<tr><td><strong>Estado</strong></td><td>Rodando, dormindo (esperando algo), parado…</td></tr>
+</table>
+</div>
+
+<p>A árvore real da VM do guia, com <code>pstree</code> (do pacote <code>psmisc</code>), mostra essa família. Repare que tudo descende do <code>systemd(1)</code>:</p>
+
+<pre class="term">$ pstree -p | head -20
+systemd(1)-+-NetworkManager(289)-+-{NetworkManager}(299)       « {entre chaves} = threads do mesmo processo
+           |                     |-{NetworkManager}(300)
+           |                     `-{NetworkManager}(301)
+           |-agetty(313)                                       « o "login:" do tty1
+           |-dbus-broker-lau(287)---dbus-broker(288)
+           |-nginx(1385)---nginx(1386)
+           |-polkitd(1282)-+-{polkitd}(1307)
+           |               |-{polkitd}(1308)
+           |               |-{polkitd}(1309)
+           |               `-{polkitd}(1315)
+           |-snapperd(1183)
+           |-sshd(310)---sshd-session(1501)---sshd-session(1507)---bash(1508)---bash(1511)-+-head(1547)
+           |                                                                               `-pstree(1546)
+           |-systemd(1014)---(sd-pam)(1016)
+           |-systemd(769)---(sd-pam)(772)
+           |-systemd-journal(196)
+           |-systemd-logind(290)
+           |-systemd-udevd(230)
+           `-systemd-userdbd(220)-+-systemd-userwor(1317)
+                                  |-systemd-userwor(1318)</pre>
+
+<p>Leia a linha do <code>sshd</code>: o servidor SSH (310) criou uma sessão (1501, 1507), que abriu um <code>bash</code>, que rodou o <code>pstree</code> e o <code>head</code>. É o caminho do próprio comando que gerou essa saída.</p>
+
+<hr>
+
+<h2>ps: a foto dos processos</h2>
+
+<h3>ps sozinho</h3>
+<p><code>ps</code> (<em>process status</em>) sem nada mostra só os processos <strong>do seu terminal</strong>:</p>
+
+<pre class="term">$ ps
+    PID TTY          TIME CMD
+   7592 pts/0    00:00:00 bash      « o seu shell
+   7644 pts/0    00:00:00 ps        « o próprio ps</pre>
+
+<p><code>TTY</code> é o terminal (<code>pts/0</code> = o primeiro pseudoterminal: uma janela de terminal ou uma conexão SSH); <code>TIME</code> é quanto tempo de processador ele já usou; <code>CMD</code>, o comando.</p>
+
+<h3>ps aux: todos os processos</h3>
+<dl class="anatomy">
+  <dt>ps</dt><dd>Lista processos.</dd>
+  <dt>a</dt><dd><em>all</em>: de todos os usuários, não só os seus.</dd>
+  <dt>u</dt><dd><em>user</em>: formato com o dono, uso de CPU e memória.</dd>
+  <dt>x</dt><dd>Inclui os processos sem terminal (serviços, que são a maioria).</dd>
+</dl>
+
+<p>As opções vão <strong>sem hífen</strong>: é o estilo BSD, herdado de outro Unix. O <code>ps</code> do Arch (pacote <code>procps-ng</code>) aceita os dois estilos.</p>
+
+<pre class="term">$ ps aux | head -12
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.2  0.3  20708 14676 ?        Ss   13:06   0:02 /usr/lib/systemd/systemd --switched-root --system --deserialize=54
+root           2  0.0  0.0      0     0 ?        S    13:06   0:00 [kthreadd]          « [entre colchetes] = tarefa do kernel
+root           3  0.0  0.0      0     0 ?        S    13:06   0:00 [pool_workqueue_release]
+root           4  0.0  0.0      0     0 ?        I&lt;   13:06   0:00 [kworker/R-rcu_gp]
+root           5  0.0  0.0      0     0 ?        I&lt;   13:06   0:00 [kworker/R-sync_wq]
+root           6  0.0  0.0      0     0 ?        I&lt;   13:06   0:00 [kworker/R-kvfree_rcu_reclaim]
+root           7  0.0  0.0      0     0 ?        I&lt;   13:06   0:00 [kworker/R-slub_flushwq]
+root           8  0.0  0.0      0     0 ?        I&lt;   13:06   0:00 [kworker/R-netns]
+root          10  0.1  0.0      0     0 ?        I    13:06   0:01 [kworker/0:1-cgroup_offline]
+root          12  0.0  0.0      0     0 ?        I    13:06   0:00 [kworker/u8:0-events_unbound]
+root          13  0.0  0.0      0     0 ?        I    13:06   0:00 [kworker/u8:1-efi_runtime]
+$ ps aux | wc -l
+113                    « 112 processos + a linha de cabeçalho, numa VM sem interface gráfica</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>USER</code></td><td>Dono do processo</td></tr>
+<tr><td><code>PID</code></td><td>Número do processo</td></tr>
+<tr><td><code>%CPU</code></td><td>Uso médio de processador desde que ele começou</td></tr>
+<tr><td><code>%MEM</code></td><td>Parte da memória RAM que ele ocupa</td></tr>
+<tr><td><code>VSZ</code></td><td>Memória virtual (KiB): tudo o que ele <em>reservou</em>, mesmo sem usar. Costuma assustar e não importa muito.</td></tr>
+<tr><td><code>RSS</code></td><td>Memória real (KiB) ocupada agora. É esta que conta.</td></tr>
+<tr><td><code>TTY</code></td><td>Terminal; <code>?</code> = sem terminal (serviço)</td></tr>
+<tr><td><code>STAT</code></td><td>Estado (tabela abaixo)</td></tr>
+<tr><td><code>START</code> / <code>TIME</code></td><td>Hora em que começou / tempo de CPU acumulado</td></tr>
+<tr><td><code>COMMAND</code></td><td>O comando completo, com argumentos</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>STAT</th><th>Estado</th></tr>
+<tr><td><code>R</code></td><td><em>Running</em>: usando o processador agora</td></tr>
+<tr><td><code>S</code></td><td><em>Sleeping</em>: dormindo, esperando algo (tecla, rede, tempo). É o estado normal da maioria.</td></tr>
+<tr><td><code>D</code></td><td>Esperando o disco, sem poder ser interrompido. Muitos em <code>D</code> = disco lento ou travado.</td></tr>
+<tr><td><code>I</code></td><td><em>Idle</em>: tarefa do kernel ociosa</td></tr>
+<tr><td><code>T</code></td><td>Parado (por <kbd>Ctrl</kbd>+<kbd>Z</kbd> ou pelo sinal STOP)</td></tr>
+<tr><td><code>Z</code></td><td>Zumbi: já terminou, mas o pai ainda não "recolheu" o resultado</td></tr>
+<tr><td><code>s</code> <code>l</code> <code>&lt;</code> <code>+</code></td><td>Extras: líder de sessão, tem várias threads, prioridade alta, está em primeiro plano no terminal</td></tr>
+</table>
+</div>
+
+<h3>ps -ef: o mesmo, no estilo Unix</h3>
+<p>O outro estilo clássico, com hífen. <code>-e</code> = todos (<em>every</em>); <code>-f</code> = formato completo (<em>full</em>). A diferença útil: mostra o <code>PPID</code> (o pai).</p>
+
+<pre class="term">$ ps -ef | head -8
+UID          PID    PPID  C STIME TTY          TIME CMD
+root           1       0  0 13:06 ?        00:00:02 /usr/lib/systemd/systemd --switched-root --system --deserialize=54
+root           2       0  0 13:06 ?        00:00:00 [kthreadd]
+root           3       2  0 13:06 ?        00:00:00 [pool_workqueue_release]    « PPID 2: filho do kthreadd
+root           4       2  0 13:06 ?        00:00:00 [kworker/R-rcu_gp]
+root           5       2  0 13:06 ?        00:00:00 [kworker/R-sync_wq]
+root           6       2  0 13:06 ?        00:00:00 [kworker/R-kvfree_rcu_reclaim]
+root           7       2  0 13:06 ?        00:00:00 [kworker/R-slub_flushwq]</pre>
+
+<h3>Escolher as colunas e ordenar</h3>
+<p>Com <code>-o</code> você escolhe as colunas; com <code>-p</code>, os PIDs; com <code>--sort</code>, a ordem (<code>-</code> antes = do maior para o menor). Os cinco que mais gastam memória na VM:</p>
+
+<pre class="term">$ ps -eo pid,user,%mem,rss,comm --sort=-%mem | head -6
+    PID USER     %MEM   RSS COMMAND
+    289 root      0.7 28076 NetworkManager
+    196 root      0.6 25444 systemd-journal
+   1501 root      0.3 14788 sshd-session
+      1 root      0.3 14676 systemd
+    230 root      0.3 12648 systemd-udevd
+$ ps -o pid,ppid,user,stat,etime,cmd -p 1,289,310
+    PID    PPID USER     STAT     ELAPSED CMD
+      1       0 root     Ss         20:43 /usr/lib/systemd/systemd --switched-root --system --deserialize=54
+    289       1 root     Ssl        20:23 /usr/bin/NetworkManager --no-daemon
+    310       1 root     Ss         20:21 sshd: /usr/bin/sshd -D [listener] 0 of 10-100 startups</pre>
+
+<p><code>ELAPSED</code> (<code>etime</code>) é há quanto tempo o processo existe (minutos:segundos). Com <code>ps -u ana</code> você vê só os processos de um usuário.</p>
+
+<hr>
+
+<h2>pgrep: achar pelo nome</h2>
+<p>O jeito mais comum de procurar é <code>ps aux | grep nome</code>. Funciona, mas tem uma pegadinha: o próprio <code>grep</code> aparece no resultado.</p>
+
+<pre class="term">$ ps aux | grep sshd
+root         310  0.0  0.2  12776  8660 ?        Ss   13:06   0:00 sshd: /usr/bin/sshd -D [listener] 0 of 10-100 startups
+root       20369  0.0  0.3  21484 14624 ?        Ss   13:25   0:00 sshd-session: root [postauth]
+…                                                                    « (uma linha por conexão SSH aberta)
+ana        26573  0.0  0.2  21616  9196 ?        S    13:27   0:00 sshd-session: ana@notty
+ana        26603  0.0  0.1   6968  4340 ?        S    13:27   0:00 grep --color=auto sshd     « o próprio grep!</pre>
+
+<p>O <code>pgrep</code> (<em>process grep</em>) foi feito para isso: procura pelo nome e devolve os PIDs, sem se incluir.</p>
+
+<dl class="anatomy">
+  <dt>pgrep</dt><dd>Procura processos pelo nome.</dd>
+  <dt>-a</dt><dd><em>all</em>: mostra o comando completo ao lado do PID. Sem ele, só os números.</dd>
+  <dt>sshd</dt><dd>Um <strong>pedaço</strong> do nome (é uma expressão regular, como no grep).</dd>
+</dl>
+
+<pre class="term">$ pgrep -a sshd
+310 sshd: /usr/bin/sshd -D [listener] 0 of 10-100 startups     « o servidor
+1501 sshd-session: ana [postauth]                                « as conexões ("sshd-session" contém "sshd")
+1507 sshd-session: ana@notty
+$ pgrep -x sshd
+310                                                              « -x = nome exato: só o servidor
+$ pgrep -l Network
+289 NetworkManager                                               « -l = PID e nome curto</pre>
+
+<h3>"Não apareceu nada"</h3>
+<p>Se o <code>pgrep</code> não acha nada, ele não escreve nada. O único sinal é o <strong>código de saída</strong>:</p>
+
+<pre class="term">$ pgrep -a firefox; echo $?
+1                                « 1 = nenhum processo com esse nome
+$ pgrep networkmanager; echo $?
+1                                « diferencia maiúsculas!
+$ pgrep -i networkmanager
+289                              « -i ignora maiúsculas/minúsculas</pre>
+
+<div class="tip">
+<strong>O nome do processo nem sempre é o nome do programa</strong>
+<p>O Chromium roda como <code>chrome</code>; o Visual Studio Code, como <code>code</code> ou <code>electron</code>; um script Python aparece como <code>python3</code>. Quando <code>pgrep nome</code> volta vazio, procure na linha de comando inteira com <code>-f</code> (<em>full</em>): <code>pgrep -af meu_script.py</code>. E use <code>-u ana</code> para ver só os de um usuário.</p>
+</div>
+
+<div class="try" data-setup="sleep 1000 &amp;" data-goal="out:sleep 1000" data-solucao="pgrep -a sleep">
+<p class="try-task"><strong>Missão:</strong> há um <code>sleep</code> rodando em segundo plano. Mostre o PID dele <strong>e</strong> o comando completo com o <code>pgrep</code>.</p>
+</div>
+
+<hr>
+
+<h2>top e htop: o filme dos processos</h2>
+
+<h3>top</h3>
+<p>O <code>ps</code> é uma foto; o <code>top</code> é um filme: atualiza a cada 3 segundos e põe no alto quem mais gasta processador. Ele vem no <code>procps-ng</code>, instalado em todo Arch. Saia com <kbd>q</kbd>. Uma "foto" do <code>top</code> (com <code>-b -n 1</code>: modo texto, uma rodada só), tirada enquanto outro usuário instalava pacotes na VM:</p>
+
+<pre class="term">$ top -b -n 1 | head -14
+top - 13:22:31 up 16 min,  3 users,  load average: 1,61, 0,53, 0,30
+Tarefas: 126 total, 3 running, 122 sleep, 1 d-sleep, 0 stopped, 0 zombie
+%CPU(s): 48,6 us, 37,1 sy,  0,0 ni,  0,0 id,  8,6 wa,  2,9 hi,  2,9 si,  0,0 st
+MB mem :   3888,2 total,   3375,2 free,    506,5 used,    274,1 buff/cache
+MB swap:   4096,0 total,   4096,0 free,      0,0 used.   3381,7 avail mem
+
+    PID USUARIO   PR  NI    VIRT    RES    SHR S  %CPU  %MEM    TEMPO+ COMANDO
+   8550 ana       20   0   97772  52744  17084 R  88,1   1,3   0:00.22 pacman       « o "culpado" do momento
+   8121 ana       20   0    9744   7484   5544 R  19,6   0,2   0:00.19 makepkg
+      1 root      20   0   21384  15656  10808 S   0,0   0,4   0:04.33 systemd
+      2 root      20   0       0      0      0 S   0,0   0,0   0:00.00 kthreadd
+      3 root      20   0       0      0      0 S   0,0   0,0   0:00.00 pool_wo+
+      4 root       0 -20       0      0      0 I   0,0   0,0   0:00.00 kworker+
+      5 root       0 -20       0      0      0 I   0,0   0,0   0:00.00 kworker+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que diz</th></tr>
+<tr><td><code>up 16 min</code></td><td>Há quanto tempo o sistema está ligado</td></tr>
+<tr><td><code>load average: 1,61, 0,53, 0,30</code></td><td>Carga média em 1, 5 e 15 minutos. Compare com o número de processadores (<code>nproc</code> = 2 na VM): acima disso, há fila.</td></tr>
+<tr><td><code>Tarefas: … 1 d-sleep … 0 zombie</code></td><td>Contagem por estado</td></tr>
+<tr><td><code>%CPU(s): … us, … sy, … id, … wa</code></td><td>Tempo em programas (<em>user</em>), no kernel (<em>system</em>), ocioso (<em>idle</em>) e <strong>esperando disco</strong> (<em>wait</em>). <code>wa</code> alto = gargalo de disco.</td></tr>
+<tr><td><code>MB mem</code> / <code>MB swap</code></td><td>Memória: o que importa é <code>avail mem</code> (disponível de verdade)</td></tr>
+<tr><td><code>PR</code> / <code>NI</code></td><td>Prioridade e <em>nice</em> (−20 = mais prioridade, 19 = menos)</td></tr>
+<tr><td><code>RES</code> / <code>SHR</code></td><td>Memória real / parte dela compartilhada com outros processos</td></tr>
+</table>
+</div>
+
+<p>Dentro do <code>top</code>: <kbd>M</kbd> ordena por memória, <kbd>P</kbd> por CPU, <kbd>k</kbd> pede um PID para matar, <kbd>q</kbd> sai. Os números usam vírgula decimal porque o sistema está em português (<code>LANG=pt_BR.UTF-8</code>).</p>
+
+<h3>htop</h3>
+<p>O <code>htop</code> é um <code>top</code> mais amigável: cores, barras, rolagem, mouse e teclas de função. Ele não vem na instalação mínima: <code>sudo pacman -S htop</code> (na VM do guia ele já está instalado, versão 3.5.3). A tela abaixo é uma <strong>captura real</strong> da VM, em modo monocromático (<code>htop -C</code>) e com a janela pequena; no seu terminal as barras são coloridas:</p>
+
+<pre class="term">$ htop
+    0[####***********                    35.3%] Tasks: 41, 14 thr, 104 kthr; 1 running
+    1[#**                                 5.4%] Load average: 5.41 2.58 1.16
+  Mem[|||#@$$$$$$$$$                264M/3.80G] Uptime: 00:20:59
+  Swp[                                0K/4.00G]
+
+  [Main] [I/O]
+  PID USER       PRI  NI  VIRT   RES  PRIV S  CPU%▽MEM%   TIME+  Command
+27199 root        20   0 21360 14412  2076 D   2.2  0.4  0:00.02 sshd-session: ana [postauth]
+20576 ana         20   0  4728  2768   232 S   1.1  0.1  0:00.03 dbus-broker --log 10 --controll
+27163 ana         20   0 1786M 51880     0 D   1.1  1.3  0:00.02 podman run --rm docker.io/libra
+27166 ana         20   0  8564  6272   824 R   1.1  0.2  0:00.04 htop -C -d 15 -n 2
+    1 root        20   0 21384 15736  4928 S   0.0  0.4  0:09.51 /usr/lib/systemd/systemd --swit
+  196 root        20   0 51972 26624  1068 S   0.0  0.7  0:01.22 /usr/lib/systemd/systemd-journa
+  220 root        20   0  9200  5756   600 S   0.0  0.1  0:00.08 /usr/lib/systemd/systemd-userdb
+  230 root        20   0 41480 12648  3172 S   0.0  0.3  0:00.54 /usr/lib/systemd/systemd-udevd
+  287 dbus        20   0  7908  4112   744 S   0.0  0.1  0:00.14 /usr/bin/dbus-broker-launch --s
+  289 root        20   0  412M 28108  3904 S   0.0  0.7  0:00.42 /usr/bin/NetworkManager --no-da</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte da tela</th><th>O que mostra</th></tr>
+<tr><td><code>0[…]</code> <code>1[…]</code></td><td>Uma barra por núcleo do processador (a VM tem 2). No terminal colorido, verde = programas, vermelho = kernel.</td></tr>
+<tr><td><code>Mem[…]</code> / <code>Swp[…]</code></td><td>Memória usada / total e swap. Aqui: 264 MiB de 3,8 GiB.</td></tr>
+<tr><td><code>Tasks</code>, <code>Load average</code>, <code>Uptime</code></td><td>Processos, threads (<code>thr</code>), tarefas do kernel (<code>kthr</code>), carga e tempo ligado</td></tr>
+<tr><td><code>[Main] [I/O]</code></td><td>Abas: processos ou uso de disco por processo (<kbd>Tab</kbd> troca)</td></tr>
+<tr><td><code>CPU%▽</code></td><td>A seta marca a coluna da ordenação atual</td></tr>
+<tr><td><code>PRIV</code></td><td>Memória privada do processo (não compartilhada)</td></tr>
+</table>
+</div>
+
+<p>Na última linha da tela fica a barra de teclas (ela não aparece na captura porque o <code>htop</code> foi encerrado sozinho com <code>-n</code>): <kbd>F1</kbd> ajuda, <kbd>F2</kbd> configurar, <kbd>F3</kbd> buscar, <kbd>F4</kbd> filtrar, <kbd>F5</kbd> árvore (pais e filhos), <kbd>F6</kbd> ordenar, <kbd>F7</kbd>/<kbd>F8</kbd> prioridade, <kbd>F9</kbd> matar (pergunta o sinal), <kbd>F10</kbd> ou <kbd>q</kbd> sair. Também dá para clicar nos cabeçalhos com o mouse.</p>
+
+<div class="tip">
+<strong>Quanto tem de cada programa</strong>
+<p>Na VM, <code>pacman -Qo</code> mostra de onde cada ferramenta desta aula vem: <code>ps</code>, <code>top</code>, <code>pgrep</code>, <code>pkill</code> e <code>pidof</code> são do <code>procps-ng</code>; <code>killall</code> e <code>pstree</code>, do <code>psmisc</code>; o <code>kill</code> externo, do <code>util-linux</code>; o <code>htop</code>, do pacote <code>htop</code>.</p>
+</div>
+
+<hr>
+
+<h2>kill: mandar um sinal</h2>
+
+<h3>Sinais</h3>
+<p>Apesar do nome, <code>kill</code> não "mata": ele <strong>manda um sinal</strong> a um processo. Um sinal é um recado curto do sistema: "termine", "pare", "continue", "releia a configuração". O processo decide o que fazer com a maioria deles. A lista completa:</p>
+
+<pre class="term">$ kill -l
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM
+16) SIGSTKFLT	17) SIGCHLD	18) SIGCONT	19) SIGSTOP	20) SIGTSTP
+…</pre>
+
+<p>Na prática, você usa uns poucos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Nome</th><th>Recado</th><th>O processo pode ignorar?</th></tr>
+<tr><td>15</td><td><code>TERM</code></td><td>"Termine, por favor." Salva, fecha arquivos e sai. <strong>É o padrão do <code>kill</code>.</strong></td><td>Sim</td></tr>
+<tr><td>9</td><td><code>KILL</code></td><td>Quem age é o kernel: o processo some na hora, sem chance de salvar nada.</td><td><strong>Não</strong></td></tr>
+<tr><td>2</td><td><code>INT</code></td><td>Interromper: o mesmo que <kbd>Ctrl</kbd>+<kbd>C</kbd> no terminal</td><td>Sim</td></tr>
+<tr><td>1</td><td><code>HUP</code></td><td>"O terminal fechou"; muitos serviços entendem como "releia a configuração"</td><td>Sim</td></tr>
+<tr><td>19 / 18</td><td><code>STOP</code> / <code>CONT</code></td><td>Congelar / descongelar (o <kbd>Ctrl</kbd>+<kbd>Z</kbd> manda o parecido <code>TSTP</code>)</td><td>STOP: não</td></tr>
+</table>
+</div>
+
+<h3>A forma do comando</h3>
+<dl class="anatomy">
+  <dt>kill</dt><dd>Manda um sinal. No Bash, é um comando interno (<code>type kill</code> → <code>kill é um comando interno do shell</code>); por isso também aceita <code>%1</code> (um <em>job</em> do terminal).</dd>
+  <dt>-15 / -TERM / -SIGTERM</dt><dd>O sinal, por número ou nome. Opcional: sem ele, é TERM.</dd>
+  <dt>5853</dt><dd>Um ou mais PIDs.</dd>
+</dl>
+
+<p>Uma sessão real na VM, com <code>sleep</code> fazendo o papel do programa (o <code>&amp;</code> roda em segundo plano e mostra <code>[job] PID</code>):</p>
+
+<pre class="term">$ sleep 600 &amp;
+[1] 8262                        « job 1, PID 8262
+$ kill %1                       « TERM para o job 1 (podia ser: kill 8262)
+$ sleep 0.2; jobs
+[1]+  Terminado                  sleep 600     « terminou pelo TERM
+$ sleep 600 &amp;
+[1] 8447
+$ kill -9 $!                    « $! = PID do último processo em segundo plano
+$ sleep 0.2; jobs
+[1]+  Morto                      sleep 600     « "Morto" = levou KILL</pre>
+
+<p>O <code>kill</code> que dá certo <strong>não escreve nada</strong> e devolve 0. Para conferir, procure o processo de novo:</p>
+
+<pre class="term">$ sleep 700 &amp;
+[1] 40536
+$ pgrep -a sleep
+40536 sleep 700
+$ kill $!
+$ echo $?
+0                               « sinal entregue
+$ pgrep -a sleep
+$ echo $?
+1                               « sumiu</pre>
+
+<h3>Congelar e descongelar</h3>
+<pre class="term">$ sleep 950 &amp;
+[1] 5865
+$ kill -STOP %1
+$ ps -o pid,stat,cmd -p $!
+    PID STAT CMD
+   5865 T    sleep 950          « T = parado
+$ kill -CONT %1
+$ ps -o pid,stat,cmd -p $!
+    PID STAT CMD
+   5865 S    sleep 950          « S = dormindo de novo (voltou a rodar)
+$ kill -9 %1</pre>
+
+<p>Útil para pausar uma compilação pesada enquanto você usa o computador e retomá-la depois.</p>
+
+<div class="warning">
+<strong>Comece pelo TERM; o -9 é o último recurso</strong>
+<p>Com <code>kill -9</code>, o programa não tem chance de salvar nada nem de apagar os arquivos de trava. O exemplo clássico no Arch: matar o <code>pacman</code> no meio de uma instalação deixa o arquivo <code>/var/lib/pacman/db.lck</code> para trás, e o próximo <code>pacman</code> reclama <code>não foi possível travar a base de dados</code> (veja <a href="atualizar.html">Atualizar o Sistema</a>). Mande TERM, espere uns segundos, e só então use <code>-9</code>. E <strong>nunca</strong> mate o <code>pacman</code> durante uma atualização.</p>
+</div>
+
+<hr>
+
+<h2>pkill e killall: pelo nome</h2>
+<p>Em vez de procurar o PID e depois matar, dá para mandar o sinal direto pelo nome.</p>
+
+<dl class="anatomy">
+  <dt>pkill sleep</dt><dd>Manda TERM a todo processo cujo nome <strong>contém</strong> "sleep" (as mesmas regras do <code>pgrep</code>: <code>-f</code>, <code>-u</code>, <code>-x</code>, <code>-i</code>).</dd>
+  <dt>killall sleep</dt><dd>Manda TERM a todo processo cujo nome é <strong>exatamente</strong> "sleep". Vem do pacote <code>psmisc</code>.</dd>
+</dl>
+
+<pre class="term">$ pacman -Qo $(command -v killall)
+/usr/bin/killall pertence a psmisc 23.7-2
+$ sleep 800 &amp; sleep 801 &amp;
+[3] 5857
+[4] 5858
+$ killall sleep                « os dois de uma vez
+$ echo $?
+0
+$ killall sleep
+sleep: nenhum processo localizado      « o killall avisa quando não acha
+$ echo $?
+1
+$ sleep 900 &amp;
+[1] 5861
+$ pkill -f 'sleep 9'           « -f: procura na linha de comando inteira
+$ echo $?
+0
+$ pkill sleep
+$ echo $?
+1                              « o pkill não avisa: só o código 1 diz "não achei"</pre>
+
+<div class="warning">
+<strong>Confira antes com o pgrep</strong>
+<p><code>pkill</code> casa pedaços: <code>pkill ssh</code> pegaria o <code>sshd</code> e todas as sessões SSH (inclusive a sua, se você estiver conectado por SSH). Rode <code>pgrep -a padrão</code> primeiro e veja o que seria atingido. O <code>killall</code> é mais seguro nesse ponto (nome exato), e <code>killall -i nome</code> pergunta antes de cada um.</p>
+</div>
+
+<div class="try" data-setup="sleep 1000 &amp;" data-goal="ran:\b(kill|pkill|killall)\b" data-solucao="pkill sleep">
+<p class="try-task"><strong>Missão:</strong> encerre o <code>sleep</code> que está rodando, usando o <strong>nome</strong> dele (sem digitar o PID). Depois confira com <code>pgrep sleep; echo $?</code>.</p>
+</div>
+
+<h3>Serviços: use o systemctl</h3>
+<p>Processos de serviços (<code>nginx</code>, <code>sshd</code>, <code>NetworkManager</code>) não devem ser mortos com <code>kill</code>: o <code>systemd</code> pode reiniciá-los na hora ou ficar com o estado errado. Use <code>sudo systemctl stop nginx</code> ou <code>restart</code> (veja <a href="systemd.html">systemctl e Serviços</a>).</p>
+
+<hr>
+
+<h2>Prioridade: nice e renice</h2>
+<p>Quando dois processos disputam o processador, ganha quem tem mais prioridade. O <em>nice</em> ("gentil") vai de −20 (egoísta) a 19 (gentil, deixa os outros passarem). Um usuário comum pode deixar o seu processo <strong>mais</strong> gentil, mas não voltar atrás:</p>
+
+<pre class="term">$ sleep 300 &amp;
+[1] 26656
+$ renice -n 10 -p $!
+26656 (process ID) com prioridade antiga 0, prioridade nova 10
+$ ps -o pid,ni,cmd -p $!
+    PID  NI CMD
+  26656  10 sleep 300
+$ renice -n 0 -p $!
+renice: falha ao definir prioridade pra 26656 (process ID): Permissão negada     « só o root diminui o nice</pre>
+
+<p>Para começar um programa já gentil: <code>nice -n 19 makepkg</code>. Bom para compilar algo do <a href="aur.html">AUR</a> sem travar o resto.</p>
+
+<hr>
+
+<h2>Formas diferentes de encerrar: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td>Fechar a janela / <kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Sempre primeiro: o programa fecha do jeito dele</td></tr>
+<tr><td><code>kill PID</code></td><td>Você sabe exatamente qual processo (viu no <code>ps</code>/<code>pgrep</code>)</td></tr>
+<tr><td><code>killall nome</code></td><td>Encerrar todas as cópias de um programa pelo nome exato (<code>killall firefox</code>)</td></tr>
+<tr><td><code>pkill -f padrão</code></td><td>O nome é genérico (<code>python3</code>) e você precisa casar um argumento (<code>pkill -f servidor.py</code>)</td></tr>
+<tr><td><kbd>k</kbd> no <code>top</code> / <kbd>F9</kbd> no <code>htop</code></td><td>Você está olhando quem gasta e quer agir ali mesmo</td></tr>
+<tr><td><code>kill -9</code> / <code>killall -9</code></td><td>O TERM não adiantou depois de alguns segundos</td></tr>
+<tr><td><code>sudo systemctl stop serviço</code></td><td>É um serviço do sistema</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Processo inexistente"</strong>
+<pre class="term">$ kill 99999
+bash: kill: (99999) - Processo inexistente
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> não há processo com esse PID: ele já terminou, ou o número foi digitado errado.</p>
+<p><strong>Como resolver:</strong> procure de novo com <code>pgrep -a nome</code>. Os PIDs mudam a cada execução; não reaproveite um número de ontem.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operação não permitida"</strong>
+<pre class="term">$ kill -9 310
+bash: kill: (310) - Operação não permitida</pre>
+<p><strong>O que aconteceu:</strong> o 310 é o <code>sshd</code>, do root. Um usuário comum só manda sinais para os próprios processos.</p>
+<p><strong>Como confirmar:</strong> <code>ps -o user,pid,cmd -p 310</code>.</p>
+<p><strong>Como resolver:</strong> se é mesmo para encerrar, use <code>sudo</code>; se é um serviço, <code>sudo systemctl stop/restart</code>. (E pense duas vezes: matar o <code>sshd</code> derruba o acesso remoto.)</p>
+</div>
+
+<div class="cenario">
+<strong>"nenhum processo localizado" / pkill sem saída</strong>
+<pre class="term">$ killall firefox
+firefox: nenhum processo localizado
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> não há processo com esse nome exato. O programa pode estar fechado, ou o processo tem outro nome (<code>chrome</code> para o Chromium, <code>python3</code> para um script).</p>
+<p><strong>Como resolver:</strong> <code>pgrep -ai parte-do-nome</code> ou <code>pgrep -af parte-do-comando</code> para descobrir o nome real.</p>
+</div>
+
+<div class="cenario">
+<strong>O processo não morre nem com -9</strong>
+<p><strong>O que aconteceu:</strong> se o <code>STAT</code> é <code>D</code>, ele está preso esperando o disco (ou um pendrive/rede que sumiu) e nem o KILL o alcança até a espera acabar. Se é <code>Z</code> (zumbi), ele já morreu: só ocupa uma linha na tabela até o pai recolhê-lo.</p>
+<p><strong>Como resolver:</strong> para <code>D</code>, resolva o disco (reconecte o dispositivo, espere); para <code>Z</code>, encerre o <strong>pai</strong> (veja o <code>PPID</code> com <code>ps -o pid,ppid,stat,cmd -p PID</code>). Se nada resolver, veja <a href="travamentos.html">Quando o Sistema Trava</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>ps</code></td><td>Processos do terminal atual</td></tr>
+<tr><td><code>ps aux</code> / <code>ps -ef</code></td><td>Todos os processos (estilo BSD / Unix)</td></tr>
+<tr><td><code>ps -eo pid,user,%mem,comm --sort=-%mem</code></td><td>Colunas escolhidas, ordenadas</td></tr>
+<tr><td><code>ps -u ana</code> · <code>ps -p PID</code></td><td>De um usuário · de um PID</td></tr>
+<tr><td><code>pstree -p</code></td><td>Árvore de processos (psmisc)</td></tr>
+<tr><td><code>pgrep -a nome</code></td><td>PIDs e comandos que casam com o nome (<code>-x</code> exato, <code>-f</code> linha toda, <code>-i</code> sem caixa, <code>-u</code> usuário)</td></tr>
+<tr><td><code>pidof nome</code></td><td>PIDs de um programa pelo nome exato</td></tr>
+<tr><td><code>top</code> · <code>htop</code></td><td>Monitor em tempo real (<kbd>q</kbd> sai)</td></tr>
+<tr><td><code>kill PID</code> · <code>kill -9 PID</code></td><td>TERM · KILL</td></tr>
+<tr><td><code>kill -STOP PID</code> · <code>kill -CONT PID</code></td><td>Congelar · continuar</td></tr>
+<tr><td><code>kill -l</code></td><td>Lista os sinais</td></tr>
+<tr><td><code>pkill padrão</code></td><td>Sinal pelo nome (pedaço)</td></tr>
+<tr><td><code>killall nome</code></td><td>Sinal pelo nome exato (<code>-i</code> pergunta)</td></tr>
+<tr><td><code>nice -n 19 cmd</code> · <code>renice -n 10 -p PID</code></td><td>Prioridade baixa ao iniciar · depois</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Todos os processos</h3>
+<p>Complete o comando que lista todos os processos no estilo BSD, com dono e uso de memória:</p>
+<div class="ex-code">ps <input data-answer="aux" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. À força</h3>
+<p>O processo 4321 ignorou o <code>kill 4321</code>. Complete o comando que manda o sinal que ele não pode ignorar:</p>
+<div class="ex-code">kill <input data-answer="-9|-KILL|-SIGKILL|-s KILL" aria-label="sinal"> 4321</div>
+</div>
+
+<div class="exercise">
+<h3>3. Nome exato</h3>
+<p>Complete para listar só o processo chamado exatamente <code>sshd</code> (sem as <code>sshd-session</code>):</p>
+<div class="ex-code">pgrep <input data-answer="-x" aria-label="opção"> sshd</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>pgrep firefox</code> não mostrou nada. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> O pgrep travou.</label>
+<label><input type="radio" name="q4"> Não há processo cujo nome contenha "firefox"; o código de saída é 1.</label>
+<label><input type="radio" name="q4"> O Firefox está rodando como root.</label>
+<label><input type="radio" name="q4"> É preciso usar sudo.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. De qual pacote vem o <code>killall</code> no Arch?</p>
+<label><input type="radio" name="q5"> procps-ng</label>
+<label><input type="radio" name="q5"> util-linux</label>
+<label><input type="radio" name="q5"> psmisc</label>
+<label><input type="radio" name="q5"> coreutils</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual sinal o <code>kill</code> manda quando você não escolhe nenhum?</p>
+<label><input type="radio" name="q6"> TERM (15)</label>
+<label><input type="radio" name="q6"> KILL (9)</label>
+<label><input type="radio" name="q6"> HUP (1)</label>
+<label><input type="radio" name="q6"> STOP (19)</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Processo = programa rodando; cada um tem PID, pai (PPID), dono e estado.</li>
+  <li><code>ps aux</code>/<code>ps -ef</code> tiram a foto; <code>top</code>/<code>htop</code> mostram o filme.</li>
+  <li><code>pgrep -a nome</code> acha sem se incluir; resultado vazio = código 1.</li>
+  <li><code>kill</code> manda TERM (educado); <code>kill -9</code> manda KILL (à força, último recurso).</li>
+  <li><code>pkill</code> casa pedaços do nome; <code>killall</code> (psmisc), o nome exato. Confira com <code>pgrep</code> antes.</li>
+  <li>Serviços se param com <code>systemctl</code>, não com <code>kill</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> as ferramentas desta aula aparecem em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (<a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">em português</a>) e na lista de monitores em <a href="https://wiki.archlinux.org/title/List_of_applications/Utilities#Task_managers">List of applications/Utilities</a>; o <code>htop</code> tem página própria em <a href="https://wiki.archlinux.org/title/Htop">Htop</a>. Prioridade de processos está em <a href="https://wiki.archlinux.org/title/Improving_performance">Improving performance</a>. Os pacotes: <a href="https://archlinux.org/packages/core/x86_64/procps-ng/">procps-ng</a> e <a href="https://archlinux.org/packages/core/x86_64/psmisc/">psmisc</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
