@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Segurança — checklist para o seu Arch | Guia Arch</title>
+<meta name="description" content="Checklist de segurança do Arch Linux: atualizar, usuário comum com sudo, faillock (3 senhas erradas bloqueiam por 10 minutos), SSH com chave, firewall, arch-audit, AppArmor/SELinux, Secure Boot com sbctl e cuidado com o AUR.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Segurança</span></h1>
+
+<p class="intro">O Arch não vem "trancado" nem "aberto": vem <strong>mínimo</strong>. Não há serviços escutando a rede além dos que você ligou, mas também não há firewall ativo, AppArmor nem Secure Boot configurados. Segurança, aqui, é uma lista de decisões suas. Esta aula é essa lista, item por item, com o estado real da VM do guia.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Pensar em segurança como camadas (e saber de quem você está se protegendo).</li>
+  <li>O checklist: atualizar, usuário comum, sudo, senhas, SSH, firewall, pacotes vulneráveis.</li>
+  <li>O bloqueio do <code>faillock</code>: por que 3 senhas erradas no <code>sudo</code> travam a conta por 10 minutos.</li>
+  <li>O que são AppArmor, SELinux e Secure Boot, e por que o Arch não os liga sozinho.</li>
+  <li>Os cuidados com o AUR.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Camadas, não um cadeado</h2>
+<p>Pense numa casa: porta trancada, grade na janela, cachorro, seguro. Nenhuma camada é perfeita, mas juntas tornam o roubo difícil. Antes de ligar qualquer coisa, pergunte <strong>de quem</strong> você se protege:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ameaça</th><th>Exemplo</th><th>Camadas que ajudam</th></tr>
+<tr><td>Falha conhecida num programa</td><td>Uma versão do OpenSSL com vulnerabilidade pública</td><td>Atualizar, <code>arch-audit</code></td></tr>
+<tr><td>Alguém na rede</td><td>Robôs tentando senhas no SSH</td><td>SSH só com chave, firewall, poucos serviços</td></tr>
+<tr><td>Um programa malicioso que você mesmo instalou</td><td>Um PKGBUILD do AUR adulterado</td><td>Ler o PKGBUILD, usuário comum, Flatpak/sandbox, AppArmor</td></tr>
+<tr><td>Acesso físico ao computador</td><td>Notebook roubado</td><td>Disco criptografado (<a href="luks.html">LUKS</a>), Secure Boot, senha do firmware</td></tr>
+<tr><td>Você mesmo, com pressa</td><td><code>sudo rm -rf</code> no lugar errado</td><td>Usuário comum, <a href="snapshots.html">snapshots</a>, backup</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Atualize (de verdade, e inteiro)</h2>
+<p>No Arch, a maioria das correções de segurança chega em <strong>dias</strong>. A regra de ouro é atualizar o sistema inteiro, com frequência:</p>
+
+<pre class="file" data-file="a rotina">sudo pacman -Syu      # tudo de uma vez; nunca "pacman -Sy pacote"</pre>
+
+<div class="warning">
+<strong>Atualização parcial é um risco</strong>
+<p><code>pacman -Sy pacote</code> (atualizar a lista e instalar só um pacote) pode deixar bibliotecas em versões que não combinam e quebrar programas. O Arch só suporta o sistema atualizado por inteiro. Veja <a href="atualizar.html">Atualizar o Sistema</a> e <a href="rolling-release.html">Rolling Release</a>.</p>
+</div>
+
+<h3>arch-audit: quais pacotes instalados têm falha conhecida?</h3>
+<p>O time de segurança do Arch mantém uma lista de vulnerabilidades (CVEs) por pacote em <code>security.archlinux.org</code>. O <code>arch-audit</code> compara essa lista com o que você tem instalado. Ele não está na VM; a instalação real seria pequena:</p>
+
+<pre class="term">#> previa -S arch-audit
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) arch-audit-0.2.0-5
+
+Tamanho total download:   1,91 MiB
+Tamanho total instalado:  4,72 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<pre class="file" data-file="ilustrativo: depois de instalar">arch-audit            # pacotes instalados com falhas conhecidas, e se já há correção
+arch-audit -u         # só os que já têm versão corrigida: resolva com pacman -Syu
+</pre>
+
+<p>Cada linha diz o pacote, a gravidade (<em>Low</em>, <em>Medium</em>, <em>High</em>, <em>Critical</em>), o tipo de falha e se ela já foi corrigida numa versão nova. Se "já foi corrigida", a solução é sempre a mesma: <code>sudo pacman -Syu</code>. Se ainda não há correção, avalie se você usa aquele recurso (por exemplo, um servidor exposto à internet).</p>
+
+<hr>
+
+<h2>2. Use um usuário comum com sudo</h2>
+<p>Usar o root no dia a dia é como dirigir sem cinto: um comando errado ou um programa malicioso tem poder total. No Arch, você cria o usuário, o põe no grupo <code>wheel</code> e libera o grupo no <code>sudoers</code> (feito na instalação; veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). Na VM:</p>
+
+<pre class="term">$ id
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)
+$ sudo grep -E '^%wheel|^root' /etc/sudoers
+[sudo] senha para ana:
+root ALL=(ALL:ALL) ALL
+%wheel ALL=(ALL:ALL) ALL                « quem está no wheel pode tudo, pedindo a SENHA</pre>
+
+<div class="try" data-goal="ran:^\s*(id|groups)\b" data-solucao="groups">
+<p class="try-task"><strong>Missão:</strong> confira se a ana está no grupo <code>wheel</code> (o grupo dos administradores no Arch).</p>
+</div>
+
+<div class="tip">
+<strong>NOPASSWD: pense duas vezes</strong>
+<p>Uma linha <code>%wheel ALL=(ALL:ALL) NOPASSWD: ALL</code> tira a pergunta de senha. É confortável, mas qualquer programa rodando como você vira root sem obstáculo. Se quiser, restrinja o <code>NOPASSWD</code> a comandos específicos.</p>
+</div>
+
+<hr>
+
+<h2>3. Senhas e o bloqueio do faillock</h2>
+
+<h3>Senhas fortes</h3>
+<p>A senha da ana é guardada em <code>/etc/shadow</code> como um <strong>hash</strong> (uma "impressão digital" que não dá para desfazer), no algoritmo <strong>yescrypt</strong>:</p>
+
+<pre class="term">$ grep ENCRYPT_METHOD /etc/login.defs
+ENCRYPT_METHOD YESCRYPT
+$ sudo grep '^ana:' /etc/shadow | cut -c1-12
+ana:$y$j9T$O                             « $y$ = yescrypt (o resto foi cortado de propósito)
+$ sudo chage -l ana | head -3
+Última mudança de senha					: out 16, 2026
+Senha expira					: nunca
+Senha inativa					: nunca</pre>
+
+<p>O Arch não obriga senha forte nem troca periódica (as recomendações atuais também não pedem troca periódica). Use uma frase longa e única (quatro ou cinco palavras aleatórias são melhores que <code>S3nh@!</code>) e um gerenciador de senhas, como o KeePassXC (<code>keepassxc</code>).</p>
+
+<h3>3 senhas erradas = 10 minutos trancado</h3>
+<p>O PAM do Arch (o sistema que confere senhas) inclui o módulo <code>pam_faillock</code>. Veja o arquivo <code>/etc/pam.d/system-auth</code>, que o <code>sudo</code>, o login e o <code>su</code> usam:</p>
+
+<pre class="term">$ grep -n faillock /etc/pam.d/system-auth
+3:auth       required                    pam_faillock.so      preauth
+8:auth       [default=die]               pam_faillock.so      authfail
+11:auth       required                    pam_faillock.so      authsucc</pre>
+
+<p>As regras ficam em <code>/etc/security/faillock.conf</code>. No Arch, tudo está comentado, ou seja, valem os padrões, que o próprio arquivo documenta:</p>
+
+<pre class="term">$ grep -E '^# (deny|fail_interval|unlock_time|dir) ' /etc/security/faillock.conf
+# dir = /var/run/faillock
+# deny = 3
+# fail_interval = 900
+# unlock_time = 600</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Padrão</th><th>Quer dizer</th></tr>
+<tr><td><code>deny</code></td><td>3</td><td>Depois de 3 falhas, a conta é bloqueada</td></tr>
+<tr><td><code>fail_interval</code></td><td>900</td><td>As falhas contam se acontecerem dentro de 15 minutos</td></tr>
+<tr><td><code>unlock_time</code></td><td>600</td><td>O bloqueio dura 10 minutos</td></tr>
+<tr><td><code>dir</code></td><td><code>/var/run/faillock</code></td><td>Onde ficam os registros (em memória: um reboot zera)</td></tr>
+</table>
+</div>
+
+<p>E o <code>sudo</code> deixa errar a senha <strong>3 vezes</strong> por comando. Juntando as duas coisas: <strong>um único <code>sudo</code> com a senha errada 3 vezes já bloqueia a conta.</strong> O teste abaixo foi feito na VM com um usuário de teste (nunca faça isso com o seu usuário numa máquina remota):</p>
+
+<pre class="term" data-user="teste-a9">$ sudo true
+[sudo] senha para teste-a9:
+Sinto muito, tente novamente.
+[sudo] senha para teste-a9:
+Sinto muito, tente novamente.
+[sudo] senha para teste-a9:
+sudo: 3 tentativas de senha incorreta
+$ echo $?
+1
+$ sudo true                                « agora com a senha CERTA
+[sudo] senha para teste-a9:
+Sinto muito, tente novamente.              « recusada! a conta está bloqueada
+[sudo] senha para teste-a9:
+Sinto muito, tente novamente.</pre>
+
+<p>Repare: <strong>nenhuma mensagem diz "conta bloqueada"</strong>. A senha certa simplesmente é recusada, o que leva muita gente a achar que esqueceu a senha ou que o teclado está errado. O root vê o motivo com o comando <code>faillock</code>:</p>
+
+<pre class="term">#> faillock --user teste-a9
+teste-a9:
+When                Type  Source                                           Valid
+2026-10-16 13:36:17 SVC   sudo                                                 V
+2026-10-16 13:36:19 SVC   sudo                                                 V
+2026-10-16 13:36:21 SVC   sudo                                                 V
+#> faillock --user teste-a9 --reset
+#> faillock --user teste-a9
+teste-a9:
+When                Type  Source                                           Valid</pre>
+
+<dl class="anatomy">
+  <dt>When</dt><dd>Quando cada falha aconteceu.</dd>
+  <dt>Type / Source</dt><dd>De onde: <code>SVC sudo</code> (o serviço sudo) ou <code>TTY /dev/pts/2</code> (um terminal).</dd>
+  <dt>Valid</dt><dd><code>V</code> = ainda conta para o bloqueio (dentro do <code>fail_interval</code>).</dd>
+  <dt>--reset</dt><dd>Apaga as falhas e desbloqueia na hora.</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você se trancou. Como sair?</th><th>Quando usar</th></tr>
+<tr><td>Esperar 10 minutos</td><td>Sempre funciona; o mais simples</td></tr>
+<tr><td><code>faillock --user ana --reset</code> como root (<code>su -</code>, se a senha do root existir)</td><td>Tem acesso ao root por outro caminho</td></tr>
+<tr><td>Reiniciar</td><td>Os registros ficam em <code>/run</code>, que é apagado no boot</td></tr>
+<tr><td>Mudar <code>deny</code>/<code>unlock_time</code> em <code>/etc/security/faillock.conf</code></td><td>Quer outra política (ex.: <code>deny = 5</code>); não desligue a proteção</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>4. SSH: só com chave</h2>
+<p>Se o SSH está ligado e a máquina é acessível pela internet, robôs vão tentar senhas o dia inteiro. As três medidas que resolvem quase tudo: <strong>entrar com chave</strong> (<code>ssh-keygen</code> + <code>ssh-copy-id</code>), <strong>desligar o login por senha</strong> (<code>PasswordAuthentication no</code>) e <strong>não permitir login do root</strong>. O passo a passo, com as saídas reais, está em <a href="ssh.html">SSH</a>. Se você não usa SSH, não ligue o <code>sshd</code>: serviço desligado não tem falha explorável.</p>
+
+<hr>
+
+<h2>5. Firewall (planeje antes de ligar)</h2>
+<p>O Arch vem sem firewall ativo:</p>
+
+<pre class="term">$ sudo ufw status
+Status: inactive
+$ sudo nft list ruleset
+$ echo $?
+0                                           « nenhuma regra: tudo passa</pre>
+
+<p>Num desktop atrás de um roteador doméstico, o risco é pequeno se nenhum serviço escuta a rede. Num notebook em redes públicas ou num servidor, ligue um firewall que <strong>bloqueie a entrada</strong> e libere só o necessário. A ordem certa (liberar o SSH <em>antes</em> de ativar) e a escolha entre <code>nftables</code> e <code>ufw</code> estão em <a href="firewall.html">Firewall (nftables e ufw)</a>. Para saber o que está escutando agora:</p>
+<pre class="term">$ sudo ss -tlnup
+Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))
+tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
+<p>Na VM, só o SSH (porta 22, em IPv4 e IPv6). Cada linha a mais nessa lista é uma porta que o firewall precisa considerar.</p>
+
+<hr>
+
+<h2>6. AppArmor e SELinux: não vêm ligados</h2>
+<p>AppArmor e SELinux são <strong>MAC</strong> (<em>Mandatory Access Control</em>): regras do kernel que limitam o que cada programa pode fazer, mesmo rodando como root. Exemplo: o perfil do AppArmor do navegador o impede de ler <code>~/.ssh</code>. O Ubuntu liga o AppArmor de fábrica; o Fedora, o SELinux. No Arch, nenhum dos dois:</p>
+
+<pre class="term">$ cat /sys/kernel/security/lsm
+capability,landlock,lockdown,yama,bpf</pre>
+
+<p>Essa é a lista de <strong>LSMs</strong> (<em>Linux Security Modules</em>) ativos no kernel. Não aparece <code>apparmor</code> nem <code>selinux</code>. Os que estão lá fazem trabalho silencioso: <code>yama</code> impede que um programa espione outro com <code>ptrace</code>; <code>landlock</code> deixa programas se autolimitarem; <code>lockdown</code> protege o kernel quando o Secure Boot está ativo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>AppArmor</th><th>SELinux</th></tr>
+<tr><td>No Arch</td><td>Pacote oficial <code>apparmor</code> (<code>previa</code>: 2 pacotes, 1,32 MiB de download); o kernel <code>linux</code> já tem suporte</td><td>Não há suporte oficial; pacotes e kernel vêm do AUR/projetos não oficiais</td></tr>
+<tr><td>Como liga</td><td>Parâmetro de kernel <code>lsm=landlock,lockdown,yama,integrity,apparmor,bpf</code> no bootloader + <code>systemctl enable apparmor</code></td><td>Kernel, pacotes e política próprios</td></tr>
+<tr><td>Regras</td><td>Por caminho de arquivo; perfis fáceis de ler</td><td>Por rótulos; muito mais completo e complexo</td></tr>
+<tr><td>Vale para você?</td><td>Sim, se quer uma camada extra e aceita mexer no <a href="bootloader.html">bootloader</a></td><td>Só se você já conhece SELinux (ou prefira o Fedora)</td></tr>
+</table>
+</div>
+
+<p>Por que o Arch não liga sozinho? Pela mesma filosofia de sempre: ele entrega as peças e você decide (e uma política MAC mal feita quebra programas de jeitos difíceis de diagnosticar). Uma alternativa mais simples para isolar programas do dia a dia é o Flatpak (veja <a href="flatpak.html">Flatpak</a>), que roda cada aplicativo numa "caixa".</p>
+
+<hr>
+
+<h2>7. Secure Boot com sbctl (ilustrativo)</h2>
+<p>O <strong>Secure Boot</strong> é um recurso da UEFI: o firmware só executa bootloaders e kernels <strong>assinados</strong> por chaves em que ele confia. Ele protege contra alguém que troca seu kernel por um adulterado (com acesso físico ou com root). O Arch não assina seus kernels com a chave da Microsoft (que vem nos PCs), então, para usar Secure Boot, você cria e registra <strong>suas próprias chaves</strong>. O <code>sbctl</code> torna isso simples.</p>
+
+<pre class="term">$ bootctl status | grep -i -E 'secure|setup'
+   Secure Boot: disabled (setup)              « desligado, e o firmware está em "modo de configuração"
+                 ✗ Enroll SecureBoot keys
+#> previa -S sbctl
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) sbctl-0.18-2
+
+Tamanho total download:    3,21 MiB
+Tamanho total instalado:  10,31 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p><code>(setup)</code> é o <strong>modo de configuração</strong>: o firmware está sem chaves e aceita registrar novas. Num PC físico, você entra nele pela tela de configuração da UEFI ("Reset to Setup Mode" ou "Clear Secure Boot keys"). O caminho com o <code>sbctl</code>:</p>
+
+<pre class="file" data-file="ilustrativo: Secure Boot com chaves próprias">sbctl status                       # instalado? modo de configuração? Secure Boot?
+sudo sbctl create-keys             # cria as suas chaves (em /var/lib/sbctl)
+sudo sbctl enroll-keys -m          # registra-as no firmware (-m: mantém as da Microsoft)
+sudo sbctl verify                  # quais arquivos da ESP ainda não estão assinados
+sudo sbctl sign -s /boot/vmlinuz-linux
+sudo sbctl sign -s /boot/EFI/GRUB/grubx64.efi
+# reinicie e ligue o Secure Boot na UEFI; depois, sbctl status
+</pre>
+
+<div class="warning">
+<strong>Por que ilustrativo, e por que cuidado</strong>
+<p>Mexer nas chaves do firmware não dá para testar numa VM compartilhada, e num PC físico um erro pode deixar a máquina sem dar boot até você desligar o Secure Boot na UEFI. O <code>-m</code> mantém as chaves da Microsoft, necessárias em muitos PCs para o firmware de placas de vídeo e para dar boot no Windows. O <code>-s</code> grava o arquivo numa lista para o <code>sbctl</code> reassinar sozinho a cada atualização do kernel (por um <a href="hooks.html">hook do pacman</a>). Com o GRUB há detalhes extras (a Arch Wiki explica); com <code>systemd-boot</code> e UKI é mais simples. Sem <a href="luks.html">criptografia de disco</a>, o Secure Boot protege pouco.</p>
+</div>
+
+<hr>
+
+<h2>8. AUR com cuidado</h2>
+<p>O AUR é a maior força do Arch e o maior risco: qualquer pessoa publica um PKGBUILD, e não há revisão prévia. Em 2025 houve casos reais de pacotes do AUR com malware. As regras: <strong>leia o PKGBUILD</strong> (de onde vem o código? há comandos estranhos como <code>curl … | sh</code>?), desconfie de pacotes novos com poucos votos que imitam nomes famosos, e prefira os repositórios oficiais e o Flatpak quando existirem. O roteiro completo está em <a href="aur-seguranca.html">AUR com Segurança</a>.</p>
+
+<hr>
+
+<h2>O checklist</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>#</th><th>Item</th><th>Como conferir</th><th>Na VM do guia</th></tr>
+<tr><td>1</td><td>Sistema atualizado</td><td><code>checkupdates</code> (pacman-contrib)</td><td>Rotina de <code>pacman -Syu</code></td></tr>
+<tr><td>2</td><td>Sem pacotes com falha corrigível</td><td><code>arch-audit -u</code></td><td>Não instalado (só <code>previa</code>)</td></tr>
+<tr><td>3</td><td>Usuário comum + sudo</td><td><code>id</code>; <code>%wheel</code> no sudoers</td><td>Sim: ana no <code>wheel</code></td></tr>
+<tr><td>4</td><td>Senhas fortes e faillock ativo</td><td><code>grep faillock /etc/pam.d/system-auth</code></td><td>Padrão: 3 falhas / 10 min</td></tr>
+<tr><td>5</td><td>SSH só com chave (ou desligado)</td><td><code>systemctl is-enabled sshd</code></td><td>Ligado (é o acesso do laboratório)</td></tr>
+<tr><td>6</td><td>Firewall planejado</td><td><code>sudo nft list ruleset</code></td><td>Inativo (de propósito)</td></tr>
+<tr><td>7</td><td>Só os serviços necessários escutando</td><td><code>sudo ss -tlnup</code></td><td>sshd</td></tr>
+<tr><td>8</td><td>AppArmor (opcional)</td><td><code>cat /sys/kernel/security/lsm</code></td><td>Não</td></tr>
+<tr><td>9</td><td>Disco criptografado (notebooks)</td><td><code>lsblk -f</code> (procure <code>crypto_LUKS</code>)</td><td>Não</td></tr>
+<tr><td>10</td><td>Secure Boot (opcional)</td><td><code>bootctl status</code></td><td>Desligado (setup)</td></tr>
+<tr><td>11</td><td>AUR revisado</td><td>Ler o PKGBUILD antes</td><td>yay, paru, downgrade (lidos)</td></tr>
+<tr><td>12</td><td>Backup</td><td>Restaurar um arquivo de teste</td><td>Snapshots da VM</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>A senha certa do sudo é recusada</strong>
+<pre class="term">$ sudo true
+[sudo] senha para ana:
+Sinto muito, tente novamente.</pre>
+<p><strong>O que aconteceu:</strong> quase sempre o <code>faillock</code>: você errou 3 vezes nos últimos 15 minutos (às vezes num <code>sudo</code> anterior). Outras causas: Caps Lock, teclado em outro layout (<code>br-abnt2</code> × <code>us</code>).</p>
+<p><strong>Como confirmar:</strong> como root, <code>faillock --user ana</code> mostra as falhas com <code>V</code>.</p>
+<p><strong>Como resolver:</strong> espere 10 minutos, ou <code>faillock --user ana --reset</code> como root, ou reinicie.</p>
+</div>
+
+<div class="cenario">
+<strong>"ana não está no arquivo sudoers"</strong>
+<p><strong>O que aconteceu:</strong> o usuário não está no <code>wheel</code> ou a linha <code>%wheel</code> continua comentada no <code>sudoers</code>.</p>
+<p><strong>Como resolver:</strong> como root, <code>usermod -aG wheel ana</code> e <code>EDITOR=nano visudo</code> para descomentar <code>%wheel ALL=(ALL:ALL) ALL</code>; depois, saia e entre de novo. Veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Depois de ligar o Secure Boot: "Verification failed: (0x1A) Security Violation"</strong>
+<p><strong>O que aconteceu:</strong> o firmware encontrou um bootloader ou kernel sem a sua assinatura (um arquivo não assinado ou uma atualização antes do hook).</p>
+<p><strong>Como resolver:</strong> desligue o Secure Boot na UEFI, dê boot, rode <code>sudo sbctl verify</code> e assine o que faltar com <code>sbctl sign -s</code>; ligue de novo.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / arquivo</th><th>Para quê</th></tr>
+<tr><td><code>sudo pacman -Syu</code></td><td>Atualizar tudo</td></tr>
+<tr><td><code>arch-audit</code> / <code>arch-audit -u</code></td><td>Pacotes com CVEs / com correção disponível</td></tr>
+<tr><td><code>faillock --user ana</code> / <code>--reset</code></td><td>Ver / zerar falhas de senha (root)</td></tr>
+<tr><td><code>/etc/security/faillock.conf</code></td><td><code>deny</code>, <code>unlock_time</code>, <code>fail_interval</code></td></tr>
+<tr><td><code>/etc/pam.d/system-auth</code></td><td>Onde o <code>pam_faillock</code> é chamado</td></tr>
+<tr><td><code>sudo ss -tlnup</code></td><td>O que está escutando a rede</td></tr>
+<tr><td><code>cat /sys/kernel/security/lsm</code></td><td>Módulos de segurança ativos (AppArmor?)</td></tr>
+<tr><td><code>bootctl status</code> / <code>sbctl status</code></td><td>Estado do Secure Boot</td></tr>
+<tr><td><code>chage -l ana</code></td><td>Validade da senha</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Destrancar</h3>
+<p>Como root, complete para desbloquear a ana depois de 3 senhas erradas:</p>
+<div class="ex-code">faillock --user ana <input data-answer="--reset" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Onde mora a política</h3>
+<p>Qual arquivo define <code>deny</code> e <code>unlock_time</code>?</p>
+<div class="ex-code"><input data-answer="/etc/security/faillock.conf" aria-label="arquivo"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. No Arch padrão, você erra a senha 3 vezes num <code>sudo</code>. O que acontece em seguida?</p>
+<label><input type="radio" name="q3"> Nada: o contador zera a cada comando.</label>
+<label><input type="radio" name="q3"> A conta fica bloqueada por 10 minutos, e até a senha certa é recusada.</label>
+<label><input type="radio" name="q3"> O sudo é desinstalado.</label>
+<label><input type="radio" name="q3"> Aparece "conta bloqueada" e um código para desbloquear.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. <code>cat /sys/kernel/security/lsm</code> mostra <code>capability,landlock,lockdown,yama,bpf</code>. O que isso diz?</p>
+<label><input type="radio" name="q4"> O AppArmor está ativo.</label>
+<label><input type="radio" name="q4"> O SELinux está em modo permissivo.</label>
+<label><input type="radio" name="q4"> Nem AppArmor nem SELinux estão ativos.</label>
+<label><input type="radio" name="q4"> O Secure Boot está ligado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para usar Secure Boot no Arch com <code>sbctl</code>, o firmware precisa estar em…</p>
+<label><input type="radio" name="q5"> modo de configuração (<em>setup mode</em>), para aceitar as suas chaves.</label>
+<label><input type="radio" name="q5"> modo legado (BIOS/CSM).</label>
+<label><input type="radio" name="q5"> modo de usuário com as chaves da Microsoft apagadas sempre.</label>
+<label><input type="radio" name="q5"> qualquer modo: o Arch já vem assinado.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Segurança são camadas: atualizar, usuário comum, poucos serviços, firewall, cuidado com o AUR.</li>
+  <li><code>pacman -Syu</code> inteiro e frequente; <code>arch-audit</code> mostra pacotes com falhas conhecidas.</li>
+  <li>3 senhas erradas (um <code>sudo</code> basta) bloqueiam a conta por 10 minutos, sem aviso; <code>faillock --reset</code> resolve.</li>
+  <li>AppArmor/SELinux e Secure Boot não vêm ligados: são decisões suas (AppArmor e <code>sbctl</code> são os caminhos mais simples).</li>
+  <li>SSH com chave e firewall: veja as aulas próprias antes de mexer.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Security">Security</a> é o checklist completo (em pt-BR: <a href="https://wiki.archlinux.org/title/Security_(Portugu%C3%AAs)">Segurança</a>); veja também <a href="https://wiki.archlinux.org/title/Security#Lock_out_user_after_three_failed_login_attempts">Lock out user after three failed login attempts</a> (faillock), <a href="https://wiki.archlinux.org/title/AppArmor">AppArmor</a>, <a href="https://wiki.archlinux.org/title/SELinux">SELinux</a>, <a href="https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot">UEFI/Secure Boot</a> (seção <em>sbctl</em>) e <a href="https://wiki.archlinux.org/title/Arch_Security_Team">Arch Security Team</a> (arch-audit).</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
