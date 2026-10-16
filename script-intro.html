@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Primeiro Script — shell script do zero | Guia Arch</title>
+<meta name="description" content="Escreva e rode seu primeiro shell script no Arch Linux: shebang, chmod +x, ./ e bash script.sh, ~/.local/bin no PATH (que o Arch não traz pronto), código de saída, set -euo pipefail, bash -x e os erros reais (Permissão negada, ^M do Windows).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Primeiro Script</span></h1>
+
+<p class="intro">Um <strong>shell script</strong> é um arquivo de texto com comandos, um por linha, que o Bash executa em sequência. Tudo o que você digita no terminal pode virar script. Assim, aquela sequência de comandos que você repete toda semana no Arch (ver o kernel, contar os pacotes do AUR, olhar o disco) vira <strong>um comando só</strong>, que você roda quando quiser.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Criar um script e entender a primeira linha (o <strong>shebang</strong>), e por que no Arch o <code>sh</code> é o próprio Bash.</li>
+  <li>Por que aparece "Permissão negada" e como o <code>chmod +x</code> resolve.</li>
+  <li>Cinco formas de executar um script, e o que muda entre elas.</li>
+  <li>Guardar seus scripts em <code>~/.local/bin</code>, que o Arch <strong>não</strong> coloca no PATH sozinho.</li>
+  <li>O código de saída, o modo seguro <code>set -euo pipefail</code>, o <code>bash -x</code> e os erros reais (incluindo o <code>^M</code> de arquivos vindos do Windows).</li>
+</ul>
+</div>
+
+<p>Antes, é bom conhecer o terminal (<a href="terminal.html">O Terminal no Arch</a>), um editor (<a href="editores.html">nano e vim</a>) e as permissões (<a href="permissoes.html">Entendendo Permissões</a>). Os exemplos rodam na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>, e as saídas vêm de um Arch Linux real.</p>
+
+<hr>
+
+<h2>O que é um script, afinal?</h2>
+<p>Pense numa <strong>receita de bolo</strong>: uma lista de passos, em ordem, que qualquer pessoa pode seguir. Um script é a mesma coisa para o computador. Em vez de você digitar:</p>
+
+<pre class="term">$ uname -r
+7.2.10-arch1-1
+$ pacman -Qm | wc -l
+4
+$ df -h / | tail -1
+/dev/sda3        25G  4,9G   19G  22% /</pre>
+
+<p>…você escreve esses comandos num arquivo uma vez e, daí em diante, roda o arquivo. O programa que lê e executa o arquivo é o mesmo que lê o que você digita: o <strong>Bash</strong>, o shell padrão do Arch (versão 5.3.20 em outubro de 2026). Por isso se chama <em>shell script</em>: um roteiro para o shell.</p>
+
+<hr>
+
+<h2>Antes de começar: onde guardar os scripts</h2>
+<p>Para aprender, crie uma pasta só para os testes. A Ana vai usar <code>~/scripts</code>:</p>
+
+<pre class="term">$ mkdir -p ~/scripts
+$ cd ~/scripts</pre>
+
+<p>O <code>-p</code> evita erro se a pasta já existir. Mais adiante você vai ver a pasta "oficial" para os scripts prontos, <code>~/.local/bin</code>, e por que no Arch ela precisa de um passo a mais.</p>
+
+<hr>
+
+<h2>Passo 1: escrever o script</h2>
+<p>Abra o editor com <code>nano ola.sh</code> (o Arch não vem com editor: o <code>nano</code> é um pacote à parte, veja <a href="editores.html">nano e vim</a>) e digite o conteúdo abaixo. A extensão <code>.sh</code> não é obrigatória, mas ajuda a reconhecer o que é script.</p>
+
+<pre class="file" data-file="ola.sh">#!/usr/bin/env bash
+# ola.sh — meu primeiro script no Arch
+# Mostra uma saudação, a data, o kernel e a pasta atual.
+
+echo "Olá, $USER!"
+echo "Hoje é $(date +%d/%m/%Y)."
+echo "Kernel em uso: $(uname -r)"
+echo "Você está em: $(pwd)"</pre>
+
+<p>Salve com <kbd>Ctrl</kbd>+<kbd>O</kbd>, <kbd>Enter</kbd>, e saia com <kbd>Ctrl</kbd>+<kbd>X</kbd>. Veja o que cada linha faz:</p>
+
+<dl class="anatomy">
+  <dt>#!/usr/bin/env bash</dt><dd>O <strong>shebang</strong>: diz qual programa deve ler o arquivo. Precisa ser a <strong>primeira</strong> linha, sem nada antes (nem uma linha em branco).</dd>
+  <dt># ola.sh — …</dt><dd>Um <strong>comentário</strong>: toda linha que começa com <code>#</code> é ignorada pelo Bash. Serve para você (e quem ler depois) entender o script.</dd>
+  <dt>(linha em branco)</dt><dd>Linhas vazias também são ignoradas. Use-as para separar partes.</dd>
+  <dt>echo "Olá, $USER!"</dt><dd>Mostra um texto. <code>$USER</code> é trocado pelo nome do usuário (variáveis são a próxima aula).</dd>
+  <dt>$(date +%d/%m/%Y)</dt><dd>Roda o <code>date</code> e coloca a saída dele dentro do texto.</dd>
+  <dt>$(uname -r)</dt><dd>Idem com o <code>uname -r</code>, que mostra a versão do kernel.</dd>
+  <dt>$(pwd)</dt><dd>Idem com o <code>pwd</code>, a pasta atual.</dd>
+</dl>
+
+<h3>Comentários: escreva para o "você do futuro"</h3>
+<p>Daqui a três meses você não vai lembrar por que escreveu aquela linha. Comente o <strong>porquê</strong>, não o óbvio:</p>
+
+<pre class="file" data-file="exemplo de comentários"># Ruim: repete o que o comando já diz
+pacman -Qm      # lista pacotes com -Qm
+
+# Bom: explica a intenção
+pacman -Qm      # pacotes que não vieram dos repositórios (quase sempre, do AUR)</pre>
+
+<p>O <code>#</code> no meio da linha também começa um comentário: tudo dali até o fim da linha é ignorado. Só não vale dentro de aspas (<code>echo "nota #1"</code> mostra o <code>#</code>).</p>
+
+<h3>O shebang em detalhe</h3>
+<p>O nome vem de <em>sharp</em> (<code>#</code>) + <em>bang</em> (<code>!</code>). Quando você executa o arquivo como programa, o kernel lê essa linha e chama o programa indicado para interpretar o resto.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Shebang</th><th>Significado no Arch</th></tr>
+<tr><td><code>#!/usr/bin/env bash</code></td><td>"Procure o <code>bash</code> no PATH e use-o." Funciona em qualquer distribuição, mesmo que o bash esteja em outra pasta. É a forma recomendada. O <code>env</code> vem do pacote <code>coreutils</code>.</td></tr>
+<tr><td><code>#!/bin/bash</code></td><td>Usa o bash nesse caminho exato. No Arch, <code>/bin</code> é um link para <code>/usr/bin</code>, então é o mesmo arquivo <code>/usr/bin/bash</code>. Funciona igual.</td></tr>
+<tr><td><code>#!/bin/sh</code></td><td>Usa o <code>sh</code>. No Arch, <code>/bin/sh</code> é um link para o <strong>próprio bash</strong> (que se comporta como um shell POSIX). No Debian e no Ubuntu, <code>sh</code> é o <strong>dash</strong>, mais limitado. Veja o cuidado em "Quando não funciona".</td></tr>
+<tr><td><code>#!/usr/bin/env python3</code></td><td>O mesmo truque serve para outras linguagens (no Arch o pacote é <code>python</code>).</td></tr>
+</table>
+</div>
+
+<p>Você pode conferir isso na sua máquina:</p>
+
+<pre class="term">$ ls -ld /bin
+lrwxrwxrwx 1 root root 7 12 out  2025 /bin -&gt; usr/bin        « /bin é só um atalho para /usr/bin
+$ ls -l /bin/sh
+lrwxrwxrwx 1 root root 4 15 set 16:47 /bin/sh -&gt; bash          « sh = bash, no Arch
+$ pacman -Qo /usr/bin/env /usr/bin/bash
+/usr/bin/env pertence a coreutils 9.12-2
+/usr/bin/bash pertence a bash 5.3.20-1</pre>
+
+<hr>
+
+<h2>Passo 2: executar</h2>
+<p>A forma mais simples é entregar o arquivo ao bash. Não precisa de nenhuma preparação:</p>
+
+<dl class="anatomy">
+  <dt>bash</dt><dd>O interpretador (o programa que vai ler o script).</dd>
+  <dt>ola.sh</dt><dd>O arquivo que ele vai ler e executar, linha por linha.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ bash ola.sh
+Olá, ana!
+Hoje é 16/10/2026.
+Kernel em uso: 7.2.10-arch1-1
+Você está em: /home/ana/scripts</pre>
+
+<p>Agora tente rodar como um programa, com <code>./</code> na frente. O <code>./</code> significa "o arquivo que está <strong>nesta</strong> pasta" (o <code>.</code> é a pasta atual, veja <a href="caminhos.html">Caminhos</a>):</p>
+
+<pre class="term" data-cwd="~/scripts">$ ./ola.sh
+bash: ./ola.sh: Permissão negada
+$ echo $?
+126                                         « 126 = o arquivo existe, mas não pode ser executado</pre>
+
+<p>Todo arquivo novo nasce <strong>sem permissão de execução</strong>, por segurança: assim, um arquivo baixado da internet não sai rodando sozinho. Veja o <code>ls -l</code>: não há nenhum <code>x</code>.</p>
+
+<pre class="term" data-cwd="~/scripts">$ ls -l ola.sh
+-rw-r--r-- 1 ana ana 239 16 out 14:54 ola.sh</pre>
+
+<p>As permissões <code>rw-r--r--</code> vêm da <strong>umask</strong> padrão do Arch (<code>022</code>): você lê e escreve, os outros só leem. (No Debian e no Ubuntu, o mesmo arquivo nasceria <code>rw-rw-r--</code>.) Veja <a href="permissoes.html">Entendendo Permissões</a>.</p>
+
+<h3>Dar permissão de execução: <code>chmod +x</code></h3>
+<dl class="anatomy">
+  <dt>chmod</dt><dd><em>Change mode</em>: muda as permissões (veja <a href="chmod.html">chmod</a>).</dd>
+  <dt>+x</dt><dd>Acrescenta (<code>+</code>) a permissão de execução (<code>x</code>, de <em>execute</em>) para todos.</dd>
+  <dt>ola.sh</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ chmod +x ola.sh
+$ ls -l ola.sh
+-rwxr-xr-x 1 ana ana 239 16 out 14:54 ola.sh          « agora tem x
+$ ./ola.sh
+Olá, ana!
+Hoje é 16/10/2026.
+Kernel em uso: 7.2.10-arch1-1
+Você está em: /home/ana/scripts</pre>
+
+<p>O <code>chmod +x</code> é feito <strong>uma vez só</strong>. Você pode editar o script quantas vezes quiser depois: a permissão continua lá.</p>
+
+<div class="try" data-goal="ran:backup\.sh,ran:^cat .*backup\.sh,ran:echo \$\?" data-solucao="cat Documentos/projetos/backup.sh;;ls -l Documentos/projetos/backup.sh;;./Documentos/projetos/backup.sh;;echo $?">
+<p class="try-task"><strong>Missão:</strong> a máquina já tem um script pronto e executável em <code>Documentos/projetos/backup.sh</code>. Veja o conteúdo dele com <code>cat</code>, confira o <code>x</code> nas permissões com <code>ls -l</code>, rode-o com <code>./Documentos/projetos/backup.sh</code> e veja o código de saída com <code>echo $?</code>.</p>
+</div>
+
+<div class="try" data-goal="exec:~/oi.sh,ran:^\./oi\.sh" data-solucao="printf '#!/usr/bin/env bash\necho &quot;Oi do Arch&quot;\n' &gt; oi.sh;;cat oi.sh;;chmod +x oi.sh;;./oi.sh">
+<p class="try-task"><strong>Missão:</strong> o simulador não tem editor, então crie o script com <code>printf</code>: <code>printf '#!/usr/bin/env bash\necho "Oi do Arch"\n' &gt; oi.sh</code> (o <code>\n</code> é a quebra de linha). Confira com <code>cat oi.sh</code>, tente <code>./oi.sh</code> e veja a "Permissão negada"; depois dê o <code>chmod +x</code> e rode de novo.</p>
+</div>
+
+<hr>
+
+<h2>Cinco formas de executar um script</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Precisa de <code>x</code>?</th><th>Usa o shebang?</th><th>Quando usar</th></tr>
+<tr><td><code>bash ola.sh</code></td><td>Não</td><td>Não (sempre bash)</td><td>Testar rápido; rodar um script baixado sem mudar permissões.</td></tr>
+<tr><td><code>./ola.sh</code></td><td>Sim</td><td>Sim</td><td>O jeito normal, estando na pasta do script.</td></tr>
+<tr><td><code>~/scripts/ola.sh</code></td><td>Sim</td><td>Sim</td><td>De qualquer pasta, com o caminho completo. É o jeito certo em timers e no cron.</td></tr>
+<tr><td><code>ola</code> (só o nome)</td><td>Sim</td><td>Sim</td><td>Quando o script está numa pasta do PATH, como <code>~/.local/bin</code>.</td></tr>
+<tr><td><code>source ola.sh</code></td><td>Não</td><td>Não</td><td>Quando o script deve mudar o <strong>seu</strong> terminal (variáveis, <code>cd</code>).</td></tr>
+</table>
+</div>
+
+<h3>Rodar só pelo nome (e o PATH do Arch)</h3>
+<p>Sem o <code>./</code>, o Bash <strong>não</strong> olha a pasta atual: ele procura o nome nas pastas da variável <code>PATH</code>, uma lista separada por <code>:</code>.</p>
+
+<pre class="term" data-cwd="~/scripts">$ ola.sh
+bash: ola.sh: comando não encontrado
+$ echo $?
+127                                         « 127 = comando não encontrado
+$ echo $PATH
+/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl</pre>
+
+<p>Repare: <strong>não há nenhuma pasta da sua home</strong> no PATH. O Debian e o Ubuntu incluem <code>~/.local/bin</code> automaticamente (pelo <code>~/.profile</code>); o Arch, fiel ao "você decide", não: o <code>/etc/profile</code> só põe as pastas do sistema, e o <code>~/.bash_profile</code> do Arch apenas carrega o <code>~/.bashrc</code>. Então são dois passos:</p>
+
+<ol class="passo">
+  <li>Criar a pasta e copiar o script para lá, já sem o <code>.sh</code> (assim ele parece um comando qualquer):
+<pre class="term" data-cwd="~/scripts">$ mkdir -p ~/.local/bin
+$ cp ola.sh ~/.local/bin/ola
+$ ola
+bash: ola: comando não encontrado            « a pasta ainda não está no PATH</pre></li>
+  <li>Pôr a pasta no PATH, no fim do <code>~/.bashrc</code>, e recarregar:
+<pre class="term" data-cwd="~/scripts">$ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc
+$ source ~/.bashrc
+$ ola
+Olá, ana!
+Hoje é 16/10/2026.
+Kernel em uso: 7.2.10-arch1-1
+Você está em: /home/ana/scripts
+$ type ola
+ola está na tabela hash (/home/ana/.local/bin/ola)</pre></li>
+</ol>
+
+<dl class="anatomy">
+  <dt>echo '…' &gt;&gt; ~/.bashrc</dt><dd>Acrescenta a linha no fim do <code>.bashrc</code>. São <strong>dois</strong> <code>&gt;</code>: com um só, você apagaria o arquivo inteiro.</dd>
+  <dt>export PATH=</dt><dd>Redefine o PATH e o "exporta" para os programas abertos a partir deste terminal.</dd>
+  <dt>"$HOME/.local/bin:$PATH"</dt><dd>A sua pasta <strong>na frente</strong>, seguida do PATH antigo (<code>$PATH</code>). As aspas simples do <code>echo</code> fazem a linha ir para o arquivo literalmente, com os <code>$</code>.</dd>
+  <dt>source ~/.bashrc</dt><dd>Relê o arquivo neste terminal. Os terminais novos já abrem com o PATH certo.</dd>
+</dl>
+
+<p>Os detalhes do <code>.bashrc</code> e do PATH estão em <a href="bashrc.html">.bashrc, alias, PATH</a>.</p>
+
+<h3>source: rodar dentro do terminal atual</h3>
+<p>Normalmente, o script roda num bash <strong>separado</strong>, que termina quando o script acaba. Por isso um <code>cd</code> dentro do script não muda a pasta do seu terminal. Com <code>source</code> (ou o atalho <code>.</code>), os comandos rodam no <strong>seu</strong> bash, como o <code>source ~/.bashrc</code> que você acabou de usar:</p>
+
+<pre class="file" data-file="vai.sh">#!/usr/bin/env bash
+cd ~/Documentos/projetos
+echo "Entrei em $(pwd)"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ bash vai.sh
+Entrei em /home/ana/Documentos/projetos
+$ pwd
+/home/ana/scripts                           « o terminal continuou onde estava
+$ source vai.sh
+Entrei em /home/ana/Documentos/projetos
+$ pwd
+/home/ana/Documentos/projetos               « com source, o cd valeu aqui</pre>
+
+<hr>
+
+<h2>O que o script devolve: o código de saída</h2>
+<p>Todo comando termina com um <strong>código de saída</strong> (<em>exit status</em>), um número de 0 a 255. Todo script também. Por padrão, é o código do último comando que rodou, mas você pode escolher com <code>exit</code>. Um exemplo bem do Arch: avisar se o pacman está travado. Enquanto um <code>pacman</code> trabalha, ele cria o arquivo <code>/var/lib/pacman/db.lck</code>; se o computador desligar no meio, esse arquivo fica para trás e trava os próximos (veja <a href="pacman.html">pacman</a>).</p>
+
+<pre class="file" data-file="verifica.sh">#!/usr/bin/env bash
+# Avisa se o pacman está travado (outro pacman rodando ou um travamento antigo).
+if [ -e /var/lib/pacman/db.lck ]; then
+    echo "O pacman está travado: existe /var/lib/pacman/db.lck"
+    exit 1
+else
+    echo "O pacman está livre."
+    exit 0
+fi</pre>
+
+<pre class="term" data-cwd="~/scripts">$ bash verifica.sh
+O pacman está livre.
+$ echo $?
+0
+$ bash verifica.sh &amp;&amp; echo "pode atualizar" || echo "espere o outro pacman"
+O pacman está livre.
+pode atualizar</pre>
+
+<p>O <code>if</code> será explicado em <a href="script-condicionais.html">Condicionais</a>. Por enquanto, guarde a tabela:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Significado</th></tr>
+<tr><td><code>0</code></td><td>Sucesso ("zero problemas").</td></tr>
+<tr><td><code>1</code></td><td>Erro genérico (o mais comum). O <code>pacman</code> devolve 1 quando um pacote não existe.</td></tr>
+<tr><td><code>2</code></td><td>Uso errado do comando ou erro de sintaxe no script.</td></tr>
+<tr><td><code>126</code></td><td>O arquivo existe, mas não pode ser executado (falta <code>x</code>).</td></tr>
+<tr><td><code>127</code></td><td>Comando não encontrado.</td></tr>
+<tr><td><code>130</code></td><td>Interrompido com <kbd>Ctrl</kbd>+<kbd>C</kbd>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Um script útil: o resumo do seu Arch</h2>
+<p>Juntando comandos que você já conhece, a Ana fez um script que mostra o estado da máquina, e o guardou direto em <code>~/.local/bin</code>:</p>
+
+<pre class="file" data-file="~/.local/bin/resumo">#!/usr/bin/env bash
+# resumo — o estado do meu Arch em poucas linhas
+
+echo "=== $(uname -n) — $(date '+%d/%m/%Y %H:%M') ==="
+echo "Kernel:   $(uname -r)"
+echo "Pacotes:  $(pacman -Q | wc -l) instalados"
+echo "Do AUR:   $(pacman -Qm | wc -l)"
+echo
+echo "Disco (/):"
+df -h / | tail -1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>$(uname -n)</code></td><td>O nome da máquina. (O comando <code>hostname</code> também serve, mas no Arch ele vem do pacote <code>inetutils</code>, que nem toda instalação tem; o <code>uname</code> está sempre lá.)</td></tr>
+<tr><td><code>date '+%d/%m/%Y %H:%M'</code></td><td>Data e hora. As aspas são necessárias por causa do espaço no formato.</td></tr>
+<tr><td><code>pacman -Q | wc -l</code></td><td><code>-Q</code> lista todos os pacotes instalados, um por linha; o <code>wc -l</code> conta as linhas.</td></tr>
+<tr><td><code>pacman -Qm | wc -l</code></td><td><code>-Qm</code> (<em>foreign</em>) lista os pacotes que não estão nos repositórios: quase sempre, os do <a href="aur.html">AUR</a>.</td></tr>
+<tr><td><code>echo</code></td><td>Sem texto, só pula uma linha.</td></tr>
+<tr><td><code>df -h / | tail -1</code></td><td>Espaço da partição raiz, só a última linha (sem o cabeçalho). Veja <a href="discos.html">lsblk, df, du</a>.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ resumo
+bash: /home/ana/.local/bin/resumo: Permissão negada     « esqueceu o chmod
+$ chmod +x ~/.local/bin/resumo
+$ resumo
+=== notebook — 16/10/2026 14:56 ===
+Kernel:   7.2.10-arch1-1
+Pacotes:  408 instalados
+Do AUR:   4
+
+Disco (/):
+/dev/sda3        25G  4,9G   19G  22% /</pre>
+
+<div class="tryscript" data-file="resumo.sh" data-goal="outre:AUR:\s+4,src:pacman -Qm">
+<p class="try-task"><strong>Missão:</strong> este é um <code>resumo</code> menor, sem o disco e sem a linha do AUR (e com uma variável nova, <code>$BASH_VERSION</code>, a versão do Bash). Acrescente, depois da linha dos pacotes, uma linha que mostre <code>Do AUR:</code> seguido da quantidade de pacotes de fora dos repositórios (<code>pacman -Qm | wc -l</code>) e clique em Rodar. Experimente também apagar a primeira linha (o shebang): com <code>bash resumo.sh</code>, que é como o editor roda, o script continua funcionando. Por quê?</p>
+<pre class="script">#!/usr/bin/env bash
+# resumo — o estado do meu Arch em poucas linhas
+
+echo "=== $(uname -n) — $(date '+%d/%m/%Y') ==="
+echo "Kernel:   $(uname -r)"
+echo "Pacotes:  $(pacman -Q | wc -l) instalados"
+echo "Bash:     $BASH_VERSION"
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+# resumo — o estado do meu Arch em poucas linhas
+
+echo "=== $(uname -n) — $(date '+%d/%m/%Y') ==="
+echo "Kernel:   $(uname -r)"
+echo "Pacotes:  $(pacman -Q | wc -l) instalados"
+echo "Do AUR:   $(pacman -Qm | wc -l)"
+echo "Bash:     $BASH_VERSION"
+</pre>
+</div>
+
+<p>(Resposta: <code>bash resumo.sh</code> não usa o shebang, porque você já disse qual programa deve ler o arquivo. O shebang só importa quando o script é executado como programa, com <code>./</code> ou pelo nome.)</p>
+
+<hr>
+
+<h2>Scripts mais seguros: <code>set -euo pipefail</code></h2>
+<p>Por padrão, o Bash é tolerante demais: se um comando falha, ele segue para o próximo como se nada tivesse acontecido. Num script que apaga arquivos ou mexe no sistema, isso é perigoso. Coloque esta linha logo depois do shebang:</p>
+
+<dl class="anatomy">
+  <dt>set</dt><dd>Muda o comportamento do Bash a partir desta linha.</dd>
+  <dt>-e</dt><dd>(<em>errexit</em>) Para o script no primeiro comando que falhar.</dd>
+  <dt>-u</dt><dd>(<em>nounset</em>) Trata como erro o uso de uma variável que não existe, como um erro de digitação.</dd>
+  <dt>-o pipefail</dt><dd>Num pipe (<code>a | b</code>), considera que falhou se <strong>qualquer</strong> parte falhar, não só a última.</dd>
+</dl>
+
+<pre class="file" data-file="seguro.sh">#!/usr/bin/env bash
+set -euo pipefail
+
+pacman -Qi pacote-que-nao-existe
+echo "Esta linha nunca será executada."</pre>
+
+<pre class="term" data-cwd="~/scripts">$ bash seguro.sh
+erro: o pacote "pacote-que-nao-existe" não foi encontrado
+$ echo $?
+1                                           « parou no erro e devolveu o código do pacman</pre>
+
+<p>Veja o <code>-u</code> pegando um erro de digitação. A variável certa era <code>$pacote</code>:</p>
+
+<pre class="file" data-file="digitacao.sh">#!/usr/bin/env bash
+set -u
+pacote="firefox"
+echo "Procurando $pacoet"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ bash digitacao.sh
+digitacao.sh: linha 4: pacoet: variável não associada
+$ echo $?
+1</pre>
+
+<p>Sem o <code>set -u</code>, o script mostraria só "Procurando " e seguiria em frente, sem avisar. Imagine isso num <code>sudo pacman -Rns $pacoet</code>.</p>
+
+<div class="note">
+<strong>O modo seguro tem pegadinhas</strong>
+<p>Com <code>-e</code>, um comando que "falha de propósito" (como um <code>grep</code> que não acha nada, ou o <code>pacman -Qdt</code> quando não há órfãos, que devolve 1) também para o script. Nesses casos, teste o comando com <code>if</code> (próximas aulas) ou acrescente <code>|| true</code>. O Guia Bash tem uma aula inteira sobre isso (link no fim).</p>
+</div>
+
+<hr>
+
+<h2>Encontrar erros: <code>bash -x</code>, <code>bash -n</code> e <code>shellcheck</code></h2>
+<p>Com <code>-x</code>, o Bash mostra cada comando antes de executá-lo, já com as variáveis substituídas. As linhas que começam com <code>+</code> são o "rastro":</p>
+
+<pre class="term" data-cwd="~/scripts">$ bash -x ola.sh
++ echo 'Olá, ana!'                          « o comando, já com $USER trocado
+Olá, ana!                                   « a saída dele
+++ date +%d/%m/%Y                           « ++ = rodou dentro de $( )
++ echo 'Hoje é 16/10/2026.'
+Hoje é 16/10/2026.
+++ uname -r
++ echo 'Kernel em uso: 7.2.10-arch1-1'
+Kernel em uso: 7.2.10-arch1-1
+++ pwd
++ echo 'Você está em: /home/ana/scripts'
+Você está em: /home/ana/scripts</pre>
+
+<p>Com <code>-n</code> (<em>noexec</em>), o Bash só <strong>lê</strong> o script e procura erros de sintaxe, sem executar nada. Ótimo antes de rodar um script que mexe no sistema:</p>
+
+<pre class="term" data-cwd="~/scripts">$ bash -n quebrado.sh
+quebrado.sh: linha 6: erro de sintaxe: fim inesperado do arquivo do comando `if' na linha 2
+$ echo $?
+2</pre>
+
+<p>O <strong>shellcheck</strong> lê o script e aponta erros e más práticas antes de você rodar. Ele está no repositório <code>extra</code>:</p>
+
+<pre class="term">$ pacman -Si shellcheck
+Repositório          : extra
+Nome                 : shellcheck
+Versão               : 0.11.0-156
+Descrição            : Shell script analysis tool
+…
+Depende de           : ghc-libs  haskell-aeson  haskell-diff  haskell-fgl  haskell-quickcheck  haskell-regex-tdfa
+…</pre>
+
+<p>Ele é escrito em Haskell, por isso puxa muitas bibliotecas <code>haskell-*</code>: em outubro de 2026, numa instalação como a da Ana, eram 55 pacotes e cerca de 22 MiB de download. Instale com <code>sudo pacman -S shellcheck</code>. Uma saída típica (ilustrativa):</p>
+
+<pre class="term" data-cwd="~/scripts">$ shellcheck apaga.sh
+
+In apaga.sh line 3:
+rm -rf $PASTA/*
+       ^-----^ SC2086 (info): Double quote to prevent globbing and word splitting.
+       ^-----^ SC2115 (warning): Use "${var:?}" to ensure this never expands to /* .</pre>
+
+<p>O aviso SC2115 é sério: se <code>$PASTA</code> estiver vazia, o comando vira <code>rm -rf /*</code>.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term" data-cwd="~/scripts">$ ./ola.sh
+bash: ./ola.sh: Permissão negada
+$ echo $?
+126</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não tem permissão de execução.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l ola.sh</code> não mostra nenhum <code>x</code>.</p>
+<p><strong>Como resolver:</strong> <code>chmod +x ola.sh</code>, ou rode com <code>bash ola.sh</code>. Se o arquivo estiver num pendrive FAT32 ou NTFS, o <code>chmod</code> não funciona lá: use <code>bash</code> ou copie para a pasta pessoal.</p>
+</div>
+
+<div class="cenario">
+<strong>"comando não encontrado" com o arquivo bem ali</strong>
+<pre class="term" data-cwd="~/scripts">$ ola.sh
+bash: ola.sh: comando não encontrado
+$ echo $?
+127</pre>
+<p><strong>O que aconteceu:</strong> sem <code>./</code>, o Bash só procura nas pastas do PATH, e a pasta atual não está lá.</p>
+<p><strong>Como resolver:</strong> use <code>./ola.sh</code>, o caminho completo, ou mova o script para <code>~/.local/bin</code>. Se você já moveu e continua "não encontrado", falta pôr a pasta no PATH: no Arch ela não vem lá (veja "Rodar só pelo nome", acima).</p>
+</div>
+
+<div class="cenario">
+<strong><code>env: “bash\r”: Arquivo ou diretório inexistente</code> (o <code>^M</code> do Windows)</strong>
+<pre class="term" data-cwd="~/scripts">$ ./script-do-windows.sh
+env: “bash\r”: Arquivo ou diretório inexistente
+env: usa -[v]S para passar opções em linhas shebang
+$ echo $?
+127</pre>
+<p><strong>O que aconteceu:</strong> o arquivo foi salvo no Windows (ou baixado de um site que o gravou assim). O Windows termina cada linha com <strong>dois</strong> caracteres, <code>\r\n</code>; o Linux usa só o <code>\n</code>. O <code>\r</code> sobrou colado no fim do shebang, e o <code>env</code> procurou um programa chamado "bash\r", que não existe.</p>
+<p><strong>Como confirmar:</strong> o <code>cat -A</code> mostra os caracteres invisíveis. O <code>\r</code> aparece como <code>^M</code> e o fim de linha como <code>$</code>:</p>
+<pre class="term" data-cwd="~/scripts">$ cat -A script-do-windows.sh
+#!/usr/bin/env bash^M$
+echo "OlM-CM-! do Windows"^M$                « o "á" vira M-CM-! (são 2 bytes em UTF-8)</pre>
+<p><strong>Como resolver:</strong> apague os <code>\r</code> do fim das linhas com o <code>sed</code> (veja <a href="sed.html">sed</a>):</p>
+<pre class="term" data-cwd="~/scripts">$ sed -i 's/\r$//' script-do-windows.sh
+$ ./script-do-windows.sh
+Olá do Windows</pre>
+<p>Outra opção é o programa <code>dos2unix</code>, que não vem instalado: <code>sudo pacman -S dos2unix</code> e depois <code>dos2unix script-do-windows.sh</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro de sintaxe: fim inesperado do arquivo"</strong>
+<pre class="term" data-cwd="~/scripts">$ bash quebrado.sh
+quebrado.sh: linha 6: erro de sintaxe: fim inesperado do arquivo do comando `if' na linha 2</pre>
+<p><strong>O que aconteceu:</strong> um bloco aberto não foi fechado: faltou o <code>fi</code> de um <code>if</code>, o <code>done</code> de um laço, ou uma aspa.</p>
+<p><strong>Como resolver:</strong> o Bash 5.3 do Arch já diz onde o bloco <strong>começou</strong> (<code>na linha 2</code>); a "linha 6" é o fim do arquivo, onde ele percebeu a falta. Vá à linha 2 e feche o bloco. Versões antigas do Bash (como a do Debian 13) só mostram "fim prematuro do arquivo", sem a pista.</p>
+</div>
+
+<div class="cenario">
+<strong>Funciona no seu Arch, mas dá <code>[[: not found</code> no Debian ou no Ubuntu</strong>
+<pre class="term" data-cwd="~/scripts">$ cat testa.sh
+#!/usr/bin/env bash
+if [[ -f /etc/arch-release ]]; then echo "Isto é um Arch Linux"; fi
+$ sh testa.sh
+Isto é um Arch Linux                         « no Arch, sh é o bash: funciona</pre>
+<p><strong>O que aconteceu:</strong> rodar <code>sh script.sh</code> ignora o shebang e usa o <code>sh</code>. No Arch, <code>sh</code> é o Bash, então recursos do Bash como <code>[[ ]]</code> funcionam. No Debian e no Ubuntu, <code>sh</code> é o <strong>dash</strong>, e o mesmo comando falha com <code>testa.sh: 2: [[: not found</code>.</p>
+<p><strong>Como resolver:</strong> rode scripts Bash com <code>bash script.sh</code> ou <code>./script.sh</code>, nunca com <code>sh</code>, e use o shebang <code>#!/usr/bin/env bash</code>. Se você quer escrever scripts que rodem em <code>sh</code> de verdade, teste-os com o dash: <code>sudo pacman -S dash</code> e <code>dash script.sh</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>O que faz</th></tr>
+<tr><td><code>#!/usr/bin/env bash</code></td><td>Shebang: escolhe o interpretador (primeira linha)</td></tr>
+<tr><td><code># texto</code></td><td>Comentário: o Bash ignora</td></tr>
+<tr><td><code>chmod +x script</code></td><td>Permite executar</td></tr>
+<tr><td><code>bash script</code></td><td>Executa sem precisar de <code>x</code> (ignora o shebang)</td></tr>
+<tr><td><code>./script</code></td><td>Executa o script da pasta atual</td></tr>
+<tr><td><code>~/.local/bin</code></td><td>Pasta dos seus comandos; no Arch, ponha no PATH pelo <code>~/.bashrc</code></td></tr>
+<tr><td><code>source script</code> / <code>. script</code></td><td>Executa no shell atual</td></tr>
+<tr><td><code>exit N</code></td><td>Termina o script com o código N</td></tr>
+<tr><td><code>echo $?</code></td><td>Mostra o código do último comando</td></tr>
+<tr><td><code>set -euo pipefail</code></td><td>Para no primeiro erro; proíbe variáveis inexistentes</td></tr>
+<tr><td><code>bash -x script</code></td><td>Mostra cada comando ao executar</td></tr>
+<tr><td><code>bash -n script</code></td><td>Só verifica a sintaxe, sem executar</td></tr>
+<tr><td><code>cat -A script</code></td><td>Mostra caracteres invisíveis (<code>^M</code> do Windows)</td></tr>
+<tr><td><code>shellcheck script</code></td><td>Aponta erros e más práticas (pacote <code>shellcheck</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Primeira linha</h3>
+<p>Complete o shebang recomendado:</p>
+<div class="ex-code">#!/usr/bin/env <input data-answer="bash" aria-label="interpretador"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Permissão de execução</h3>
+<p>Complete para poder rodar <code>./limpa.sh</code>:</p>
+<div class="ex-code">chmod <input data-answer="+x|u+x|a+x|755|775|744|700" aria-label="permissão"> limpa.sh</div>
+</div>
+
+<div class="exercise">
+<h3>3. O PATH no Arch</h3>
+<p>Complete a linha do <code>~/.bashrc</code> que põe a sua pasta de scripts no PATH:</p>
+<div class="ex-code">export PATH="$HOME/<input data-answer=".local/bin" aria-label="pasta">:$PATH"</div>
+</div>
+
+<div class="exercise">
+<h3>4. Modo seguro</h3>
+<p>Complete a linha que faz o script parar no primeiro erro e recusar variáveis inexistentes:</p>
+<div class="ex-code">set <input data-answer="-euo pipefail|-eu -o pipefail|-ue -o pipefail" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. <code>./backup.sh</code> responde "Permissão negada" e <code>echo $?</code> mostra 126. O que falta?</p>
+<label><input type="radio" name="q5"> Instalar o bash com o pacman.</label>
+<label><input type="radio" name="q5"> Rodar com <code>sudo</code>.</label>
+<label><input type="radio" name="q5"> A permissão de execução: <code>chmod +x backup.sh</code>.</label>
+<label><input type="radio" name="q5"> Colocar o script no PATH.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Um script dá <code>env: “bash\r”: Arquivo ou diretório inexistente</code>. Qual a causa?</p>
+<label><input type="radio" name="q6"> O bash não está instalado.</label>
+<label><input type="radio" name="q6"> O arquivo tem finais de linha do Windows (<code>\r\n</code>).</label>
+<label><input type="radio" name="q6"> Falta o <code>chmod +x</code>.</label>
+<label><input type="radio" name="q6"> O shebang deveria ser <code>#!/bin/sh</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Um script faz <code>cd /tmp</code>. Depois de <code>./script.sh</code>, em que pasta o seu terminal está?</p>
+<label><input type="radio" name="q7"> Na mesma de antes: o script roda num bash separado.</label>
+<label><input type="radio" name="q7"> Em <code>/tmp</code>.</label>
+<label><input type="radio" name="q7"> Na pasta pessoal.</label>
+<label><input type="radio" name="q7"> Depende do shebang.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Script = arquivo de texto com comandos. A primeira linha é o shebang: <code>#!/usr/bin/env bash</code>. Linhas com <code>#</code> são comentários.</li>
+  <li><code>bash script.sh</code> roda sem preparação; para <code>./script.sh</code>, antes rode <code>chmod +x</code> (uma vez).</li>
+  <li>Para rodar pelo nome, guarde em <code>~/.local/bin</code> e, no Arch, ponha essa pasta no PATH pelo <code>~/.bashrc</code>.</li>
+  <li>O código de saída diz se deu certo: 0 é sucesso, 126 é "sem permissão", 127 é "não encontrado".</li>
+  <li>Use <code>set -euo pipefail</code>, depure com <code>bash -x</code>/<code>bash -n</code> e revise com <code>shellcheck</code>. <code>^M</code> no <code>cat -A</code> = arquivo do Windows.</li>
+</ul>
+
+<p><strong>Para ir mais fundo:</strong> o Guia Bash tem aulas inteiras sobre <a href="https://wallysondevs.github.io/guia-bash/script-primeiro.html">o primeiro script</a>, <a href="https://wallysondevs.github.io/guia-bash/executar.html">as formas de executar</a>, <a href="https://wallysondevs.github.io/guia-bash/modo-estrito.html">o modo estrito (<code>set -euo pipefail</code>)</a>, <a href="https://wallysondevs.github.io/guia-bash/depuracao.html">depuração</a> e <a href="https://wallysondevs.github.io/guia-bash/shellcheck.html">shellcheck</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Bash">Bash</a> explica os arquivos de configuração (<code>.bashrc</code>, <code>.bash_profile</code>) e o modo <code>sh</code>; <a href="https://wiki.archlinux.org/title/Command-line_shell">Command-line shell</a> compara os shells e explica o link <code>/bin/sh</code>; <a href="https://wiki.archlinux.org/title/Environment_variables">Environment variables</a> mostra como definir o <code>PATH</code>; e <a href="https://wiki.archlinux.org/title/Dash">Dash</a> ensina a testar scripts no shell POSIX mínimo.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
