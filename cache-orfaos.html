@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch cache e órfãos — paccache, pacman -Sc e pacman -Qdt | Guia Arch</title>
+<meta name="description" content="Liberar espaço no Arch Linux: o cache /var/cache/pacman/pkg, paccache -d, -r, -rk1 e -ruk0, pacman -Sc e -Scc, o paccache.timer, e os pacotes órfãos com pacman -Qdt e pacman -Rns $(pacman -Qdtq), com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Cache e <span class="hl">Órfãos</span></h1>
+
+<p class="intro">Com o tempo, o Arch acumula duas sobras: os <strong>pacotes baixados</strong>, que o pacman guarda depois de instalar, e os <strong>órfãos</strong>, dependências que ficaram para trás quando o programa que as usava foi removido. Nesta aula você aprende a medir e limpar as duas, sem apagar o que ainda pode salvar o seu sistema.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o cache <code>/var/cache/pacman/pkg</code>, para que serve e quanto ocupa.</li>
+  <li>Limpar com <code>paccache</code> (<code>-d</code>, <code>-r</code>, <code>-rk1</code>, <code>-ruk0</code>) e com <code>pacman -Sc</code>/<code>-Scc</code>.</li>
+  <li>Automatizar com o <code>paccache.timer</code>.</li>
+  <li>Achar e remover órfãos com <code>pacman -Qdt</code>, e por que não remover no automático.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O cache de pacotes</h2>
+
+<p>Todo pacote que o pacman baixa fica guardado em <code>/var/cache/pacman/pkg/</code>, junto com a assinatura (<code>.sig</code>). Ele <strong>não apaga sozinho</strong>, nem as versões antigas depois de uma atualização. Isso tem dois lados:</p>
+
+<ul>
+  <li><strong>A favor:</strong> se uma atualização der problema, a versão anterior está ali, pronta para voltar sem internet (veja <a href="downgrade.html">Voltar um Pacote</a>). Reinstalar um pacote também não precisa baixar de novo.</li>
+  <li><strong>Contra:</strong> semana após semana, o cache cresce. Em um ano, passa fácil de vários GiB.</li>
+</ul>
+
+<p>Quanto ocupa na VM do guia, que acabou de ser instalada (com <code>sudo</code>, porque algumas pastas lá dentro são protegidas):</p>
+
+<pre class="term">$ sudo du -sh /var/cache/pacman/pkg
+1,3G	/var/cache/pacman/pkg
+$ ls /var/cache/pacman/pkg | head -4
+aardvark-dns-2.1.0-3-x86_64.pkg.tar.zst
+aardvark-dns-2.1.0-3-x86_64.pkg.tar.zst.sig          « a assinatura de cada pacote
+abseil-cpp-20260817.0-2-x86_64.pkg.tar.zst
+abseil-cpp-20260817.0-2-x86_64.pkg.tar.zst.sig
+$ ls -l /var/cache/pacman/pkg | grep htop
+-rw-r--r-- 1 root root    184319 16 ago 13:16 htop-3.5.3-1-x86_64.pkg.tar.zst
+-rw-r--r-- 1 root root       119 16 ago 13:16 htop-3.5.3-1-x86_64.pkg.tar.zst.sig</pre>
+
+<p>Sem <code>sudo</code>, o <code>du</code> reclama de algumas pastas e mostra o total mesmo assim:</p>
+
+<pre class="term">$ du -sh /var/cache/pacman/pkg
+du: não foi possível ler diretório '/var/cache/pacman/pkg/download-veVDmJ': Permissão negada
+du: não foi possível ler diretório '/var/cache/pacman/pkg/download-TUFm9E': Permissão negada
+du: não foi possível ler diretório '/var/cache/pacman/pkg/download-ySVMmN': Permissão negada
+1,3G	/var/cache/pacman/pkg</pre>
+
+<p>Essas pastas <code>download-XXXXXX</code> são temporárias: o pacman baixa os arquivos nelas, como o usuário sem poderes <code>alpm</code> (a opção <code>DownloadUser</code>), e depois move o pacote para o cache. Quando uma transação é cancelada ou interrompida, a pasta vazia fica para trás. Não ocupam espaço e podem ser apagadas quando nenhum pacman estiver rodando.</p>
+
+<hr>
+
+<h2>paccache: limpar com critério</h2>
+
+<p>O <code>paccache</code> vem no pacote <code>pacman-contrib</code>. A ideia dele: <strong>manter as últimas versões de cada pacote</strong> e apagar as mais antigas. Por padrão, mantém <strong>3</strong>.</p>
+
+<dl class="anatomy">
+  <dt>-d</dt><dd><em>dryrun</em>: só mostra o que apagaria. <strong>Comece sempre por aqui.</strong></dd>
+  <dt>-r</dt><dd><em>remove</em>: apaga de verdade.</dd>
+  <dt>-k N</dt><dd><em>keep</em>: quantas versões manter de cada pacote (padrão 3).</dd>
+  <dt>-u</dt><dd><em>uninstalled</em>: olhar só os pacotes que <strong>não estão mais instalados</strong>.</dd>
+  <dt>-v</dt><dd><em>verbose</em>: listar os arquivos.</dd>
+  <dt>-c pasta</dt><dd>Usar outro cache (o padrão é o do <code>pacman.conf</code>).</dd>
+</dl>
+
+<p>Na VM, recém-instalada, cada pacote tem uma versão só. O <code>paccache</code> não acha nada para apagar:</p>
+
+<pre class="term">$ paccache -d
+==&gt; no candidate packages found for pruning           « nada a podar (a saída é em inglês)
+$ echo $?
+0
+$ paccache -dk1
+==&gt; no candidate packages found for pruning</pre>
+
+<h3>Um cache com versões antigas (exemplo controlado)</h3>
+
+<p>Para ver o <code>paccache</code> trabalhando, montamos um cache de teste em <code>/tmp/a4/cache</code> com <strong>quatro versões reais do htop</strong> (as três antigas baixadas do <a href="https://archive.archlinux.org/">Arch Linux Archive</a>, o arquivo histórico de pacotes do Arch) e dois pacotes que não estão instalados (<code>fastfetch</code> e <code>yyjson</code>). A opção <code>-c</code> aponta para ele:</p>
+
+<pre class="term">#> ls /tmp/a4/cache
+fastfetch-2.70.0-1-x86_64.pkg.tar.zst
+fastfetch-2.70.0-1-x86_64.pkg.tar.zst.sig
+htop-3.5.0-1-x86_64.pkg.tar.zst
+htop-3.5.1-1-x86_64.pkg.tar.zst
+htop-3.5.2-1-x86_64.pkg.tar.zst
+htop-3.5.3-1-x86_64.pkg.tar.zst                       « a versão instalada
+yyjson-0.13.0-1-x86_64.pkg.tar.zst
+yyjson-0.13.0-1-x86_64.pkg.tar.zst.sig
+#> paccache -d -c /tmp/a4/cache
+
+==&gt; finished dry run: 1 candidates (disk space saved: 170.06 KiB)    « mantendo 3, sobra 1 (o 3.5.0)
+#> paccache -dvk1 -c /tmp/a4/cache
+==&gt; Candidate packages:
+htop-3.5.0-1-x86_64.pkg.tar.zst
+htop-3.5.1-1-x86_64.pkg.tar.zst
+htop-3.5.2-1-x86_64.pkg.tar.zst
+
+==&gt; finished dry run: 3 candidates (disk space saved: 517.75 KiB)    « mantendo 1, saem 3
+#> paccache -duk0 -c /tmp/a4/cache
+
+==&gt; finished dry run: 2 candidates (disk space saved: 831.13 KiB)    « desinstalados: fastfetch e yyjson</pre>
+
+<p>Agora de verdade, com <code>-r</code>:</p>
+
+<pre class="term">#> paccache -rk1 -c /tmp/a4/cache
+
+==&gt; finished: 3 packages removed (disk space saved: 517.75 KiB)
+#> paccache -ruk0 -c /tmp/a4/cache
+
+==&gt; finished: 2 packages removed (disk space saved: 831.13 KiB)
+#> ls /tmp/a4/cache
+htop-3.5.3-1-x86_64.pkg.tar.zst                       « sobrou só a versão em uso
+#> paccache -rk1 -c /tmp/a4/cache
+==&gt; no candidate packages found for pruning</pre>
+
+<p>Repare que o <code>.sig</code> de cada pacote vai embora junto com ele. No cache do sistema, sem <code>-c</code>, rode com <code>sudo</code>: <code>sudo paccache -r</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que apaga</th><th>Quando usar</th></tr>
+<tr><td><code>paccache -r</code></td><td>Versões além das 3 últimas de cada pacote</td><td>A limpeza normal, de rotina. Ainda dá para voltar até duas versões.</td></tr>
+<tr><td><code>paccache -rk1</code></td><td>Tudo menos a última versão</td><td>Disco apertado; você perde a volta rápida para a versão anterior.</td></tr>
+<tr><td><code>paccache -ruk0</code></td><td>Todas as versões de pacotes que você <strong>desinstalou</strong></td><td>Depois de remover programas grandes.</td></tr>
+<tr><td><code>paccache -d…</code></td><td>Nada (só mostra)</td><td>Antes de qualquer um dos de cima.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>pacman -Sc e -Scc</h2>
+
+<p>O próprio pacman também limpa, com menos controle. As duas formas perguntam antes (respondemos "não"):</p>
+
+<pre class="term">$ sudo pacman -Sc
+Pacotes a serem mantidos:
+      Todos os pacotes instalados localmente           « mantém a versão de cada pacote instalado
+
+Diretório de cache: /var/cache/pacman/pkg/
+:: Deseja remover todos os outros pacotes do cache? [S/n] n
+
+Diretório da base de dados: /var/lib/pacman/
+:: Deseja remover repositórios não utilizados? [S/n] n   « catálogos de repositórios que você desligou
+$ sudo pacman -Scc
+
+Diretório de cache: /var/cache/pacman/pkg/
+:: Deseja remover TODOS os arquivos do cache? [s/N] n    « repare: o padrão aqui é NÃO (N maiúsculo)
+
+Diretório da base de dados: /var/lib/pacman/
+:: Deseja remover repositórios não utilizados? [S/n] n</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Remove do cache</th><th>Parecido com</th></tr>
+<tr><td><code>pacman -Sc</code></td><td>Pacotes desinstalados e versões que não são as instaladas</td><td><code>paccache -rk1</code> + <code>paccache -ruk0</code></td></tr>
+<tr><td><code>pacman -Scc</code></td><td><strong>Tudo</strong></td><td><code>paccache -rk0</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Cuidado com o -Scc</strong>
+<p>Sem o cache, voltar um pacote que quebrou depende da internet e do Arch Linux Archive. Por isso o pacman pergunta com <code>[s/N]</code>: só um <code>s</code> digitado confirma. Prefira o <code>paccache -r</code> no dia a dia; o <code>-Scc</code> serve para casos de disco cheio de verdade (e depois de confirmar que o sistema está funcionando).</p>
+</div>
+
+<hr>
+
+<h2>Limpeza automática: paccache.timer</h2>
+
+<p>O <code>pacman-contrib</code> traz um <a href="timers.html">timer do systemd</a> que roda <code>paccache -r</code> uma vez por semana. Ele vem <strong>desligado</strong>:</p>
+
+<pre class="term">$ systemctl status paccache.timer --no-pager
+○ paccache.timer - Discard unused packages weekly
+     Loaded: loaded (/usr/lib/systemd/system/paccache.timer; disabled; preset: disabled)
+     Active: inactive (dead)                               « desligado
+    Trigger: n/a
+   Triggers: ● paccache.service
+$ systemctl cat paccache.timer --no-pager
+# /usr/lib/systemd/system/paccache.timer
+[Unit]
+Description=Discard unused packages weekly
+
+[Timer]
+OnCalendar=weekly                                         « toda semana
+AccuracySec=1h
+Persistent=true                                           « se o PC estava desligado, roda no próximo boot
+
+[Install]
+WantedBy=timers.target</pre>
+
+<p>O serviço roda <code>/usr/bin/paccache -r $PACCACHE_ARGS</code>, e a variável vem do arquivo <code>/etc/conf.d/pacman-contrib</code>:</p>
+
+<pre class="file" data-file="/etc/conf.d/pacman-contrib"># Pacman-Contrib arguments
+#
+# The PACCACHE_ARGS environment variable is used to provide flags
+# and extra arguments to `paccache` when running paccache.service.
+# See `man 8 paccache` or `paccache --help` for further information.
+
+PACCACHE_ARGS=</pre>
+
+<p>Para ligar (e, se quiser, manter só 1 versão em vez de 3):</p>
+
+<pre class="term">$ sudo systemctl enable --now paccache.timer
+$ sudoedit /etc/conf.d/pacman-contrib          « troque para PACCACHE_ARGS='-k1'</pre>
+
+<p>Esses dois comandos são ilustrativos aqui: na VM do guia o timer fica como veio, desligado.</p>
+
+<hr>
+
+<h2>Pacotes órfãos</h2>
+
+<p>Um <strong>órfão</strong> é um pacote instalado <strong>como dependência</strong> que <strong>nenhum</strong> pacote instalado usa mais. Acontece quando você remove um programa com <code>-R</code> (sem o <code>s</code>), ou quando uma atualização deixa de precisar de uma biblioteca.</p>
+
+<dl class="anatomy">
+  <dt>-Q</dt><dd>Consultar os instalados.</dd>
+  <dt>d</dt><dd>Só os instalados como dependência.</dd>
+  <dt>t</dt><dd>Só os que nenhum pacote exige.</dd>
+</dl>
+
+<pre class="term">$ pacman -Qdt
+$ echo $?
+1                                            « nenhum órfão na VM</pre>
+
+<p>Como sempre no pacman, "nada encontrado" é silêncio + código 1. Para ver como fica com um órfão, usamos a cópia do banco de dados da VM (sem tocar no sistema) e marcamos o <code>htop</code> como dependência, como em <a href="pacman-avancado.html">pacman Avançado</a>:</p>
+
+<pre class="term">#> pacman -D --asdeps htop
+htop: motivo da instalação foi definido como "instalado como dependência"
+#> pacman -Qdt
+htop 3.5.3-1                                 « um órfão: dependência sem ninguém que a use
+#> pacman -Qdtq
+htop                                         « -q: só o nome, para usar em outro comando</pre>
+
+<h3>Remover todos os órfãos</h3>
+
+<p>A receita clássica junta tudo numa linha:</p>
+
+<dl class="anatomy">
+  <dt>pacman -Qdtq</dt><dd>Lista os órfãos, um nome por linha.</dd>
+  <dt>$( … )</dt><dd><strong>Substituição de comando</strong>: o Bash roda o que está dentro e troca pelo resultado, e a linha vira <code>pacman -Rns htop</code>.</dd>
+  <dt>sudo pacman -Rns</dt><dd>Remove, com as dependências que sobrarem e sem <code>.pacsave</code>.</dd>
+</dl>
+
+<pre class="term">#> pacman -Rns $(pacman -Qdtq)
+verificando dependências...
+
+Pacotes (1) htop-3.5.3-1
+
+Tamanho total removido:  0,41 MiB
+
+:: Deseja remover estes pacotes? [S/n] n</pre>
+
+<p>No sistema de verdade, sem órfãos, a lista vem vazia e o pacman reclama que não recebeu nada:</p>
+
+<pre class="term">$ sudo pacman -Rns $(pacman -Qdtq)
+erro: nenhum alvo definido (use -h para obter ajuda)
+$ echo $?
+1</pre>
+
+<p>Não é problema: só quer dizer que não havia órfãos. Uma forma equivalente, que lê os nomes da entrada: <code>pacman -Qdtq | sudo pacman -Rns -</code>.</p>
+
+<h3>Por que não sair removendo</h3>
+
+<ul>
+  <li><strong>"Órfão" é sobre o pacman, não sobre você.</strong> Um pacote pode ter vindo como dependência e você usá-lo direto. Exemplo da VM: o <code>jq</code> veio como dependência do <code>devtools</code>. Se um dia o <code>devtools</code> sair, o <code>jq</code> vira órfão, mesmo que os seus scripts usem <code>jq</code>. Antes de remover, marque o que você usa: <code>sudo pacman -D --asexplicit jq</code>.</li>
+  <li><strong>Dependências opcionais não contam.</strong> Com um <code>t</code>, um pacote que é opcional de outro não aparece. Com <code>-Qdtt</code>, aparecem também esses, que podem estar ativando um recurso que você usa (por isso o <code>-Qdtt</code> é ainda mais perigoso de remover no automático).</li>
+  <li><strong>Leia a lista</strong> antes do <code>S</code>, como em qualquer remoção. Remover em cadeia pode levar mais do que você esperava.</li>
+  <li><strong>Pacotes do AUR</strong> instalados por um ajudante: as dependências de compilação (<em>makedepends</em>) podem ter ficado como órfãs. Essas costumam ser seguras de remover (veja <a href="yay-paru.html">yay e paru</a>).</li>
+</ul>
+
+<hr>
+
+<h2>Formas diferentes de liberar espaço</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Comando</th><th>Comentário</th></tr>
+<tr><td>Rotina mensal</td><td><code>sudo paccache -r</code></td><td>Mantém 3 versões; seguro.</td></tr>
+<tr><td>Sempre limpo, sem pensar</td><td><code>paccache.timer</code></td><td>Faz o <code>paccache -r</code> toda semana.</td></tr>
+<tr><td>Disco apertado</td><td><code>sudo paccache -rk1</code> + <code>sudo paccache -ruk0</code></td><td>Mantém só a versão em uso.</td></tr>
+<tr><td>Emergência (disco cheio)</td><td><code>sudo pacman -Scc</code></td><td>Apaga tudo; perde a volta rápida.</td></tr>
+<tr><td>Dependências esquecidas</td><td><code>sudo pacman -Rns $(pacman -Qdtq)</code></td><td>Leia a lista antes.</td></tr>
+<tr><td>Ver o que mais ocupa</td><td><code>expac -H M '%m\t%n' | sort -h | tail</code></td><td>Veja <a href="pacman-avancado.html">pacman Avançado</a> e, para o disco todo, <a href="discos.html">lsblk, df, du</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="try" data-goal="ran:pacman +-Qdt" data-solucao="pacman -Qdt">
+<p class="try-task"><strong>Missão 1:</strong> procure pacotes órfãos no sistema da ana. Não apareceu nada? Confira o código de saída com <code>echo $?</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:pacman +-Sc" data-solucao="sudo pacman -Sc;;ana;;n;;n">
+<p class="try-task"><strong>Missão 2:</strong> peça ao pacman para limpar o cache de pacotes desinstalados (a senha é <code>ana</code>). Leia as duas perguntas antes de responder.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"nenhum alvo definido"</strong>
+<pre class="term">$ sudo pacman -Rns $(pacman -Qdtq)
+erro: nenhum alvo definido (use -h para obter ajuda)</pre>
+<p><strong>O que aconteceu:</strong> não há órfãos; o <code>$( )</code> ficou vazio e o pacman recebeu só <code>-Rns</code>.</p>
+<p><strong>Como resolver:</strong> nada a fazer. Confirme com <code>pacman -Qdt; echo $?</code> (código 1 = sem órfãos).</p>
+</div>
+
+<div class="cenario">
+<strong>"no candidate packages found for pruning"</strong>
+<p><strong>O que aconteceu:</strong> não há versões além das que você pediu para manter (com <code>-r</code>, 3 de cada).</p>
+<p><strong>Como resolver:</strong> nada a fazer; se quer liberar mais, <code>paccache -dk1</code> mostra quanto sairia mantendo uma só.</p>
+</div>
+
+<div class="cenario">
+<strong>du: "Permissão negada" em download-…</strong>
+<p><strong>O que aconteceu:</strong> as pastas temporárias de download pertencem ao usuário <code>alpm</code>.</p>
+<p><strong>Como resolver:</strong> use <code>sudo du -sh /var/cache/pacman/pkg</code>. As pastas vazias que sobram podem ser apagadas (com nenhum pacman rodando): <code>sudo rmdir /var/cache/pacman/pkg/download-*</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Limpei o cache e agora preciso da versão antiga</strong>
+<p><strong>O que aconteceu:</strong> uma atualização quebrou algo e o <code>-Scc</code> apagou a versão anterior.</p>
+<p><strong>Como resolver:</strong> o Arch Linux Archive guarda todas as versões; a ferramenta <code>downgrade</code> busca lá. Veja <a href="downgrade.html">Voltar um Pacote</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo du -sh /var/cache/pacman/pkg</code></td><td>Tamanho do cache</td></tr>
+<tr><td><code>paccache -d</code> / <code>-dv</code></td><td>Simula (e lista) a limpeza</td></tr>
+<tr><td><code>sudo paccache -r</code></td><td>Mantém as 3 últimas versões de cada pacote</td></tr>
+<tr><td><code>sudo paccache -rk1</code></td><td>Mantém só a última</td></tr>
+<tr><td><code>sudo paccache -ruk0</code></td><td>Apaga as de pacotes desinstalados</td></tr>
+<tr><td><code>sudo pacman -Sc</code> / <code>-Scc</code></td><td>Limpa o cache (desinstalados / tudo)</td></tr>
+<tr><td><code>sudo systemctl enable --now paccache.timer</code></td><td>Limpeza semanal automática</td></tr>
+<tr><td><code>pacman -Qdt</code> / <code>-Qdtq</code></td><td>Lista os órfãos (com versão / só nomes)</td></tr>
+<tr><td><code>sudo pacman -Rns $(pacman -Qdtq)</code></td><td>Remove os órfãos</td></tr>
+<tr><td><code>sudo pacman -D --asexplicit pkg</code></td><td>Protege um pacote que você usa de virar "órfão"</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Simular primeiro</h3>
+<p>Complete para ver o que o <code>paccache</code> apagaria mantendo só 1 versão, sem apagar nada:</p>
+<div class="ex-code">paccache <input data-answer="-dk1|-dk 1|-d -k1|-d -k 1|-k1 -d" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Os órfãos</h3>
+<p>Liste os órfãos só pelo nome:</p>
+<div class="ex-code">pacman <input data-answer="-Qdtq|-Qtdq|-Qqdt" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Desinstalados</h3>
+<p>Apague do cache todas as versões dos pacotes que você já removeu:</p>
+<div class="ex-code">sudo paccache <input data-answer="-ruk0|-rk0 -u|-r -u -k0|-ruk 0" aria-label="opções"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que o Arch guarda as versões antigas no cache?</p>
+<label><input type="radio" name="q4"> Por esquecimento: é um defeito do pacman.</label>
+<label><input type="radio" name="q4"> Para você poder voltar para a versão anterior se uma atualização der problema.</label>
+<label><input type="radio" name="q4"> Porque o pacman precisa delas para atualizar.</label>
+<label><input type="radio" name="q4"> Para compartilhar com outros computadores da rede.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. <code>pacman -Qdt</code> não mostrou nada. O que isso quer dizer?</p>
+<label><input type="radio" name="q5"> O comando falhou e é preciso rodar como root.</label>
+<label><input type="radio" name="q5"> O cache está vazio.</label>
+<label><input type="radio" name="q5"> Não há órfãos (o código de saída é 1).</label>
+<label><input type="radio" name="q5"> Todos os pacotes são órfãos.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O cache <code>/var/cache/pacman/pkg</code> guarda os pacotes baixados e nunca encolhe sozinho; ele é a sua rede de segurança para voltar versões.</li>
+  <li><code>paccache -d</code> primeiro; <code>paccache -r</code> mantém 3 versões; <code>-rk1</code> mantém 1; <code>-ruk0</code> limpa os desinstalados.</li>
+  <li><code>pacman -Sc</code> limpa o que não está instalado; <code>-Scc</code> limpa tudo (padrão "não").</li>
+  <li><code>paccache.timer</code> automatiza a limpeza semanal (vem desligado).</li>
+  <li>Órfãos: <code>pacman -Qdt</code>; remover com <code>sudo pacman -Rns $(pacman -Qdtq)</code>, depois de ler a lista.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a limpeza do cache está em <a href="https://wiki.archlinux.org/title/Pacman#Cleaning_the_package_cache">pacman – Cleaning the package cache</a> (em português: <a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)#Limpando_o_cache_de_pacotes">pacman – Limpando o cache de pacotes</a>), e a remoção de órfãos em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#Removing_unused_packages_(orphans)">pacman/Tips and tricks – Removing unused packages (orphans)</a>. O Arch Linux Archive tem página própria: <a href="https://wiki.archlinux.org/title/Arch_Linux_Archive">Arch Linux Archive</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
