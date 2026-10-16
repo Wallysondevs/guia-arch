@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Configurar o Sistema — fstab, chroot, fuso, idioma, usuários | Guia Arch</title>
+<meta name="description" content="Depois do pacstrap: gerar o fstab com genfstab, entrar com arch-chroot, configurar fuso, idioma, teclado e hostname, refazer o initramfs, criar senha do root, a usuária ana com sudo e ativar a rede, com as saídas reais da instalação.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Configurar o Sistema</span></h1>
+
+<p class="intro">O <code>pacstrap</code> copiou o Arch para o disco, mas o sistema novo ainda não sabe nada sobre si mesmo: não sabe quais partições montar, em que fuso está, que idioma fala, como se chama nem quem pode entrar. Nesta aula você responde a cada uma dessas perguntas, uma por vez, quase sempre escrevendo <strong>uma linha num arquivo de texto</strong>. É a parte da instalação em que você mais aprende como o Arch funciona por dentro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Gerar o <code>/etc/fstab</code> com <code>genfstab</code> e ler cada coluna dele.</li>
+  <li>Entrar no sistema novo com <code>arch-chroot</code> (e por que o prompt muda).</li>
+  <li>Configurar fuso horário, idioma, teclado e nome da máquina.</li>
+  <li>Refazer o initramfs com <code>mkinitcpio -P</code> e entender por que o aviso do pacstrap sumiu.</li>
+  <li>Definir a senha do root, criar a usuária <code>ana</code>, liberar o <code>sudo</code> e ativar a rede para o primeiro boot.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Onde você está e o que falta</h2>
+<p>Pense numa casa recém-construída: as paredes estão de pé (os pacotes estão no disco), mas ainda não tem endereço na porta, relógio na parede, nem chave para os moradores. Na aula anterior (<a href="pacstrap.html">Espelhos e pacstrap</a>) você terminou com a raiz montada em <code>/mnt</code> e a partição EFI em <code>/mnt/boot</code>. Agora cada pergunta vira um arquivo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Arquivo (no sistema novo)</th><th>Comando</th></tr>
+<tr><td>Quais partições montar no boot?</td><td><code>/etc/fstab</code></td><td><code>genfstab</code></td></tr>
+<tr><td>Em que fuso estou?</td><td><code>/etc/localtime</code> e <code>/etc/adjtime</code></td><td><code>ln -sf</code>, <code>hwclock</code></td></tr>
+<tr><td>Que idioma eu falo?</td><td><code>/etc/locale.gen</code> e <code>/etc/locale.conf</code></td><td><code>locale-gen</code></td></tr>
+<tr><td>Qual é o meu teclado?</td><td><code>/etc/vconsole.conf</code></td><td><code>echo</code> ou editor</td></tr>
+<tr><td>Como eu me chamo?</td><td><code>/etc/hostname</code></td><td><code>echo</code> ou editor</td></tr>
+<tr><td>Como dou a partida?</td><td><code>/boot/initramfs-linux.img</code></td><td><code>mkinitcpio -P</code></td></tr>
+<tr><td>Quem pode entrar?</td><td><code>/etc/shadow</code>, <code>/etc/passwd</code>, <code>/etc/sudoers</code></td><td><code>passwd</code>, <code>useradd</code>, <code>visudo</code></td></tr>
+<tr><td>A rede liga sozinha?</td><td>links em <code>/etc/systemd/system/</code></td><td><code>systemctl enable</code></td></tr>
+</table>
+</div>
+
+<p>Todas as saídas desta aula são da instalação real da VM do guia (o coordenador gravou cada comando com a saída; veja o <a href="projeto-instalacao.html">projeto de instalação</a>). O ambiente live fala <strong>inglês</strong>, então as mensagens aparecem em inglês até o primeiro boot.</p>
+
+<hr>
+
+<h2>1. O fstab: a lista de partições</h2>
+<p>O <strong>fstab</strong> (<em>file systems table</em>, tabela de sistemas de arquivos) é o arquivo <code>/etc/fstab</code>. A cada boot, o systemd lê essa lista e monta cada partição no lugar certo. Sem ele, o sistema até liga (o bootloader diz qual é a raiz), mas o <code>/boot</code> e a swap ficam de fora.</p>
+<p>Você não precisa escrevê-lo à mão: o <code>genfstab</code> olha o que está montado agora embaixo de <code>/mnt</code> e escreve as linhas certas. Por isso a ordem importa: primeiro montar tudo (aula <a href="formatar-montar.html">Formatar e Montar</a>), depois gerar.</p>
+
+<dl class="anatomy">
+  <dt>genfstab</dt><dd>Gera linhas de fstab a partir do que está montado. Vem no pacote <code>arch-install-scripts</code>, que já está no live.</dd>
+  <dt>-U</dt><dd>Identifica cada partição pelo <strong>UUID</strong> (um número único gravado na formatação), não pelo nome <code>/dev/sda1</code>.</dd>
+  <dt>/mnt</dt><dd>A pasta a examinar: tudo o que está montado nela e abaixo dela.</dd>
+  <dt>&gt;&gt;</dt><dd><strong>Acrescenta</strong> a saída ao final do arquivo (sem apagar o que já existe).</dd>
+  <dt>/mnt/etc/fstab</dt><dd>O fstab do sistema <strong>novo</strong> (visto do live, ele mora em <code>/mnt</code>).</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> genfstab -U /mnt &gt;&gt; /mnt/etc/fstab
+#> echo $?
+0                              « nada na tela, código 0: deu certo
+#> cat /mnt/etc/fstab
+# Static information about the filesystems.
+# See fstab(5) for details.
+
+# &lt;file system&gt; &lt;dir&gt; &lt;type&gt; &lt;options&gt; &lt;dump&gt; &lt;pass&gt;
+# /dev/sda3
+UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9	/         	ext4      	rw,relatime	0 1
+
+# /dev/sda1
+UUID=C509-6CB1      	/boot     	vfat      	rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro	0 2
+
+# /dev/sda2
+UUID=02576132-0458-4975-916f-94e08af9a31c	none      	swap      	defaults  	0 0
+</pre>
+
+<p>As quatro primeiras linhas já existiam: o pacote <code>filesystem</code> instala um fstab só com comentários. O <code>genfstab</code> acrescentou três blocos, um por partição. Cada bloco tem um comentário (<code># /dev/sda3</code>, só para você saber de quem se trata) e uma linha de verdade com seis colunas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Na linha da raiz</th><th>O que significa</th></tr>
+<tr><td>1. o quê</td><td><code>UUID=75d167c8-…</code></td><td>Qual partição. Aqui, pelo UUID que o <code>mkfs.ext4</code> criou (veja o <code>lsblk -f</code> em <a href="formatar-montar.html">Formatar e Montar</a>).</td></tr>
+<tr><td>2. onde</td><td><code>/</code></td><td>O ponto de montagem. A swap não é montada numa pasta, por isso tem <code>none</code>.</td></tr>
+<tr><td>3. tipo</td><td><code>ext4</code></td><td>O sistema de arquivos: <code>ext4</code>, <code>vfat</code> (a partição EFI, FAT32), <code>swap</code>.</td></tr>
+<tr><td>4. opções</td><td><code>rw,relatime</code></td><td><code>rw</code> = leitura e escrita; <code>relatime</code> = atualiza a data de acesso dos arquivos só de vez em quando (economiza escrita). Na EFI aparecem opções do FAT: <code>fmask</code>/<code>dmask</code> (permissões), <code>codepage</code>, <code>utf8</code>, <code>errors=remount-ro</code> (se der erro, vira somente leitura). <code>defaults</code> = as opções padrão.</td></tr>
+<tr><td>5. dump</td><td><code>0</code></td><td>Para o antigo programa de backup <code>dump</code>. Ninguém usa mais: sempre <code>0</code>.</td></tr>
+<tr><td>6. pass</td><td><code>1</code></td><td>Ordem do <code>fsck</code> (verificação de disco) no boot: <code>1</code> = a raiz, primeiro; <code>2</code> = as outras, depois; <code>0</code> = não verificar (a swap).</td></tr>
+</table>
+</div>
+
+<h3>Por que UUID e não /dev/sda3?</h3>
+<p>O nome <code>/dev/sda</code> é dado na ordem em que o kernel encontra os discos. Ligue um pendrive ou um segundo SSD e o seu disco pode virar <code>/dev/sdb</code> no próximo boot: um fstab com <code>/dev/sda3</code> montaria a partição errada (ou nenhuma). O UUID fica gravado <strong>dentro</strong> da partição e não muda enquanto você não formatá-la de novo. Repare que o UUID da EFI é curto (<code>C509-6CB1</code>): é o "número de série" do FAT32, que tem só 8 dígitos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>genfstab -U</code> (UUID)</td><td><code>UUID=75d167c8-…</code></td><td><strong>Sempre</strong>, é o que a Arch Wiki recomenda.</td></tr>
+<tr><td><code>genfstab -L</code> (rótulo)</td><td><code>LABEL=raiz</code></td><td>Se você deu nomes às partições (<code>mkfs.ext4 -L raiz</code>) e quer um fstab legível.</td></tr>
+<tr><td><code>genfstab</code> sem opção</td><td><code>/dev/sda3</code></td><td>Evite: quebra se a ordem dos discos mudar.</td></tr>
+</table>
+</div>
+
+<h3>&gt;&gt; × &gt;, e o perigo de rodar duas vezes</h3>
+<p>O <code>&gt;&gt;</code> <strong>acrescenta</strong>. Isso é bom na primeira vez (preserva o cabeçalho), mas se você rodar o comando de novo, as linhas entram <strong>outra vez</strong> e cada partição aparece duas vezes. Veja numa cópia do fstab, na VM do guia (nunca faça isso no fstab de verdade):</p>
+
+<pre class="term" data-user="root">#> cp /etc/fstab /tmp/a3/fstab
+#> genfstab -U / &gt;&gt; /tmp/a3/fstab           « a "segunda vez"
+#> grep -c "^UUID" /etc/fstab /tmp/a3/fstab
+/etc/fstab:3
+/tmp/a3/fstab:6                            « cada partição duas vezes
+#> findmnt --verify --tab-file /tmp/a3/fstab
+
+0 erro de análise, 0 erro, 3 avisos
+/
+   [W] alvo especificado mais de uma vez
+/boot
+   [W] alvo especificado mais de uma vez
+none
+   [W] alvo especificado mais de uma vez
+</pre>
+
+<p>O <code>findmnt --verify</code> lê um fstab e aponta problemas; <code>--tab-file</code> diz qual arquivo ler (sem ela, lê o <code>/etc/fstab</code>). Cada <code>[W]</code> (<em>warning</em>, aviso) diz que o mesmo ponto de montagem aparece em duas linhas. Num fstab correto, a resposta é esta:</p>
+
+<pre class="term" data-user="root">#> findmnt --verify
+Sucesso, nenhum erro ou aviso detectado</pre>
+
+<div class="warning">
+<strong>Rodou duas vezes? Conserte antes de reiniciar</strong>
+<p>Abra <code>nano /mnt/etc/fstab</code> e apague o bloco repetido, ou gere de novo com um <code>&gt;</code> só: <code>genfstab -U /mnt &gt; /mnt/etc/fstab</code>. O <code>&gt;</code> <strong>substitui</strong> o arquivo inteiro: você perde as quatro linhas de comentário do cabeçalho, o que não faz mal nenhum. No live, confira com <code>findmnt --verify --tab-file /mnt/etc/fstab</code>.</p>
+</div>
+
+<p>O fstab tem uma aula própria no Nível 2: <a href="fstab.html">mount e fstab</a> (opções, partições extras, <code>nofail</code>, como testar com <code>mount -a</code>).</p>
+
+<hr>
+
+<h2>2. Entrar no sistema novo: arch-chroot</h2>
+<p>Até aqui você mexeu no sistema novo "de fora", escrevendo <code>/mnt</code> na frente de tudo. Para os próximos passos é mais fácil (e às vezes obrigatório) estar <strong>dentro</strong> dele: programas como <code>locale-gen</code>, <code>mkinitcpio</code> e <code>passwd</code> precisam enxergar o <code>/etc</code> do sistema novo como se fosse o <code>/etc</code> de verdade.</p>
+<p>É isso que faz um <strong>chroot</strong> (<em>change root</em>, trocar a raiz): a partir dele, para os comandos que você rodar, <code>/mnt</code> passa a ser <code>/</code>. O <code>arch-chroot</code> é um <code>chroot</code> com ajudas: antes de entrar, ele monta <code>/proc</code>, <code>/sys</code>, <code>/dev</code> e <code>/run</code> dentro de <code>/mnt</code> e copia a configuração de DNS, para que os programas funcionem lá dentro.</p>
+
+<dl class="anatomy">
+  <dt>arch-chroot</dt><dd>Entra no sistema montado num diretório (pacote <code>arch-install-scripts</code>).</dd>
+  <dt>/mnt</dt><dd>Onde está a raiz do sistema novo.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-title="root@archiso: arch-chroot /mnt">#> arch-chroot /mnt
+</pre>
+
+<p>Não aparece nada, só o prompt muda. O ambiente live usa o <strong>zsh</strong> com o prompt <code>root@archiso ~ #</code>; dentro do chroot quem responde é o <strong>Bash</strong> do sistema novo, com o prompt padrão do Arch:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> pwd
+/
+</pre>
+
+<dl class="anatomy">
+  <dt>root</dt><dd>Você continua root.</dd>
+  <dt>@archiso</dt><dd>O nome ainda é <code>archiso</code>: o kernel que está rodando é o do pendrive, e o nome da máquina vem dele. O <code>notebook</code> só vale no primeiro boot.</dd>
+  <dt>/</dt><dd>A pasta atual é a raiz... do sistema novo (o antigo <code>/mnt</code>).</dd>
+  <dt>#</dt><dd>Prompt de root.</dd>
+</dl>
+
+<div class="note">
+<strong>Como o coordenador rodou os comandos</strong>
+<p>Para gravar cada saída num arquivo, na VM do guia cada comando foi rodado de fora, com <code>arch-chroot /mnt comando</code> (por exemplo, <code>arch-chroot /mnt locale-gen</code>): o <code>arch-chroot</code> entra, roda só aquele comando e sai. A saída é a mesma. Nesta aula você vê o jeito normal: entrar uma vez com <code>arch-chroot /mnt</code> e digitar tudo lá dentro, até o <code>exit</code> (em <a href="primeiro-boot.html">Primeiro Boot</a>).</p>
+</div>
+
+<div class="warning">
+<strong>Fique atento ao prompt</strong>
+<p>A partir daqui, todos os comandos são dentro do chroot (<code>[root@archiso /]#</code>). Se você ver <code>root@archiso ~ #</code>, você saiu (ou nunca entrou), e um <code>passwd</code> mudaria a senha do <strong>live</strong>, que some ao desligar. Saiu sem querer? Rode <code>arch-chroot /mnt</code> de novo; nada se perde.</p>
+</div>
+
+<hr>
+
+<h2>3. Fuso horário e relógio</h2>
+<p>O Linux guarda a hora em <strong>UTC</strong> (o horário de Greenwich) e converte para a sua hora local na hora de mostrar. Para converter, precisa saber o seu <strong>fuso</strong>. O fuso é escolhido apontando o arquivo <code>/etc/localtime</code> para um dos arquivos de fuso que vêm no pacote <code>tzdata</code>, em <code>/usr/share/zoneinfo/Região/Cidade</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> ls /usr/share/zoneinfo/America | head -5
+Adak
+Anchorage
+Anguilla
+Antigua
+Araguaina
+</pre>
+
+<p>O Brasil tem quatro fusos. Os nomes são de cidades: <code>America/Sao_Paulo</code> (Brasília, a maior parte do país), <code>America/Manaus</code>, <code>America/Rio_Branco</code>, <code>America/Noronha</code>; há também nomes para cidades que já mudaram de regra, como <code>America/Recife</code> e <code>America/Bahia</code>. Use a sua cidade (ou a mais próxima da lista).</p>
+
+<dl class="anatomy">
+  <dt>ln</dt><dd>Cria um <strong>link</strong> (um atalho para outro arquivo).</dd>
+  <dt>-s</dt><dd>Link <strong>simbólico</strong> (o atalho guarda o caminho do alvo).</dd>
+  <dt>-f</dt><dd><em>force</em>: se <code>/etc/localtime</code> já existir, substitui.</dd>
+  <dt>/usr/share/zoneinfo/America/Sao_Paulo</dt><dd>O alvo: o arquivo com as regras do fuso de Brasília.</dd>
+  <dt>/etc/localtime</dt><dd>O nome do atalho, que todos os programas consultam.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
+#> hwclock --systohc
+#> echo $?
+0
+</pre>
+
+<p>Os dois comandos não mostram nada quando dão certo. O <code>hwclock</code> mexe no <strong>relógio do hardware</strong> (o RTC, o relógio da placa-mãe que continua contando com o computador desligado): <code>--systohc</code> (<em>system to hardware clock</em>) copia a hora do sistema para ele e cria o arquivo <code>/etc/adjtime</code>. Depois do primeiro boot, o resultado fica assim (VM do guia):</p>
+
+<pre class="term" data-user="root">#> ls -l /etc/localtime
+lrwxrwxrwx 1 root root 37 16 out 12:09 /etc/localtime -&gt; /usr/share/zoneinfo/America/Sao_Paulo
+#> cat /etc/adjtime
+0.000000 1792163398 0.000000
+1792163398
+UTC                       « o relógio da placa guarda UTC (o padrão do Linux)
+</pre>
+
+<p>O <code>l</code> no começo de <code>lrwxrwxrwx</code> e a seta <code>-&gt;</code> mostram que é um link. A última linha do <code>adjtime</code> é a que importa: <code>UTC</code>.</p>
+
+<div class="tip">
+<strong>Vai ter Windows no mesmo computador?</strong>
+<p>O Windows guarda a hora <strong>local</strong> no relógio da placa, o Linux guarda UTC. Em dual boot, um dos dois sempre mostra a hora errada (3 horas de diferença, no fuso de Brasília). A solução recomendada é configurar o Windows para usar UTC; veja <a href="https://wiki.archlinux.org/title/System_time#UTC_in_Microsoft_Windows">System time: UTC in Microsoft Windows</a> na Arch Wiki.</p>
+</div>
+
+<hr>
+
+<h2>4. Idioma (locale)</h2>
+<p>Um <strong>locale</strong> é um pacote de regras de idioma e país: em que língua aparecem as mensagens, se o decimal é vírgula ou ponto, como se escreve a data, a ordem alfabética com acentos. O nome junta idioma, país e codificação: <code>pt_BR.UTF-8</code> = português, do Brasil, em UTF-8 (a codificação que entende acentos e emojis).</p>
+<p>Configurar o idioma tem duas etapas: <strong>gerar</strong> os locales que você quer ter e <strong>escolher</strong> qual o sistema usa.</p>
+
+<h3>Gerar: /etc/locale.gen e locale-gen</h3>
+<p>O arquivo <code>/etc/locale.gen</code> tem uma lista enorme com todos os locales possíveis, todos comentados (com <code>#</code> na frente). Você tira o <code>#</code> dos que quer. Use <code>nano /etc/locale.gen</code>, procure com <kbd>Ctrl</kbd>+<kbd>W</kbd> por <code>pt_BR.UTF-8</code>, apague o <code>#</code>, faça o mesmo com <code>en_US.UTF-8</code> e salve (<kbd>Ctrl</kbd>+<kbd>O</kbd>, <kbd>Enter</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>). Na VM do guia, o coordenador fez a mesma coisa com um <code>sed</code>, sem abrir editor:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> sed -i -e 's/^#pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/' -e 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+#> grep -v "^#" /etc/locale.gen
+en_US.UTF-8 UTF-8
+pt_BR.UTF-8 UTF-8
+</pre>
+
+<dl class="anatomy">
+  <dt>sed -i</dt><dd>Edita o arquivo no lugar (<em>in place</em>).</dd>
+  <dt>-e 's/^#pt_BR.UTF-8 UTF-8/pt_BR.UTF-8 UTF-8/'</dt><dd>Troca a linha que <strong>começa</strong> (<code>^</code>) com <code>#pt_BR.UTF-8 UTF-8</code> pela mesma linha sem o <code>#</code>.</dd>
+  <dt>-e 's/^#en_US…/en_US…/'</dt><dd>O mesmo para o inglês dos EUA.</dd>
+  <dt>/etc/locale.gen</dt><dd>O arquivo editado.</dd>
+</dl>
+
+<p>O <code>grep -v "^#"</code> mostra só as linhas que <strong>não</strong> começam com <code>#</code>: exatamente as duas que você ativou. Por que gerar o <code>en_US.UTF-8</code> também? Alguns programas e scripts esperam que ele exista, e ter o inglês à mão ajuda a pesquisar mensagens de erro (dá para rodar um comando em inglês com <code>LANG=C comando</code>).</p>
+
+<div class="warning">
+<strong>Cuidado com o pt_BR sem UTF-8</strong>
+<p>Logo abaixo da linha certa existe <code>#pt_BR ISO-8859-1</code>, uma codificação antiga. Ative a linha <code>pt_BR.UTF-8 UTF-8</code>, não essa.</p>
+</div>
+
+<p>Agora o <code>locale-gen</code> compila os locales ativados:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> locale-gen
+Generating locales...
+  en_US.UTF-8... done          « um por linha ativada no locale.gen
+  pt_BR.UTF-8... done
+Generation complete.
+</pre>
+
+<p>Compare com o <code>pacstrap</code>: lá, o gancho <code>Generating the configured locale...</code> mostrou só <code>Generating locales...</code> e <code>Generation complete.</code>, sem nenhum idioma no meio, porque ainda nenhuma linha estava ativa.</p>
+
+<h3>Escolher: /etc/locale.conf</h3>
+<p>Gerar não basta: o sistema precisa saber qual usar. Isso fica na variável <code>LANG</code>, escrita em <code>/etc/locale.conf</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> echo 'LANG=pt_BR.UTF-8' &gt; /etc/locale.conf
+#> cat /etc/locale.conf
+LANG=pt_BR.UTF-8
+</pre>
+
+<p>Aqui o <code>&gt;</code> (um só) é o certo: o arquivo não existia, e se existisse você quer substituí-lo. As aspas simples protegem o texto (veja <a href="terminal.html">O Terminal no Arch</a>). O efeito aparece no primeiro boot: mensagens, datas e números em português.</p>
+
+<hr>
+
+<h2>5. Teclado do console</h2>
+<p>No live você rodou <code>loadkeys br-abnt2</code> (aula <a href="ambiente-live.html">O Ambiente Live</a>), mas isso vale só até desligar. Para o sistema instalado, o mapa de teclado do console (a tela preta de texto, antes de qualquer interface gráfica) fica em <code>/etc/vconsole.conf</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> echo 'KEYMAP=br-abnt2' &gt; /etc/vconsole.conf
+#> cat /etc/vconsole.conf
+KEYMAP=br-abnt2
+</pre>
+
+<p>Qual mapa escolher? Os brasileiros disponíveis são estes (lista tirada da VM com <code>localectl list-keymaps | grep "^br"</code>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mapa</th><th>Teclado</th></tr>
+<tr><td><code>br-abnt2</code></td><td>O padrão brasileiro atual, com <kbd>Ç</kbd> e a tecla <kbd>/?</kbd> ao lado do <kbd>Shift</kbd> direito. O da maioria dos notebooks vendidos no Brasil.</td></tr>
+<tr><td><code>br-abnt</code></td><td>A variante ABNT anterior. Na dúvida, fique com o <code>br-abnt2</code>.</td></tr>
+<tr><td><code>br-latin1-abnt2</code>, <code>br-latin1-us</code></td><td>Variações com a tabela latin1.</td></tr>
+<tr><td><code>us</code></td><td>Teclado americano (sem <kbd>Ç</kbd>). Se o seu teclado é "internacional", veja <code>us-acentos</code>.</td></tr>
+</table>
+</div>
+
+<p>Esse arquivo vale só para o console. O teclado da interface gráfica (KDE, GNOME) é configurado nela; veja <a href="desktop.html">Instalar um Desktop</a>.</p>
+
+<hr>
+
+<h2>6. Nome da máquina (hostname)</h2>
+<p>O <strong>hostname</strong> é o nome do computador na rede e no prompt (<code>[ana@<strong>notebook</strong> ~]$</code>). É uma palavra só, sem espaços nem acentos (letras, números e hífen):</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> echo notebook &gt; /etc/hostname
+#> cat /etc/hostname
+notebook
+</pre>
+
+<p>Na VM do guia, os três arquivos (idioma, teclado e nome) foram escritos de fora do chroot numa linha só, com <code>/mnt</code> na frente: <code>echo 'LANG=pt_BR.UTF-8' &gt; /mnt/etc/locale.conf; echo 'KEYMAP=br-abnt2' &gt; /mnt/etc/vconsole.conf; echo notebook &gt; /mnt/etc/hostname</code>. O resultado é idêntico.</p>
+
+<div class="note">
+<strong>E o /etc/hosts?</strong>
+<p>Guias antigos mandam editar o <code>/etc/hosts</code>. Hoje não é necessário: no Arch, o pacote <code>filesystem</code> já o traz com <code>localhost</code> configurado, e o próprio systemd resolve o nome da máquina.</p>
+</div>
+
+<hr>
+
+<h2>7. Refazer o initramfs: mkinitcpio -P</h2>
+<p>Para dar a partida, o kernel carrega primeiro um mini-sistema chamado <strong>initramfs</strong> (o arquivo <code>/boot/initramfs-linux.img</code>), com os drivers necessários para achar o disco e montar a raiz. Quem gera esse arquivo é o <code>mkinitcpio</code>. O <code>pacstrap</code> já o gerou uma vez (ao instalar o kernel), mas naquele momento o <code>/etc/vconsole.conf</code> ainda não existia. Repare no aviso do log do pacstrap:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux …
+…
+(15/18) Updating linux initcpios...
+…
+  -&gt; Running build hook: [sd-vconsole]
+==&gt; WARNING: sd-vconsole: "/etc/vconsole.conf" not found, will use default values
+…</pre>
+
+<p>O gancho <code>sd-vconsole</code> copia o mapa de teclado para dentro do initramfs (é ele que deixa você digitar a senha de um disco criptografado em ABNT2). Agora que o arquivo existe, gere de novo:</p>
+
+<dl class="anatomy">
+  <dt>mkinitcpio</dt><dd>Cria o initramfs (o nome vem de <em>make initcpio</em>: o initramfs é um arquivo no formato <code>cpio</code>).</dd>
+  <dt>-P</dt><dd><em>allpresets</em>: gera para <strong>todos</strong> os kernels instalados (cada kernel tem um <em>preset</em> em <code>/etc/mkinitcpio.d/</code>).</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> mkinitcpio -P
+==&gt; Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'    « um preset por kernel
+==&gt; Using default configuration file: '/etc/mkinitcpio.conf'
+  -&gt; -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img       « kernel lido → imagem gerada
+==&gt; Starting build: '7.2.10-arch1-1'
+  -&gt; Running build hook: [base]
+  -&gt; Running build hook: [systemd]
+  -&gt; Running build hook: [autodetect]       « só os módulos do seu hardware
+  -&gt; Running build hook: [microcode]        « embute o intel-ucode
+  -&gt; Running build hook: [modconf]
+  -&gt; Running build hook: [kms]
+  -&gt; Running build hook: [keyboard]
+  -&gt; Running build hook: [sd-vconsole]      « agora sem o WARNING
+  -&gt; Running build hook: [block]
+  -&gt; Running build hook: [filesystems]
+  -&gt; Running build hook: [fsck]
+==&gt; Generating module dependencies
+==&gt; Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
+  -&gt; Early uncompressed CPIO image generation successful
+==&gt; Initcpio image generation successful      « deu certo
+</pre>
+
+<p>Cada <code>build hook</code> (gancho) acrescenta uma parte ao initramfs; a lista vem da linha <code>HOOKS=</code> de <code>/etc/mkinitcpio.conf</code>. A última linha é a que você procura: <code>successful</code>. A diferença para o pacstrap é só uma: a linha <code>WARNING</code> sumiu. Os ganchos, o arquivo de configuração e quando é preciso rodar de novo estão em <a href="mkinitcpio.html">mkinitcpio e initramfs</a>.</p>
+
+<hr>
+
+<h2>8. Senha do root: passwd</h2>
+<p>O <strong>root</strong> é o administrador. Sem senha definida, ninguém consegue entrar como root no sistema novo. O <code>passwd</code> (de <em>password</em>) sem nome de usuário muda a senha de quem está rodando, ou seja, do root:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> passwd
+New password:                « digite (nada aparece na tela) e Enter
+Retype new password:         « de novo, para conferir
+passwd: password updated successfully
+</pre>
+
+<p>Enquanto você digita, <strong>nenhum caractere aparece</strong>, nem asteriscos: é normal, é para ninguém ver o tamanho da senha. Se as duas não baterem, nada muda e você tenta de novo (código de saída 10):</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> passwd
+New password:
+Retype new password:
+Sorry, passwords do not match.
+passwd: Failed preliminary check by password service
+passwd: password unchanged
+</pre>
+
+<p>(As mensagens são as do <code>passwd</code> real em inglês, conferidas na VM do guia com uma usuária de teste.)</p>
+
+<hr>
+
+<h2>9. A sua usuária: useradd</h2>
+<p>Usar o computador como root o tempo todo é perigoso: um comando errado apaga o sistema. O normal é ter uma conta comum para o dia a dia e pedir poderes de administrador só quando precisar, com o <code>sudo</code>. Na VM do guia, a usuária é a <code>ana</code>:</p>
+
+<dl class="anatomy">
+  <dt>useradd</dt><dd>Cria um usuário.</dd>
+  <dt>-m</dt><dd><em>create home</em>: cria a pasta pessoal <code>/home/ana</code> (sem isso, ela não existe).</dd>
+  <dt>-G wheel</dt><dd>Põe a usuária no grupo extra <code>wheel</code>, o grupo dos administradores no Arch (o nome vem de <em>big wheel</em>, "figurão").</dd>
+  <dt>-s /bin/bash</dt><dd>O shell dela: o Bash.</dd>
+  <dt>ana</dt><dd>O nome de login: minúsculas, sem espaços nem acentos.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> useradd -m -G wheel -s /bin/bash ana
+#> id ana
+uid=1000(ana) gid=1000(ana) groups=1000(ana),998(wheel)
+#> passwd ana
+New password:
+Retype new password:
+passwd: password updated successfully
+</pre>
+
+<p>O <code>useradd</code> não mostra nada quando dá certo. O <code>id</code> confere: <code>uid=1000</code> (o primeiro usuário comum sempre recebe 1000), o grupo principal <code>ana</code> (criado junto, com o mesmo nome) e o grupo extra <code>wheel</code> (número 998). Depois, <code>passwd ana</code> define a senha dela: com um nome, o <code>passwd</code> muda a senha de outra pessoa (só o root pode).</p>
+<p>O <code>-m</code> cria <code>/home/ana</code> com permissão <strong>700</strong> (só a dona entra) e copia de <code>/etc/skel</code> três arquivos de configuração do Bash: <code>.bashrc</code>, <code>.bash_profile</code> e <code>.bash_logout</code>. Usuários, grupos e permissões são assunto de <a href="sudo-usuarios.html">sudo, root e Usuários</a> e <a href="usuarios.html">Usuários e Grupos</a>.</p>
+
+<hr>
+
+<h2>10. Liberar o sudo para o grupo wheel: visudo</h2>
+<p>Estar no grupo <code>wheel</code> ainda não dá poder nenhum. Quem decide quem pode usar o <code>sudo</code> é o arquivo <code>/etc/sudoers</code>, e no Arch a linha do <code>wheel</code> vem <strong>comentada</strong>. No log da instalação:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> grep -n "wheel" /etc/sudoers
+124:## Uncomment to allow members of group wheel to execute any command
+125:# %wheel ALL=(ALL:ALL) ALL                       « esta é a linha
+128:# %wheel ALL=(ALL:ALL) NOPASSWD: ALL            « esta não (sudo sem senha)
+</pre>
+
+<p>Nunca edite o <code>/etc/sudoers</code> direto com o <code>nano</code>: um erro de digitação ali pode deixar o <code>sudo</code> inutilizável. Use o <code>visudo</code>, que abre uma <strong>cópia</strong>, confere a sintaxe ao salvar e só então substitui o original. Ele usa o editor da variável <code>EDITOR</code>; sem ela, tenta o <code>vi</code>, que não vem instalado:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> visudo
+visudo: no editor found (editor path = /usr/bin/vi)
+#> EDITOR=nano visudo
+</pre>
+
+<dl class="anatomy">
+  <dt>EDITOR=nano</dt><dd>Define a variável <code>EDITOR</code> só para este comando.</dd>
+  <dt>visudo</dt><dd>Edita o <code>/etc/sudoers</code> com segurança.</dd>
+</dl>
+
+<p>No <code>nano</code>, desça até a linha 125 (<kbd>Ctrl</kbd>+<kbd>_</kbd> e digite <code>125</code>), apague o <code>#</code> e o espaço do começo de <code>%wheel ALL=(ALL:ALL) ALL</code>, salve e saia. O trecho fica assim (VM do guia):</p>
+
+<pre class="file" data-file="/etc/sudoers (linhas 124 a 128)">## Uncomment to allow members of group wheel to execute any command
+%wheel ALL=(ALL:ALL) ALL
+
+## Same thing without a password
+# %wheel ALL=(ALL:ALL) NOPASSWD: ALL
+</pre>
+
+<dl class="anatomy">
+  <dt>%wheel</dt><dd>Para quem vale a regra. O <code>%</code> indica um <strong>grupo</strong> (sem ele, seria um usuário).</dd>
+  <dt>ALL=</dt><dd>Em qualquer máquina (o mesmo sudoers pode servir a vários computadores).</dd>
+  <dt>(ALL:ALL)</dt><dd>Pode agir como qualquer usuário : qualquer grupo (normalmente, como root).</dd>
+  <dt>ALL</dt><dd>Pode rodar qualquer comando.</dd>
+</dl>
+
+<p>Para conferir sem abrir o editor, <code>visudo -c</code> (<em>check</em>) só verifica a sintaxe:</p>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> grep -n "^%wheel" /etc/sudoers
+125:%wheel ALL=(ALL:ALL) ALL                « agora sem o #
+#> visudo -c
+/etc/sudoers: parsed OK
+</pre>
+
+<div class="tip">
+<strong>Por que não a linha NOPASSWD?</strong>
+<p>Com ela, qualquer programa rodando como ana vira root sem pedir nada. Pedir a senha é a última barreira contra um comando colado sem querer. Use a linha 125.</p>
+</div>
+
+<hr>
+
+<h2>11. A rede no primeiro boot: systemctl enable</h2>
+<p>O live tem rede porque ele mesmo liga seus serviços. O sistema novo não: se nada for ativado, o primeiro boot acontece <strong>sem internet</strong>, e sem internet não dá para instalar o que falta. Por isso o <code>pacstrap</code> instalou o <code>networkmanager</code>, e agora você o <strong>ativa</strong>. Na VM do guia, ativou-se também o servidor SSH (pacote <code>openssh</code>), para acessar a máquina de outro computador:</p>
+
+<dl class="anatomy">
+  <dt>systemctl</dt><dd>Controla os serviços do systemd.</dd>
+  <dt>enable</dt><dd><strong>Ativar</strong>: o serviço passa a iniciar sozinho em todo boot.</dd>
+  <dt>NetworkManager</dt><dd>O serviço que conecta cabo e Wi-Fi (atenção às maiúsculas).</dd>
+  <dt>sshd</dt><dd>O servidor SSH (opcional; só se você quer entrar por SSH).</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> systemctl enable NetworkManager sshd
+#> echo $?
+0
+</pre>
+
+<p>No log da instalação, dentro do chroot, o comando não mostrou nada. No sistema já instalado, o mesmo tipo de comando avisa cada link que cria (exemplo real na VM, com o <code>cronie</code>):</p>
+
+<pre class="term" data-user="root">#> systemctl enable cronie
+Created symlink '/etc/systemd/system/multi-user.target.wants/cronie.service' → '/usr/lib/systemd/system/cronie.service'.</pre>
+
+<p>"Ativar", portanto, é só criar um <strong>link</strong> numa pasta que o systemd lê no boot. Os links que o <code>enable</code> criou na instalação estão lá:</p>
+
+<pre class="term" data-user="root">#> ls /etc/systemd/system/multi-user.target.wants/
+NetworkManager.service  remote-fs.target  sshd.service</pre>
+
+<div class="note">
+<strong>enable, não start</strong>
+<p>Dentro do chroot o systemd do sistema novo não está rodando (quem roda é o do live), então <code>systemctl start</code> e <code>enable --now</code> não ligam nada ali. Só o <code>enable</code> faz sentido: ele prepara o próximo boot. Serviços a fundo: <a href="systemd.html">systemctl e Serviços</a>; rede: <a href="rede.html">NetworkManager e iwd</a>.</p>
+</div>
+
+<hr>
+
+<h2>Conferir tudo antes de sair</h2>
+<p>Antes de instalar o bootloader, vale um minuto para conferir os arquivos. No sistema da VM do guia, depois de pronto, eles estão assim:</p>
+
+<pre class="term" data-user="root">#> cat /etc/locale.conf /etc/vconsole.conf /etc/hostname
+LANG=pt_BR.UTF-8
+KEYMAP=br-abnt2
+notebook
+#> id ana
+uid=1000(ana) gid=1000(ana) grupos=1000(ana),998(wheel)
+#> systemctl is-enabled NetworkManager sshd
+enabled
+enabled</pre>
+
+<p>(No sistema instalado as mensagens já saem em português: <code>grupos=</code> em vez de <code>groups=</code>.)</p>
+
+<div class="try" data-goal="out:LANG=pt_BR.UTF-8" data-solucao="cat /etc/locale.conf">
+<p class="try-task"><strong>Missão:</strong> no terminal simulado (a máquina já instalada), mostre o conteúdo do arquivo que guarda o idioma do sistema.</p>
+</div>
+
+<div class="try" data-goal="ran:hostname,out:notebook" data-solucao="cat /etc/hostname">
+<p class="try-task"><strong>Missão:</strong> leia o arquivo que guarda o nome da máquina.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"WARNING: sd-vconsole: "/etc/vconsole.conf" not found"</strong>
+<p><strong>O que aconteceu:</strong> o <code>mkinitcpio</code> rodou antes de você criar o <code>/etc/vconsole.conf</code>. No pacstrap isso é esperado.</p>
+<p><strong>Como resolver:</strong> crie o arquivo (passo 5) e rode <code>mkinitcpio -P</code> de novo. Se o aviso continuar, confira o nome do arquivo com <code>cat /etc/vconsole.conf</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"visudo: no editor found (editor path = /usr/bin/vi)"</strong>
+<p><strong>O que aconteceu:</strong> o <code>visudo</code> procura o <code>vi</code>, que não está instalado (o pacote <code>vim</code> instala o comando <code>vim</code>, não <code>vi</code>).</p>
+<p><strong>Como resolver:</strong> diga qual editor usar: <code>EDITOR=nano visudo</code> (ou <code>EDITOR=vim visudo</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"syntax error" ao salvar o sudoers</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> visudo -c
+/etc/sudoers:125:21: syntax error
+%wheel ALL=(ALL:ALL ALL
+                    ^~~
+</pre>
+<p><strong>O que aconteceu:</strong> a linha 125, coluna 21, está errada: faltou o <code>)</code>. (Saída real da VM, com o erro feito de propósito numa cópia do arquivo.)</p>
+<p><strong>Como resolver:</strong> ao salvar com erro, o <code>visudo</code> não grava e pergunta <em>What now?</em>: digite <code>e</code> e Enter para voltar a editar e corrigir. A linha certa é <code>%wheel ALL=(ALL:ALL) ALL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"useradd: user 'ana' already exists"</strong>
+<p><strong>O que aconteceu:</strong> você rodou o <code>useradd</code> duas vezes (código de saída 9). A usuária já foi criada na primeira.</p>
+<p><strong>Como resolver:</strong> nada a fazer. Se faltou algo (o grupo, por exemplo), corrija com <code>usermod -aG wheel ana</code> em vez de criar de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Escrevi o arquivo, mas foi no lugar errado</strong>
+<p><strong>O que aconteceu:</strong> dentro do chroot, você digitou <code>/mnt/etc/hostname</code> (isso seria <code>/mnt/mnt/etc/hostname</code> do lado de fora), ou fora do chroot digitou <code>/etc/hostname</code> (o do live, que some ao desligar).</p>
+<p><strong>Como confirmar:</strong> olhe o prompt. <code>[root@archiso /]#</code> = dentro, use caminhos sem <code>/mnt</code>; <code>root@archiso ~ #</code> = fora, use <code>/mnt</code> na frente.</p>
+<p><strong>Como resolver:</strong> escreva de novo no lugar certo.</p>
+</div>
+
+<div class="cenario">
+<strong>Rodei o genfstab duas vezes</strong>
+<p><strong>Como confirmar:</strong> <code>findmnt --verify --tab-file /mnt/etc/fstab</code> mostra <code>[W] alvo especificado mais de uma vez</code> (no live, em inglês).</p>
+<p><strong>Como resolver:</strong> veja o aviso na seção 1: apague as linhas repetidas ou gere de novo com <code>&gt;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Onde</th><th>O que faz</th></tr>
+<tr><td><code>genfstab -U /mnt &gt;&gt; /mnt/etc/fstab</code></td><td>live (fora)</td><td>Gera o fstab com UUIDs. <strong>Uma vez só.</strong></td></tr>
+<tr><td><code>arch-chroot /mnt</code></td><td>live (fora)</td><td>Entra no sistema novo.</td></tr>
+<tr><td><code>ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime</code></td><td>chroot</td><td>Escolhe o fuso.</td></tr>
+<tr><td><code>hwclock --systohc</code></td><td>chroot</td><td>Acerta o relógio da placa e cria <code>/etc/adjtime</code>.</td></tr>
+<tr><td><code>nano /etc/locale.gen</code> + <code>locale-gen</code></td><td>chroot</td><td>Ativa e gera os idiomas.</td></tr>
+<tr><td><code>echo 'LANG=pt_BR.UTF-8' &gt; /etc/locale.conf</code></td><td>chroot</td><td>Escolhe o idioma do sistema.</td></tr>
+<tr><td><code>echo 'KEYMAP=br-abnt2' &gt; /etc/vconsole.conf</code></td><td>chroot</td><td>Teclado do console.</td></tr>
+<tr><td><code>echo notebook &gt; /etc/hostname</code></td><td>chroot</td><td>Nome da máquina.</td></tr>
+<tr><td><code>mkinitcpio -P</code></td><td>chroot</td><td>Refaz o initramfs de todos os kernels.</td></tr>
+<tr><td><code>passwd</code> / <code>passwd ana</code></td><td>chroot</td><td>Senha do root / da ana.</td></tr>
+<tr><td><code>useradd -m -G wheel -s /bin/bash ana</code></td><td>chroot</td><td>Cria a usuária no grupo dos administradores.</td></tr>
+<tr><td><code>EDITOR=nano visudo</code></td><td>chroot</td><td>Libera o <code>sudo</code> para o <code>wheel</code> (descomente a linha 125).</td></tr>
+<tr><td><code>systemctl enable NetworkManager sshd</code></td><td>chroot</td><td>Rede (e SSH) ligam sozinhos no boot.</td></tr>
+<tr><td><code>findmnt --verify</code></td><td>qualquer</td><td>Confere o fstab.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Acrescentar, não substituir</h3>
+<p>Complete o comando que gera o fstab do sistema novo usando UUIDs e o acrescenta ao arquivo:</p>
+<div class="ex-code">genfstab <input data-answer="-U /mnt &gt;&gt; /mnt/etc/fstab" aria-label="resto do comando" size="28"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O fuso de Manaus</h3>
+<p>Complete para escolher o fuso <code>America/Manaus</code>:</p>
+<div class="ex-code">ln -sf <input data-answer="/usr/share/zoneinfo/America/Manaus" aria-label="arquivo do fuso" size="32"> /etc/localtime</div>
+</div>
+
+<div class="exercise">
+<h3>3. Criar o Bruno</h3>
+<p>Complete para criar o usuário <code>bruno</code>, com pasta pessoal, no grupo <code>wheel</code> e com o Bash:</p>
+<div class="ex-code">useradd <input data-answer="-m -G wheel -s /bin/bash" aria-label="opções" size="24"> bruno</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Você rodou <code>arch-chroot /mnt</code>. Qual destes prompts indica que você está <strong>dentro</strong> do sistema novo?</p>
+<label><input type="radio" name="q4"> <code>root@archiso ~ #</code></label>
+<label><input type="radio" name="q4"> <code>[root@archiso /]#</code></label>
+<label><input type="radio" name="q4"> <code>[root@notebook ~]#</code></label>
+<label><input type="radio" name="q4"> <code>[ana@notebook ~]$</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que o <code>genfstab</code> é usado com <code>-U</code>?</p>
+<label><input type="radio" name="q5"> Para o fstab sair em letras maiúsculas.</label>
+<label><input type="radio" name="q5"> Para incluir só as partições de usuário (<code>/home</code>).</label>
+<label><input type="radio" name="q5"> Para identificar as partições por UUID, que não muda se a ordem dos discos mudar.</label>
+<label><input type="radio" name="q5"> Para atualizar (<em>update</em>) um fstab que já existe.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A ana está no grupo <code>wheel</code>, mas o <code>sudo</code> responde que ela não tem permissão. O que faltou?</p>
+<label><input type="radio" name="q6"> Descomentar a linha <code>%wheel ALL=(ALL:ALL) ALL</code> com <code>visudo</code>.</label>
+<label><input type="radio" name="q6"> Rodar <code>mkinitcpio -P</code>.</label>
+<label><input type="radio" name="q6"> Rodar <code>locale-gen</code>.</label>
+<label><input type="radio" name="q6"> Rodar <code>systemctl enable sudo</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Por que o <code>mkinitcpio -P</code> desta aula não mostra o aviso <code>sd-vconsole</code> que apareceu no pacstrap?</p>
+<label><input type="radio" name="q7"> Porque o <code>-P</code> esconde os avisos.</label>
+<label><input type="radio" name="q7"> Porque agora o kernel é outro.</label>
+<label><input type="radio" name="q7"> Porque dentro do chroot não há teclado.</label>
+<label><input type="radio" name="q7"> Porque agora o <code>/etc/vconsole.conf</code> existe.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>genfstab -U /mnt &gt;&gt; /mnt/etc/fstab</code>, uma vez só; confira com <code>cat</code> e <code>findmnt --verify</code>.</li>
+  <li><code>arch-chroot /mnt</code> entra no sistema novo; o prompt vira <code>[root@archiso /]#</code>.</li>
+  <li>Fuso: link em <code>/etc/localtime</code> + <code>hwclock --systohc</code>. Idioma: <code>locale.gen</code> + <code>locale-gen</code> + <code>locale.conf</code>. Teclado: <code>vconsole.conf</code>. Nome: <code>hostname</code>.</li>
+  <li><code>mkinitcpio -P</code> refaz o initramfs, agora com o teclado certo.</li>
+  <li>Senha do root, <code>useradd -m -G wheel</code>, <code>passwd ana</code> e <code>EDITOR=nano visudo</code> para liberar o <code>sudo</code>.</li>
+  <li><code>systemctl enable NetworkManager</code>, senão o primeiro boot fica sem rede. Próximo passo: <a href="bootloader.html">o bootloader</a>.</li>
+</ul>
+
+<h2>Na Arch Wiki</h2>
+<p>Esta aula segue a seção <a href="https://wiki.archlinux.org/title/Installation_guide#Configure_the_system">Configure the system</a> do <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> (há uma tradução: <a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">Guia de instalação (Português)</a>, que pode estar atrás do original em inglês). Para aprofundar cada passo: <a href="https://wiki.archlinux.org/title/Fstab">fstab</a>, <a href="https://wiki.archlinux.org/title/Chroot">chroot</a>, <a href="https://wiki.archlinux.org/title/System_time">System time</a>, <a href="https://wiki.archlinux.org/title/Locale">Locale</a>, <a href="https://wiki.archlinux.org/title/Linux_console/Keyboard_configuration">Linux console/Keyboard configuration</a>, <a href="https://wiki.archlinux.org/title/Network_configuration#Set_the_hostname">Set the hostname</a>, <a href="https://wiki.archlinux.org/title/Mkinitcpio">mkinitcpio</a>, <a href="https://wiki.archlinux.org/title/Users_and_groups">Users and groups</a>, <a href="https://wiki.archlinux.org/title/Sudo">sudo</a> e <a href="https://wiki.archlinux.org/title/NetworkManager">NetworkManager</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
