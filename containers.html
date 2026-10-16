@@ -366,7 +366,7 @@ inactive</pre>
 
 <p>Há duas versões: a do sistema (<code>sudo systemctl enable --now podman.socket</code>, para o Podman do root) e a do usuário (<code>systemctl --user enable --now podman.socket</code>, para os containers da ana). Só ligue se algum programa pedir.</p>
 
-<div class="try" data-goal="svc:podman.socket=active" data-solucao="sudo systemctl start podman.socket">
+<div class="try" data-goal="svc:podman.socket=active" data-solucao="sudo systemctl start podman.socket" data-stdin="ana">
 <p class="try-task"><strong>Missão:</strong> um programa pediu a API do Podman do sistema. Ligue o <code>podman.socket</code> agora (sem habilitar no boot; senha <code>ana</code>) e confira com <code>systemctl is-active podman.socket</code>.</p>
 </div>
 

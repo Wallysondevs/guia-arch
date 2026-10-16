@@ -164,7 +164,7 @@ Accept-Ranges: bytes
 <p>Abrir <code>http://localhost</code> no Firefox da própria máquina mostra a mesma página "Welcome to nginx!". De outro computador da rede, use o IP da máquina (<code>ip a</code> mostra; veja <a href="rede.html">NetworkManager e iwd</a>), desde que o firewall deixe passar a porta 80.</p>
 </div>
 
-<div class="try" data-goal="svc:nginx=active" data-solucao="sudo systemctl start nginx">
+<div class="try" data-goal="svc:nginx=active" data-solucao="sudo systemctl start nginx" data-stdin="ana">
 <p class="try-task"><strong>Missão:</strong> o nginx está parado. Ligue-o (a senha da ana é <code>ana</code>) e confira com <code>systemctl status nginx</code>.</p>
 </div>
 
@@ -407,8 +407,8 @@ inactive</pre>
 </table>
 </div>
 
-<div class="try" data-setup="sudo systemctl start nginx;;ana" data-goal="svc:nginx=active,svc:nginx=enabled" data-solucao="sudo systemctl enable nginx">
-<p class="try-task"><strong>Missão:</strong> o nginx já está rodando, mas não liga sozinho no boot. Faça-o ligar no boot (senha <code>ana</code>) e confira com <code>systemctl is-enabled nginx</code>.</p>
+<div class="try" data-goal="svc:nginx=active,svc:nginx=enabled" data-solucao="sudo systemctl enable --now nginx" data-stdin="ana">
+<p class="try-task"><strong>Missão:</strong> com <strong>um comando só</strong>, ligue o nginx agora e também no boot (senha <code>ana</code>). Confira com <code>systemctl is-active nginx</code> e <code>systemctl is-enabled nginx</code>.</p>
 </div>
 
 <hr>
