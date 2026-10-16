@@ -202,6 +202,8 @@
   var CAB_ZST = "\x28\xb5\x2f\xfd";
   function dadosDe(no) {
     if (no.d != null) return no.d;
+    if (no.comp) { var mg = COMP[no.comp.fmt].magia; return mg + repete("\0", Math.max(0, Math.min(no.z || 0, 65536) - mg.length)); }
+    if (no.tar) return String.fromCharCode.apply(null, bytesTar(no).slice(0, 65536));
     if (no.magia === "elf" || no.magia === "zst") { var cab = no.magia === "elf" ? CAB_ELF : CAB_ZST, z0 = Math.max(0, Math.min(no.z || 0, 65536) - cab.length); return cab + repete("\0", z0); }
     var z = no.z || 0; return z > 65536 ? repete("\0", 65536) : repete("\0", z);
   }
@@ -5375,7 +5377,7 @@
       if (!/^\s*[+-]?[0-9]+\s*$/.test(args[1])) { if (this.interativo && !this.subshell) this.escrever(2, "exit\n"); this.erro("exit: " + args[1] + ": requer argumento numérico"); throw new ExitSig(2); }
       st = ((parseInt(args[1], 10) % 256) + 256) % 256;
     }
-    if (this.interativo && !this.subshell && !this.emSubst) this.escrever(2, this.shopt.login_shell ? "logout\n" : "exit\n");
+    if (this.interativo && !this.subshell && !this.emSubst) this.escrever(2, this.shopt.login_shell ? "sair\n" : "exit\n"); // "logout" traduzido
     throw new ExitSig(st);
   });
   BUILTINS.logout = function* (args) { if (this.interativo && this.shopt.login_shell && !this.subshell) return yield* BUILTINS.exit.call(this, args); if (this.interativo) { this.erro("logout: não é um shell de login: use `exit'"); return 1; } this.erro("logout: não é um shell de login: use `exit'"); return 1; };
@@ -6792,7 +6794,7 @@
     var n, uid = sh ? sh.uid : UID, gid = sh ? contaDe(sh).gid : GID;
     if (no.t === "d") { n = mkD(uid, preservar ? no.m : no.m & ~umask, preservar ? no.mt : k.clock); for (var c in no.c) n.c[c] = clonarNo(no.c[c], k, preservar, umask, sh); }
     else if (no.t === "l") { n = mkL(no.alvo, preservar ? no.mt : k.clock); }
-    else { n = mkF(uid, preservar ? no.m : (no.m & ~umask), no.d, preservar ? no.mt : k.clock); if (no.d === null) { n.d = null; n.z = no.z; } }
+    else { n = mkF(uid, preservar ? no.m : (no.m & ~umask), no.d, preservar ? no.mt : k.clock); if (no.d === null) { n.d = null; n.z = no.z; } ["comp", "tar", "magia", "fileDesc", "blocosReais"].forEach(function (x) { if (no[x] !== undefined) n[x] = no[x]; }); }
     n.u = uid; n.g = gid;
     if (preservar && uid === 0) { n.u = no.u; n.g = no.g; }
     if (!preservar) n.ct = k.clock;
@@ -8291,6 +8293,8 @@
     if (no.t === "c" && no.bloco) return "block special (" + no.maj.replace(", ", "/") + ")";
     if (no.t === "c") return "character special (1/3)";
     if (no.fileDesc) return no.fileDesc;
+    if (no.comp) return descComp(no);
+    if (no.tar) return "POSIX tar archive (GNU)";
     if (no.magia === "zst") return "Zstandard compressed data (v0.8+), Dictionary ID: None";
     if (no.d === null) return "data";
     var d = no.d;
@@ -8890,6 +8894,500 @@
       try { return yield* sh.executar(args.slice(1), { semFuncao: true, externo: true }); } finally { unref(sh.fds[1]); sh.fds[1] = salvo; }
     }
     return yield* sh.executar(args.slice(1), { semFuncao: true, externo: true });
+  };
+  /* ---------- compactadores (gzip, xz, zstd, bzip2) e tar ----------
+     Um arquivo compactado guarda o arquivo original inteiro (no.comp = {fmt, inner, nome, mt}); um .tar guarda a
+     lista dos membros (no.tar = [{nome, no}]). O conteúdo em bytes não existe de verdade: o tamanho do .tar é o
+     exato (blocos de 512, registro de 10240), o dos compactados é uma ESTIMATIVA (um LZ77 simplificado). */
+  function tamDeflate(b) { // bytes do fluxo deflate (estimado) para um Array de bytes
+    var n = b.length, i = 0, head = new Map(), lit = {}, ml = {}, md = {}, fx = 0, extra = 0;
+    if (n > 200000) b = b.slice(0, 200000), n = b.length; // (arquivos grandes: estima pela amostra)
+    function put(p) { if (p + 2 < n) { var k = (b[p] << 16) | (b[p + 1] << 8) | b[p + 2], c = head.get(k); if (!c) { c = []; head.set(k, c); } c.push(p); } }
+    var TL = [[3, 257, 0], [11, 265, 1], [19, 269, 2], [35, 273, 3], [67, 277, 4], [131, 281, 5], [258, 285, 0]];
+    while (i < n) {
+      var best = 0, bd = 0;
+      if (i + 2 < n) { var c = head.get((b[i] << 16) | (b[i + 1] << 8) | b[i + 2]) || []; for (var j = c.length - 1; j >= 0 && j >= c.length - 64; j--) { var p = c[j]; if (i - p > 32768) break; var l = 0; while (l < 258 && i + l < n && b[p + l] === b[i + l]) l++; if (l > best) { best = l; bd = i - p; } } }
+      if (best >= 3) {
+        var t = TL[0]; for (var q = TL.length - 1; q >= 0; q--) if (best >= TL[q][0]) { t = TL[q]; break; }
+        var code = best === 258 ? 285 : t[1] + (t[2] ? Math.floor((best - t[0]) / (1 << t[2])) : best - 3), dx = bd <= 4 ? 0 : Math.floor(Math.log2(bd - 1)) - 1;
+        fx += (code < 280 ? 7 : 8) + t[2] + 5 + dx; extra += t[2] + dx; ml[code] = (ml[code] || 0) + 1; var dc = bd <= 4 ? bd - 1 : 2 * (dx + 1) + (((bd - 1) >> dx) & 1); md[dc] = (md[dc] || 0) + 1;
+        for (var r = 0; r < best; r++) put(i + r); i += best;
+      } else { fx += b[i] < 144 ? 8 : 9; lit[b[i]] = (lit[b[i]] || 0) + 1; put(i); i++; }
+    }
+    fx += 10;
+    function H(f) { var tt = 0, s = 0, k; for (k in f) tt += f[k]; for (k in f) s -= f[k] * Math.log2(f[k] / tt); return s; }
+    var lm = {}, k2; for (k2 in lit) lm[k2] = lit[k2]; for (k2 in ml) lm["m" + k2] = ml[k2]; lm.fim = 1;
+    var din = H(lm) + H(md) + extra + 74 + (Object.keys(lm).length + Object.keys(md).length) * 4.2;
+    return Math.max(2, Math.ceil((n < 256 ? fx : Math.min(fx, din)) / 8));
+  }
+  function bytesDe(no) { return no.tar ? bytesTar(no) : utf8bytes(dadosDe(no)); }
+  function bytesTar(no) { // fluxo tar aproximado (cabeçalhos com o nome, conteúdo, zeros), só para estimar a compressão
+    if (no.cacheTarB) return no.cacheTarB;
+    var out = [];
+    no.tar.forEach(function (m) {
+      var h = utf8bytes(m.nome).slice(0, 100); while (h.length < 512) h.push(0); out.push.apply(out, h);
+      if (m.no.t === "f") { var d = bytesDe(m.no); for (var i = 0; i < d.length; i++) out.push(d[i]); while (out.length % 512) out.push(0); }
+    });
+    while (out.length < no.z) out.push(0);
+    return (no.cacheTarB = out);
+  }
+  var COMP = {
+    gz: { suf: ".gz", prog: "gzip", magia: "\x1f\x8b\x08\x00", tam: function (b, nome) { return 10 + (nome ? utf8len(nome) + 1 : 0) + tamDeflate(b) + 8; } },
+    xz: { suf: ".xz", prog: "xz", magia: "\xfd7zXZ\x00", tam: function (b) { var d = tamDeflate(b); return 64 + Math.round(d * (b.length < 2000 ? 1.03 : 0.85)); } },
+    zst: { suf: ".zst", prog: "zstd", magia: "\x28\xb5\x2f\xfd", tam: function (b) { return 14 + Math.round(tamDeflate(b) * (b.length < 2000 ? 1 : 1.04)); } },
+    bz2: { suf: ".bz2", prog: "bzip2", magia: "BZh9", tam: function (b) { return 40 + Math.round(tamDeflate(b) * (b.length < 2000 ? 1.1 : 0.9)); } }
+  };
+  // novo nó compactado a partir de "inner" (o arquivo original, que fica guardado dentro)
+  function mkComp(fmt, inner, nomeOrig, guardarNome, sh) {
+    var no = mkF(inner.u, inner.m, null, inner.mt, COMP[fmt].tam(bytesDe(inner), guardarNome ? nomeOrig : null));
+    no.u = inner.u; no.g = inner.g; no.comp = { fmt: fmt, inner: inner, nome: guardarNome ? nomeOrig : null, mt: guardarNome ? inner.mt : 0 };
+    return no;
+  }
+  function descComp(no) {
+    var c = no.comp;
+    if (c.fmt === "gz") {
+      var s = "gzip compressed data";
+      if (c.nome) { var t = new Date(c.mt); s += ", was \"" + c.nome + "\", last modified: " + ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.getUTCDay()] + " " + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.getUTCMonth()] + " " + pad(t.getUTCDate(), 2) + " " + dois(t.getUTCHours()) + ":" + dois(t.getUTCMinutes()) + ":" + dois(t.getUTCSeconds()) + " " + t.getUTCFullYear(); }
+      return s + ", from Unix, original size modulo 2^32 " + (c.inner.tar ? c.inner.z : bytesDe(c.inner).length);
+    }
+    if (c.fmt === "xz") return "XZ compressed data, checksum CRC64";
+    if (c.fmt === "bz2") return "bzip2 compressed data, block size = 900k";
+    return "Zstandard compressed data (v0.8+), Dictionary ID: None";
+  }
+  // gzip/gunzip/zcat, xz/unxz/xzcat, zstd/unzstd/zstdcat, bzip2/bunzip2/bzcat
+  function compactador(fmt, modoPadrao) {
+    return function* (args, io) {
+      var sh = io.sh, C = COMP[fmt], prog = C.prog, o = { d: modoPadrao === "d" || modoPadrao === "c", c: modoPadrao === "c", k: fmt === "zst" }, arqs = [], saidaO = null;
+      for (var i = 1; i < args.length; i++) {
+        var x = args[i];
+        if (x === "--") { arqs = arqs.concat(args.slice(i + 1)); break; }
+        var lg = { "--decompress": "d", "--uncompress": "d", "--stdout": "c", "--to-stdout": "c", "--keep": "k", "--force": "f", "--list": "l", "--verbose": "v", "--quiet": "q", "--test": "t", "--rm": "rm" }[x];
+        if (lg) { o[lg] = true; if (lg === "rm") o.k = false; continue; }
+        if (x === "-o" && fmt === "zst") { saidaO = args[++i]; continue; }
+        if (/^-[0-9]+$/.test(x) || /^--(fast|best)$/.test(x) || /^-T\d+$/.test(x)) continue;
+        if (/^-[dckflvqt0-9]+$/.test(x)) { x.slice(1).split("").forEach(function (c) { if (!/\d/.test(c)) o[c] = true; }); continue; }
+        if (/^-./.test(x)) { io.err(prog + ": invalid option -- '" + x.replace(/^-+/, "")[0] + "'\n"); return 1; }
+        arqs.push(x);
+      }
+      if (!arqs.length) { io.err("(simulador) " + prog + " lendo da entrada padrão não é simulado aqui; dê o nome de um arquivo.\n"); return 1; }
+      var st = 0;
+      function aviso(m, cod) { if (!o.q) io.err(m + "\n"); if (cod > st) st = cod; }
+      for (var a = 0; a < arqs.length; a++) {
+        var f = arqs[a], r = sh.resolver(f, true);
+        if (!r.no) {
+          if (fmt === "zst") aviso("zstd: can't stat " + f + " : No such file or directory -- ignored ", 1);
+          else aviso(prog + ": " + f + ": " + errMsg(r.err || "ENOENT"), 1);
+          continue;
+        }
+        if (r.no.t === "d") { aviso(fmt === "gz" ? "gzip: " + f + " is a directory -- ignored" : fmt === "zst" ? "zstd: " + f + " is a directory -- ignored " : prog + ": " + f + ": É um diretório, pulando", 2); continue; }
+        if (!sh.pode(r.no, 4)) { aviso(prog + ": " + f + ": Permissão negada", 1); continue; }
+        if (o.l) {
+          if (!r.no.comp || r.no.comp.fmt !== fmt) { aviso(prog + ": " + f + ": not in " + (fmt === "gz" ? "gzip" : prog) + " format", 1); continue; }
+          if (fmt === "gz") { var tin = bytesDe(r.no.comp.inner).length, corpo = tamanho(r.no) - 10 - (r.no.comp.nome ? utf8len(r.no.comp.nome) + 1 : 0) - 8; io.out("         compressed        uncompressed  ratio uncompressed_name\n" + pad(tamanho(r.no), 19) + " " + pad(tin, 19) + " " + pad((tin ? (100 * (tin - corpo) / tin) : 0).toFixed(1).replace(".", ",") + "%", 6) + " " + f.replace(/\.gz$/, "") + "\n"); }
+          else io.err("(simulador) " + prog + " -l não é simulado aqui.\n");
+          continue;
+        }
+        if (o.d || o.t) {
+          if (!r.no.comp || r.no.comp.fmt !== fmt) {
+            if (!o.c && !C.suf.length) continue;
+            if (!o.c && f.slice(-C.suf.length) !== C.suf && !(fmt === "gz" && /\.tgz$/.test(f))) { aviso(fmt === "gz" ? "gzip: " + f + ": unknown suffix -- ignored" : fmt === "zst" ? "zstd: " + f + ": unknown suffix (.zst/.tzst/.gz/.xz/.lzma/.lz4 expected). Can't derive the output file name. Specify it with -o dstFileName. Ignoring." : prog + ": " + f + ": O nome do arquivo tem um sufixo desconhecido, pulando", 2); continue; }
+            aviso(fmt === "gz" ? "gzip: " + f + ": not in gzip format" : fmt === "zst" ? "zstd: " + f + ": unsupported format " : prog + ": " + f + ": Formato de arquivo não reconhecido", 1); continue;
+          }
+          if (o.t) continue;
+          var inner = r.no.comp.inner;
+          if (o.c) { io.out(dadosDe(inner)); continue; }
+          if (f.slice(-C.suf.length) !== C.suf && !(fmt === "gz" && /\.tgz$/.test(f))) { aviso(fmt === "gz" ? "gzip: " + f + ": unknown suffix -- ignored" : prog + ": " + f + ": O nome do arquivo tem um sufixo desconhecido, pulando", 2); continue; }
+          var destD = saidaO || (/\.tgz$/.test(f) ? f.replace(/\.tgz$/, ".tar") : f.slice(0, -C.suf.length));
+          if (sh.resolver(destD, false).no && !o.f) {
+            if (fmt === "zst") { var okZ = io.tty() ? yield* io.pergunta("zstd: " + destD + " already exists; overwrite (y/n) ? ") : false; if (!okZ) { if (!io.tty()) io.err("zstd: " + destD + " already exists; overwrite (y/n) ? Not overwritten  \n \n"); else io.err("Not overwritten  \n"); st = 1; continue; } }
+            else if (fmt === "gz") { aviso("gzip: " + destD + " already exists;\tnot overwritten", 2); continue; }
+            else { aviso(prog + ": " + destD + ": O arquivo já existe", 1); continue; }
+          }
+          var pD = sh.paiDe(destD); if (!pD.pai || !sh.pode(pD.pai, 2)) { aviso(prog + ": " + destD + ": Permissão negada", 1); continue; }
+          var novoD = clonarNo(inner, sh.k, true, 0, sh); novoD.u = r.no.u; novoD.g = r.no.g; novoD.mt = r.no.comp.nome || fmt !== "gz" ? r.no.mt : r.no.mt; novoD.m = r.no.m;
+          pD.pai.c[pD.nome] = novoD; pD.pai.mt = sh.k.clock;
+          if (fmt === "zst") io.err(pad(f, 20, true) + ": " + bytesDe(inner).length + " bytes \n");
+          if (o.v && fmt === "gz") io.err(f + ":\t" + pad((100 * (1 - (tamanho(r.no) - 18 - (r.no.comp.nome ? utf8len(r.no.comp.nome) + 1 : 0)) / Math.max(1, bytesDe(inner).length))).toFixed(1).replace(".", ","), 5) + "% -- replaced with " + destD + "\n");
+          if (!o.k) { delete r.pai.c[r.nome]; r.pai.mt = sh.k.clock; }
+          continue;
+        }
+        // compactar
+        if (r.no.comp && r.no.comp.fmt === fmt && !o.f && !o.c) { aviso(fmt === "gz" ? "gzip: " + f + " already has .gz suffix -- unchanged" : prog + ": " + f + ": O arquivo já tem o sufixo '" + C.suf + "', pulando", 2); continue; }
+        var nomeBase = f.slice(f.lastIndexOf("/") + 1);
+        var compNo = mkComp(fmt, r.no, nomeBase, !o.c || fmt === "gz", sh);
+        if (o.c) { io.out(C.magia + repete("\0", Math.max(0, tamanho(compNo) - C.magia.length))); continue; }
+        var dest = saidaO || f + C.suf;
+        if (sh.resolver(dest, false).no && !o.f) {
+          if (fmt === "gz") { aviso("gzip: " + dest + " already exists;\tnot overwritten", 2); continue; }
+          if (fmt === "zst") { var okZ2 = io.tty() ? yield* io.pergunta("zstd: " + dest + " already exists; overwrite (y/n) ? ") : false; if (!okZ2) { if (!io.tty()) io.err("zstd: " + dest + " already exists; overwrite (y/n) ? Not overwritten  \n \n"); st = 1; continue; } }
+          else { aviso(prog + ": " + dest + ": O arquivo já existe", 1); continue; }
+        }
+        var pC = sh.paiDe(dest); if (!pC.pai || !sh.pode(pC.pai, 2)) { aviso(prog + ": " + dest + ": Permissão negada", 1); continue; }
+        compNo.mt = r.no.mt; compNo.ct = sh.k.clock;
+        pC.pai.c[pC.nome] = compNo; pC.pai.mt = sh.k.clock;
+        var tin2 = bytesDe(r.no).length;
+        if (fmt === "zst" && !o.q) io.err(pad(f, 20, true) + " : " + (100 * tamanho(compNo) / Math.max(1, tin2)).toFixed(2) + "%   (" + pad(tin2, 6) + " B => " + pad(tamanho(compNo), 6) + " B, " + dest + ") \n");
+        if (o.v && fmt === "gz") io.err(f + ":\t" + pad((100 * (1 - (tamanho(compNo) - 18 - utf8len(nomeBase) - 1) / Math.max(1, tin2))).toFixed(1).replace(".", ","), 5) + "% -- replaced with " + dest + "\n");
+        if (!o.k) { delete r.pai.c[r.nome]; r.pai.mt = sh.k.clock; }
+      }
+      return st;
+    };
+  }
+  EXT.gzip = compactador("gz"); EXT.gunzip = compactador("gz", "d"); EXT.zcat = compactador("gz", "c");
+  EXT.xz = compactador("xz"); EXT.unxz = compactador("xz", "d"); EXT.xzcat = compactador("xz", "c");
+  EXT.zstd = compactador("zst"); EXT.unzstd = compactador("zst", "d"); EXT.zstdcat = compactador("zst", "c");
+  EXT.bzip2 = compactador("bz2"); EXT.bunzip2 = compactador("bz2", "d"); EXT.bzcat = compactador("bz2", "c");
+  EXT.zgrep = function* (args, io) { // zgrep: o grep no conteúdo descompactado
+    var sh = io.sh, a = args.slice(1), arqs = [], opts = [], pad_ = null;
+    for (var i = 0; i < a.length; i++) { if (/^-/.test(a[i]) && pad_ === null) opts.push(a[i]); else if (pad_ === null) pad_ = a[i]; else arqs.push(a[i]); }
+    var st = 1;
+    for (var j = 0; j < arqs.length; j++) {
+      var r = sh.resolver(arqs[j], true); if (!r.no) { io.err("gzip: " + arqs[j] + ": " + errMsg(r.err || "ENOENT") + "\n"); st = 2; continue; }
+      var txt = r.no.comp ? dadosDe(r.no.comp.inner) : dadosDe(r.no);
+      var sub = sh.fork(); var pp = novoPipe(); escreverOFD(sh.k, pp[0], ""); 
+      var tmp = mkF(sh.uid, 384, txt, sh.k.clock); var nomeT = "/tmp/.zgrep" + j; var pt = sh.paiDe(nomeT); pt.pai.c[pt.nome] = tmp;
+      var s2 = yield* EXT.grep.call(io, ["grep"].concat(opts, [pad_, nomeT]).concat(arqs.length > 1 ? ["--label=" + arqs[j], "-H"] : []), io);
+      delete pt.pai.c[pt.nome]; void sub; void pp;
+      if (s2 === 0 && st !== 2) st = 0; else if (s2 === 2) st = 2;
+    }
+    return st;
+  };
+
+  // membros de um pacote do cache (pacman -Ql) e o .PKGINFO, gerado a partir dos dados do pacote
+  function tarDePacote(sh, caminho) {
+    var m = /\/([^/]+)-([^-]+-[^-]+)-(x86_64|any)\.pkg\.tar\.zst$/.exec(caminho);
+    if (!m || !DADOS) return null;
+    var e = DADOS.pac.local[m[1]]; if (!e || e[0] !== m[2]) return null;
+    var arqs = arquivosPac(m[1]); if (!arqs) return null;
+    var p = normPac(m[1], e, true), t = sh.k.clock;
+    var info = "# Generated by makepkg 7.1.0\n# using fakeroot version 1.38.1\npkgname = " + p.n + "\npkgbase = " + p.n + "\nxdata = pkgtype=pkg\npkgver = " + p.v + "\npkgdesc = " + p.d + "\nurl = " + p.u + "\nbuilddate = " + p.b + "\npackager = " + p.k + "\nsize = " + p.m + "\narch = " + p.a + "\n" +
+      p.l.map(function (x) { return "license = " + x + "\n"; }).join("") + (p.r || []).map(function (x) { return "replaces = " + x + "\n"; }).join("") + p.g.map(function (x) { return "group = " + x + "\n"; }).join("") +
+      (p.c || []).map(function (x) { return "conflict = " + x + "\n"; }).join("") + (p.p || []).map(function (x) { return "provides = " + x + "\n"; }).join("") + (p.D || []).map(function (x) { return "depend = " + x + "\n"; }).join("") + (p.o || []).map(function (x) { return "optdepend = " + x + "\n"; }).join("");
+    var membros = [".BUILDINFO", ".MTREE", ".PKGINFO"].map(function (n) { var f = mkF(0, 420, n === ".PKGINFO" ? info : null, p.b * 1000, n === ".PKGINFO" ? undefined : 0); if (n !== ".PKGINFO") f.semConteudo = true; return { nome: n, no: f }; });
+    arqs.forEach(function (a) { var dir = /\/$/.test(a); var f = dir ? mkD(0, 493, p.b * 1000) : mkF(0, 420, null, p.b * 1000, 0); if (!dir) f.semConteudo = true; membros.push({ nome: a.replace(/^\//, ""), no: f }); });
+    return membros;
+  }
+  function fmtTarData(ms) { var t = tm(ms); return t.Y + "-" + dois(t.M + 1) + "-" + dois(t.D) + " " + dois(t.h) + ":" + dois(t.m); }
+  EXT.tar = function* (args, io) {
+    var sh = io.sh, a = args.slice(1), o = { excl: [] }, ops = [], arqTar = null, dirC = null;
+    // estilo antigo: "tar czf x.tar.gz pasta" (primeiro argumento sem traço)
+    if (a.length && !/^-/.test(a[0]) && /^[ctxrudvzjJfOpaC]+$/.test(a[0]) && /[ctx]/.test(a[0])) a[0] = "-" + a[0];
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i];
+      if (x === "--") { ops = ops.concat(a.slice(i + 1)); break; }
+      if (/^--exclude=/.test(x)) { o.excl.push(x.slice(10)); continue; }
+      if (x === "--exclude") { o.excl.push(a[++i]); continue; }
+      if (/^--file=/.test(x)) { arqTar = x.slice(7); continue; }
+      if (/^--directory=/.test(x)) { dirC = x.slice(12); continue; }
+      var lg = { "--create": "c", "--extract": "x", "--get": "x", "--list": "t", "--verbose": "v", "--gzip": "z", "--gunzip": "z", "--xz": "J", "--bzip2": "j", "--zstd": "zst", "--auto-compress": "a", "--to-stdout": "O", "--file": "f", "--directory": "C", "--preserve-permissions": "p" }[x];
+      if (lg === "f") { arqTar = a[++i]; continue; }
+      if (lg === "C") { dirC = a[++i]; continue; }
+      if (lg) { o[lg] = true; continue; }
+      if (/^-[A-Za-z]+$/.test(x)) {
+        var letras = x.slice(1);
+        for (var j = 0; j < letras.length; j++) {
+          var c = letras[j];
+          if (c === "f") { arqTar = j < letras.length - 1 ? letras.slice(j + 1) : a[++i]; break; }
+          if (c === "C") { dirC = j < letras.length - 1 ? letras.slice(j + 1) : a[++i]; break; }
+          if ("ctxvzjJOpa".indexOf(c) < 0) { io.err("tar: opção inválida -- “" + c + "”\nTente \"tar --help\" ou \"tar --usage\" para mais informações.\n"); return 2; }
+          o[c] = true;
+        }
+        continue;
+      }
+      if (/^--./.test(x)) { io.err("tar: opção não reconhecida “" + x + "”\nTente \"tar --help\" ou \"tar --usage\" para mais informações.\n"); return 2; }
+      ops.push(x);
+    }
+    var nModos = (o.c ? 1 : 0) + (o.x ? 1 : 0) + (o.t ? 1 : 0);
+    if (nModos !== 1) { io.err((nModos ? "tar: Você não pode especificar mais do que uma das opções \"-Acdtrux\", \"--delete\" ou \"--test-label\"" : "tar: Você deve especificar uma das opções \"-Acdtrux\", \"--delete\" ou \"--test-label\"") + "\nTente \"tar --help\" ou \"tar --usage\" para mais informações.\n"); return 2; }
+    if (!arqTar) { io.err("(simulador) o tar sem -f (lendo ou gravando na entrada/saída padrão) não é simulado aqui; use -f arquivo.\n"); return 2; }
+    var fmtPedido = o.z ? "gz" : o.J ? "xz" : o.j ? "bz2" : o.zst ? "zst" : null;
+    if (o.c && o.a && !fmtPedido) fmtPedido = /\.(tar\.gz|tgz)$/.test(arqTar) ? "gz" : /\.(tar\.xz|txz)$/.test(arqTar) ? "xz" : /\.tar\.bz2$/.test(arqTar) ? "bz2" : /\.(tar\.zst|tzst)$/.test(arqTar) ? "zst" : null;
+    var cwd0 = sh.cwd;
+    function absRel(p) { return p; }
+    if (o.c) {
+      if (!ops.length) { io.err("tar: Recusando a criar um arquivo-tar vazio\nTente \"tar --help\" ou \"tar --usage\" para mais informações.\n"); return 2; }
+      var membros = [], st = 0, avisouBarra = false;
+      var exclui = function (n) { return o.excl.some(function (pp) { return casaPadrao(pp, n.slice(n.lastIndexOf("/") + 1), {}) || casaPadrao(pp, n, {}); }); };
+      var add = function (no, nome) {
+        if (exclui(nome)) return;
+        var nomeM = nome.replace(/^\/+/, "");
+        if (nomeM !== nome && !avisouBarra) { io.err("tar: Removendo \"/\" inicial dos nomes dos membros\n"); avisouBarra = true; }
+        if (no.t === "d") {
+          membros.push({ nome: nomeM.replace(/\/*$/, "/"), no: clonarRaso(no) });
+          if (o.v) io.out(nomeM.replace(/\/*$/, "/") + "\n");
+          if (!sh.pode(no, 4)) { io.err("tar: " + nome + ": Não foi possível abrir: Permissão negada\n"); st = 2; return; }
+          listarDir(no).forEach(function (n) { add(no.c[n], nome.replace(/\/+$/, "") + "/" + n); });
+        } else {
+          if (no.t === "f" && !sh.pode(no, 4)) { io.err("tar: " + nome + ": Não foi possível abrir: Permissão negada\n"); st = 2; return; }
+          membros.push({ nome: nomeM, no: clonarRaso(no) });
+          if (o.v) io.out(nomeM + "\n");
+        }
+      };
+      ops.forEach(function (op) {
+        var r = sh.resolver(dirC ? (op[0] === "/" ? op : dirC.replace(/\/$/, "") + "/" + op) : op, false);
+        if (!r.no) { io.err("tar: " + op + ": Função stat falhou: " + errMsg(r.err || "ENOENT") + "\n"); st = 2; return; }
+        add(r.no, op);
+      });
+      if (st === 2) io.err("tar: Saindo com status de falha em razão de erros anteriores\n");
+      var tamTar = 1024; membros.forEach(function (mb) { tamTar += 512 + (mb.no.t === "f" ? Math.ceil(tamanho(mb.no) / 512) * 512 : 0); });
+      tamTar = Math.ceil(tamTar / 10240) * 10240;
+      var noTar = donoDe(sh, mkF(sh.uid, 438 & ~sh.umask, null, sh.k.clock, tamTar)); noTar.tar = membros; noTar.magia = null;
+      var final = fmtPedido ? donoDe(sh, mkComp(fmtPedido, noTar, null, false, sh)) : noTar;
+      final.m = 438 & ~sh.umask; final.mt = final.ct = sh.k.clock;
+      var pT = sh.paiDe(arqTar);
+      if (!pT.pai || pT.pai.t !== "d") { io.err("tar: " + arqTar + ": Não foi possível abrir: " + errMsg(pT.err || "ENOENT") + "\ntar: Error is not recoverable: exiting now\n"); return 2; }
+      if (!sh.pode(pT.pai, 2)) { io.err("tar: " + arqTar + ": Não foi possível abrir: Permissão negada\ntar: Error is not recoverable: exiting now\n"); return 2; }
+      pT.pai.c[pT.nome] = final; pT.pai.mt = sh.k.clock;
+      return st;
+    }
+    // -t e -x: abrir o arquivo
+    var rA = sh.resolver(arqTar, true);
+    if (!rA.no) { io.err("tar: " + arqTar + ": Função open falhou: " + errMsg(rA.err || "ENOENT") + "\ntar: Error is not recoverable: exiting now\n"); return 2; }
+    if (rA.no.t === "d") { io.err("tar: " + arqTar + ": Função read falhou: É um diretório\ntar: Error is not recoverable: exiting now\n"); return 2; }
+    var noA = rA.no, membrosL = null;
+    if (noA.comp) {
+      if (fmtPedido && fmtPedido !== noA.comp.fmt) { io.err("\n" + COMP[fmtPedido].prog + ": stdin: not in " + (fmtPedido === "gz" ? "gzip" : COMP[fmtPedido].prog) + " format\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"); return 2; }
+      if (noA.comp.inner.tar) membrosL = noA.comp.inner.tar;
+    } else if (noA.tar) {
+      if (fmtPedido) { io.err("\n" + COMP[fmtPedido].prog + ": stdin: not in " + (fmtPedido === "gz" ? "gzip" : COMP[fmtPedido].prog) + " format\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"); return 2; }
+      membrosL = noA.tar;
+    } else if (noA.magia === "zst" && /\.pkg\.tar\.zst$/.test(arqTar)) {
+      membrosL = tarDePacote(sh, rA.caminho);
+      if (!membrosL) { io.err("(simulador) o conteúdo de " + arqTar + " não está disponível aqui (só o dos pacotes instalados que as aulas usam).\n"); return 2; }
+      if (o.x && !o.O) { io.err("(simulador) extrair um pacote do cache não é simulado aqui; use tar -t para listar ou tar -xOf pacote .PKGINFO.\n"); return 2; }
+    }
+    if (!membrosL) { io.err("tar: Este não parece ser um arquivo-tar\ntar: Saindo com status de falha em razão de erros anteriores\n"); return 2; }
+    var achou = {}, st2 = 0;
+    var selec = function (nome) { if (!ops.length) return true; for (var q = 0; q < ops.length; q++) { var p0 = ops[q].replace(/\/+$/, ""); if (nome.replace(/\/$/, "") === p0 || nome.indexOf(p0 + "/") === 0) { achou[ops[q]] = true; return true; } } return false; };
+    for (var k = 0; k < membrosL.length; k++) {
+      var mb = membrosL[k];
+      if (!selec(mb.nome)) continue;
+      if (o.excl.some(function (pp) { return casaPadrao(pp, mb.nome.replace(/\/$/, "").split("/").pop(), {}); })) continue;
+      if (o.t) {
+        if (o.v) {
+          var ug = (USUARIOS[mb.no.u] || mb.no.u) + "/" + (GRUPOS[mb.no.g] || mb.no.g), tamT = mb.no.t === "f" ? String(tamanho(mb.no)) : "0";
+          io.out(modoStr(mb.no) + " " + ug + repete(" ", Math.max(1, 19 - ug.length - tamT.length)) + tamT + " " + fmtTarData(mb.no.mt) + " " + mb.nome + (mb.no.t === "l" ? " -> " + mb.no.alvo : "") + "\n");
+        } else io.out(mb.nome + "\n");
+        continue;
+      }
+      if (o.O) { if (mb.no.t === "f") io.out(mb.no.semConteudo ? "" : dadosDe(mb.no)); continue; }
+      if (o.v) io.out(mb.nome + "\n");
+      var destX = (dirC ? dirC.replace(/\/$/, "") + "/" : "") + mb.nome.replace(/\/$/, "");
+      var pX = sh.paiDe(destX);
+      if (!pX.pai) { // cria as pastas do caminho, como o tar
+        var partes = destX.split("/"), cam = destX[0] === "/" ? "" : "";
+        for (var w = 0; w < partes.length - 1; w++) { cam = cam ? cam + "/" + partes[w] : partes[w]; if (!sh.resolver(cam, true).no) { var pw = sh.paiDe(cam); if (pw.pai) pw.pai.c[pw.nome] = donoDe(sh, mkD(sh.uid, 493 & ~sh.umask | 448, sh.k.clock)); } }
+        pX = sh.paiDe(destX);
+      }
+      if (!pX.pai || !sh.pode(pX.pai, 2)) { io.err("tar: " + mb.nome + ": Não foi possível abrir: " + (pX.pai ? "Permissão negada" : "Arquivo ou diretório inexistente") + "\n"); st2 = 2; continue; }
+      var existente = pX.pai.c[pX.nome];
+      if (mb.no.t === "d") { if (existente && existente.t === "d") { existente.m = mb.no.m & ~sh.umask; existente.mt = mb.no.mt; continue; } }
+      var novoX = clonarNo(mb.no, sh.k, true, 0, sh); novoX.m = mb.no.m & (o.p || sh.uid === 0 ? 4095 : ~sh.umask); novoX.mt = mb.no.mt;
+      pX.pai.c[pX.nome] = novoX; pX.pai.mt = sh.k.clock;
+    }
+    ops.forEach(function (op) { if (!achou[op]) { io.err("tar: " + op + ": Não foi encontrado no arquivo-tar\n"); st2 = 2; } });
+    if (st2 === 2) io.err("tar: Saindo com status de falha em razão de erros anteriores\n");
+    void cwd0; void absRel;
+    return st2;
+  };
+  // cópia de um nó para dentro do tar (sem os filhos, que viram membros próprios)
+  function clonarRaso(no) {
+    var n;
+    if (no.t === "d") n = mkD(no.u, no.m, no.mt);
+    else if (no.t === "l") n = mkL(no.alvo, no.mt);
+    else { n = mkF(no.u, no.m, no.d, no.mt); if (no.d === null) { n.d = null; n.z = no.z; } ["comp", "tar", "magia", "fileDesc"].forEach(function (k) { if (no[k] !== undefined) n[k] = no[k]; }); }
+    n.u = no.u; n.g = no.g;
+    return n;
+  }
+
+  /* ---------- tree 2.3.2 ---------- */
+  EXT.tree = function* (args, io) {
+    var sh = io.sh, o = { L: Infinity }, raizes = [], ign = null, pat = null;
+    for (var i = 1; i < args.length; i++) {
+      var x = args[i];
+      if (x === "--") { raizes = raizes.concat(args.slice(i + 1)); break; }
+      if (x === "-L") { o.L = parseInt(args[++i], 10); if (!(o.L > 0)) { io.err("tree: Invalid level, must be greater than 0.\n"); return 1; } continue; }
+      if (x === "-I") { ign = args[++i]; continue; } if (x === "-P") { pat = args[++i]; continue; }
+      if (x === "--noreport") { o.noreport = true; continue; } if (x === "--dirsfirst") { o.dirsfirst = true; continue; }
+      if (x === "--version" || x === "-V") { io.out("tree v2.3.2 © 1996 - 2026 by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro\n"); return 0; }
+      if (/^-[adfFlCnhsp]+$/.test(x)) { x.slice(1).split("").forEach(function (c) { o[c] = true; }); continue; }
+      if (/^-/.test(x)) { io.err("tree: Invalid argument -`" + x.replace(/^-+/, "")[0] + "'.\nusage: tree [-acdfghilnpqrstuvxACDFJQNSUX] [-L level [-R]] [-H  baseHREF]\n\t[-T title] [-o filename] [-P pattern] [-I pattern] [--gitignore]\n\t[--gitfile[=]file] [--matchdirs] [--metafirst] [--ignore-case]\n\t[--nolinks] [--hintro[=]file] [--houtro[=]file] [--inodes] [--device]\n\t[--sort[=]<name>] [--dirsfirst] [--filesfirst] [--filelimit[=]#] [--si]\n\t[--du] [--prune] [--charset[=]X] [--timefmt[=]format] [--fromfile]\n\t[--fflinks] [--info] [--infofile[=]file] [--noreport] [--hyperlink]\n\t[--scheme[=]schema] [--authority[=]host] [--opt-toggle] [--compress[=]#]\n\t[--condense] [--version] [--help] [--] [directory ...]\n"); return 1; }
+      raizes.push(x);
+    }
+    if (!raizes.length) raizes = ["."];
+    var casa = function (padrao, n) { return padrao.split("|").some(function (pp) { return casaPadrao(pp, n, {}); }); };
+    var nd = 0, nf = 0, st = 0, out = "";
+    function indicador(no, alvo) { if (!o.F) return ""; var t = alvo || no; if (t.t === "d") return "/"; if (t.t === "f" && t.m & 73) return "*"; return ""; }
+    function anda(no, cam, prefixo, nivel) {
+      if (!sh.pode(no, 4) || !sh.pode(no, 1)) return false;
+      var nomes = Object.keys(no.c).filter(function (n) { return o.a || n[0] !== "."; });
+      var itens = nomes.map(function (n) {
+        var f = no.c[n], alvo = f.t === "l" ? sh.resolver(cam + "/" + n, true).no : null;
+        return { n: n, no: f, alvo: alvo, ehDir: f.t === "d" || (alvo && alvo.t === "d") };
+      }).filter(function (it) {
+        if (ign && casa(ign, it.n)) return false;
+        if (o.d && !it.ehDir) return false;
+        if (pat && !(it.no.t === "d") && !casa(pat, it.n)) return false;
+        return true;
+      });
+      itens.sort(function (x, y) { if (o.dirsfirst && x.ehDir !== y.ehDir) return x.ehDir ? -1 : 1; return collate(x.n, y.n); });
+      itens.forEach(function (it, k) {
+        var ult = k === itens.length - 1, rot = o.f ? cam + "/" + it.n : it.n;
+        var linha = prefixo + (ult ? "└── " : "├── ") + rot + (it.no.t === "l" ? "" : indicador(it.no));
+        if (it.no.t === "l") linha += " -> " + it.no.alvo + (it.alvo ? indicador(it.no, it.alvo) : "");
+        if (it.ehDir) nd++; else nf++;
+        if (it.no.t === "d" && nivel < o.L) {
+          if (!sh.pode(it.no, 4) || !sh.pode(it.no, 1)) { out += linha + "  [error opening dir]\n"; return; }
+          out += linha + "\n";
+          anda(it.no, cam.replace(/\/$/, "") + "/" + it.n, prefixo + (ult ? "    " : "│   "), nivel + 1);
+        } else out += linha + "\n";
+      });
+      return true;
+    }
+    raizes.forEach(function (r0) {
+      var r = sh.resolver(r0, true);
+      if (!r.no || r.no.t !== "d") {
+        out += r0 + (r.no ? "  [error opening dir]\n" : "  [error opening dir]\n"); st = 2; return;
+      }
+      out += r0 + indicador(r.no) + "\n";
+      nd++;
+      if (!sh.pode(r.no, 4)) { out = out.replace(/\n$/, "  [error opening dir]\n"); st = 2; return; }
+      anda(r.no, r0, "", 1);
+    });
+    if (!o.noreport) out += "\n" + nd + (nd === 1 ? " directory" : " directories") + (o.d ? "" : ", " + nf + (nf === 1 ? " file" : " files")) + "\n";
+    if (st === 2 && nd === 1 && raizes.length === 1 && !sh.no(raizes[0])) out = out.replace(/\n1 directory/, "\n0 directories");
+    io.out(out);
+    return st;
+  };
+
+  /* ---------- locale (glibc) ---------- */
+  var LOCALE_KW = {
+    pt: { decimal_point: ",", thousands_sep: ".", grouping: "3", "numeric-decimal-point-wc": "44", "numeric-thousands-sep-wc": "46", "numeric-codeset": "UTF-8", mon_decimal_point: ",", mon_thousands_sep: ".", currency_symbol: "R$", int_curr_symbol: "BRL ", yesexpr: "^[+1SsyY]", noexpr: "^[-0nN]", yesstr: "sim", nostr: "não", d_fmt: "%d/%m/%Y", t_fmt: "%T", d_t_fmt: "%a %d %b %Y %T", charmap: "UTF-8", day: "domingo;segunda;terça;quarta;quinta;sexta;sábado", abday: "dom;seg;ter;qua;qui;sex;sáb", mon: "janeiro;fevereiro;março;abril;maio;junho;julho;agosto;setembro;outubro;novembro;dezembro", abmon: "jan;fev;mar;abr;mai;jun;jul;ago;set;out;nov;dez", am_pm: ";" },
+    C: { decimal_point: ".", thousands_sep: "", grouping: "-1", "numeric-decimal-point-wc": "46", "numeric-thousands-sep-wc": "0", "numeric-codeset": "ANSI_X3.4-1968", mon_decimal_point: "", mon_thousands_sep: "", currency_symbol: "", int_curr_symbol: "", yesexpr: "^[yY]", noexpr: "^[nN]", yesstr: "", nostr: "", d_fmt: "%m/%d/%y", t_fmt: "%H:%M:%S", d_t_fmt: "%a %b %e %H:%M:%S %Y", charmap: "ANSI_X3.4-1968", day: "Sunday;Monday;Tuesday;Wednesday;Thursday;Friday;Saturday", abday: "Sun;Mon;Tue;Wed;Thu;Fri;Sat", mon: "January;February;March;April;May;June;July;August;September;October;November;December", abmon: "Jan;Feb;Mar;Apr;May;Jun;Jul;Aug;Sep;Oct;Nov;Dec", am_pm: "AM;PM" }
+  };
+  var LOCALE_CAT = { decimal_point: "LC_NUMERIC", thousands_sep: "LC_NUMERIC", grouping: "LC_NUMERIC", "numeric-decimal-point-wc": "LC_NUMERIC", "numeric-thousands-sep-wc": "LC_NUMERIC", "numeric-codeset": "LC_NUMERIC", mon_decimal_point: "LC_MONETARY", mon_thousands_sep: "LC_MONETARY", currency_symbol: "LC_MONETARY", int_curr_symbol: "LC_MONETARY", yesexpr: "LC_MESSAGES", noexpr: "LC_MESSAGES", yesstr: "LC_MESSAGES", nostr: "LC_MESSAGES", d_fmt: "LC_TIME", t_fmt: "LC_TIME", d_t_fmt: "LC_TIME", day: "LC_TIME", abday: "LC_TIME", mon: "LC_TIME", abmon: "LC_TIME", am_pm: "LC_TIME", charmap: "LC_CTYPE" };
+  EXT.locale = function* (args, io) {
+    var sh = io.sh, a = args.slice(1), k = false, c = false;
+    var CATS = ["LC_CTYPE", "LC_NUMERIC", "LC_TIME", "LC_COLLATE", "LC_MONETARY", "LC_MESSAGES", "LC_PAPER", "LC_NAME", "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT", "LC_IDENTIFICATION"];
+    function valorCat(cat) { return sh.valor("LC_ALL") || sh.valor(cat) || sh.valor("LANG") || "C"; }
+    if (a[0] === "-a" || a[0] === "--all-locales") { io.out("C\nC.utf8\nen_US.utf8\nPOSIX\npt_BR.utf8\n"); return 0; }
+    if (a[0] === "-m" || a[0] === "--charmaps") { io.err("(simulador) a lista de mapas de caracteres (locale -m) não está aqui; na VM ela tem centenas de nomes (ANSI_X3.4-1968, UTF-8…).\n"); return 1; }
+    while (a.length && /^-[kc]+$/.test(a[0])) { if (/k/.test(a[0])) k = true; if (/c/.test(a[0])) c = true; a.shift(); }
+    if (!a.length) {
+      var lang = sh.valor("LANG") || "", out = "LANG=" + lang + "\n";
+      CATS.forEach(function (cat) { var v = sh.valor(cat); out += cat + "=" + (v && !sh.valor("LC_ALL") ? v : "\"" + valorCat(cat) + "\"") + "\n"; });
+      io.out(out + "LC_ALL=" + (sh.valor("LC_ALL") || "") + "\n"); return 0;
+    }
+    var st = 0;
+    a.forEach(function (kw) {
+      if (CATS.indexOf(kw) >= 0) { if (c) io.out(kw + "\n"); Object.keys(LOCALE_CAT).filter(function (x) { return LOCALE_CAT[x] === kw; }).forEach(function (x) { var tb = /^pt/.test(valorCat(kw)) ? LOCALE_KW.pt : LOCALE_KW.C; io.out((k ? x + "=\"" + tb[x] + "\"" : tb[x]) + "\n"); }); return; }
+      if (!(kw in LOCALE_CAT)) { io.err("locale: nome desconhecido “" + kw + "”\n"); st = 1; return; }
+      var cat = LOCALE_CAT[kw], tab = /^pt/.test(valorCat(cat)) && !/^(C|POSIX)/.test(valorCat(cat)) ? LOCALE_KW.pt : LOCALE_KW.C, v = tab[kw];
+      if (c) io.out(cat + "\n");
+      io.out((k ? kw + "=" + (/^(grouping)$/.test(kw) ? v : "\"" + v + "\"") : v) + "\n");
+    });
+    return st;
+  };
+
+  /* ---------- rename (util-linux 2.42) ---------- */
+  EXT.rename = function* (args, io) {
+    var sh = io.sh, a = args.slice(1), o = {};
+    while (a.length && /^-/.test(a[0])) {
+      var x = a.shift();
+      if (x === "--") break;
+      if (x === "-V" || x === "--version") { io.out("rename de util-linux 2.42.4\n"); return 0; }
+      var lg = { "--verbose": "v", "--no-act": "n", "--no-overwrite": "o", "--symlink": "s", "--last": "l", "--all": "a", "--interactive": "i" }[x];
+      if (lg) { o[lg] = true; continue; }
+      if (/^-[vnosla i]+$/.test(x)) { x.slice(1).split("").forEach(function (c) { o[c] = true; }); continue; }
+      io.msg("opção inválida -- “" + x.replace(/^-+/, "")[0] + "”"); io.err("Tente \"rename --help\" para mais informações.\n"); return 1;
+    }
+    if (a.length < 3) { io.msg("argumentos insuficientes"); io.err("Tente \"rename --help\" para mais informações.\n"); return 1; }
+    var de = a[0], para = a[1], arqs = a.slice(2), ok = 0, falhas = 0;
+    arqs.forEach(function (f) {
+      var r = sh.resolver(f, false);
+      if (!r.no) { io.err("rename: " + f + ": não acessível: " + errMsg(r.err || "ENOENT") + "\n"); falhas++; return; }
+      var i = f.lastIndexOf("/"), dir = f.slice(0, i + 1), base = f.slice(i + 1);
+      var pos = o.l ? base.lastIndexOf(de) : base.indexOf(de);
+      if (pos < 0 || de === "") return;
+      var novoBase = o.a ? base.split(de).join(para) : base.slice(0, pos) + para + base.slice(pos + de.length), novo = dir + novoBase;
+      if (o.o && sh.resolver(novo, false).no) { io.out("Ignorando arquivo existente: \"" + novo + "\"\n"); return; }
+      if (!o.n) {
+        var pa = sh.paiDe(novo);
+        if (!pa.pai || !sh.pode(pa.pai, 2) || !sh.pode(r.pai, 2)) { io.err("rename: " + f + ": falha ao renomear: Permissão negada\n"); falhas++; return; }
+        delete r.pai.c[r.nome]; pa.pai.c[pa.nome] = r.no; r.pai.mt = pa.pai.mt = sh.k.clock; r.no.ct = sh.k.clock;
+      }
+      if (o.v || o.n && o.v) io.out("`" + f + "' -> `" + novo + "'\n");
+      ok++;
+    });
+    if (falhas && !ok) return 1;
+    if (falhas) return 2;
+    return ok ? 0 : 4;
+  };
+
+  /* ---------- crontab (cronie 1.7) ---------- */
+  var CRON_CAMPOS = [["bad minute", 0, 59], ["bad hour", 0, 23], ["bad day-of-month", 1, 31], ["bad month", 1, 12], ["bad day-of-week", 0, 7]];
+  function cronValido(txt) { // devolve [linha, mensagem] do primeiro erro, ou null
+    var ls = txt.split("\n");
+    if (ls[ls.length - 1] === "") ls.pop();
+    for (var i = 0; i < ls.length; i++) {
+      var l = ls[i].trim();
+      if (!l || l[0] === "#" || /^[A-Za-z_][A-Za-z0-9_]*\s*=/.test(l)) continue;
+      if (/^@(reboot|yearly|annually|monthly|weekly|daily|midnight|hourly)\s+\S/.test(l)) continue;
+      var c = l.split(/\s+/);
+      for (var j = 0; j < 5; j++) {
+        var campo = c[j], lim = CRON_CAMPOS[j];
+        var okC = campo !== undefined && campo.split(",").every(function (pt) {
+          var m = /^(\*|(\d+)(?:-(\d+))?|[a-z]{3})(?:\/(\d+))?$/i.exec(pt);
+          if (!m) return false;
+          if (m[2] !== undefined && (+m[2] < lim[1] || +m[2] > lim[2])) return false;
+          if (m[3] !== undefined && (+m[3] < lim[1] || +m[3] > lim[2])) return false;
+          if (/^[a-z]{3}$/i.test(m[1]) && j !== 3 && j !== 4) return false;
+          return true;
+        });
+        if (!okC) return [j === 0 ? i : i + 1, lim[0]]; // (o cronie conta a linha assim)
+      }
+      if (c.length < 6) return [i, "bad command"];
+    }
+    return null;
+  }
+  EXT.crontab = function* (args, io) {
+    var sh = io.sh, a = args.slice(1), op = null, arq = null, usuario = contaDe(sh).nome;
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i];
+      if (x === "-u") { usuario = a[++i]; if (sh.uid !== 0 && usuario !== contaDe(sh).nome) { io.err("must be privileged to use -u\n"); return 1; } continue; }
+      if (/^-[lre]$/.test(x) || x === "-i") { if (x !== "-i") op = x[1]; continue; }
+      if (x === "-V") { io.out("cronie 1.7.2\n"); return 0; }
+      if (/^-./.test(x)) { io.err("crontab: opção inválida -- “" + x.replace(/^-+/, "")[0] + "”\ncrontab: usage error: unrecognized option\nUsage:\n crontab [options] file\n crontab [options]\n crontab -n [hostname]\n\nOptions:\n -u <user>  define user\n -e         edit user's crontab\n -l         list user's crontab\n -r         delete user's crontab\n -i         prompt before deleting\n -n <host>  set host in cluster to run users' crontabs\n -c         get host in cluster to run users' crontabs\n -T <file>  test a crontab file syntax\n -V         print version and exit\n -x <mask>  enable debugging\n\nDefault operation is replace, per 1003.2\n"); return 1; }
+      arq = x;
+    }
+    var spool = "/var/spool/cron/" + usuario, no = sh.k.cronTabs = sh.k.cronTabs || {};
+    if (op === "l") { if (no[usuario] == null) { io.err("no crontab for " + usuario + "\n"); return 1; } io.out(no[usuario]); return 0; }
+    if (op === "r") {
+      if (no[usuario] == null) { io.err("no crontab for " + usuario + "\n"); return 1; }
+      var home = CONTAS[idUsuario(usuario)] ? CONTAS[idUsuario(usuario)].home : "/home/" + usuario, sh2 = sh;
+      var pasta = sh2.resolver(home + "/.cache", true).no;
+      if (pasta && pasta.t === "d") { var cb = pasta.c.crontab || (pasta.c.crontab = mkD(idUsuario(usuario) || 0, 493, sh.k.clock)); cb.c["crontab.bak"] = mkF(idUsuario(usuario) || 0, 384, no[usuario], sh.k.clock); io.err("Backup of " + usuario + "'s previous crontab saved to " + home + "/.cache/crontab/crontab.bak\n"); }
+      delete no[usuario]; return 0;
+    }
+    if (op === "e") { io.err("(simulador) o crontab -e abre o editor (vi/nano), que não existe aqui. Escreva as linhas num arquivo e instale com \"crontab arquivo\".\n"); return 1; }
+    if (!arq) { io.err("(simulador) \"crontab\" sem arquivo lê as linhas do teclado; use \"crontab arquivo\" ou \"crontab -l\".\n"); return 1; }
+    var r = arq === "-" ? null : sh.lerArquivo(arq);
+    if (r && r.err) { io.err(arq + ": " + errMsg(r.err) + "\n"); return 1; }
+    var txt = r ? r.txt : "";
+    var erro = cronValido(txt);
+    if (erro) { io.err("\"" + (arq === "-" ? "-" : arq) + "\":" + erro[0] + ": " + erro[1] + "\nInvalid crontab file, can't install.\n"); return 1; }
+    no[usuario] = txt; void spool;
+    return 0;
+  };
+
+  /* ---------- sudoedit ---------- */
+  EXT.sudoedit = function* (args, io) {
+    var sh = io.sh, a = args.slice(1).filter(function (x) { return !/^-/.test(x); });
+    if (!a.length) { io.err("usage: sudoedit -h | -V\nusage: sudoedit [-ABkNnS] [-C num] [-D directory]\n                [-g group] [-h host] [-p prompt] [-R directory] [-T timeout]\n                [-u user] file ...\n"); return 1; }
+    if (sh.uid !== 0 && !sh.k.preparando && !(arch(sh.k).sudoAte > sh.k.clock) && !temTerminal(sh)) { io.err("sudoedit: um terminal é necessário para ler a senha; use a opção -S para ler a entrada padrão ou configure um auxiliar de askpass\nsudoedit: uma senha é necessária\n"); return 1; }
+    if (!(yield* autenticarSudo(sh, io, {}))) return 1;
+    io.err("(simulador) o sudoedit abriria uma cópia de " + a.join(", ") + " no editor (nano/vim), que não existe aqui. Na sua máquina, edite e salve: o sudoedit grava o arquivo como root.\n");
+    return 1;
   };
   EXT.watch = function* (args, io) { io.err("(simulador) watch redesenha a tela a cada 2 segundos; aqui ele não existe. Use um laço: while sleep 2; do comando; done\n"); return 1; };
 

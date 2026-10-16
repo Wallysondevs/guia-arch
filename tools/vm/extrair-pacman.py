@@ -185,7 +185,7 @@ QL = """bash pacman nano vim htop nginx openssh linux linux-lts coreutils system
 networkmanager cronie wget curl git flatpak base filesystem pacman-contrib reflector man-db snapper ufw podman
 zram-generator btrfs-progs dosfstools e2fsprogs mkinitcpio intel-ucode yay-bin paru-bin downgrade inetutils less
 util-linux iproute2 lvm2 cryptsetup efibootmgr expac fzf jq rsync gawk sed grep findutils procps-ng shadow
-pacman-mirrorlist archlinux-keyring linux-firmware-whence systemd-sysvcompat""".split()
+pacman-mirrorlist archlinux-keyring linux-firmware-whence systemd-sysvcompat which tar gzip xz zstd""".split()
 arquivos = {}
 for n in QL:
     if n in local:

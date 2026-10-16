@@ -336,3 +336,108 @@ ls -A -C -w 60
 ls -a -C -w 80
 LC_ALL=C ls -C -w 80 --quoting-style=shell-escape
 LC_ALL=C ls --quoting-style=shell-escape Música 'Área de trabalho' -d
+### pend-crontab2
+printf '*/5 * * * * echo oi\n' > c1; printf 'xx\n' > c2; printf '0 25 * * * x\n' > c3
+crontab c2; echo $?
+crontab c3; echo $?
+crontab nada; echo $?
+crontab -r; echo $?
+crontab c1; echo $?
+crontab -l; echo $?
+crontab -r; echo $?
+ls .cache/crontab
+crontab -l; echo $?
+### pend-sudoedit2
+sudoedit /etc/hostname < /dev/null; echo $?
+### pend-locale2
+LC_ALL=C locale decimal_point thousands_sep charmap
+locale nada; echo $?
+locale -k decimal_point currency_symbol
+LC_TIME=C locale
+LC_NUMERIC=C locale decimal_point
+locale -c LC_NUMERIC
+locale yesexpr d_fmt mon
+### pend-rename2
+mkdir -p fotos; touch fotos/foto1 fotos/a.jpg fotos/b.jpg
+rename -v foto X fotos/foto1; ls fotos
+rename -v jpg png fotos/a.jpg fotos/b.jpg nada 2>/dev/null; echo "st=$?"
+rename -nv png jpg fotos/*.png; echo "n=$?"
+rename -v zzz y fotos/a.png; echo "nomatch=$?"
+touch fotos/c.png; rename -o -v a c fotos/a.png; echo "o=$?"
+rename -v a c fotos/a.png; echo "ow=$?"; ls fotos
+rename; echo "u=$?"
+### pend-tree2
+mkdir -p t/a/b; touch t/a/x t/.oculto; ln -s a t/l; ln -s nada t/q; chmod 000 t/a/b
+tree t
+tree -F t
+tree -f t
+tree -ad --noreport t
+tree -P "x*" t
+tree -a -L 1 t
+tree -I "a|q" t
+chmod 755 t/a/b
+tree Downloads Imagens
+tree -L 1 aur
+### pend-gzip
+cd Documentos
+## (o tamanho dos compactados é uma estimativa no simulador: os casos cortam os números)
+gzip acesso.log; ls -l acesso.log* | cut -d' ' -f1-4,6-
+file acesso.log.gz
+gzip -l acesso.log.gz | tr -s ' ' | cut -d' ' -f3,5
+gunzip acesso.log.gz; ls -l acesso.log*
+gzip -k acesso.log; ls acesso.log*
+gzip acesso.log; echo $?
+gzip -f acesso.log; echo $?
+zcat acesso.log.gz | head -2
+gzip -d acesso.log.gz; ls acesso.log*
+gzip -c notas.txt > n.gz; ls n.gz notas.txt
+gzip -v alunos.csv 2>&1 | sed 's/ *[0-9,]*%/ N%/'
+gzip nada; echo $?
+gzip projetos; echo $?
+gzip -dc alunos.csv.gz | head -1
+gunzip -k alunos.csv.gz; echo $?
+gunzip notas.txt; echo $?
+gzip -t alunos.csv.gz; echo $?
+### pend-xz-zstd
+cd Documentos
+xz acesso.log; ls -l acesso.log* | cut -d' ' -f1-4,6-
+file acesso.log.xz
+unxz acesso.log.xz; ls acesso.log*
+xz -k notas.txt; ls notas*
+xzcat notas.txt.xz
+zstd acesso.log 2>&1 | sed -E 's/[0-9.]+%/N%/; s/=> +[0-9]+ B/=> N B/'
+ls acesso.log*
+file acesso.log.zst
+zstd -d -f acesso.log.zst; echo $?
+zstd --rm -f acesso.log 2>&1 | sed -E 's/[0-9.]+%/N%/; s/=> +[0-9]+ B/=> N B/'; ls acesso.log*
+zstdcat acesso.log.zst | head -1
+unzstd acesso.log.zst; ls acesso.log*
+zstd -q alunos.csv; ls alunos*
+zstd nada; echo $?
+xz nada; echo $?
+### pend-tar1
+mkdir -p site/css; echo 'body {}' > site/css/style.css; echo '<h1>Oi</h1>' > site/index.html; echo x > site/rascunho.tmp
+touch -d '2026-10-16 15:05' site/css/style.css site/index.html site/rascunho.tmp site/css site
+tar -czvf site.tar.gz site | sort
+tar -tzf site.tar.gz | sort
+tar -tvf site.tar.gz | sort -k6
+file site.tar.gz
+tar -czf s2.tar.gz --exclude="*.tmp" site; tar -tf s2.tar.gz | sort
+tar -cf site.tar site; ls -l site.tar | cut -d' ' -f5; file site.tar
+tar -cJf site.tar.xz site; file site.tar.xz; tar -tf site.tar.xz | sort
+tar --zstd -cf site.tar.zst site; file site.tar.zst
+tar -caf auto.tar.zst site; file auto.tar.zst
+tar -cjf site.tar.bz2 site; file site.tar.bz2
+mkdir r; tar -xvf site.tar.gz -C r | sort; ls r r/site
+mkdir so; cd so; tar -xf ../site.tar.gz site/index.html; ls site; cd ..
+tar -xOf site.tar.gz site/index.html
+tar -czf hostname.tar.gz /etc/hostname; tar -tf hostname.tar.gz
+tar -czf backup.tar.gz; echo $?
+tar -xf nada.tar; echo $?
+tar -tf frutas.txt; echo $?
+tar -xzf site.tar.zst; echo $?
+tar -tf site.tar.gz nada; echo $?
+tar cf velho.tar site/index.html; tar tf velho.tar
+### pend-tar-pkg
+tar -tf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst
+tar -xOf /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst .PKGINFO
