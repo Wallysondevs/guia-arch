@@ -92,7 +92,13 @@ function add(cam, i, conteudo) {
   else if (conteudo !== undefined) e.push(conteudo);
   fsl.push(e);
 }
-var IGNORAR = /^\/(mnt\/a8|home\/teste-|tmp\/)|^\/etc\/(passwd-|group-|shadow-|gshadow-|subuid-|subgid-)$/;
+// /var/log/snapper.log só apareceu depois dos testes dos autores com o snapper (não está no snapshot limpo)
+var IGNORAR = /^\/(mnt\/a8|home\/teste-|tmp\/)|^\/etc\/(passwd-|group-|shadow-|gshadow-|subuid-|subgid-)$|^\/var\/log\/snapper\.log$/;
+// links de /etc/profile.d (o systemd 262 instala dois): extrações antigas guardavam só os arquivos comuns
+[["70-systemd-shell-extra.sh"], ["80-systemd-osc-context.sh"]].forEach(function (x) {
+  var cam = "/etc/profile.d/" + x[0];
+  if (!A[cam]) A[cam] = { m: 511, u: 0, g: 0, mt: 1790082821, s: 57, t: "l", l: "../../usr/lib/systemd/profile.d/" + x[0] };
+});
 // pastas listadas: primeiro a própria pasta, depois os filhos
 Object.keys(PS).sort().forEach(function (dir) {
   if (dir === "/dev") return;
@@ -206,11 +212,24 @@ var corte = plog.length;
 for (var i = 0; i < plog.length; i++) if (/^\[2026-10-16T13:0[6-9]|^\[2026-10-16T13:[1-5]/.test(plog[i])) { corte = i; break; }
 plog = plog.slice(0, corte).join("\n") + "\n";
 
+/* ---------------- file /usr/bin/* e cache do pacman ---------------- */
+// tipo de cada programa (como o "file" mostra), com o BuildID à parte: { t: [tipos com "#"], m: { nome: "i" ou "i:buildid" } }
+var fbTipos = [], fbIdx = {}, fbin = {};
+Object.keys(S.saidas["file-usr-bin"] || {}).forEach(function (n) {
+  var d = S.saidas["file-usr-bin"][n];
+  if (/^(symbolic link|directory)/.test(d)) return;
+  var m = /BuildID\[sha1\]=([0-9a-f]+)/.exec(d), t = d.replace(/BuildID\[sha1\]=[0-9a-f]+/, "#");
+  if (!(t in fbIdx)) { fbIdx[t] = fbTipos.length; fbTipos.push(t); }
+  fbin[n] = fbIdx[t] + (m ? ":" + m[1] : "");
+});
+// tamanho, data e blocos dos arquivos de /var/cache/pacman/pkg
+var cachePkg = S.saidas["cache-pkg"] || {};
+
 var H = {};
 try { H = JSON.parse(fs.readFileSync(path.join(VMDIR, "home.json"), "utf8")); } catch (e) { /* */ }
 var dados = {
   v: 1, home: H, gerado: new Date().toISOString().slice(0, 10), t: tabela, pac: pac, fs: fsl, proc: proc,
-  sd: { u: units, luf: luf, lu: lu, lua: lua, boots: boots }, jr: { t0: t0, l: jr, ant: anteriores }, plog: plog
+  sd: { u: units, luf: luf, lu: lu, lua: lua, boots: boots }, jr: { t0: t0, l: jr, ant: anteriores }, plog: plog, fbin: { t: fbTipos, m: fbin }, cachePkg: cachePkg
 };
 var json = JSON.stringify(dados);
 var gz = zlib.gzipSync(Buffer.from(json, "utf8"), { level: 9 });

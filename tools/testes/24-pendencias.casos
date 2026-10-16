@@ -97,8 +97,8 @@ find . -maxdepth 1 -exec ls {}; echo $?
 ### pend-find-xtype
 mkdir fx; touch fx/a; ln -s a fx/ok; ln -s nada fx/quebrado; ln -s ../frutas.txt fx/fr
 find fx -xtype l
-find fx -type l
-find fx -xtype f
+find fx -type l | sort
+find fx -xtype f | sort
 ### pend-ln
 ln -sr frutas.txt Documentos/af; ls -l Documentos/af | cut -d' ' -f9-
 ln -s Meus Documentos x3; echo $?
@@ -164,3 +164,69 @@ mkdir p; ln -s a p/lk; mv -v p /tmp/p/
 ls -la /tmp/p | cut -c1-10
 mv -v /tmp/p/a /tmp/p/a2
 echo z > zz; mv -bv zz /tmp/; echo y > zz; mv -bv zz /tmp/
+### pend-hostname-ip2
+hostname --help
+hostname -f; hostname -s; hostname -d
+hostname nova; echo $?
+hostname --nada; echo $?
+ip route get 8.8.8.8 from 10.0.2.15
+ip route get 127.0.0.1
+ip route get 10.0.2.15
+ip route get nada; echo $?
+ip route get; echo $?
+### pend-getent-hosts2
+getent hosts archlinux.org localhost
+getent ahostsv4 archlinux.org
+getent ahosts localhost
+getent ahosts notebook
+getent hosts 8.8.8.8
+getent hosts nada.invalid; echo $?
+### pend-pacman-opcoes
+pacman -Qw; echo $?
+pacman -Sz; echo $?
+pacman -Rx; echo $?
+pacman -a; echo $?
+pacman -Ss -Q; echo $?
+pacman -sQ bash
+pacman -Fh | head -3
+pacman -Dh | head -3
+pacman -Uh | tail -2
+pacman -h -Q | head -2
+### pend-cal2
+cal 2026
+cal 13 2026; echo $?
+cal -m
+cal 5 2026
+cal 3 2026
+### pend-find-msgs
+find . -maxdepth 0 -type x; echo $?
+find . -type fx
+find . -name
+find . -nada
+find . -maxdepth 0 -name a b
+find . \( -name a
+find . -mtime abc
+find . -perm
+find . -xtype q
+### pend-binarios
+file /usr/bin/bash /usr/bin/paccache /usr/bin/sudo
+head -c 20 /usr/bin/ls | od -c
+ls -l /var/cache/pacman/pkg | head -5
+ls -l /var/cache/pacman/pkg/which-2.25-1-x86_64.pkg.tar.zst.sig
+du -sh /var/cache/pacman/pkg
+### pend-grep-erros
+grep -E "[a" frutas.txt; echo $?
+grep "a\{1" frutas.txt; echo $?
+grep -E "a{1" frutas.txt; echo $?
+grep "a\)" frutas.txt; echo $?
+grep -E "a{2,1}" frutas.txt; echo $?
+grep "[[:foo:]]" frutas.txt; echo $?
+grep 'a\' frutas.txt; echo $?
+grep -P "(" frutas.txt; echo $?
+grep "[:space:]" frutas.txt; echo $?
+### pend-tr-operandos
+tr a < /dev/null; echo $?
+tr -s a b c < /dev/null; echo $?
+tr -ds a b c < /dev/null; echo $?
+tr a b c d < /dev/null; echo $?
+echo aab | tr -s a b; echo $?

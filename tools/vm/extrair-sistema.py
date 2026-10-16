@@ -64,6 +64,8 @@ for base in ["/etc", "/etc/pacman.d", "/etc/default", "/etc/skel", "/etc/nginx",
             d = info(p)
         except Exception:
             continue
+        if d["t"] == "l" and base == "/etc/profile.d":
+            arq[p] = d
         if d["t"] == "f" and d["s"] <= 8192:
             try:
                 d["c"] = open(p, encoding="utf-8").read()
@@ -140,5 +142,17 @@ for b in range(1, 8):
     CMDS["journal-b-%d-json" % b] = ["journalctl", "-b", "-%d" % b, "-n", "60", "--no-pager", "-o", "json", "--output-fields=_SYSTEMD_UNIT,PRIORITY,SYSLOG_IDENTIFIER,_PID,MESSAGE,_TRANSPORT,_COMM,UNIT,_HOSTNAME"]
 for k, c in CMDS.items():
     saidas[k] = run(c, {"SYSTEMD_PAGER": "cat", "SYSTEMD_COLORS": "0", "COLUMNS": "200", "LANG": "pt_BR.UTF-8"})
+
+# tipo (file) dos programas de /usr/bin e tamanho/data dos pacotes do cache do pacman
+fb = {}
+for l in run(["sh", "-c", "cd /usr/bin && file -N -F '\t' -- *"]).split("\n"):
+    if "\t" in l:
+        n, d = l.split("\t", 1); fb[n] = d.strip()
+saidas["file-usr-bin"] = fb
+cache = {}
+for n in sorted(os.listdir("/var/cache/pacman/pkg")):
+    st = os.lstat(os.path.join("/var/cache/pacman/pkg", n))
+    cache[n] = [st.st_size, int(st.st_mtime), st.st_blocks]
+saidas["cache-pkg"] = cache
 
 json.dump({"arquivos": arq, "pastas": pastas, "servicos": servicos, "saidas": saidas, "agora": int(time.time())}, sys.stdout, ensure_ascii=False, separators=(",", ":"))

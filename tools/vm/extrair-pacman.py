@@ -284,7 +284,8 @@ python3 pip node npm docker vlc firefox code nvim zsh fish tmux unzip zip 7z rg 
 ssh sshd nginx mysql psql sqlite3 ufw rsync man tldr locate updatedb lsof strace nmap whois iperf3
 ncdu duf btop smartctl hdparm dmidecode lshw inxi mkfs.vfat mkfs.ext4 mkfs.btrfs fsck.fat cryptsetup
 arch-chroot pacstrap genfstab grub-install efibootmgr os-prober ntfs-3g paccache checkupdates pactree
-reflector expac yay paru makepkg sudo doas visudo""".split()
+reflector expac yay paru makepkg sudo doas visudo
+drill lsblk adduser useradd vi ss ping ip host rename tar gzip xz zstd crontab sudoedit locale bsdtar gio nano vim lynx nc""".split()
 fres = {}
 for l in run(["pacman", "-F", "--machinereadable"] + FQ, True).split("\n"):
     c = l.split("\0")

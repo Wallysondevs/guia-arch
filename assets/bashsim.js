@@ -198,8 +198,11 @@
     if (no.d == null) return 0; // esparso (como na VM)
     var t = tamanho(no); return Math.ceil(t / 4096) * 4;
   }
+  var CAB_ELF = "\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\x03\0>\0\x01\0\0\0";
+  var CAB_ZST = "\x28\xb5\x2f\xfd";
   function dadosDe(no) {
     if (no.d != null) return no.d;
+    if (no.magia === "elf" || no.magia === "zst") { var cab = no.magia === "elf" ? CAB_ELF : CAB_ZST, z0 = Math.max(0, Math.min(no.z || 0, 65536) - cab.length); return cab + repete("\0", z0); }
     var z = no.z || 0; return z > 65536 ? repete("\0", 65536) : repete("\0", z);
   }
 
@@ -280,7 +283,12 @@
           if (velho && velho.t === "d") { velho.m = e[2]; velho.u = e[3]; velho.g = e[4]; velho.mt = velho.ct = velho.at = mt; if (e[6] !== 4096) velho.tam = e[6]; return; }
           no = mkD(e[3], e[2], mt); if (e[6] !== 4096) no.tam = e[6];
         } else if (e[1] === "l") { no = mkL(e[7], mt); no.u = e[3]; no.g = e[4]; }
-        else if (e[1] === "f") { no = e[7] != null ? mkF(e[3], e[2], e[7], mt) : mkF(e[3], e[2], null, mt, e[6]); no.g = e[4]; }
+        else if (e[1] === "f") {
+          no = e[7] != null ? mkF(e[3], e[2], e[7], mt) : mkF(e[3], e[2], null, mt, e[6]); no.g = e[4];
+          // o "file" real de cada programa de /usr/bin (ELF: o conteúdo começa com o cabeçalho \x7fELF)
+          var fb = DADOS.fbin && e[0].indexOf("/usr/bin/") === 0 && Object.prototype.hasOwnProperty.call(DADOS.fbin.m, e[0].slice(9)) ? DADOS.fbin.m[e[0].slice(9)] : null;
+          if (fb != null) { var fbp = String(fb).split(":"); no.fileDesc = DADOS.fbin.t[+fbp[0]].replace("#", "BuildID[sha1]=" + (fbp[1] || "")); if (/^(setuid )?ELF/.test(no.fileDesc) && no.d === null) no.magia = "elf"; }
+        }
         else return;
         por(cam, no);
       });
@@ -292,12 +300,15 @@
       por("/etc/hostname", mkF(0, 420, "notebook\n", D16));
     }
     var tmp = por("/tmp", mkD(0, 1023, BOOT0)); tmp.tam = 40; tmp.tmpfs = true;
-    var rt = por("/root", mkD(0, 488, dataT(2026, 10, 16, 12, 11)));
+    var rt = por("/root", mkD(0, 488, dataT(2026, 10, 16, 13, 5)));
     rt.c[".bash_history"] = mkF(0, 384, "", dataT(2026, 10, 16, 13, 6));
-    rt.c[".config"] = mkD(0, 448, dataT(2026, 10, 16, 12, 11)); rt.c[".local"] = mkD(0, 493, dataT(2026, 10, 16, 12, 11)); rt.c[".ssh"] = mkD(0, 448, dataT(2026, 10, 16, 12, 11));
+    rt.c[".ssh"] = mkD(0, 448, dataT(2026, 10, 16, 12, 11));
     // /dev
     var DV = BOOT0;
     ["null", "zero", "random", "urandom", "full", "tty"].forEach(function (n) { por("/dev/" + n, mkC(n, DV)); });
+    var dtty = por("/dev/tty", mkC("tty", DV)); dtty.g = 5;
+    // o disco da VM: dispositivos de bloco (grupo disk), como em lsblk
+    ["sda", "sda1", "sda2", "sda3"].forEach(function (n, i) { var b = por("/dev/" + n, mkC(n, DV)); b.bloco = true; b.m = 432; b.g = 993; b.maj = "8, " + i; });
     por("/dev/stdin", mkL("/proc/self/fd/0", DV));
     por("/dev/stdout", mkL("/proc/self/fd/1", DV));
     por("/dev/stderr", mkL("/proc/self/fd/2", DV));
@@ -360,6 +371,7 @@
         pasta.mt = Math.max(pasta.mt, e.mt * 1000);
         var nn = pasta.c[partes[1]] = e.d ? mkD(UID, e.m, e.mt * 1000) : (e.c != null ? mkF(UID, e.m, e.c, e.mt * 1000) : mkF(UID, e.m, null, e.mt * 1000, e.s));
         if (e.d && e.nl) nn.nlf = e.nl; // .git, pkg e src têm subpastas na VM
+        if (e.d && e.du) nn.duOculto = e.du; // o conteúdo dessas subpastas não existe aqui, mas o du conta (KiB)
         if (!e.d && e.c == null && e.b) nn.blocosReais = e.b; // os .pkg.tar.zst não são esparsos
       });
     }
@@ -369,7 +381,12 @@
       Object.keys(DADOS.pac.local).forEach(function (n) { var p = DADOS.pac.local[n], d = mkD(0, 493, p[17] * 1000); d.c["desc"] = mkF(0, 420, "", p[17] * 1000); d.c["files"] = mkF(0, 420, "", p[17] * 1000); loc.c[n + "-" + p[0]] = d; });
       loc.c["ALPM_DB_VERSION"] = mkF(0, 420, "9\n", dataT(2026, 10, 16, 12, 8));
       var pk = por("/var/cache/pacman/pkg", mkD(0, 493, dataT(2026, 10, 16, 13, 0)));
-      DADOS.pac.cache.forEach(function (n) { pk.c[n] = mkF(0, 420, null, dataT(2026, 10, 16, 12, 57), /\.sig$/.test(n) ? 566 : tamanhoPacoteCache(n)); });
+      DADOS.pac.cache.forEach(function (n) {
+        var ci = DADOS.cachePkg && DADOS.cachePkg[n];
+        var f = pk.c[n] = mkF(0, 420, null, ci ? ci[1] * 1000 : dataT(2026, 10, 16, 12, 57), ci ? ci[0] : /\.sig$/.test(n) ? 566 : tamanhoPacoteCache(n));
+        if (ci) f.blocosReais = Math.ceil(ci[2] / 2);
+        if (/\.zst$/.test(n)) f.magia = "zst"; // pacotes de verdade (zstd), não arquivos esparsos
+      });
       por("/var/log/pacman.log", mkF(0, 420, DADOS.plog, dataT(2026, 10, 16, 13, 0)));
     }
     return raiz;
@@ -2127,7 +2144,7 @@
   /* ERE (POSIX) → RegExp do JavaScript */
   function ereParaJs(re, opts) {
     opts = opts || {};
-    var out = "", i = 0, bre = !!opts.bre;
+    var out = "", i = 0, bre = !!opts.bre, profP = 0;
     while (i < re.length) {
       var c = re[i];
       if (c === "\\") {
@@ -2168,6 +2185,8 @@
         if (c === "(" || c === ")" || c === "|" || c === "{" || c === "}" || c === "+" || c === "?") { out += "\\" + c; i++; continue; }
         if (c === "*" && (out === "" || out === "^" || /\\\($/.test(out))) { out += "\\*"; i++; continue; }
       } else {
+        if (c === "(") profP = (profP || 0) + 1;
+        if (c === ")") { if (!profP) { out += "\\)"; i++; continue; } profP--; } // ")" sem par é literal no ERE
         if (c === "{" && !/^\{[0-9]*(,[0-9]*)?\}/.test(re.slice(i))) { out += "\\{"; i++; continue; }
         if ((c === "*" || c === "+" || c === "?") && (out === "" || out === "^" || out.slice(-1) === "(" || out.slice(-1) === "|")) { out += "\\" + c; i++; continue; }
       }
@@ -2627,6 +2646,7 @@
     if (r.err && r.err !== "ENOENT") return { err: r.err };
     var no = r.no;
     if (no && no.t === "c") {
+      if (no.bloco && !this.pode(no, modo === "r" ? 4 : 2)) return { err: "EACCES" };
       if (no.dev === "null") return new OFD("null");
       if (no.dev === "zero") return new OFD("zero");
       if (no.dev === "random" || no.dev === "urandom") return new OFD("random");
@@ -2660,6 +2680,7 @@
     var r = this.resolver(p, true);
     if (r.err) return { err: r.err };
     if (r.no.t === "d") return { err: "EISDIR" };
+    if (r.no.t === "c" && r.no.bloco && !this.pode(r.no, 4)) return { err: "EACCES" };
     if (r.no.t === "c") { if (r.no.dev === "null") return { txt: "" }; if (r.no.dev === "zero") return { txt: repete("\0", 1024) }; return { txt: "" }; }
     if (!this.pode(r.no, 4)) return { err: "EACCES" };
     return { txt: dadosDe(r.no), no: r.no };
@@ -3976,8 +3997,9 @@
       case "-r": return this.pode(no, 4);
       case "-w": return this.pode(no, 2);
       case "-x": return this.pode(no, 1);
-      case "-c": return no.t === "c";
-      case "-b": case "-p": case "-S": return false;
+      case "-c": return no.t === "c" && !no.bloco;
+      case "-b": return no.t === "c" && !!no.bloco;
+      case "-p": case "-S": return false;
       case "-g": return !!(no.m & 1024); case "-u": return !!(no.m & 2048); case "-k": return !!(no.m & 512);
       case "-O": return no.u === this.uid; case "-G": return no.g === contaDe(this).gid;
       case "-N": return no.mt > (no.at || 0);
@@ -5923,14 +5945,22 @@
      Os textos longos de "help NOME" ficam em assets/bashsim-ajuda.js, carregado sob demanda. */
   var TEXTO_HELP = "GNU bash, versão 5.3.20(1)-release (x86_64-pc-linux-gnu)\nEsses comandos shell são definidos internamente. Digite `help' para ver essa\nlista. Digite `help NOME' para descobrir mais sobre a função `NOME'.\nUse `info bash' para descobrir mais sobre o shell em geral.\nUse `man -k' ou `info' para descobrir mais sobre comandos que não estão nesta\nlista.\n\nUm asterisco (*) próximo ao nome significa que o comando está desabilitado.\n\n ! PIPELINE                              history [-c] [-d posição] [n] ou his>\n espec_job [&]                           if COMANDOS; then COMANDOS; [ elif C>\n (( expressão ))                         jobs [-lnprs] [espec_job ...] ou job>\n . [-p caminho] arquivo [argumentos]     kill [-s espec_sinal | -n num_sinal >\n :                                       let ARG [ARG ...]\n [ arg... ]                              local [opção] nome[=valor] ...\n [[ expressão ]]                         logout [n]\n alias [-p] [nome[=valor] ... ]          mapfile [-d delim] [-n número] [-O o>\n bg [espec_job ...]                      popd [-n] [+N | -N]\n bind [-lpsvPSVX] [-m mapa-teclas] [-f>  printf [-v var] formato [argumentos]\n break [n]                               pushd [-n] [+N | -N | dir]\n builtin [comando-interno-shell [arg .>  pwd [-LP]\n caller [expr]                           read [-ers] [-a array] [-d delim] [->\n case PALAVRA in [PADRÃO [| PADRÃO]...>  readarray [-d delim] [-n número] [-O>\n cd [-L|[-P [-e]]] [-@] [dir]            readonly [-aAf] [nome[=valor] ...] o>\n command [-pVv] comando [arg ...]        return [n]\n compgen [-V nome_var] [-abcdefgjksuv]>  select NOME [in PALAVRAS ... ;] do C>\n complete [-abcdefgjksuv] [-pr] [-DEI]>  set [-abefhkmnptuvxBCEHPT] [-o opção>\n compopt [-o|+o opção] [-DEI] [nome ..>  shift [n]\n continue [n]                            shopt [-pqsu] [-o] [nome_opção ...]\n coproc [NOME] comando [redirecionamen>  source [-p caminho] arquivo [argumen>\n declare [-aAfFgiIlnrtux] [nome[=valor>  suspend [-f]\n dirs [-clpv] [+N] [-N]                  test [expr]\n disown [-h] [-ar] [espec_job ... | pi>  time [-p] pipeline\n echo [-neE] [arg ...]                   times\n enable [-a] [-dnps] [-f arquivo] [nom>  trap [-Plp] [[ação] espec_sinal ...]\n eval [arg ...]                          true\n exec [-cl] [-a nome] [comando [argume>  type [-afptP] nome [nome ...]\n exit [n]                                typeset [-aAfFgiIlnrtux] nome[=valor>\n export [-fn] [nome[=valor] ...] ou ex>  ulimit [-SHabcdefiklmnpqrstuvxPRT] [>\n false                                   umask [-p] [-S] [modo]\n fc [-e editor] [-lnr] [primeiro] [últ>  unalias [-a] nome [nome ...]\n fg [espec_job]                          unset [-f] [-v] [-n] [nome ...]\n for NOME [in PALAVRAs ...] ; do COMAN>  until COMANDOS; do COMANDOS-2; done\n for (( exp1; exp2; exp3 )); do COMAND>  variables - Nomes e significados de >\n function NOME { COMANDOS ; } ou NOME >  wait [-fn] [-p var] [id ...]\n getopts optstring nome [arg ...]        while COMANDOS; do COMANDOS-2; done\n hash [-lr] [-p caminho] [-dt] [nome .>  { COMANDOS ; }\n help [-dms] [padrão ...]\n";
   var BASH_VERSAO_TXT = "GNU bash, versão 5.3.20(1)-release (x86_64-pc-linux-gnu)\nCopyright (C) 2025 Free Software Foundation, Inc.\nLicença GPLv3+: GNU GPL versão 3 ou posterior <http://gnu.org/licenses/gpl.html>\n\nEste é um software livre; você é livre para alterar e redistribuí-lo.\nHá NENHUMA GARANTIA, na extensão permitida pela lei.\n";
-  var AJUDA = null, AJUDA_D = null;
+  var AJUDA = null, AJUDA_D = null, AJUDA_P = {};
   function carregarAjuda() {
     if (AJUDA) return true;
     var dados = global.BashSimAjuda;
     if (!dados && typeof require === "function" && typeof module !== "undefined") { try { dados = require("./bashsim-ajuda.js"); } catch (e) { dados = null; } }
     if (!dados) return false;
-    AJUDA = dados.ajuda; AJUDA_D = dados.descricao;
+    AJUDA = dados.ajuda; AJUDA_D = dados.descricao; AJUDA_P = dados.programas || {};
     return true;
+  }
+  // --help de programas (texto real da VM, em assets/bashsim-ajuda.js); o coreutils 9.12 põe negrito e links
+  // (OSC 8) nos nomes das opções sempre que TERM indica um terminal com cores, mesmo num pipe
+  function ajudaPrograma(io, chave) {
+    if (!carregarAjuda() || !AJUDA_P[chave]) { io.err("(simulador) a ajuda ainda está carregando; tente de novo em um instante.\n"); return 1; }
+    var t = AJUDA_P[chave], term = io.sh.valor("TERM");
+    if (!term || term === "dumb") t = t.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "").replace(/\x1b\[[0-9;]*m/g, "");
+    io.out(t); return 0;
   }
 
   /* ------------------------------------------------------------------
@@ -6328,7 +6358,7 @@
     return "";
   }
   function modoStr(no) {
-    var r = no.t === "d" ? "d" : no.t === "l" ? "l" : no.t === "c" ? "c" : "-", m = no.m, l = "rwxrwxrwx";
+    var r = no.t === "d" ? "d" : no.t === "l" ? "l" : no.t === "c" ? (no.bloco ? "b" : "c") : "-", m = no.m, l = "rwxrwxrwx";
     for (var i = 0; i < 9; i++) r += (m & (256 >> i)) ? l[i] : "-";
     var a = r.split("");
     if (m & 2048) a[3] = a[3] === "x" ? "s" : "S";
@@ -6387,7 +6417,7 @@
     if (o.p === true) o.p = true;
     if (o["indicator-style"] === "classify") o.F = true;
     if (o.version) { io.out("ls (GNU coreutils) 9.7\n"); return 0; }
-    if (o.help) { io.out("Uso: ls [OPÇÃO]... [ARQUIVO]...\n"); return 0; }
+    if (o.help) return ajudaPrograma(io, "ls");
     var tty = io.tty();
     var usaCor = o.color === "always" || o.color === "yes" || o.color === "force" || ((o.color === "auto" || o.color === "tty" || o.color === "if-tty" || o.color === true) && tty);
     if (o.color === true && !tty) usaCor = false;
@@ -6449,6 +6479,7 @@
       return dataLs(t, sh.k.clock);
     }
     function tamTxt(no) {
+      if (no.t === "c" && no.maj) return no.maj;
       if (no.t === "c") return ({ "null": "1, 3", zero: "1, 5", random: "1, 8", urandom: "1, 9", full: "1, 7", tty: "5, 0" })[no.dev] || "1, 3";
       var t = tamanho(no);
       return o.h || o.si ? humano(t, o.si) : String(t);
@@ -6626,7 +6657,7 @@
     });
     return st;
   };
-  function tipoArqPt(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? "arquivo especial de caractere" : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
+  function tipoArqPt(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? (no.bloco ? "arquivo especial de bloco" : "arquivo especial de caractere") : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
   EXT.rm = function* (args, io) {
     var sh = io.sh, g = getopt(args, "", { recursive: "r", force: "f", interactive: "interactive?=", verbose: "v", dir: "d", "preserve-root": "pr", "no-preserve-root": "npr" }, { validas: "rRfivdI" });
     if (g.erro) {
@@ -6836,6 +6867,7 @@
     var dest = g.o.t || (ops.length > 1 ? ops.pop() : ".");
     var rd = sh.resolver(dest, !g.o.n);
     var st = 0;
+    if (ops.length > 1 && !(rd.no && rd.no.t === "d")) { io.msg(rd.no ? "alvo " + qn(dest) + " não é um diretório" : "alvo " + qn(dest) + ": " + errMsg(rd.err || "ENOENT")); return 1; }
     ops.forEach(function (alvo) {
       var base = alvo.replace(/\/+$/, ""); base = base.slice(base.lastIndexOf("/") + 1);
       var link = rd.no && rd.no.t === "d" && !(g.o.n && rd.no.t === "l") ? dest.replace(/\/+$/, "") + "/" + base : dest;
@@ -6848,11 +6880,19 @@
       if (!p.pai || p.pai.t !== "d") { io.msg("falha ao criar " + (g.o.s ? "link simbólico " : "link físico ") + qn(link) + ": Arquivo ou diretório inexistente"); st = 1; return; }
       if (g.o.s) {
         var t = alvo;
+        if (g.o.r) {
+          // -r: caminho relativo da pasta do link até o alvo (como o "relpath" do coreutils)
+          var de = sh.abs(p.dir === "." ? "" : p.dir).split("/").filter(Boolean), para = sh.abs(alvo).split("/").filter(Boolean), c0 = 0;
+          while (c0 < de.length && c0 < para.length && de[c0] === para[c0]) c0++;
+          t = repete("../", de.length - c0) + para.slice(c0).join("/");
+          if (!t) t = ".";
+        }
         p.pai.c[p.nome] = donoDe(sh, mkL(t, sh.k.clock));
       } else {
         var ra = sh.resolver(alvo, false);
         if (!ra.no) { io.msg("falha ao acessar " + qn(alvo) + ": " + errMsg(ra.err || "ENOENT")); st = 1; return; }
-        if (ra.no.t === "d") { io.msg(qn(alvo) + ": links físicos não são permitidos para diretórios"); st = 1; return; }
+        if (ra.no.t === "d") { io.msg(alvo + ": não são permitidos links físicos para diretórios"); st = 1; return; }
+        if (montagemDe(ra.caminho || sh.abs(alvo)) !== montagemDe(sh.abs(p.dir === "." ? "" : p.dir))) { io.msg("falha ao criar link físico " + qn(link) + " => " + qn(alvo) + ": Link entre dispositivos inválido"); st = 1; return; }
         p.pai.c[p.nome] = ra.no; ra.no.nl = (ra.no.nl || 1) + 1; ra.no.ct = sh.k.clock;
       }
       p.pai.mt = sh.k.clock;
@@ -7065,6 +7105,7 @@
         if (r.length) out += (!temFim && (cauda || r.length === ls.length) && fimIncl && r[r.length - 1] === ls[ls.length - 1] && (cauda || r.length === ls.length)) ? "" : "\n";
         io.out(out);
       }, cauda ? "abrir" : "abrir");
+      if (cauda && o.f && g.ops.length && g.ops.every(function (a) { return a !== "-" && !sh.no(a); })) { io.msg("nenhum aquivo restante"); return 1; } // (sic: "aquivo" na tradução)
       if (cauda && o.f && !sh.k.semTeclado) {
         // tail -f: fica esperando o arquivo crescer (Ctrl+C para parar)
         var arq = g.ops[g.ops.length - 1], no = arq ? sh.no(arq) : null, tam = no ? dadosDe(no).length : 0;
@@ -7341,7 +7382,9 @@
     var ops = g.ops;
     if (!ops.length) return io.tente("falta operando");
     if (!o.d && !o.s && ops.length < 2) { io.msg("falta operando depois de " + qa(ops[0])); io.err("Dois conjuntos devem ser fornecidos na tradução.\n"); return io.tente(); }
-    if (o.d && !o.s && ops.length > 1) { io.msg("operando extra " + qa(ops[1])); io.err("Somente um conjunto pode ser fornecido ao excluir.\n"); return io.tente(); }
+    if (o.d && !o.s && ops.length > 1) { io.msg("operando extra " + qa(ops[1])); io.err("Somente um conjunto pode ser fornecido na exclusão sem omissão de repetições.\n"); return io.tente(); }
+    var maxOps = (o.d && !o.s) || (o.s && !o.d && ops.length < 2) ? 1 : 2;
+    if (ops.length > Math.max(maxOps, 2) || (o.s && !o.d && ops.length > 2)) { io.msg("operando extra " + qa(ops[2])); return io.tente(); }
     var s1 = trConjunto(ops[0], io); if (!s1) return 1;
     var s2 = ops[1] !== undefined ? trConjunto(ops[1], io) : null; if (ops[1] !== undefined && !s2) return 1;
     var a = trExpandir(s1), b = s2 ? trExpandir(s2, a.length) : null;
@@ -7631,7 +7674,7 @@
     function ender(n) { if (radix === "n") return ""; var s = n.toString(radix === "x" ? 16 : radix === "d" ? 10 : 8); while (s.length < 7) s = "0" + s; return s; }
     for (var i = 0; i < b.length; i += 16) {
       var lin = b.slice(i, i + 16), cel;
-      if (tipo === "c") cel = lin.map(function (x) { var esc = { 0: "\\0", 7: "\\a", 8: "\\b", 9: "\\t", 10: "\\n", 11: "\\v", 12: "\\f", 13: "\\r" }[x]; return pad(esc || (x >= 32 && x < 127 ? String.fromCharCode(x) : x.toString(8)), 4); }).join("");
+      if (tipo === "c") cel = lin.map(function (x) { var esc = { 0: "\\0", 7: "\\a", 8: "\\b", 9: "\\t", 10: "\\n", 11: "\\v", 12: "\\f", 13: "\\r" }[x]; return pad(esc || (x >= 32 && x < 127 ? String.fromCharCode(x) : ("00" + x.toString(8)).slice(-3)), 4); }).join("");
       else if (/^x1/.test(tipo)) cel = lin.map(function (x) { return " " + ("0" + x.toString(16)).slice(-2); }).join("");
       else if (/^d1|^u1/.test(tipo)) cel = lin.map(function (x) { return pad(x, 4); }).join("");
       else { var w = []; for (var k = 0; k < lin.length; k += 2) { var v = lin[k] | ((lin[k + 1] || 0) << 8); w.push(" " + ("000000" + v.toString(8)).slice(-6)); } cel = w.join(""); }
@@ -7760,20 +7803,44 @@
     io.out(formatarData(fmt, quando, !!o.u) + "\n");
     return 0;
   };
+  // cal do util-linux: blocos de 20 colunas, sempre 6 linhas de semanas, título centralizado (sobra vai à esquerda),
+  // hoje em vídeo reverso no terminal
   EXT.cal = function* (args, io) {
-    var t = tm(io.sh.k.clock), ano = t.Y, mes = t.M;
-    var cab = MESES_LONGO[mes][0].toUpperCase() + MESES_LONGO[mes].slice(1) + " " + ano;
-    var esp = Math.floor((20 - cab.length) / 2);
-    var out = pad(repete(" ", esp) + cab, 20, true) + "  \ndo se te qu qu se sá  \n";
-    var primeiro = new Date(Date.UTC(ano, mes, 1)).getUTCDay(), dias = new Date(Date.UTC(ano, mes + 1, 0)).getUTCDate();
-    var linha = repete("   ", primeiro);
-    for (var d = 1; d <= dias; d++) {
-      var sd = pad(d, 2);
-      linha += sd + " ";
-      if ((primeiro + d) % 7 === 0) { out += linha + " \n"; linha = ""; }
+    var t = tm(io.sh.k.clock), ops = [], tres = false, seg = false, anoTodo = false;
+    for (var i = 1; i < args.length; i++) {
+      var a = args[i];
+      if (a === "-3" || a === "--three") tres = true; else if (a === "-m" || a === "--monday") seg = true; else if (a === "-s" || a === "--sunday") seg = false;
+      else if (a === "-y" || a === "--year") anoTodo = true; else if (a === "-1" || a === "--one") tres = false;
+      else if (/^-./.test(a)) return io.erroOpcao({ tipo: /^--/.test(a) ? "longa" : "curta", op: /^--/.test(a) ? a : a[1] });
+      else ops.push(a);
     }
-    if (linha) out += pad(linha, 21, true) + " \n";
-    io.out(out);
+    var ano = t.Y, mes = t.M;
+    if (ops.length === 1) { ano = parseInt(ops[0], 10); anoTodo = true; }
+    else if (ops.length >= 2) {
+      mes = parseInt(ops[0], 10) - 1; ano = parseInt(ops[1], 10);
+      if (!(mes >= 0 && mes < 12)) { io.msg("valor de mês inválido: use 1-12"); return 1; }
+    }
+    if (anoTodo && ops.length === 0) ano = t.Y;
+    var tty = io.tty();
+    function centro(txt, w) { var sobra = w - largura(txt), dir = Math.floor(sobra / 2); return repete(" ", sobra - dir) + txt + repete(" ", dir); }
+    function bloco(a2, m2, comAno) {
+      var linhas = [centro(MESES_LONGO[m2] + (comAno ? " " + a2 : ""), 20), seg ? "se te qu qu se sá do" : "do se te qu qu se sá"];
+      var primeiro = new Date(Date.UTC(a2, m2, 1)).getUTCDay(), dias = new Date(Date.UTC(a2, m2 + 1, 0)).getUTCDate();
+      if (seg) primeiro = (primeiro + 6) % 7;
+      var cel = [];
+      for (var x = 0; x < primeiro; x++) cel.push("  ");
+      for (var d = 1; d <= dias; d++) cel.push(tty && a2 === t.Y && m2 === t.M && d === t.D ? "\x1b[7m" + pad(d, 2) + "\x1b[0m" : pad(d, 2));
+      for (var w = 0; w < 6; w++) { var l = cel.slice(w * 7, w * 7 + 7); while (l.length < 7) l.push("  "); linhas.push(l.join(" ")); }
+      return linhas;
+    }
+    function juntar(blocos, sep) { var out = ""; for (var li = 0; li < blocos[0].length; li++) out += blocos.map(function (b) { return b[li]; }).join(sep) + "\n"; return out; }
+    if (anoTodo) {
+      var out = centro(String(ano), 66) + "\n\n";
+      for (var g = 0; g < 4; g++) out += juntar([0, 1, 2].map(function (k) { return bloco(ano, g * 3 + k, false); }), "   ");
+      io.out(out); return 0;
+    }
+    if (tres) { io.out(juntar([-1, 0, 1].map(function (dm) { var mm = mes + dm, aa = ano; if (mm < 0) { mm = 11; aa--; } if (mm > 11) { mm = 0; aa++; } return bloco(aa, mm, true); }), "  ")); return 0; }
+    io.out(juntar([bloco(ano, mes, true)], ""));
     return 0;
   };
 
@@ -8029,7 +8096,7 @@
   };
 
   /* ---------- stat / du / df / file / which ---------- */
-  function tipoArqStat(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? "arquivo especial de caractere" : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
+  function tipoArqStat(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? (no.bloco ? "arquivo especial de bloco" : "arquivo especial de caractere") : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
   function dataCompleta(ms) { var t = tm(ms); return t.Y + "-" + dois(t.M + 1) + "-" + dois(t.D) + " " + dois(t.h) + ":" + dois(t.m) + ":" + dois(t.s) + ".000000000 -0300"; }
   EXT.stat = function* (args, io) {
     var g = getopt(args, "cf", { format: "c=", printf: "printf=", dereference: "L", terse: "t", "file-system": "f" }, { validas: "cLtf" });
@@ -8078,7 +8145,7 @@
     var maxD = o.s ? 0 : (o.d !== undefined ? +o.d : Infinity);
     function fmt(k) { if (o.b) return String(k); if (o.h) return k === 0 ? "0" : humano(k * 1024); if (o.m) return String(Math.ceil(k / 1024)); return String(k); }
     function anda(no, rot, prof) {
-      var t = blocos(no);
+      var t = blocos(no) + (no.duOculto || 0);
       if (o.A || o.b) t = o.b ? tamanho(no) : Math.ceil(tamanho(no) / 1024);
       if (no.t === "d") {
         if (!sh.pode(no, 4)) { io.msg("não foi possível ler o diretório " + q1(rot) + ": Permissão negada"); st = 1; }
@@ -8125,7 +8192,10 @@
     var no = r.no;
     if (no.t === "l") return "symbolic link to " + no.alvo;
     if (no.t === "d") return "directory";
+    if (no.t === "c" && no.bloco) return "block special (" + no.maj.replace(", ", "/") + ")";
     if (no.t === "c") return "character special (1/3)";
+    if (no.fileDesc) return no.fileDesc;
+    if (no.magia === "zst") return "Zstandard compressed data (v0.8+), Dictionary ID: None";
     if (no.d === null) return "data";
     var d = no.d;
     if (d === "") return "empty";
@@ -8615,7 +8685,19 @@
     io.err("tput: código de capacidade desconhecido \"" + c + "\" (simulador)\n");
     return 4;
   };
-  EXT.less = function* (args, io) { var st = yield* io.cadaArquivo(args.slice(1).filter(function (a) { return a[0] !== "-" && a[0] !== "+"; }), function (txt) { io.out(txt); }); return st; };
+  EXT.less = function* (args, io) {
+    // o less não põe "less:" antes do erro e dá código 1 só quando nenhum arquivo abriu
+    var sh = io.sh, arqs = args.slice(1).filter(function (a) { return a[0] !== "-" && a[0] !== "+"; }), bons = [];
+    arqs.forEach(function (a) {
+      var r = sh.resolver(a, true);
+      if (!r.no) io.err(a + ": " + errMsg(r.err || "ENOENT") + "\n");
+      else if (r.no.t === "d") io.err(a + " is a directory\n");
+      else if (!sh.pode(r.no, 4)) io.err(a + ": Permissão negada\n");
+      else bons.push(a);
+    });
+    if (arqs.length && !bons.length) return 1;
+    var st = yield* io.cadaArquivo(bons, function (txt) { io.out(txt); }); return arqs.length ? 0 : st;
+  };
   EXT.more = EXT.less; EXT.most = EXT.less;
   EXT.timeout = function* (args, io) {
     var a = args.slice(1), sig = 15;
@@ -8771,6 +8853,48 @@
   };
 
   /* ---------- grep ---------- */
+  // erros de expressão regular com as mensagens da glibc/grep em pt_BR (null = válida)
+  var CLASSES_POSIX = /^(alpha|digit|alnum|upper|lower|space|blank|punct|print|graph|cntrl|xdigit)$/;
+  function erroRegexPosix(p, ere) {
+    var prof = 0;
+    for (var i = 0; i < p.length; i++) {
+      var c = p[i];
+      if (c === "\\") {
+        if (i === p.length - 1) return "Barra invertida final";
+        var d = p[++i];
+        if (!ere && d === "(") prof++;
+        else if (!ere && d === ")") { if (!prof) return ") ou \\) descasados"; prof--; }
+        else if (!ere && d === "{") { var f = p.indexOf("\\}", i); if (f < 0) return "\\{ descasado"; var ct = p.slice(i + 1, f), mm = /^(\d*)(,(\d*))?$/.exec(ct); if (!mm || (mm[3] && mm[1] && +mm[1] > +mm[3])) return "Conteúdo inválido de \\{\\}"; i = f + 1; }
+        continue;
+      }
+      if (c === "[") {
+        var j = i + 1;
+        if (p[j] === "^") j++;
+        if (p[j] === "]") j++;
+        if (j >= p.length) return "Expressão regular inválida"; // "[" no fim do padrão
+        var ini = j, fechou = false;
+        while (j < p.length) {
+          if (p[j] === "[" && /[:.=]/.test(p[j + 1] || "")) {
+            var tipo = p[j + 1], fim = p.indexOf(tipo + "]", j + 2);
+            if (fim < 0) return "[, [^, [:, [. ou [= sem correspondente";
+            if (tipo === ":" && !CLASSES_POSIX.test(p.slice(j + 2, fim))) return "Nome de classe de caractere inválido";
+            j = fim + 2; continue;
+          }
+          if (p[j] === "]") { fechou = true; break; }
+          j++;
+        }
+        if (!fechou) return "[, [^, [:, [. ou [= sem correspondente";
+        var dentro = p.slice(ini, j);
+        if (/^:.*:$/.test(dentro) && dentro.length > 1) return "a sintaxe da classe de caracteres é [" + "[" + dentro + "]], não [" + dentro + "]";
+        i = j; continue;
+      }
+      if (ere && c === "(") prof++;
+      else if (ere && c === ")" && prof) prof--;
+      else if (ere && c === "{") { var f2 = p.indexOf("}", i), ct2 = f2 < 0 ? null : p.slice(i + 1, f2), m2 = ct2 === null ? null : /^(\d*)(,(\d*))?$/.exec(ct2); if (m2 && (m2[1] || m2[3]) && m2[3] && m2[1] && +m2[1] > +m2[3]) return "Conteúdo inválido de \\{\\}"; }
+    }
+    if (prof) return "( ou \\( descasados";
+    return null;
+  }
   EXT.grep = function* (args, io) {
     var nomeProg = args[0];
     var g = getopt(args, "efABCmd", {
@@ -8799,6 +8923,8 @@
     var vazioPadrao = padroes.some(function (p) { return p === ""; });
     if (o.w) src = "(?<![\\p{L}\\p{N}_])(?:" + src + ")(?![\\p{L}\\p{N}_])";
     if (o.x) src = "^(?:" + src + ")$";
+    if (!o.F && !o.P) for (var pe = 0; pe < padroes.length; pe++) { var er = erroRegexPosix(padroes[pe], !!o.E); if (er) { io.msg(er); return 2; } }
+    if (o.P) for (var pp = 0; pp < padroes.length; pp++) { var abre = (padroes[pp].replace(/\\./g, "").match(/\(/g) || []).length, fecha = (padroes[pp].replace(/\\./g, "").match(/\)/g) || []).length; if (abre > fecha) { io.msg("missing closing parenthesis"); return 2; } }
     var re = criarRegex(src, (o.i && !o.noi ? "i" : "") + "g");
     if (!re) {
       io.msg("Expressão regular inválida"); return 2;
@@ -8880,7 +9006,7 @@
       if (o.c) saidaArq += (multi ? (cor ? cor_("p", arq.rot) + cor_("s", ":") : arq.rot + ":") : "") + contagem + "\n";
       else if (o.l && contagem) saidaArq += (cor ? cor_("p", arq.rot) : arq.rot) + (o.Z ? "\0" : "\n");
       else if (o.L && !contagem) saidaArq += (cor ? cor_("p", arq.rot) : arq.rot) + "\n";
-      else if (binario && contagem && !o.q) saidaArq += "grep: " + arq.rot + ": arquivo binário corresponde\n";
+      else if (binario && contagem && !o.q) saidaArq += "grep: " + arq.rot + ": arquivo binário coincide com o padrão\n";
       io.out(saidaArq);
       yield* io.fluir();
     }
@@ -10145,24 +10271,28 @@
     var COM_ARG = { "-name": 1, "-iname": 1, "-path": 1, "-ipath": 1, "-wholename": 1, "-regex": 1, "-iregex": 1, "-type": 1, "-size": 1, "-mtime": 1, "-mmin": 1, "-atime": 1, "-amin": 1, "-ctime": 1, "-cmin": 1, "-newer": 1, "-perm": 1, "-user": 1, "-group": 1, "-printf": 1, "-maxdepth": 1, "-mindepth": 1, "-links": 1, "-inum": 1, "-fprint": 1, "-samefile": 1, "-lname": 1, "-uid": 1, "-gid": 1, "-xtype": 1, "-regextype": 1 };
     function prim() {
       var t = expr[p++];
-      if (t === "(" ) { var e = ou(); if (expr[p] !== ")") throw new ErrF("parênteses sem correspondência"); p++; return e; }
+      if (t === "(" ) { var e = ou(); if (expr[p] !== ")") throw new ErrF("expressão inválida; Eu estava esperando encontrar um \")\" em algum lugar, mas não foi encontrado um."); p++; return e; }
       if (t === "!" || t === "-not") return { op: "not", a: prim() };
       if (t === undefined) throw new ErrF("expressão esperada");
       if (t === "-exec" || t === "-execdir" || t === "-ok" || t === "-okdir") {
         var cmd = [];
         while (p < expr.length && expr[p] !== ";" && !(expr[p] === "+" && expr[p - 1] === "{}")) cmd.push(expr[p++]);
-        if (p >= expr.length) throw new ErrF("faltando argumento para “" + t + "”");
+        if (p >= expr.length) throw new ErrF("faltando argumento para \"" + t + "\"");
         var mais = expr[p] === "+"; p++;
         temAcao = true;
         return { op: t, cmd: cmd, mais: mais, acum: [] };
       }
       if (COM_ARG[t]) {
-        if (p >= expr.length) throw new ErrF("faltando argumento para “" + t + "”");
+        if (p >= expr.length) throw new ErrF("faltando argumento para \"" + t + "\"");
         var v = expr[p++];
+        if (/^-[acm](min|time)$/.test(t) && !/^[+-]?[0-9]+$/.test(v)) throw new ErrF("argumento inválido \"" + v + "\" para \"" + t + "\"");
         if (t === "-maxdepth") { maxD = +v; return { op: "-true" }; }
         if (t === "-mindepth") { minD = +v; return { op: "-true" }; }
         if (t === "-printf" || t === "-fprint") temAcao = true;
-        if (t === "-type" && !/^[fdlbcps](,[fdlbcps])*$/.test(v)) throw new ErrF("Argumento desconhecido para -type: " + v);
+        if ((t === "-type" || t === "-xtype") && !/^[fdlbcpsD](,[fdlbcpsD])*$/.test(v)) {
+          if (v.length > 1 && v[1] !== ",") throw new ErrF("Deve-se separar vários argumentos para " + t + " usando: \",\"");
+          throw new ErrF("Argumento desconhecido para " + t + ": " + (v.split(",").filter(function (x) { return !/^[fdlbcpsD]$/.test(x); })[0] || v));
+        }
         if (t === "-newer") { var r = sh.resolver(v, true); if (!r.no) throw new ErrF(qa(v) + ": Arquivo ou diretório inexistente"); return { op: t, ref: r.no }; }
         if (t === "-regextype") return { op: "-true" };
         return { op: t, v: v };
@@ -10171,12 +10301,19 @@
       if (t === "-depth" || t === "-d") { depthFirst = true; return { op: "-true" }; }
       if (/^-(true|false|empty|prune|readable|writable|executable|nouser|nogroup|xdev|mount|noleaf|follow)$/.test(t)) return { op: t };
       if (/^-/.test(t)) throw new ErrF("predicado inválido \"" + t + "\"");
-      throw new ErrF("caminhos devem preceder expressão: “" + t + "”");
+      throw new ErrF(caminhosAntes(t, p - 1));
+    }
+    // "find . -name *.jpg" expandido pelo shell: o real sugere que faltam aspas
+    function caminhosAntes(t, pos) {
+      var m = "os caminhos devem preceder a expressão: \"" + t + "\"";
+      var ant = expr[pos - 2];
+      if (/^-(i?name|i?path|i?wholename|i?lname|i?regex)$/.test(ant || "") && sh.resolver(expr[pos - 1], false).no) m += "\nfind: possível padrão sem aspas após o predicado \"" + ant + "'?";
+      return m;
     }
     function e_() { var l = prim(); while (p < expr.length && expr[p] !== ")" && expr[p] !== "-o" && expr[p] !== "-or" && expr[p] !== ",") { if (expr[p] === "-a" || expr[p] === "-and") p++; l = { op: "and", a: l, b: prim() }; } return l; }
     function ou() { var l = e_(); while (expr[p] === "-o" || expr[p] === "-or" || expr[p] === ",") { var vir = expr[p] === ","; p++; l = { op: vir ? "," : "or", a: l, b: e_() }; } return l; }
     var arvore;
-    try { arvore = expr.length ? ou() : { op: "-true" }; if (p < expr.length) throw new ErrF(expr[p] === ")" ? "parênteses sem correspondência" : "caminhos devem preceder expressão: “" + expr[p] + "”"); }
+    try { arvore = expr.length ? ou() : { op: "-true" }; if (p < expr.length) throw new ErrF(expr[p] === ")" ? "parênteses sem correspondência" : caminhosAntes(expr[p], p)); }
     catch (e) { if (e instanceof ErrF) { io.msg(e.m); return 1; } throw e; }
     if (!temAcao) arvore = { op: "and", a: arvore, b: { op: "-print" } };
     var agora = sh.k.clock, st = 0, sair = false, self = this;
@@ -10196,7 +10333,7 @@
         case "-ipath": return casaPadrao(e.v, item.c, { nc: true });
         case "-lname": return no.t === "l" && casaPadrao(e.v, no.alvo, {});
         case "-regex": case "-iregex": { var r = criarRegex("^(?:" + ereParaJs(e.v, { bre: false }) + ")$", e.op === "-iregex" ? "i" : ""); return !!r && r.test(item.c); }
-        case "-type": case "-xtype": { var tn = no.t === "l" && seguir ? (sh.resolver(item.c, true).no || no) : no; var tipo = tn.t === "d" ? "d" : tn.t === "l" ? "l" : tn.t === "c" ? "c" : "f"; return e.v.split(",").indexOf(tipo) >= 0; }
+        case "-type": case "-xtype": { var tn = no.t === "l" && (e.op === "-xtype" ? !seguir : seguir) ? (sh.resolver(item.c, true).no || no) : no; var tipo = tn.t === "d" ? "d" : tn.t === "l" ? "l" : tn.t === "c" ? "c" : "f"; return e.v.split(",").indexOf(tipo) >= 0; }
         case "-size": {
           var m = /^([+-]?)([0-9]+)([bckwMG]?)$/.exec(e.v); if (!m) return false;
           var u = { b: 512, c: 1, k: 1024, w: 2, M: 1048576, G: 1073741824, "": 512 }[m[3]], tam = tamanho(no);
@@ -10773,11 +10910,23 @@
     io.out(p.join(" ") + "\n");
     return 0;
   };
+  // o hostname do Arch é o do GNU inetutils 2.8 (não tem -I, ao contrário do Debian/Ubuntu)
   EXT.hostname = function* (args, io) {
     var a = args[1];
-    if (a === "-I" || a === "--all-ip-addresses") { io.out("10.0.2.15 fd17:625c:f037:2:3074:376a:4fe9:621c \n"); return 0; }
-    if (a === "-i" || a === "--ip-address") { io.out("127.0.1.1\n"); return 0; }
-    if (a && a[0] !== "-") { if (io.sh.uid !== 0) { io.msg("you must be root to change the host name"); return 1; } io.out(""); return 0; }
+    var longas = { "--aliases": "-a", "--domain": "-d", "--fqdn": "-f", "--long": "-f", "--ip-addresses": "-i", "--short": "-s", "--yp": "-y", "--nis": "-y", "--help": "-?", "--version": "-V" };
+    if (a && /^--./.test(a)) { var l = Object.keys(longas).filter(function (k) { return k.indexOf(a) === 0; }); if (l.length === 1) a = longas[l[0]]; else if (a !== "--usage") { io.err("hostname: unrecognized option '" + a + "'\nTry 'hostname --help' or 'hostname --usage' for more information.\n"); return 64; } }
+    if (a === "--usage") { io.out("Usage: hostname [-adfisy?V] [-F FILE] [--aliases] [--domain] [--fqdn] [--long]\n            [--file=FILE] [--ip-addresses] [--short] [--yp] [--nis] [--help]\n            [--usage] [--version] [NAME]\n"); return 0; }
+    if (a && /^-./.test(a)) {
+      var c = a[1];
+      if (c === "?") { io.out("Usage: hostname [OPTION...] [NAME]\nShow or set the system's host name.\n\n  -a, --aliases              alias names\n  -d, --domain               DNS domain name\n  -f, --fqdn, --long         DNS host name or FQDN\n  -F, --file=FILE            set host name or NIS domain name from FILE\n  -i, --ip-addresses         addresses for the host name\n  -s, --short                short host name\n  -y, --yp, --nis            NIS/YP domain name\n  -?, --help                 give this help list\n      --usage                give a short usage message\n  -V, --version              print program version\n\nMandatory or optional arguments to long options are also mandatory or optional\nfor any corresponding short options.\n\nReport bugs to <bug-inetutils@gnu.org>.\n"); return 0; }
+      if (c === "V") { io.out("hostname (GNU inetutils) 2.8\n"); return 0; }
+      if (c === "i") { io.out("10.0.2.15\n"); return 0; }
+      if (c === "f" || c === "s") { io.out("notebook\n"); return 0; }
+      if (c === "d" || c === "y") { io.out("(none)\n"); return 0; }
+      if (c === "a") { io.out("\n"); return 0; }
+      if (c !== "F") { io.err("hostname: invalid option -- '" + c + "'\nTry 'hostname --help' or 'hostname --usage' for more information.\n"); return 64; }
+    }
+    if (a) { if (io.sh.uid !== 0) { io.msg("sethostname: Operation not permitted"); return 1; } io.out(""); return 0; }
     io.out("notebook\n"); return 0;
   };
   EXT.nproc = function* (args, io) { io.out("2\n"); return 0; };
@@ -10959,6 +11108,18 @@
       io.out("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\n    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00\n2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000\n    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff\n    altname enx08002774b203\n");
       return 0;
     }
+    if ((eh(obj, "route") || obj === "r") && sub && eh(sub, "get")) {
+      var rest = a.slice(2), dest = null, de = null;
+      for (var ri = 0; ri < rest.length; ri++) { if (rest[ri] === "from") de = rest[++ri]; else if (rest[ri] === "to") dest = rest[++ri]; else if (dest === null) dest = rest[ri]; }
+      if (dest === null) { io.err("need at least a destination address\n"); return 1; }
+      var okIp = function (x) { var m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(x); return m && m.slice(1).every(function (n) { return +n < 256; }); };
+      if (!okIp(dest)) { io.err("Error: any valid prefix is expected rather than \"" + dest + "\".\n"); return 1; }
+      var uidR = " uid " + io.sh.uid + " \n";
+      if (/^127\./.test(dest) || dest === "10.0.2.15") { io.out("local " + dest + (de ? " from " + de : "") + " dev lo" + (de ? "" : " src " + (dest === "10.0.2.15" ? dest : "127.0.0.1")) + uidR + "    cache <local> \n"); return 0; }
+      var noLan = /^10\.0\.2\./.test(dest);
+      io.out(dest + (de ? " from " + de : "") + (noLan ? "" : " via 10.0.2.2") + " dev enp0s3" + (de ? "" : " src 10.0.2.15") + uidR + "    cache \n");
+      return 0;
+    }
     if (eh(obj, "route") || obj === "r") { io.out("default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100 \n10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15 metric 100 \n"); return 0; }
     if (!obj) { io.err("Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }\n       ip [ -force ] -batch filename\nwhere  OBJECT := { address | addrlabel | fou | help | ila | ioam | l2tp | link |\n                   macsec | maddress | monitor | mptcp | mroute | mrule |\n                   neighbor | neighbour | netconf | netns | nexthop | ntable |\n                   ntbl | route | rule | sr | stats | tap | tcpmetrics |\n                   token | tunnel | tuntap | vrf | xfrm }\n"); return 255; }
     io.err("(simulador) \"ip " + obj + "\" não é simulado aqui; use ip a, ip link ou ip r.\n"); return 1;
@@ -11012,7 +11173,36 @@
   EXT.getent = function* (args, io) {
     var db = args[1], chaves = args.slice(2), sh = io.sh;
     var arq = { passwd: "/etc/passwd", group: "/etc/group", shadow: "/etc/shadow", gshadow: "/etc/gshadow" }[db];
-    if (db === "hosts") { var hs = { localhost: "::1             localhost", notebook: "fd17:625c:f037:2:3074:376a:4fe9:621c notebook" }; var st0 = 0; if (!chaves.length) { io.out("127.0.0.1       localhost\n::1             localhost\n"); return 0; } chaves.forEach(function (c) { if (hs[c]) io.out(hs[c] + "\n"); else st0 = 2; }); return st0; }
+    if (/^(hosts|ahosts|ahostsv4|ahostsv6)$/.test(db)) {
+      // endereços reais vistos na VM (o DNS de verdade não é simulado; fora desta lista: código 2, como um nome inexistente)
+      var HS = {
+        localhost: [["::1"], ["127.0.0.1"]], "localhost.localdomain": [["::1"], ["127.0.0.1"]],
+        notebook: [["fd17:625c:f037:2:3074:376a:4fe9:621c", "fe80::9c83:cf89:6133:11ca"], ["10.0.2.15"]],
+        "archlinux.org": [["2604:cac0:a104:d::3"], ["209.126.35.79"]], "www.archlinux.org": [["2604:cac0:a104:d::3"], ["209.126.35.79"]],
+        "aur.archlinux.org": [["2604:cac0:a104:d::2"], ["209.126.35.78"]], "wiki.archlinux.org": [["2604:cac0:a104:d::4"], ["209.126.35.81"]],
+        "google.com": [["2800:3f0:4001:838::200e"], ["172.217.172.142"]], "github.com": [[], ["4.228.31.150"]],
+        "geo.mirror.pkgbuild.com": [["2a0b:4342:1a91:3b5:26a3:f0ff:fe49:9bf9"], ["102.130.49.241"]]
+      };
+      var REV = { "8.8.8.8": "dns.google", "1.1.1.1": "one.one.one.one", "127.0.0.1": "localhost", "::1": "localhost", "10.0.2.15": "notebook" };
+      var col = function (ip) { return ip.length < 15 ? pad(ip, 15, true) : ip; };
+      var st0 = 0;
+      if (!chaves.length) { if (db === "hosts") { io.out("127.0.0.1       localhost\n::1             localhost\n"); return 0; } return 0; }
+      chaves.forEach(function (c) {
+        if (REV[c] && db === "hosts") { io.out(col(c) + " " + REV[c] + "\n"); return; }
+        var h = HS[c.toLowerCase()];
+        if (!h) { st0 = 2; return; }
+        if (db === "hosts") {
+          if (c === "notebook") h[0].forEach(function (ip) { io.out(col(ip) + " " + c + "\n"); });
+          else io.out(col(h[0][0] || h[1][0]) + " " + c + "\n");
+          return;
+        }
+        var ips = db === "ahostsv4" ? h[1] : db === "ahostsv6" ? (h[0].length ? h[0] : h[1].map(function (x) { return "::ffff:" + x; })) : h[0].map(function (x) { return /^fe80/.test(x) ? x + "%2" : x; }).concat(h[1]);
+        if (c === "notebook" && db === "ahosts") ips = ["fe80::9c83:cf89:6133:11ca%2", "fd17:625c:f037:2:3074:376a:4fe9:621c", "10.0.2.15"];
+        if (!ips.length) { st0 = 2; return; }
+        ips.forEach(function (ip, i) { ["STREAM", "DGRAM ", "RAW   "].forEach(function (t, j) { io.out(col(ip) + " " + t + " " + (i === 0 && j === 0 ? c : "") + "\n"); }); });
+      });
+      return st0;
+    }
     if (!arq) { io.err("Banco de dados desconhecido: " + (db || "") + "\nTente \"getent --help\" ou \"getent --usage\" para mais informações.\n"); return 1; }
     if (/shadow/.test(db) && sh.uid !== 0) return 0;
     var r = sh.lerArquivo(arq), ls = r.txt ? linhasDe(r.txt) : [], st = 0;
@@ -11063,7 +11253,7 @@
   // lê as opções do pacman: operação (Q S R F U D T V h) e modificadores
   var PAC_LONGAS = { query: "Q", sync: "S", remove: "R", files: "F", upgrade: "U", database: "D", deptest: "T", version: "V", help: "h", info: "i", list: "l", search: "s", owns: "o", explicit: "e", deps: "d", foreign: "m", native: "n", unrequired: "t", upgrades: "u", check: "k", quiet: "q", groups: "g", refresh: "y", sysupgrade: "u", clean: "c", nosave: "n", recursive: "s", cascade: "c", print: "p", downloadonly: "w" };
   function lerOpcoesPac(args) {
-    var o = { op: null, m: {}, alvos: [], longas: {} }, erro = null;
+    var o = { op: null, m: {}, alvos: [], longas: {} }, erro = null, letras = [];
     for (var i = 1; i < args.length; i++) {
       var a = args[i];
       if (a === "--") { o.alvos = o.alvos.concat(args.slice(i + 1)); break; }
@@ -11076,22 +11266,27 @@
         }
         if (!PAC_LONGAS[nome]) { erro = "opção inválida \"--" + nome + "\""; break; }
         var c = PAC_LONGAS[nome];
-        if ("QSRFUDTVh".indexOf(c) >= 0 && /^(query|sync|remove|files|upgrade|database|deptest|version|help)$/.test(nome)) { if (o.op && o.op !== c) { erro = "só uma operação pode ser usada por vez"; break; } o.op = c; }
+        if ("QSRFUDTV".indexOf(c) >= 0 && /^(query|sync|remove|files|upgrade|database|deptest|version)$/.test(nome)) { if (o.op && o.op !== c) { erro = "somente uma operação pode ser usada por vez"; break; } o.op = c; }
         else o.m[c] = (o.m[c] || 0) + 1;
         continue;
       }
       if (a[0] === "-" && a.length > 1) {
         for (var j = 1; j < a.length; j++) {
           var ch = a[j];
-          if ("QSRFUDTV".indexOf(ch) >= 0) { if (o.op && o.op !== ch) { erro = "só uma operação pode ser usada por vez"; break; } o.op = ch; continue; }
+          if ("QSRFUDTV".indexOf(ch) >= 0) { if (o.op && o.op !== ch) { erro = "somente uma operação pode ser usada por vez"; break; } o.op = ch; continue; }
           if (ch === "h") { o.m.h = 1; continue; }
-          if ("ilsoedmtukqgycnpwvx".indexOf(ch) < 0) { erro = "opção inválida \"-" + ch + "\""; break; }
-          o.m[ch] = (o.m[ch] || 0) + 1;
+          // letras fora do getopt do pacman: mensagem do getopt; as outras são conferidas depois, conforme a operação
+          if ("bcdefgiklmnopqrstuvwxy".indexOf(ch) < 0) { erro = "opção inválida \"-" + ch + "\""; o.erroGetopt = ch; break; }
+          o.m[ch] = (o.m[ch] || 0) + 1; letras.push(ch);
         }
         if (erro) break;
         continue;
       }
       o.alvos.push(a);
+    }
+    if (!erro && !(o.m.h && !o.op)) {
+      var VALIDAS = { Q: "bcdegiklmnopqrstuv", S: "bcdgilpqrsuvwy", R: "bcdnprsuv", F: "blqrvxy", U: "bdprv", D: "bkqrv", T: "brv", V: "" };
+      for (var li = 0; li < letras.length; li++) { if (!o.op || VALIDAS[o.op].indexOf(letras[li]) < 0) { erro = "opção inválida \"-" + letras[li] + "\""; break; } }
     }
     o.erro = erro;
     return o;
@@ -11183,10 +11378,10 @@
     if (!DADOS) { io.err("(simulador) os dados dos pacotes ainda estão carregando; tente de novo em um instante.\n"); return 1; }
     A.cacheDir = sh.no("/var/cache/pacman/pkg");
     var o = lerOpcoesPac(args), cols = colunas(io), m = o.m, conf = o.longas;
-    if (o.erro) { io.err(/^opção inválida "-(.)"$/.test(o.erro) ? "pacman: opção inválida -- “" + o.erro.slice(-2, -1) + "”\n" : "erro: " + o.erro + "\n"); return 1; }
+    if (o.erro) { io.err(o.erroGetopt ? "pacman: opção inválida -- “" + o.erroGetopt + "”\n" : "erro: " + o.erro + "\n"); return 1; }
     if (o.op === "V") { io.out("\n .--.                  Pacman v7.1.0 - libalpm v16.0.1\n/ _.-' .-.  .-.  .-.   Copyright (C) 2006-2025 Pacman Development Team\n\\  '-. '-'  '-'  '-'   Copyright (C) 2002-2006 Judd Vinet\n '--'\n                       Este programa pode ser redistribuído livremente\n                       sob os termos da Licença Pública Geral GNU.\n\n"); return 0; }
     if (!o.op) { if (m.h) { pacmanUso(io); return 0; } io.err("erro: nenhuma operação especificada (use -h para obter ajuda)\n"); return 1; }
-    if (m.h) { io.err("(simulador) a ajuda de \"pacman -" + o.op + " -h\" não está disponível aqui; veja man pacman na sua máquina.\n"); return 0; }
+    if (m.h) return ajudaPrograma(io, "pacman-" + o.op);
     if (o.op === "Q") return yield* pacQ(sh, io, A, o, cols);
     if (o.op === "S") return yield* pacS(sh, io, A, o, cols);
     if (o.op === "R") return yield* pacR(sh, io, A, o, cols);
@@ -11980,6 +12175,8 @@
       var c = txt[i];
       if (c === C0) { flush(); var letra = txt[i + 1], fim = txt.indexOf(C1, i + 2); if (fim < 0) fim = txt.length; out += '<span class="c-' + letra + '">' + escHtml(txt.slice(i + 2, fim)) + "</span>"; i = fim + 1; continue; }
       if (c === "\x1b") {
+        var osc = /^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/.exec(txt.slice(i, i + 400)); // OSC 8 (links do --help do coreutils): invisível
+        if (osc) { i += osc[0].length; continue; }
         var m = /^\x1b\[([0-9;?]*)([A-Za-z])/.exec(txt.slice(i)) || /^\x1b\(B/.exec(txt.slice(i));
         if (m) {
           flush();
