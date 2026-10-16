@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch firewall — nftables, ufw e firewalld sem se trancar fora | Guia Arch</title>
+<meta name="description" content="Firewall no Arch Linux: por que nada vem ativo, nft list ruleset, o /etc/nftables.conf do pacote explicado linha por linha, ufw (status, allow ssh, enable) e firewalld, e como ligar um firewall sem derrubar o SSH.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Firewall: <span class="hl">nftables</span> e ufw</h1>
+
+<p class="intro">Um <strong>firewall</strong> ("parede corta-fogo") decide quais conexões de rede podem entrar e sair da máquina. O Linux tem o firewall dentro do kernel (o <strong>netfilter</strong>); o que muda é a ferramenta para escrever as regras: <code>nft</code> (nftables), <code>ufw</code> ou <code>firewalld</code>. No Arch, como quase tudo, <strong>nenhum vem ligado</strong>: você escolhe se quer e qual.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Conferir que o seu Arch está sem firewall (<code>nft list ruleset</code>, <code>ufw status</code>).</li>
+  <li>Ler, linha por linha, o <code>/etc/nftables.conf</code> que vem no pacote.</li>
+  <li>Usar o <code>ufw</code>: <code>allow</code>, <code>deny</code>, <code>enable</code>, <code>status</code>.</li>
+  <li>Conhecer o <code>firewalld</code> e escolher entre os três.</li>
+  <li>A regra de ouro: <strong>libere o SSH antes de ligar</strong> qualquer firewall numa máquina remota.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Sobre os exemplos desta aula</strong>
+<p>A VM do guia é acessada por SSH por vários autores ao mesmo tempo. Ligar um firewall nela, com uma regra errada, cortaria o acesso de todos. Por isso, aqui, <strong>só os comandos de leitura foram rodados de verdade</strong> (estado, arquivos, testes de sintaxe). Todo comando que liga, carrega ou muda regras está marcado como <strong>ilustrativo</strong>. Esse cuidado é exatamente o que você deve ter num servidor.</p>
+</div>
+
+<hr>
+
+<h2>Como funciona</h2>
+<p>Cada pacote de rede que chega passa por uma série de <strong>regras</strong>, de cima para baixo. A primeira que "casa" decide: <strong>aceitar</strong> (<em>accept</em>), <strong>descartar</strong> calado (<em>drop</em>) ou <strong>recusar</strong> avisando (<em>reject</em>). Se nenhuma casar, vale a <strong>política</strong> padrão (<em>policy</em>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th></tr>
+<tr><td><strong>input</strong></td><td>O que <strong>chega</strong> à máquina (alguém tentando acessar o seu SSH, o seu servidor web)</td></tr>
+<tr><td><strong>output</strong></td><td>O que <strong>sai</strong> (você navegando). Quase sempre liberado.</td></tr>
+<tr><td><strong>forward</strong></td><td>O que <strong>passa</strong> pela máquina indo para outra (roteadores, VMs, containers)</td></tr>
+<tr><td><strong>porta</strong></td><td>O "ramal" de cada serviço: 22 = SSH, 80 = HTTP, 443 = HTTPS</td></tr>
+<tr><td><strong>estado</strong> (<em>conntrack</em>)</td><td>O kernel lembra das conexões: a resposta de um site que <strong>você</strong> abriu é <em>established</em> e pode entrar</td></tr>
+</table>
+</div>
+
+<p>A configuração mais comum num computador pessoal: <strong>bloquear tudo o que chega</strong>, exceto respostas ao que você pediu e os serviços que você quer oferecer (o SSH, por exemplo).</p>
+
+<hr>
+
+<h2>No Arch, nada vem ativo</h2>
+<p>A VM tem três ferramentas instaladas (para as aulas), e nenhuma ligada:</p>
+
+<pre class="term">$ pacman -Q nftables iptables ufw firewalld
+erro: o pacote "firewalld" não foi encontrado
+nftables 1:1.1.7-3
+iptables 1:1.8.13-1
+ufw 0.36.2-7
+$ systemctl is-enabled nftables ufw iptables
+disabled
+disabled
+disabled</pre>
+
+<p>Para olhar as regras carregadas no kernel, é preciso ser root. Como a ana:</p>
+
+<pre class="term">$ nft list ruleset
+netlink: Error: cache initialization failed: Operation not permitted
+Error: Operation not permitted (perhaps you must be root?)
+$ ufw status
+ERROR: You need to be root to run this script</pre>
+
+<p>Com <code>sudo</code>, a resposta é o silêncio:</p>
+
+<pre class="term">$ sudo nft list ruleset
+$ echo $?
+0                                « nenhuma regra: tudo passa
+$ sudo ufw status
+Status: inactive
+$ sudo iptables -S
+-P INPUT ACCEPT                  « -P = política: aceitar
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT</pre>
+
+<dl class="anatomy">
+  <dt>nft</dt><dd>A ferramenta do <strong>nftables</strong>, o sistema de firewall atual do kernel.</dd>
+  <dt>list ruleset</dt><dd>Mostra <strong>todas</strong> as regras carregadas. Vazio = sem firewall.</dd>
+  <dt>iptables -S</dt><dd>O comando antigo (<code>-S</code> = listar como regras). No Arch, ele é uma "fachada" que escreve no nftables: <code>iptables -V</code> mostra <code>iptables v1.8.13 (nf_tables)</code>.</dd>
+</dl>
+
+<div class="note">
+<strong>Sem firewall é perigoso?</strong>
+<p>Num computador pessoal atrás do roteador de casa, sem serviços ligados, o risco é pequeno: uma porta só "existe" se algum programa estiver escutando nela. O primeiro passo de segurança é sempre ver <strong>o que está escutando</strong> (<code>sudo ss -tulpn</code>; veja <a href="rede.html">NetworkManager e iwd</a>) e desligar o que não precisa. O firewall é a segunda camada, e fica importante em notebooks que usam Wi-Fi público e em servidores.</p>
+</div>
+
+<hr>
+
+<h2>nftables: o firewall do kernel</h2>
+<p>O pacote <code>nftables</code> traz um serviço (<code>nftables.service</code>) que, ao ligar, carrega as regras do arquivo <code>/etc/nftables.conf</code>. O arquivo que vem no pacote já é um bom firewall de computador pessoal. Real:</p>
+
+<pre class="file" data-file="/etc/nftables.conf">#!/usr/bin/nft -f
+# vim:set ts=2 sw=2 et:
+
+# IPv4/IPv6 Simple &amp; Safe firewall ruleset.
+# More examples in /usr/share/nftables/ and /usr/share/doc/nftables/examples/.
+
+destroy table inet filter
+table inet filter {
+  chain input {
+    type filter hook input priority filter
+    policy drop
+
+    ct state invalid drop comment "early drop of invalid connections"
+    ct state {established, related} accept comment "allow tracked connections"
+    iif lo accept comment "allow from loopback"
+    meta l4proto { icmp, icmpv6 } accept comment "allow icmp"
+    tcp dport ssh accept comment "allow sshd"
+    pkttype host limit rate 5/second counter reject with icmpx type admin-prohibited
+    counter
+  }
+  chain forward {
+    type filter hook forward priority filter
+    policy drop
+  }
+}
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code>destroy table inet filter</code></td><td>Apaga a tabela antiga com esse nome, se existir, para recarregar do zero sem duplicar regras</td></tr>
+<tr><td><code>table inet filter { … }</code></td><td>Uma <strong>tabela</strong> chamada <code>filter</code>, da família <code>inet</code> (vale para IPv4 <strong>e</strong> IPv6 de uma vez)</td></tr>
+<tr><td><code>chain input { type filter hook input priority filter</code></td><td>Uma <strong>corrente</strong> de regras pendurada (<em>hook</em>) na entrada: olha tudo o que chega</td></tr>
+<tr><td><code>policy drop</code></td><td>O que não for liberado abaixo é <strong>descartado</strong></td></tr>
+<tr><td><code>ct state invalid drop</code></td><td>Descarta pacotes que não fazem sentido (<code>ct</code> = <em>conntrack</em>)</td></tr>
+<tr><td><code>ct state {established, related} accept</code></td><td>Aceita respostas a conexões que <strong>você</strong> abriu. Sem esta linha, você não navegaria.</td></tr>
+<tr><td><code>iif lo accept</code></td><td>Aceita tudo da interface <code>lo</code> (a própria máquina falando com ela mesma)</td></tr>
+<tr><td><code>meta l4proto { icmp, icmpv6 } accept</code></td><td>Aceita ICMP (o <code>ping</code> e mensagens de controle; o IPv6 precisa delas para funcionar)</td></tr>
+<tr><td><code>tcp dport ssh accept</code></td><td><strong>Libera a porta 22</strong> (SSH). É isso que deixa este arquivo "seguro" de ligar numa máquina acessada por SSH.</td></tr>
+<tr><td><code>pkttype host limit rate 5/second counter reject with icmpx type admin-prohibited</code></td><td>Para o resto que era endereçado a esta máquina: <strong>recusa avisando</strong> (em vez de silêncio), no máximo 5 por segundo, e conta</td></tr>
+<tr><td><code>counter</code></td><td>Conta o que chegou até o fim (e vai cair na política <code>drop</code>)</td></tr>
+<tr><td><code>chain forward { … policy drop }</code></td><td>Não deixa a máquina repassar pacotes para outras (ela não é um roteador)</td></tr>
+</table>
+</div>
+
+<p>O <code>nft</code> pode <strong>conferir</strong> um arquivo sem carregar nada, com <code>-c</code> (<em>check</em>). Isso foi rodado na VM (sem efeito nenhum):</p>
+
+<pre class="term">$ sudo nft -c -f /etc/nftables.conf
+$ echo $?
+0                                « sintaxe correta; nada foi carregado</pre>
+
+<h3>Ligar o nftables</h3>
+<p><strong>Ilustrativo</strong> (não rodado na VM). Com o arquivo acima (que libera o SSH), ligar é um comando:</p>
+
+<pre class="term">$ sudo systemctl enable --now nftables
+$ sudo nft list ruleset          « agora mostra a tabela inet filter carregada</pre>
+
+<p>Para liberar outro serviço, acrescente uma linha na <code>chain input</code>, logo depois da do SSH, e recarregue:</p>
+
+<pre class="file" data-file="/etc/nftables.conf (trecho)">    tcp dport ssh accept comment "allow sshd"
+    tcp dport { http, https } accept comment "servidor web"
+</pre>
+
+<pre class="term">$ sudo nft -c -f /etc/nftables.conf      « confira antes
+$ sudo systemctl reload nftables          « recarrega o arquivo</pre>
+
+<p>Exemplos prontos para outras situações ficam em <code>/usr/share/nftables/</code> (<code>inet-filter.nft</code>, <code>inet-nat.nft</code>, <code>all-in-one.nft</code>…).</p>
+
+<hr>
+
+<h2>ufw: o firewall "descomplicado"</h2>
+<p>O <strong>ufw</strong> (<em>Uncomplicated Firewall</em>, vindo do Ubuntu) escreve as regras para você a partir de comandos simples. Na VM ele está instalado e <strong>inativo</strong>:</p>
+
+<pre class="term">$ sudo ufw status verbose
+Status: inactive
+$ grep -v '^#' /etc/ufw/ufw.conf | grep -v '^$'
+ENABLED=no                       « não liga no boot
+LOGLEVEL=low
+$ grep -v '^#' /etc/default/ufw | grep -v '^$' | head -4
+IPV6=yes
+DEFAULT_INPUT_POLICY="DROP"      « quando ligado: bloqueia o que chega…
+DEFAULT_OUTPUT_POLICY="ACCEPT"   « …e libera o que sai
+DEFAULT_FORWARD_POLICY="DROP"</pre>
+
+<p>Repare na consequência: ao ligar o ufw sem nenhuma regra, <strong>a entrada fica toda bloqueada, inclusive o SSH</strong>. Ao contrário do <code>nftables.conf</code> do Arch, o ufw não libera a porta 22 sozinho.</p>
+
+<h3>Perfis de aplicativos</h3>
+<p>O ufw conhece as portas de vários programas pelo nome (comandos de leitura, rodados na VM):</p>
+
+<pre class="term">$ sudo ufw app list
+Available applications:
+  AIM
+  Bonjour
+  CIFS
+  DNS
+…
+  SSH
+…
+  WWW
+  WWW Cache
+  WWW Full
+  WWW Secure
+…
+$ sudo ufw app info SSH
+Profile: SSH
+Title: SSH server
+Description: SSH server
+
+Port:
+  22/tcp
+$ sudo ufw show added
+Added user rules (see 'ufw status' for running firewall):
+(None)                           « nenhuma regra criada ainda</pre>
+
+<h3>A sequência certa: primeiro o SSH, depois o enable</h3>
+<p><strong>Ilustrativo</strong>: os comandos abaixo <strong>não</strong> foram rodados na VM, e as saídas foram omitidas (não puderam ser conferidas). Num computador seu:</p>
+
+<ol class="passo">
+<li><p><strong>Libere o SSH</strong> (se você acessa a máquina por SSH, ou vai acessar):</p>
+<pre class="term">$ sudo ufw allow ssh</pre>
+<dl class="anatomy">
+  <dt>allow</dt><dd>Libera a entrada.</dd>
+  <dt>ssh</dt><dd>O serviço, pelo nome (de <code>/etc/services</code>: porta 22/tcp). Valem também <code>22/tcp</code>, <code>SSH</code> (o perfil) ou <code>from 192.168.0.0/24 to any port 22</code> (só da rede de casa).</dd>
+</dl>
+<p>Com o ufw desligado, a regra fica guardada e entra em vigor quando ele ligar.</p></li>
+<li><p><strong>Confira o que vai valer</strong> (<code>ufw show added</code> agora lista <code>ufw allow 22/tcp</code>).</p></li>
+<li><p><strong>Ligue</strong>. O ufw avisa que pode derrubar conexões SSH e pergunta (<code>y</code>/<code>n</code>):</p>
+<pre class="term">$ sudo ufw enable
+$ sudo systemctl enable ufw          « para o serviço carregar as regras no boot</pre></li>
+<li><p><strong>Veja as regras ativas:</strong></p>
+<pre class="term">$ sudo ufw status numbered</pre>
+<p>A saída lista cada regra com um número, a porta (<code>22/tcp</code>), a ação (<code>ALLOW IN</code>) e a origem (<code>Anywhere</code>), em duas versões: IPv4 e <code>(v6)</code>.</p></li>
+</ol>
+
+<h3>Outros comandos do ufw</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo ufw allow 80/tcp</code></td><td>Libera uma porta</td></tr>
+<tr><td><code>sudo ufw allow 'WWW Full'</code></td><td>Libera um perfil (80 e 443)</td></tr>
+<tr><td><code>sudo ufw allow from 192.168.0.0/24 to any port 22</code></td><td>Libera só para a rede local</td></tr>
+<tr><td><code>sudo ufw limit ssh</code></td><td>Libera, mas bloqueia quem tentar mais de 6 conexões em 30 s (contra robôs)</td></tr>
+<tr><td><code>sudo ufw deny 3306</code></td><td>Bloqueia uma porta</td></tr>
+<tr><td><code>sudo ufw delete 2</code></td><td>Apaga a regra número 2 (de <code>status numbered</code>)</td></tr>
+<tr><td><code>sudo ufw disable</code></td><td>Desliga (as regras ficam guardadas)</td></tr>
+<tr><td><code>sudo ufw reset</code></td><td>Desliga e apaga todas as regras</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>firewalld</h2>
+<p>O <strong>firewalld</strong> (do Fedora e do Red Hat) organiza a rede em <strong>zonas</strong> (<code>public</code>, <code>home</code>, <code>work</code>…), cada uma com seus serviços liberados, e integra com o NetworkManager: o Wi-Fi do café pode estar na zona <code>public</code> e o de casa na <code>home</code>. Não está instalado na VM (<code>erro: o pacote "firewalld" não foi encontrado</code>). <strong>Ilustrativo</strong>:</p>
+
+<pre class="term">$ sudo pacman -S firewalld
+$ sudo systemctl enable --now firewalld
+$ sudo firewall-cmd --get-active-zones
+$ sudo firewall-cmd --zone=public --add-service=ssh --permanent
+$ sudo firewall-cmd --reload
+$ sudo firewall-cmd --list-all</pre>
+
+<dl class="anatomy">
+  <dt>--add-service=ssh</dt><dd>Libera um serviço conhecido na zona.</dd>
+  <dt>--permanent</dt><dd>Grava na configuração. Sem ele, a regra vale só até o próximo <code>reload</code>/boot (útil para testar).</dd>
+  <dt>--reload</dt><dd>Aplica a configuração gravada.</dd>
+</dl>
+
+<p>Desktops KDE oferecem uma tela de firewall que funciona com o ufw ou com o firewalld.</p>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>nftables (<code>nft</code>)</th><th>ufw</th><th>firewalld</th></tr>
+<tr><td>O que é</td><td>A ferramenta nativa do firewall do kernel</td><td>Uma camada simples por cima do iptables/nftables</td><td>Um serviço com zonas, por cima do nftables</td></tr>
+<tr><td>Configuração</td><td>Um arquivo de texto (<code>/etc/nftables.conf</code>)</td><td>Comandos (<code>ufw allow</code>)</td><td>Comandos (<code>firewall-cmd</code>) e zonas</td></tr>
+<tr><td>Libera o SSH sozinho?</td><td>Sim, o arquivo do Arch traz <code>tcp dport ssh accept</code></td><td><strong>Não</strong>: faça <code>ufw allow ssh</code> antes do <code>enable</code></td><td>A zona padrão <code>public</code> costuma trazer o ssh</td></tr>
+<tr><td>Bom para</td><td>Quem quer entender e controlar tudo; servidores</td><td>Iniciantes; computador pessoal; receitas do Ubuntu</td><td>Notebooks que mudam de rede; quem vem do Fedora</td></tr>
+<tr><td>Pacote</td><td><code>nftables</code></td><td><code>ufw</code></td><td><code>firewalld</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Use um só</strong>
+<p>Ligar dois deles ao mesmo tempo (ufw e firewalld, ou nftables.service e ufw) cria regras sobrepostas e comportamentos difíceis de entender. Escolha um, e desabilite os outros. Containers (Docker, Podman) e máquinas virtuais também criam regras próprias (veja <a href="containers.html">Docker e Podman</a>).</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>Liguei o firewall e o SSH caiu</strong>
+<p><strong>O que aconteceu:</strong> a política de entrada passou a ser <code>drop</code> e não havia regra para a porta 22 (o caso clássico do <code>ufw enable</code> sem <code>ufw allow ssh</code>).</p>
+<p><strong>Como resolver:</strong> só pelo console da máquina (teclado e monitor, ou o console web da VPS): <code>sudo ufw allow ssh</code> ou <code>sudo ufw disable</code>; no nftables, <code>sudo systemctl stop nftables</code> (ou <code>sudo nft flush ruleset</code>, que apaga todas as regras carregadas). Prevenção: libere o SSH primeiro e mantenha uma sessão aberta enquanto testa.</p>
+</div>
+
+<div class="cenario">
+<strong>"Operation not permitted (perhaps you must be root?)" / "You need to be root"</strong>
+<p><strong>O que aconteceu:</strong> ver e mudar o firewall é coisa de root.</p>
+<p><strong>Como resolver:</strong> <code>sudo nft list ruleset</code>, <code>sudo ufw status</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O serviço está rodando, mas ninguém de fora consegue acessar</strong>
+<p><strong>Como confirmar, em ordem:</strong> o serviço escuta em <code>0.0.0.0</code> e não só em <code>127.0.0.1</code>? (<code>sudo ss -tulpn</code>); a porta está liberada? (<code>sudo nft list ruleset</code> ou <code>sudo ufw status</code>); o roteador encaminha a porta (para acesso de fora de casa)?</p>
+<p><strong>Como resolver:</strong> libere a porta (<code>ufw allow 8080/tcp</code> ou uma linha <code>tcp dport 8080 accept</code>) e confira a configuração do serviço.</p>
+</div>
+
+<div class="cenario">
+<strong>Erro de sintaxe no nftables.conf</strong>
+<p><strong>O que aconteceu:</strong> o <code>nft</code> recusa o arquivo inteiro (nada é carregado) e mostra a linha do erro com um <code>^^^^</code> embaixo.</p>
+<p><strong>Como resolver:</strong> sempre <code>sudo nft -c -f /etc/nftables.conf</code> antes do <code>reload</code>; o <code>systemctl status nftables</code> e o <code>journalctl -u nftables</code> mostram a mensagem.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sudo nft list ruleset</code></td><td>Todas as regras carregadas (vazio = sem firewall)</td></tr>
+<tr><td><code>sudo nft -c -f /etc/nftables.conf</code></td><td>Confere o arquivo sem carregar</td></tr>
+<tr><td><code>sudo systemctl enable --now nftables</code> · <code>reload</code></td><td>Liga o nftables / recarrega o arquivo</td></tr>
+<tr><td><code>sudo nft flush ruleset</code></td><td>Apaga todas as regras carregadas (emergência)</td></tr>
+<tr><td><code>sudo ufw status verbose</code> · <code>numbered</code></td><td>Estado e regras do ufw</td></tr>
+<tr><td><code>sudo ufw allow ssh</code> · <code>allow 80/tcp</code> · <code>limit ssh</code></td><td>Libera</td></tr>
+<tr><td><code>sudo ufw enable</code> + <code>sudo systemctl enable ufw</code></td><td>Liga (agora e no boot)</td></tr>
+<tr><td><code>sudo ufw disable</code> · <code>reset</code> · <code>delete N</code></td><td>Desliga · apaga tudo · apaga uma regra</td></tr>
+<tr><td><code>sudo ufw app list</code> · <code>app info NOME</code></td><td>Perfis de aplicativos</td></tr>
+<tr><td><code>sudo firewall-cmd --list-all</code></td><td>Regras da zona ativa (firewalld)</td></tr>
+<tr><td><code>sudo ss -tulpn</code></td><td>O que está escutando (o primeiro passo)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ver as regras</h3>
+<p>Complete para listar todas as regras carregadas no kernel:</p>
+<div class="ex-code">sudo nft <input data-answer="list ruleset" aria-label="subcomando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Antes do enable</h3>
+<p>Complete o comando que deve vir <strong>antes</strong> de <code>sudo ufw enable</code> numa máquina acessada por SSH:</p>
+<div class="ex-code">sudo ufw <input data-answer="allow" aria-label="ação"> <input data-answer="ssh|22|22/tcp|SSH|OpenSSH" aria-label="serviço"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Conferir sem carregar</h3>
+<p>Complete para testar a sintaxe do <code>/etc/nftables.conf</code> sem aplicar nada:</p>
+<div class="ex-code">sudo nft <input data-answer="-c" aria-label="opção"> -f /etc/nftables.conf</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Num Arch recém-instalado, <code>sudo nft list ruleset</code> não mostra nada. O que isso significa?</p>
+<label><input type="radio" name="q4"> O nftables está quebrado.</label>
+<label><input type="radio" name="q4"> Não há regras de firewall: nada vem ativo no Arch.</label>
+<label><input type="radio" name="q4"> Todas as conexões estão bloqueadas.</label>
+<label><input type="radio" name="q4"> Falta o sudo.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No <code>/etc/nftables.conf</code> do Arch, qual linha impede que você se tranque fora ao ligar o firewall por SSH?</p>
+<label><input type="radio" name="q5"> <code>policy drop</code></label>
+<label><input type="radio" name="q5"> <code>iif lo accept</code></label>
+<label><input type="radio" name="q5"> <code>chain forward</code></label>
+<label><input type="radio" name="q5"> <code>tcp dport ssh accept</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que a linha <code>ct state {established, related} accept</code> é essencial?</p>
+<label><input type="radio" name="q6"> Sem ela, as respostas às conexões que você abre (sites, atualizações) seriam bloqueadas.</label>
+<label><input type="radio" name="q6"> Ela libera o SSH.</label>
+<label><input type="radio" name="q6"> Ela bloqueia o ping.</label>
+<label><input type="radio" name="q6"> Ela liga o firewall no boot.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O firewall é do kernel (netfilter/nftables); <code>nft</code>, <code>ufw</code> e <code>firewalld</code> são formas de escrever as regras.</li>
+  <li>No Arch, nenhum vem ligado: <code>sudo nft list ruleset</code> vazio, <code>ufw status</code> → <code>inactive</code>.</li>
+  <li>O <code>/etc/nftables.conf</code> do pacote bloqueia a entrada, mas libera respostas, loopback, ICMP e o <strong>SSH</strong>.</li>
+  <li>O ufw bloqueia a entrada ao ligar e <strong>não</strong> libera o SSH sozinho: <code>ufw allow ssh</code> antes do <code>ufw enable</code>.</li>
+  <li>Teste sem aplicar (<code>nft -c</code>), mantenha uma sessão aberta e use um firewall só.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/Nftables">nftables</a> explica a sintaxe e traz exemplos de servidor e de estação de trabalho; <a href="https://wiki.archlinux.org/title/Uncomplicated_Firewall">Uncomplicated Firewall</a> cobre o ufw (inclusive o uso com Docker); <a href="https://wiki.archlinux.org/title/Firewalld">firewalld</a> descreve as zonas; e <a href="https://wiki.archlinux.org/title/Simple_stateful_firewall">Simple stateful firewall</a> ensina a montar um firewall do zero, entendendo cada regra. (Em outubro de 2026, essas páginas não têm versão em português.)</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
