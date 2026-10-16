@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch touch e mkdir — criar arquivos e pastas | Guia Arch</title>
+<meta name="description" content="Crie arquivos e pastas no Arch Linux com touch e mkdir: cada parte explicada, seis formas de criar várias pastas, chaves e sequências, mkdir -p, touch -d, as permissões que o Arch dá aos itens novos, as mensagens reais e missões no terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">touch e mkdir</span></h1>
+
+<p class="intro">Nesta aula você cria arquivos e pastas pelo terminal. São dois comandos: <code>mkdir</code> cria pastas e <code>touch</code> cria arquivos vazios. Eles parecem simples, mas têm truques que economizam muito trabalho, como criar 12 pastas, ou a estrutura inteira de um projeto, com um comando só.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que cada parte dos comandos <code>mkdir</code> e <code>touch</code> faz, e o que eles devolvem.</li>
+  <li>Seis formas diferentes de criar várias pastas, e quando usar cada uma.</li>
+  <li>Como criar um caminho inteiro de pastas com <code>mkdir -p</code>.</li>
+  <li>Como o <code>touch</code> cria arquivos e muda datas sem apagar nada.</li>
+  <li>As mensagens de erro reais do Arch e o que fazer com cada uma.</li>
+</ul>
+</div>
+
+<p>Os exemplos são de uma instalação real do Arch (coreutils 9.12), com a usuária <strong>ana</strong> na máquina <strong>notebook</strong>. Você vai usar o <code>ls</code> o tempo todo para conferir o que criou; se ainda não o conhece, veja antes a aula <a href="ls.html">ls</a>.</p>
+
+<hr>
+
+<h2>mkdir: criar uma pasta</h2>
+<p><code>mkdir</code> vem de <em>make directory</em>, "criar diretório". Diretório é o nome técnico de pasta.</p>
+
+<dl class="anatomy">
+  <dt>mkdir</dt><dd>O programa. Ele cria pastas.</dd>
+  <dt>estudos</dt><dd>O <strong>argumento</strong>: o nome da pasta que você quer criar. Sem caminho, ela nasce dentro da pasta atual.</dd>
+</dl>
+
+<pre class="term">$ mkdir estudos
+$ ls
+'Área de trabalho'   Documentos   estudos      Imagens   Música    Vídeos
+ aur                 Downloads    frutas.txt   Modelos   Público</pre>
+
+<p>O <code>mkdir</code> <strong>não mostrou nada</strong>. No Linux, silêncio significa sucesso: o comando só fala quando dá erro ou quando você pede. Por isso usamos o <code>ls</code> logo depois, para conferir. A pasta nova apareceu entre "Downloads" e "frutas.txt", porque o <code>ls</code> ordena pelo idioma, ignorando maiúsculas.</p>
+
+<h3>Pedindo para o mkdir falar: <code>-v</code></h3>
+
+<dl class="anatomy">
+  <dt>mkdir</dt><dd>O programa.</dd>
+  <dt>-v</dt><dd>Uma <strong>opção</strong> (de <em>verbose</em>, "detalhado"): conta o que foi feito.</dd>
+  <dt>aulas</dt><dd>O nome da pasta.</dd>
+</dl>
+
+<pre class="term">$ mkdir -v aulas
+mkdir: foi criado o diretório 'aulas'</pre>
+
+<h3>O que o comando devolve</h3>
+<p>Além do que aparece na tela, todo comando devolve um <strong>código de saída</strong>: <code>0</code> quando deu certo e outro número quando deu errado. Você vê esse código com <code>echo $?</code>, logo depois do comando:</p>
+
+<pre class="term">$ mkdir provas
+$ echo $?
+0                                                 « 0 = deu certo
+$ mkdir provas
+mkdir: não foi possível criar o diretório “provas”: Arquivo existe
+$ echo $?
+1                                                 « 1 = deu errado</pre>
+
+<p>A mensagem segue sempre o mesmo modelo: <strong>quem reclamou</strong> (<code>mkdir:</code>), <strong>o que tentou fazer</strong> (criar o diretório "provas") e, depois dos dois-pontos, <strong>o motivo</strong> (<code>Arquivo existe</code>: já existe algo com esse nome). No Arch a frase vem inteira em português; repare que o erro põe o nome entre aspas curvas (<code>“provas”</code>) e o <code>-v</code>, entre aspas retas (<code>'aulas'</code>).</p>
+
+<h3>As permissões de uma pasta nova</h3>
+<pre class="term">$ mkdir nova
+$ ls -ld nova
+drwxr-xr-x 2 ana ana 4096 16 out 14:56 nova</pre>
+
+<p>A pasta nasce com <code>drwxr-xr-x</code>: a dona (ana) pode tudo; o grupo e os outros podem entrar e ver o conteúdo, mas não criar nada nela. Quem decide isso é a <strong>umask</strong>, uma "máscara" que o Arch define como <code>022</code> para todos os usuários (confira com o comando <code>umask</code>). A aula <a href="permissoes.html">Entendendo Permissões</a> explica as letras e a umask.</p>
+
+<hr>
+
+<h2>Criar várias pastas: 6 formas diferentes</h2>
+<p>A Ana quer uma pasta para cada mês do semestre: <code>jan</code>, <code>fev</code>, <code>mar</code>, <code>abr</code>, <code>mai</code> e <code>jun</code>. Todas as formas a seguir chegam ao mesmo resultado; o que muda é a situação em que cada uma é mais prática.</p>
+
+<h3>Forma 1: vários nomes separados por espaço</h3>
+
+<dl class="anatomy">
+  <dt>mkdir</dt><dd>O programa.</dd>
+  <dt>jan fev mar</dt><dd>Três argumentos. Cada um vira uma pasta.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/estudos">$ mkdir jan fev mar
+$ ls
+fev  jan  mar</pre>
+
+<p>É a forma mais usada no dia a dia. "fev" veio antes de "jan" porque o <code>ls</code> ordena alfabeticamente; ele não sabe que são meses.</p>
+
+<h3>Forma 2: chaves <code>{ }</code></h3>
+<p>Quando os nomes têm uma parte em comum, as chaves evitam repetir. Quem entende as chaves é o <strong>shell</strong> (o Bash, o programa que lê o que você digita), não o <code>mkdir</code>: o Bash transforma <code>{jan,fev,mar}</code> em <code>jan fev mar</code> antes de chamar o comando. O <code>echo</code>, que só repete o que recebe, mostra essa transformação:</p>
+
+<dl class="anatomy">
+  <dt>relatorio-</dt><dd>O começo, igual para todos.</dd>
+  <dt>{jan,fev,mar}</dt><dd>As partes que mudam, separadas por vírgula, <strong>sem espaços</strong>.</dd>
+  <dt>.txt</dt><dd>O final, igual para todos.</dd>
+</dl>
+
+<pre class="term">$ echo relatorio-{jan,fev,mar}.txt
+relatorio-jan.txt relatorio-fev.txt relatorio-mar.txt
+$ mkdir rel-{abr,mai,jun}</pre>
+
+<div class="warning">
+<strong>Atenção às chaves: sem espaço depois da vírgula</strong>
+<p>Com espaço, o Bash não reconhece as chaves e passa o texto do jeito que está. Veja o estrago:</p>
+<pre class="term" data-cwd="~/estudos">$ echo {jan, fev}
+{jan, fev}
+$ mkdir {abr, mai}
+$ ls
+{abr,  fev  jan  mai}  mar</pre>
+<p>Foram criadas duas pastas com nomes estranhos, <code>{abr,</code> e <code>mai}</code>. Com uma opção só, como <code>{jan}</code>, as chaves também não fazem nada. A aula <a href="curingas.html">Curingas</a> compara as chaves com os curingas <code>*</code> e <code>?</code>, e o <a href="https://wallysondevs.github.io/guia-bash/chaves.html">Guia Bash</a> tem uma aula inteira sobre chaves.</p>
+</div>
+
+<h3>Forma 3: sequências <code>{1..12}</code></h3>
+<p>Com dois pontos entre o começo e o fim, as chaves geram uma sequência:</p>
+
+<pre class="term" data-cwd="~/calendario">$ echo mes{1..12}
+mes1 mes2 mes3 mes4 mes5 mes6 mes7 mes8 mes9 mes10 mes11 mes12</pre>
+
+<p>Mas, sem zeros, a ordem do <code>ls</code> fica estranha, porque ele compara caractere por caractere ("aula10" vem antes de "aula2"):</p>
+
+<pre class="term" data-cwd="~/calendario">$ mkdir aula{1..12}
+$ ls -d aula*
+aula1   aula11  aula2  aula4  aula6  aula8
+aula10  aula12  aula3  aula5  aula7  aula9</pre>
+
+<p>Com um zero na frente do primeiro número, todos ficam do mesmo tamanho, e a ordem fica certa:</p>
+
+<pre class="term" data-cwd="~/calendario">$ mkdir mes{01..12}
+$ ls
+mes01  mes03  mes05  mes07  mes09  mes11
+mes02  mes04  mes06  mes08  mes10  mes12</pre>
+
+<div class="try" data-setup="mkdir cursos;;cd cursos" data-goal="dir:~/cursos/aula01,dir:~/cursos/aula05,dir:~/cursos/aula10,absent:~/cursos/aula1" data-solucao="mkdir aula{01..10}">
+<p class="try-task"><strong>Missão 1:</strong> você está na pasta <code>cursos</code>. Crie, com <strong>um comando só</strong>, as pastas <code>aula01</code> até <code>aula10</code>, com o zero na frente. Confira a ordem com <code>ls</code>.</p>
+</div>
+
+<h3>Forma 4: laço <code>for</code></h3>
+<p>Um laço repete um comando para cada item de uma lista. É mais longo, mas permite fazer <strong>mais de uma coisa</strong> por pasta.</p>
+
+<dl class="anatomy">
+  <dt>for mes in abr mai jun</dt><dd>Para cada palavra da lista, guarde-a na variável <code>mes</code>…</dd>
+  <dt>;</dt><dd>Separa as partes do comando.</dd>
+  <dt>do mkdir "$mes"; echo "criei $mes"</dt><dd>…e rode estes comandos. <code>$mes</code> é trocado pela palavra da vez.</dd>
+  <dt>; done</dt><dd>Fim do laço.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/estudos">$ for mes in abr mai jun; do mkdir "$mes"; echo "criei $mes"; done
+criei abr
+criei mai
+criei jun</pre>
+
+<p>Laços em detalhe estão no <a href="https://wallysondevs.github.io/guia-bash/for.html">Guia Bash (o laço for)</a>.</p>
+
+<h3>Forma 5: a partir de uma lista em arquivo</h3>
+<p>Se os nomes já estão num arquivo de texto, um por linha, o <code>xargs</code> lê o arquivo e entrega os nomes ao <code>mkdir</code>:</p>
+
+<pre class="term" data-cwd="~/clientes">$ cat clientes.txt
+padaria
+oficina
+mercado
+$ xargs mkdir &lt; clientes.txt
+$ ls
+clientes.txt  mercado  oficina  padaria</pre>
+
+<dl class="anatomy">
+  <dt>xargs</dt><dd>Lê palavras da entrada e as passa como argumentos para outro comando.</dd>
+  <dt>mkdir</dt><dd>O comando que recebe as palavras.</dd>
+  <dt>&lt; clientes.txt</dt><dd>Usa o arquivo como entrada (veja <a href="redirecionamento.html">Redirecionamento</a>).</dd>
+</dl>
+
+<p>Se algum nome tiver espaço, use <code>xargs -d '\n' mkdir &lt; clientes.txt</code>, que separa só por linha. O <code>xargs</code> é assunto de <a href="pipes.html">Pipes e xargs</a>.</p>
+
+<h3>Forma 6: pelo gerenciador de arquivos</h3>
+<p>O Arch não vem com ambiente gráfico; depois de instalar um (veja <a href="desktop.html">Instalar um Desktop</a>), o gerenciador de arquivos cria pastas pelo menu do botão direito ou por um atalho de teclado, como <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> no Arquivos do GNOME e <kbd>F10</kbd> no Dolphin do KDE. Para uma ou duas pastas é tão rápido quanto o terminal. Para dez ou mais, o terminal ganha.</p>
+
+<h3>Qual forma usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td>Vários nomes</td><td><code>mkdir jan fev mar</code></td><td>São poucos nomes, sem padrão.</td></tr>
+<tr><td>Chaves</td><td><code>mkdir rel-{jan,fev}</code></td><td>Os nomes têm uma parte igual.</td></tr>
+<tr><td>Sequência</td><td><code>mkdir aula{01..20}</code></td><td>Os nomes são numerados.</td></tr>
+<tr><td>Laço for</td><td><code>for m in a b; do …; done</code></td><td>Você quer fazer mais coisas por pasta.</td></tr>
+<tr><td>xargs</td><td><code>xargs mkdir &lt; lista.txt</code></td><td>Os nomes já estão num arquivo.</td></tr>
+<tr><td>Interface gráfica</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td><td>É uma pasta só e o gerenciador já está aberto.</td></tr>
+</table>
+</div>
+
+<div class="try" data-setup="mkdir semestre;;cd semestre" data-goal="dir:~/semestre/jan,dir:~/semestre/fev,dir:~/semestre/mar,dir:~/semestre/abr,dir:~/semestre/mai,dir:~/semestre/jun" data-solucao="mkdir jan fev mar;;mkdir {abr,mai,jun}">
+<p class="try-task"><strong>Missão 2:</strong> você está na pasta <code>semestre</code>. Crie as pastas <code>jan</code>, <code>fev</code>, <code>mar</code>, <code>abr</code>, <code>mai</code> e <code>jun</code>. Use pelo menos duas formas diferentes e confira com <code>ls</code>.</p>
+</div>
+
+<hr>
+
+<h2>Pastas dentro de pastas: <code>-p</code></h2>
+<p>Tente criar <code>site/css</code> quando a pasta <code>site</code> ainda não existe:</p>
+
+<pre class="term">$ mkdir site/css
+mkdir: não foi possível criar o diretório “site/css”: Arquivo ou diretório inexistente
+$ echo $?
+1</pre>
+
+<p>O <code>mkdir</code> só cria o <strong>último</strong> nível do caminho. Como <code>site</code> não existe, ele não acha onde pôr a <code>css</code>. A opção <code>-p</code> (de <em>parents</em>, "pais") cria todas as pastas que faltam no caminho:</p>
+
+<dl class="anatomy">
+  <dt>mkdir</dt><dd>O programa.</dd>
+  <dt>-p</dt><dd>Cria as pastas "pais" que faltarem e <strong>não reclama</strong> se a pasta já existir.</dd>
+  <dt>-v</dt><dd>Mostra cada pasta criada. <code>-pv</code> é o mesmo que <code>-p -v</code>.</dd>
+  <dt>site/css</dt><dd>O caminho completo que você quer.</dd>
+</dl>
+
+<pre class="term">$ mkdir -pv site/css
+mkdir: foi criado o diretório 'site'
+mkdir: foi criado o diretório 'site/css'
+$ mkdir -pv site/css                  « de novo: tudo já existe
+$ echo $?
+0                                      « nenhuma mensagem e nenhum erro</pre>
+
+<p>Repare na segunda vez: como as duas pastas já existiam, o <code>-p</code> não criou nada, não disse nada e devolveu 0. É exatamente o que você quer num script: "garanta que esta pasta exista".</p>
+
+<h3>Uma estrutura inteira de uma vez</h3>
+<p>Juntando <code>-p</code> com chaves (inclusive chaves dentro de chaves), você monta a estrutura de um projeto num comando só. As duas formas abaixo dão o mesmo resultado:</p>
+
+<pre class="syntax"># forma longa: um caminho por pasta
+mkdir -p loja/src loja/docs loja/testes/unidade loja/testes/integracao
+# forma curta: com chaves
+mkdir -p loja/{src,docs,testes/{unidade,integracao}}</pre>
+
+<p>Para ver a estrutura criada, o <code>tree</code> desenha a árvore. Ele não vem no <code>base</code> do Arch: instale com <code>sudo pacman -S tree</code> (veja <a href="pacman.html">pacman: o Básico</a>). Sem ele, o <code>find</code> lista tudo o que há dentro:</p>
+
+<pre class="term">$ mkdir -p loja/{src,docs,testes/{unidade,integracao}}
+$ tree loja
+loja
+├── docs
+├── src
+└── testes
+    ├── integracao
+    └── unidade
+
+6 directories, 0 files
+$ find loja
+loja
+loja/docs
+loja/src
+loja/testes
+loja/testes/unidade
+loja/testes/integracao</pre>
+
+<p>O <code>find</code> mostra os itens na ordem em que estão gravados no disco, que pode variar de uma máquina para outra. Você vai conhecê-lo em <a href="find.html">find e locate</a>.</p>
+
+<div class="tip">
+<strong>Dica para scripts</strong>
+<p>Em scripts, use sempre <code>mkdir -p</code>: se a pasta já existir, ele não dá erro e o script continua.</p>
+</div>
+
+<div class="try" data-goal="dir:~/app/src,dir:~/app/docs,dir:~/app/testes,ran:^\s*mkdir\s+-[a-z]*p" data-solucao="mkdir -p app/{src,docs,testes}">
+<p class="try-task"><strong>Missão 3:</strong> crie, com <strong>um único comando</strong>, a pasta <code>app</code> contendo <code>src</code>, <code>docs</code> e <code>testes</code>. Confira com <code>ls app</code>.</p>
+</div>
+
+<h3>Já escolhendo as permissões: <code>-m</code></h3>
+<p>Com <code>-m</code> (de <em>mode</em>, "modo") a pasta já nasce com as permissões que você quiser, em vez das da umask. <code>700</code> quer dizer "só a dona entra":</p>
+
+<pre class="term">$ mkdir -m 700 privado
+$ ls -ld privado
+drwx------ 2 ana ana 4096 16 out 14:56 privado</pre>
+
+<hr>
+
+<h2>touch: criar arquivos vazios</h2>
+<p><code>touch</code> significa "tocar". Ele "toca" no arquivo para atualizar a data de modificação. Se o arquivo não existe, ele cria um vazio. Por isso é usado para criar arquivos.</p>
+
+<dl class="anatomy">
+  <dt>touch</dt><dd>O programa.</dd>
+  <dt>anotacoes.txt</dt><dd>O arquivo a criar (ou a "tocar", se já existir).</dd>
+</dl>
+
+<pre class="term">$ touch anotacoes.txt
+$ echo $?
+0
+$ ls -l anotacoes.txt
+-rw-r--r-- 1 ana ana 0 16 out 14:56 anotacoes.txt       « tamanho 0: vazio</pre>
+
+<p>A linha mostra um arquivo comum (<code>-</code>), da ana, com <strong>0 bytes</strong> e a data e hora de agora. As permissões <code>rw-r--r--</code> (a dona lê e escreve; os outros só leem) vêm da mesma umask <code>022</code> do Arch. Compare com um arquivo antigo da Ana, criado de outro jeito, com permissão de escrita para o grupo:</p>
+
+<pre class="term">$ ls -l notas.txt novo.txt
+-rw-rw-r-- 1 ana ana 69 14 out 17:40 notas.txt        « antigo: o grupo também escreve (rw-rw-r--)
+-rw-r--r-- 1 ana ana  0 16 out 15:05 novo.txt         « criado agora, com a umask 022 do Arch</pre>
+
+<h3>Vários arquivos de uma vez</h3>
+<p>O <code>touch</code> aceita vários nomes, chaves e sequências, como o <code>mkdir</code>:</p>
+
+<pre class="term" data-cwd="~/site">$ touch index.html style.css script.js
+$ touch capitulo{1..3}.md
+$ ls
+capitulo1.md  capitulo2.md  capitulo3.md  index.html  script.js  style.css</pre>
+
+<div class="try" data-setup="mkdir site;;cd site" data-goal="file:~/site/index.html,file:~/site/style.css,file:~/site/script.js,file:~/site/capitulo1.md,file:~/site/capitulo3.md" data-solucao="touch index.html style.css script.js;;touch capitulo{1..3}.md">
+<p class="try-task"><strong>Missão 4:</strong> você está na pasta <code>site</code>. Crie os arquivos vazios <code>index.html</code>, <code>style.css</code> e <code>script.js</code>, e também <code>capitulo1.md</code>, <code>capitulo2.md</code> e <code>capitulo3.md</code> (estes, com chaves). Confira com <code>ls -l</code>: todos têm tamanho 0?</p>
+</div>
+
+<h3>O touch não apaga o conteúdo</h3>
+<p>Se o arquivo já existe, o <code>touch</code> só muda a data. O conteúdo fica intacto:</p>
+
+<pre class="term" data-cwd="~/Documentos">$ cat notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos
+$ ls -l notas.txt
+-rw-rw-r-- 1 ana ana 69 14 out 17:40 notas.txt
+$ touch notas.txt
+$ ls -l notas.txt
+-rw-rw-r-- 1 ana ana 69 16 out 14:56 notas.txt         « só a data mudou: 69 bytes continuam lá
+$ cat notas.txt
+Comprar café
+Ligar para o João
+Estudar Bash
+Fazer backup das fotos</pre>
+
+<p>Para que serve "tocar" num arquivo? Alguns programas decidem o que fazer pela data: o <code>make</code> recompila o que mudou, scripts de backup copiam o que é recente, e a ordem do <code>ls -lt</code> muda.</p>
+
+<h3>Escolher a data: <code>-d</code></h3>
+<p>Com <code>-d</code> (de <em>date</em>) você escolhe a data que o arquivo vai ter, em vez de "agora". É útil para testar scripts que apagam arquivos antigos:</p>
+
+<dl class="anatomy">
+  <dt>touch</dt><dd>O programa.</dd>
+  <dt>-d "2026-01-01 08:00"</dt><dd>A data desejada, entre aspas porque tem espaço. O formato mais seguro é <code>ANO-MÊS-DIA HORA:MINUTO</code>.</dd>
+  <dt>antigo.log</dt><dd>O arquivo (criado, se não existir).</dd>
+</dl>
+
+<pre class="term">$ touch -d "2026-01-01 08:00" antigo.log
+$ ls -l antigo.log
+-rw-r--r-- 1 ana ana 0  1 jan  2026 antigo.log          « mais de 6 meses: o ls mostra o ano
+$ touch -d "2026-10-10 21:14" recente.log
+$ ls -l recente.log
+-rw-r--r-- 1 ana ana 0 10 out 21:14 recente.log</pre>
+
+<p>O <code>-d</code> também entende expressões em <strong>inglês</strong>, como <code>yesterday</code> ("ontem") e <code>"2 days ago"</code> ("2 dias atrás"). Em português, não:</p>
+
+<pre class="term">$ touch -d yesterday ontem.txt
+$ touch -d "2 days ago" anteontem.txt
+$ ls -l ontem.txt anteontem.txt
+-rw-r--r-- 1 ana ana 0 14 out 15:05 anteontem.txt
+-rw-r--r-- 1 ana ana 0 15 out 15:05 ontem.txt
+$ touch -d ontem x.txt
+touch: formato de data inválido “ontem”</pre>
+
+<h3>Outras opções do touch</h3>
+<pre class="term">$ touch -t 202601010800 a.txt                      « -t: data colada, AAAAMMDDhhmm
+$ ls -l a.txt
+-rw-r--r-- 1 ana ana 0  1 jan  2026 a.txt
+$ touch -r ~/Documentos/notas.txt copia-data.txt   « -r: copia a data de outro arquivo
+$ ls -l copia-data.txt
+-rw-r--r-- 1 ana ana 0 14 out 17:40 copia-data.txt
+$ touch -c fantasma.txt                            « -c: só toca se existir; não cria
+$ echo $?
+0
+$ ls fantasma.txt
+ls: não foi possível acessar 'fantasma.txt': Arquivo ou diretório inexistente</pre>
+
+<div class="try" data-goal="file:~/antigo.log,ran:touch\s+.*-[dt],outre:antigo\.log" data-solucao="touch -d &quot;2026-01-01 08:00&quot; antigo.log;;ls -l antigo.log">
+<p class="try-task"><strong>Missão 5:</strong> crie o arquivo <code>antigo.log</code> com a data de 1º de janeiro de 2026, às 8h. Confira com <code>ls -l antigo.log</code>: aparece a hora ou o ano?</p>
+</div>
+
+<hr>
+
+<h2>Outras formas de criar um arquivo</h2>
+<p>O <code>touch</code> cria arquivos <strong>vazios</strong>. Quando você já quer escrever algo dentro, há outros caminhos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Cuidado</th></tr>
+<tr><td><code>touch arq.txt</code></td><td>Cria vazio ou só atualiza a data</td><td>Nunca apaga conteúdo</td></tr>
+<tr><td><code>echo "texto" &gt; arq.txt</code></td><td>Cria com uma linha de texto</td><td><strong>Apaga</strong> o conteúdo anterior</td></tr>
+<tr><td><code>echo "texto" &gt;&gt; arq.txt</code></td><td>Acrescenta uma linha no fim (cria se não existir)</td><td>Seguro: não apaga nada</td></tr>
+<tr><td><code>&gt; arq.txt</code></td><td>Cria vazio ou <strong>esvazia</strong> o arquivo</td><td>Apaga o conteúdo sem perguntar</td></tr>
+<tr><td><code>nano arq.txt</code></td><td>Abre um editor de texto</td><td>O <code>base</code> do Arch não traz editor: instale com <code>sudo pacman -S nano</code> (veja <a href="editores.html">nano e vim</a>)</td></tr>
+</table>
+</div>
+
+<pre class="term">$ echo "Lista de compras" &gt; compras.txt
+$ echo "pão" &gt;&gt; compras.txt
+$ cat compras.txt
+Lista de compras
+pão
+$ &gt; compras.txt                       « um &gt; sozinho: esvazia
+$ ls -l compras.txt
+-rw-r--r-- 1 ana ana 0 16 out 15:05 compras.txt</pre>
+
+<div class="warning">
+<strong>Atenção: <code>&gt;</code> apaga, <code>&gt;&gt;</code> acrescenta</strong>
+<p>Um <code>&gt;</code> no lugar de <code>&gt;&gt;</code> apaga tudo o que havia no arquivo, sem perguntar e sem lixeira. Na dúvida, use <code>&gt;&gt;</code>. Os dois são explicados em <a href="redirecionamento.html">Redirecionamento</a>.</p>
+</div>
+
+<div class="try" data-goal="contains:~/compras.txt=pão,contains:~/compras.txt=leite,contains:~/compras.txt=café" data-solucao="echo pão &gt; compras.txt;;echo leite &gt;&gt; compras.txt;;echo café &gt;&gt; compras.txt">
+<p class="try-task"><strong>Missão 6:</strong> crie o arquivo <code>compras.txt</code> com três linhas: <code>pão</code>, <code>leite</code> e <code>café</code>. Use <code>echo</code> com <code>&gt;</code> e <code>&gt;&gt;</code>, e confira com <code>cat compras.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Arquivo existe"</strong>
+<pre class="term">$ mkdir fotos
+mkdir: não foi possível criar o diretório “fotos”: Arquivo existe
+$ mkdir notas.txt
+mkdir: não foi possível criar o diretório “notas.txt”: Arquivo existe</pre>
+<p><strong>O que aconteceu:</strong> já existe uma pasta, ou um arquivo, com esse nome. Repare que a mensagem diz "Arquivo" mesmo quando o que existe é uma pasta: para o sistema, pasta também é um tipo de arquivo.</p>
+<p><strong>Como confirmar:</strong> <code>ls -ld fotos</code> mostra o que existe e se é pasta (<code>d</code>) ou arquivo (<code>-</code>).</p>
+<p><strong>Como resolver:</strong> se a ideia era só "garantir que a pasta exista", use <code>mkdir -p fotos</code>, que não reclama. Se é um arquivo, escolha outro nome.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" no mkdir e no touch</strong>
+<pre class="term">$ mkdir projetos/2026/janeiro
+mkdir: não foi possível criar o diretório “projetos/2026/janeiro”: Arquivo ou diretório inexistente
+$ touch pasta-que-nao-existe/a.txt
+touch: não foi possível tocar 'pasta-que-nao-existe/a.txt': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> alguma pasta do caminho ainda não existe. Aqui, <code>projetos</code> existia, mas <code>2026</code> não.</p>
+<p><strong>Como resolver:</strong> crie o caminho com <code>-p</code>. O <code>-v</code> mostra que só as que faltavam foram criadas:</p>
+<pre class="term">$ mkdir -pv projetos/2026/janeiro
+mkdir: foi criado o diretório 'projetos/2026'
+mkdir: foi criado o diretório 'projetos/2026/janeiro'</pre>
+<p>O <code>touch</code> não tem <code>-p</code>: crie a pasta antes (<code>mkdir -p pasta</code>) e depois o arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term">$ mkdir /opt/meuapp
+mkdir: não foi possível criar o diretório “/opt/meuapp”: Permissão negada
+$ echo $?
+1
+$ touch /etc/teste.conf
+touch: não foi possível tocar '/etc/teste.conf': Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> fora da sua pasta pessoal (e de <code>/tmp</code>), quase tudo pertence ao administrador, o root.</p>
+<p><strong>Como resolver:</strong> antes, pense se o arquivo não deveria estar na sua pasta pessoal. Se precisa mesmo criar ali, use <code>sudo</code>, que pede a <strong>sua</strong> senha (a ana está no grupo <code>wheel</code>; veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). Na primeira vez, o sudo mostra um aviso:</p>
+<pre class="term">$ sudo mkdir /opt/meuapp
+
+Presumimos que você recebeu as instruções de sempre do administrador
+de sistema local. Basicamente, resume-se a estas três coisas:
+
+    #1) Respeite a privacidade dos outros.
+    #2) Pense antes de digitar.
+    #3) Com grandes poderes vêm grandes responsabilidades.
+
+Por motivos de segurança, a senha que você digitar não será visível.
+
+[sudo] senha para ana:
+$ ls -ld /opt/meuapp
+drwxr-xr-x 2 root root 4096 16 out 14:56 /opt/meuapp     « criada pelo root, é do root</pre>
+<p>Repare que a pasta criada com <code>sudo</code> pertence ao <strong>root</strong>, e não à ana. Para mudar o dono, use <code>chown</code> (veja <a href="permissoes.html">Entendendo Permissões</a>).</p>
+</div>
+
+<div class="try" data-goal="dir:/opt/meuapp" data-solucao="sudo mkdir /opt/meuapp" data-stdin="ana">
+<p class="try-task"><strong>Missão 7:</strong> tente criar a pasta <code>/opt/meuapp</code> e leia o erro. Depois crie-a com <code>sudo</code> (a senha da ana é <code>ana</code>) e confira o dono com <code>ls -ld /opt/meuapp</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Não é um diretório"</strong>
+<pre class="term">$ mkdir -p notas.txt/x
+mkdir: não foi possível criar o diretório “notas.txt”: Não é um diretório</pre>
+<p><strong>O que aconteceu:</strong> no caminho existe um <strong>arquivo</strong> com o nome que deveria ser de uma pasta. O <code>-p</code> não transforma arquivo em pasta.</p>
+<p><strong>Como resolver:</strong> escolha outro nome, ou renomeie o arquivo com <code>mv</code> (veja <a href="mover.html">Mover e Renomear</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Nome com espaço virou duas pastas</strong>
+<pre class="term" data-cwd="~/estudos">$ mkdir Meus Projetos
+$ ls
+Meus  Projetos</pre>
+<p><strong>O que aconteceu:</strong> o espaço separa argumentos, e o <code>mkdir</code> recebeu dois nomes. Não houve erro: ele fez exatamente o que você pediu.</p>
+<p><strong>Como resolver:</strong> apague as duas com <code>rmdir</code> (que só remove pastas vazias; veja <a href="remover.html">rm e rmdir</a>) e crie de novo com aspas. Ou evite espaços: <code>meus-projetos</code>.</p>
+<pre class="term" data-cwd="~/estudos">$ rmdir Meus Projetos
+$ mkdir "Meus Projetos"
+$ ls
+'Meus Projetos'</pre>
+</div>
+
+<div class="try" data-goal="dir:~/Meus Projetos,absent:~/Meus,absent:~/Projetos" data-solucao="mkdir &quot;Meus Projetos&quot;">
+<p class="try-task"><strong>Missão 8:</strong> crie, na pasta pessoal, <strong>uma</strong> pasta chamada <code>Meus Projetos</code> (com espaço). Se criar duas por engano, apague-as com <code>rmdir</code> e tente de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>"falta operando"</strong>
+<pre class="term">$ mkdir
+mkdir: falta operando
+Tente "mkdir --help" para mais informações.
+$ touch
+touch: falta o operando arquivo
+Tente "touch --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> faltou o nome. "Operando" é o argumento sobre o qual o comando age.</p>
+</div>
+
+<div class="cenario">
+<strong>"formato de data inválido"</strong>
+<pre class="term">$ touch -d "2026-13-01" x.txt
+touch: formato de data inválido “2026-13-01”</pre>
+<p><strong>O que aconteceu:</strong> não existe mês 13. O <code>-d</code> também recusa datas em português ("ontem", "32 de outubro"). Nesse caso o arquivo <strong>não</strong> é criado.</p>
+<p><strong>Como resolver:</strong> use <code>AAAA-MM-DD hh:mm</code>, ou as palavras em inglês (<code>yesterday</code>, <code>"2 days ago"</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<h3>mkdir</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td>(nenhuma)</td><td>Cria uma ou várias pastas</td><td><code>mkdir fotos videos</code></td></tr>
+<tr><td><code>-p</code></td><td>Cria as pastas que faltam no caminho; não reclama se já existir</td><td><code>mkdir -p a/b/c</code></td></tr>
+<tr><td><code>-v</code></td><td>Mostra cada pasta criada</td><td><code>mkdir -v fotos</code></td></tr>
+<tr><td><code>-m</code></td><td>Define as permissões já na criação</td><td><code>mkdir -m 700 privado</code></td></tr>
+</table>
+</div>
+<h3>touch</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td>(nenhuma)</td><td>Cria o arquivo vazio, ou atualiza a data para agora</td><td><code>touch a.txt</code></td></tr>
+<tr><td><code>-d</code></td><td>Usa a data informada em vez de agora</td><td><code>touch -d "2026-01-01 08:00" a.txt</code></td></tr>
+<tr><td><code>-t</code></td><td>Data no formato <code>AAAAMMDDhhmm</code></td><td><code>touch -t 202601010800 a.txt</code></td></tr>
+<tr><td><code>-r</code></td><td>Copia a data de outro arquivo</td><td><code>touch -r modelo.txt a.txt</code></td></tr>
+<tr><td><code>-c</code></td><td>Não cria o arquivo se ele não existir</td><td><code>touch -c a.txt</code></td></tr>
+<tr><td><code>-m</code> / <code>-a</code></td><td>Muda só a data de modificação / só a de acesso</td><td><code>touch -m a.txt</code></td></tr>
+</table>
+</div>
+<h3>Chaves (do Bash, valem para qualquer comando)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Vira</th></tr>
+<tr><td><code>{a,b,c}</code></td><td><code>a b c</code></td></tr>
+<tr><td><code>rel-{jan,fev}.txt</code></td><td><code>rel-jan.txt rel-fev.txt</code></td></tr>
+<tr><td><code>{1..5}</code></td><td><code>1 2 3 4 5</code></td></tr>
+<tr><td><code>{01..10}</code></td><td><code>01 02 … 10</code></td></tr>
+<tr><td><code>loja/{src,testes/{a,b}}</code></td><td><code>loja/src loja/testes/a loja/testes/b</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Várias pastas de uma vez</h3>
+<p>Complete para criar as pastas <code>fotos</code>, <code>videos</code> e <code>musicas</code> com um único comando:</p>
+<div class="ex-code">mkdir <input data-answer="fotos videos musicas|{fotos,videos,musicas}" aria-label="argumentos"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Caminho que ainda não existe</h3>
+<p>A pasta <code>trabalho</code> não existe. Complete para criar <code>trabalho/2026/relatorios</code> sem erro:</p>
+<div class="ex-code">mkdir <input data-answer="-p|-pv|-vp|--parents" aria-label="opção"> trabalho/2026/relatorios</div>
+</div>
+
+<div class="exercise">
+<h3>3. Sequência numerada</h3>
+<p>Complete para criar <code>aula01</code> até <code>aula10</code>:</p>
+<div class="ex-code">mkdir aula<input data-answer="{01..10}" aria-label="sequência"></div>
+</div>
+
+<div class="exercise">
+<h3>4. Uma data no passado</h3>
+<p>Complete para que <code>velho.txt</code> tenha a data de 1º de março de 2026:</p>
+<div class="ex-code">touch <input data-answer="-d 2026-03-01|-d &quot;2026-03-01&quot;|-d '2026-03-01'|-t 202603010000" aria-label="opção e data"> velho.txt</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O arquivo <code>notas.txt</code> tem 20 linhas. O que acontece depois de <code>touch notas.txt</code>?</p>
+<label><input type="radio" name="q5"> O arquivo fica vazio.</label>
+<label><input type="radio" name="q5"> Aparece "Arquivo existe".</label>
+<label><input type="radio" name="q5"> Só a data de modificação muda; as 20 linhas continuam lá.</label>
+<label><input type="radio" name="q5"> É criado um arquivo <code>notas.txt.1</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. O que <code>mkdir {abr, mai}</code> (com espaço depois da vírgula) cria?</p>
+<label><input type="radio" name="q6"> As pastas <code>abr</code> e <code>mai</code>.</label>
+<label><input type="radio" name="q6"> As pastas <code>{abr,</code> e <code>mai}</code>.</label>
+<label><input type="radio" name="q6"> Uma pasta chamada <code>{abr, mai}</code>.</label>
+<label><input type="radio" name="q6"> Nada: dá erro.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. No Arch, com a umask padrão, que permissões tem um arquivo recém-criado com <code>touch</code>?</p>
+<label><input type="radio" name="q7"> <code>-rwxrwxrwx</code></label>
+<label><input type="radio" name="q7"> <code>-rw-rw-r--</code></label>
+<label><input type="radio" name="q7"> <code>-rw-------</code></label>
+<label><input type="radio" name="q7"> <code>-rw-r--r--</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>mkdir nome</code> cria uma pasta; <code>mkdir a b c</code> cria várias; nada aparece quando dá certo (código 0).</li>
+  <li>Chaves <code>{a,b}</code> e sequências <code>{01..12}</code> são expandidas pelo Bash e funcionam com qualquer comando; sem espaço depois da vírgula.</li>
+  <li><code>mkdir -p</code> cria o caminho inteiro e não reclama se a pasta já existir; <code>-v</code> mostra o que foi criado.</li>
+  <li><code>touch</code> cria arquivos vazios e nunca apaga conteúdo; <code>-d</code>, <code>-t</code> e <code>-r</code> escolhem a data.</li>
+  <li>No Arch, itens novos nascem com <code>rw-r--r--</code> (arquivos) e <code>rwxr-xr-x</code> (pastas), por causa da umask <code>022</code>.</li>
+  <li><code>&gt;</code> apaga, <code>&gt;&gt;</code> acrescenta. Fora da pasta pessoal, criar exige <code>sudo</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>mkdir</code> e o <code>touch</code> fazem parte do <code>coreutils</code>, apresentado em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>). As permissões com que os itens nascem são explicadas em <a href="https://wiki.archlinux.org/title/Umask">Umask</a> e em <a href="https://wiki.archlinux.org/title/File_permissions_and_attributes">File permissions and attributes</a>. As chaves e os laços são recursos do <a href="https://wiki.archlinux.org/title/Bash">Bash</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

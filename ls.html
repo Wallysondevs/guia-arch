@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch ls — listar arquivos e ler cada coluna | Guia Arch</title>
+<meta name="description" content="O comando ls no Arch Linux: cada coluna do ls -l explicada, tipos de arquivo, cores do Arch, ocultos, tamanhos, ordenação por data, tamanho e idioma, o alias do .bashrc, combinações comuns, erros reais e missões no terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">ls</span></h1>
+
+<p class="intro">O <code>ls</code> (de <em>list</em>, "listar") mostra o que existe numa pasta. É o comando mais digitado no terminal: você vai usá-lo antes e depois de quase tudo, para conferir. Nesta aula você aprende a ler cada pedaço do que ele mostra e as opções que mais vai usar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler, coluna por coluna, uma linha do <code>ls -l</code>, inclusive a data no formato do Arch (<code>15 out 09:07</code>).</li>
+  <li>Reconhecer o tipo de cada item pela primeira letra (<code>-</code>, <code>d</code>, <code>l</code>…) e pela cor.</li>
+  <li>Ver arquivos ocultos, tamanhos legíveis e ordenar por data, tamanho ou número.</li>
+  <li>Por que o <code>ls</code> é colorido no Arch, e por que o <code>ll</code> não existe.</li>
+  <li>As combinações do dia a dia (<code>ls -lah</code>, <code>ls -lt | head</code>) e qual usar em cada situação.</li>
+</ul>
+</div>
+
+<p>Os exemplos são de uma instalação real do Arch (coreutils 9.12), com a usuária <strong>ana</strong> na máquina <strong>notebook</strong>. Se você ainda não sabe andar entre pastas, veja antes <a href="navegar.html">pwd e cd</a>.</p>
+
+<hr>
+
+<h2>O básico</h2>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>Lista o conteúdo da pasta atual. Sem opções, mostra só os nomes, em colunas.</dd>
+</dl>
+
+<pre class="term">$ ls
+'Área de trabalho'   Documentos   frutas.txt   Modelos   Público
+ aur                 Downloads    Imagens      Música    Vídeos</pre>
+
+<p>Como ler esta saída:</p>
+<ul>
+  <li>Os nomes estão em ordem alfabética, <strong>de cima para baixo</strong> e depois para a direita: <code>Área de trabalho</code>, <code>aur</code>, <code>Documentos</code>, <code>Downloads</code>…</li>
+  <li><code>'Área de trabalho'</code> aparece entre <strong>aspas</strong> porque tem espaços. O <code>ls</code> mostra o nome do jeito que você teria de digitá-lo num comando. As aspas não fazem parte do nome.</li>
+  <li>O espaço antes de <code>aur</code> só serve para alinhar a coluna com a aspa de cima.</li>
+  <li>No terminal de verdade, as pastas aparecem em <strong>azul</strong> e os arquivos comuns, como <code>frutas.txt</code>, na cor normal. As cores estão explicadas mais adiante.</li>
+</ul>
+
+<p>Quando dá certo, o <code>ls</code> devolve o código de saída 0, que você vê com <code>echo $?</code>. Uma pasta vazia não mostra nada, e também devolve 0: vazio não é erro.</p>
+
+<h3>Listar outra pasta</h3>
+<p>Passe o caminho como <strong>argumento</strong>. Você não precisa entrar na pasta para ver o que tem nela:</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>O programa.</dd>
+  <dt>Documentos</dt><dd>O argumento: a pasta a listar (caminho relativo ou absoluto, como no <code>cd</code>).</dd>
+</dl>
+
+<pre class="term">$ ls Documentos
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt</pre>
+
+<p>Com duas ou mais pastas, o <code>ls</code> põe um título antes de cada uma:</p>
+
+<pre class="term">$ ls Documentos Imagens
+Documentos:
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt
+
+Imagens:
+ferias.jpg  perfil.png</pre>
+
+<div class="try" data-goal="ran:^\s*ls\s+(~/|/home/ana/)?Downloads/?\s*$,out:manual.pdf" data-solucao="ls Downloads">
+<p class="try-task"><strong>Missão 1:</strong> sem sair da pasta pessoal, liste o que tem na pasta <code>Downloads</code>.</p>
+</div>
+
+<hr>
+
+<h2>Detalhes: <code>ls -l</code></h2>
+<p>O <code>-l</code> (de <em>long</em>, "longo") mostra uma linha por item, com tipo, permissões, dono, tamanho e data. Uma <strong>opção</strong> como <code>-l</code> muda o jeito como o comando trabalha; ela começa com hífen e vem antes dos argumentos.</p>
+
+<dl class="anatomy">
+  <dt>ls</dt><dd>O programa.</dd>
+  <dt>-l</dt><dd>A opção: formato longo, um item por linha.</dd>
+  <dt>Documentos</dt><dd>A pasta a listar.</dd>
+</dl>
+
+<pre class="term">$ ls -l Documentos
+total 16                                                « espaço ocupado no disco, em blocos de 1 KiB
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos         « o d no início: é uma pasta
+-rw-rw-r-- 1 ana ana 8394 14 out 17:40 relatorio.odt</pre>
+
+<h3>Uma linha, peça por peça</h3>
+<p>Pegue a última linha e separe-a nos espaços. São sete colunas:</p>
+
+<pre class="syntax">-rw-rw-r--   1   ana   ana   8394   14 out 17:40   relatorio.odt
+│            │   │     │     │      │               └─ 7. nome
+│            │   │     │     │      └─ 6. data e hora da última modificação
+│            │   │     │     └─ 5. tamanho em bytes
+│            │   │     └─ 4. grupo dono
+│            │   └─ 3. usuário dono
+│            └─ 2. número de links
+└─ 1. tipo (1º caractere) + permissões (os outros 9)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>#</th><th>Coluna</th><th>Exemplo</th><th>Significado</th></tr>
+<tr><td>1</td><td>Tipo e permissões</td><td><code>-rw-rw-r--</code></td><td>O 1º caractere é o <strong>tipo</strong>: <code>-</code> arquivo comum, <code>d</code> pasta, <code>l</code> link (tabela abaixo). Os outros nove são as <strong>permissões</strong>, em três trios: o que o dono, o grupo e os outros podem fazer (<code>r</code> ler, <code>w</code> escrever, <code>x</code> executar, <code>-</code> não pode). A aula <a href="permissoes.html">Entendendo Permissões</a> explica cada letra.</td></tr>
+<tr><td>2</td><td>Links</td><td><code>1</code></td><td>Quantos nomes apontam para este item. Em arquivos é quase sempre 1. Em pastas é 2 + o número de subpastas: <code>projetos</code> tem 3 porque tem uma subpasta (<code>site</code>).</td></tr>
+<tr><td>3</td><td>Dono</td><td><code>ana</code></td><td>O usuário dono do item. Arquivos do sistema são do <code>root</code>.</td></tr>
+<tr><td>4</td><td>Grupo</td><td><code>ana</code></td><td>O grupo dono. No Arch, cada usuário tem um grupo com o próprio nome.</td></tr>
+<tr><td>5</td><td>Tamanho</td><td><code>8394</code></td><td>Em <strong>bytes</strong> (8394 bytes ≈ 8,2 KiB). Pastas mostram <code>4096</code>: é o tamanho da "ficha" da pasta, <strong>não</strong> a soma do que tem dentro. Para o total de uma pasta, use <code>du -sh</code>.</td></tr>
+<tr><td>6</td><td>Data</td><td><code>14 out 17:40</code></td><td>A última modificação do conteúdo. No Arch o <strong>dia vem antes do mês</strong>, que aparece abreviado em português. Para itens com mais de seis meses, a hora dá lugar ao <strong>ano</strong>: <code>12 out  2025</code>.</td></tr>
+<tr><td>7</td><td>Nome</td><td><code>relatorio.odt</code></td><td>O nome do item. Num link, vem seguido de <code>-&gt;</code> e do destino.</td></tr>
+</table>
+</div>
+
+<h3>A data: hora ou ano?</h3>
+<p>Compare estas três linhas reais:</p>
+
+<pre class="term">$ ls -l .bashrc /bin /etc/pacman.conf
+-rw-r--r-- 1 ana  ana   172 15 set 16:47 .bashrc
+lrwxrwxrwx 1 root root    7 12 out  2025 /bin -&gt; usr/bin       « mais de 6 meses: mostra o ano
+-rw-r--r-- 1 root root 2928 15 out 05:27 /etc/pacman.conf</pre>
+
+<ul>
+  <li><code>15 set 16:47</code>: dia 15 de setembro, às 16h47. Como foi nos últimos seis meses, o <code>ls</code> mostra a hora e omite o ano.</li>
+  <li><code>12 out  2025</code>: dia 12 de outubro de <strong>2025</strong>. Passou de seis meses, então o ano aparece no lugar da hora (com um espaço a mais, para alinhar).</li>
+</ul>
+
+<p>Quando você precisa da data completa, sem ambiguidade, peça outro formato:</p>
+
+<pre class="term">$ ls -l --time-style=long-iso Documentos
+total 16
+-rw-rw-r-- 1 ana ana  389 2026-10-15 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 2026-10-14 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 2026-10-14 17:40 notas.txt
+drwxrwxr-x 3 ana ana 4096 2026-10-15 09:15 projetos
+-rw-rw-r-- 1 ana ana 8394 2026-10-14 17:40 relatorio.odt
+$ ls -l --full-time Documentos/notas.txt
+-rw-rw-r-- 1 ana ana 69 2026-10-14 17:40:00.000000000 -0300 Documentos/notas.txt</pre>
+
+<div class="note">
+<strong>Vindo do Debian ou do Ubuntu?</strong>
+<p>O Debian 13 mostra a mesma data como <code>out 14 17:40</code> (mês antes do dia) e o Ubuntu 26.04 como <code>Oct 14 17:40</code> (em inglês, porque lá o <code>ls</code> é outro programa). No Arch é <code>14 out 17:40</code>. É só a ordem de apresentação: o arquivo é o mesmo. Em scripts, nunca leia a data da saída do <code>ls -l</code>, porque ela muda com o idioma e a distribuição; use <code>--time-style=long-iso</code> ou o comando <code>stat</code>.</p>
+</div>
+
+<h3>A linha "total"</h3>
+<p>A primeira linha, <code>total 16</code>, é o espaço que os itens listados ocupam no disco, em blocos de 1 KiB. Não é a soma dos tamanhos da coluna 5. Veja a pasta <code>Downloads</code>:</p>
+
+<pre class="term">$ ls -l Downloads
+total 0                                                  « 0 KiB no disco?
+-rw-rw-r-- 1 ana ana 1566638080 10 out 21:14 archlinux-x86_64.iso
+-rw-rw-r-- 1 ana ana      49152 15 out 08:47 foto.jpg
+-rw-rw-r-- 1 ana ana  104857600  1 out 19:30 fotos-viagem.zip
+-rw-rw-r-- 1 ana ana    2411520 13 out 11:02 manual.pdf
+-rw-rw-r-- 1 ana ana    5242880  9 out 20:10 musica.mp3</pre>
+
+<p>Os arquivos de exemplo da Ana são "de mentira": foram criados com o tamanho declarado, mas sem conteúdo gravado (são <strong>arquivos esparsos</strong>). Por isso a ISO tem 1,5 GB de tamanho e ocupa 0 no disco. Num arquivo normal, as duas medidas são parecidas.</p>
+
+<h3>Os tipos: o primeiro caractere</h3>
+<p>Além de arquivos e pastas, o Linux tem outros tipos de item. Estes são reais, do próprio sistema:</p>
+
+<pre class="term">$ ls -ld /dev/null /dev/sda /dev/tty1 /bin /run/dbus/system_bus_socket
+lrwxrwxrwx 1 root root    7 12 out  2025 /bin -&gt; usr/bin
+crw-rw-rw- 1 root root 1, 3 16 out 14:51 /dev/null                    « 1, 3 no lugar do tamanho
+brw-rw---- 1 root disk 8, 0 16 out 14:51 /dev/sda
+crw------- 1 root tty  4, 1 16 out 14:51 /dev/tty1
+srw-rw-rw- 1 root root    0 16 out 14:51 /run/dbus/system_bus_socket</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Tipo</th><th>Exemplo real no Arch</th><th>Você vai ver…</th></tr>
+<tr><td><code>-</code></td><td>Arquivo comum</td><td><code>notas.txt</code>, <code>/etc/pacman.conf</code></td><td>O tempo todo</td></tr>
+<tr><td><code>d</code></td><td>Diretório (pasta)</td><td><code>Documentos</code>, <code>/etc</code></td><td>O tempo todo</td></tr>
+<tr><td><code>l</code></td><td>Link simbólico (atalho)</td><td><code>/bin -&gt; usr/bin</code></td><td>Em <code>/</code>, <code>/etc</code>, <code>/usr/lib</code> (veja <a href="links.html">Links</a>)</td></tr>
+<tr><td><code>c</code></td><td>Dispositivo de caractere</td><td><code>/dev/null</code>, <code>/dev/tty1</code></td><td>Em <code>/dev</code>. No lugar do tamanho aparecem dois números (<code>1, 3</code>) que identificam o dispositivo</td></tr>
+<tr><td><code>b</code></td><td>Dispositivo de bloco (disco)</td><td><code>/dev/sda</code></td><td>Em <code>/dev</code>, ao mexer com discos (veja <a href="particionar.html">Particionar</a>)</td></tr>
+<tr><td><code>s</code></td><td>Socket (canal de comunicação entre programas)</td><td><code>/run/dbus/system_bus_socket</code></td><td>Em <code>/run</code></td></tr>
+<tr><td><code>p</code></td><td>Pipe nomeado (FIFO)</td><td><code>prw-r--r-- … canal</code>, criado com <code>mkfifo canal</code></td><td>Raramente</td></tr>
+</table>
+</div>
+
+<p>Duas letras ainda podem aparecer <strong>dentro</strong> das permissões: <code>s</code> no lugar do <code>x</code> do dono (<code>-rwsr-xr-x</code>, o "setuid" do <code>/usr/bin/sudo</code>) e <code>t</code> no fim (<code>drwxrwxrwt</code>, o "sticky bit" do <code>/tmp</code>). Um <code>+</code> logo depois das permissões (<code>drwxr-sr-x+</code>, como em <code>/var/log/journal</code>) indica permissões extras (ACL). Tudo isso é assunto de <a href="permissoes.html">Entendendo Permissões</a>.</p>
+
+<div class="try" data-goal="ran:ls\s+-[a-zA-Z]*l,outre:^l.*/bin -&gt; usr/bin" data-solucao="ls -l /bin">
+<p class="try-task"><strong>Missão 2:</strong> descubra para onde aponta o atalho <code>/bin</code>. Use o formato longo e procure a seta <code>-&gt;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Arquivos ocultos: <code>-a</code> e <code>-A</code></h2>
+<p>No Linux, arquivos e pastas cujo nome começa com <strong>ponto</strong> ficam escondidos. Ninguém "esconde" de propósito: é uma convenção para tirar da frente as configurações, como o <code>.bashrc</code>. O <code>ls</code> comum não os mostra.</p>
+
+<dl class="anatomy">
+  <dt>-a</dt><dd>De <em>all</em>, "todos": mostra tudo, inclusive <code>.</code> (a própria pasta) e <code>..</code> (a pasta de cima).</dd>
+  <dt>-A</dt><dd>De <em>almost all</em>, "quase todos": mostra os ocultos, mas sem <code>.</code> e <code>..</code>.</dd>
+</dl>
+
+<pre class="term">$ ls -a
+ .                   .bash_history   .cache       frutas.txt   Música
+ ..                  .bash_logout    .config      Imagens      Público
+'Área de trabalho'   .bash_profile   Documentos   .local       .ssh
+ aur                 .bashrc         Downloads    Modelos      Vídeos
+$ ls -A
+'Área de trabalho'   .bash_logout    .cache       Downloads    .local    Público
+ aur                 .bash_profile   .config      frutas.txt   Modelos   .ssh
+ .bash_history       .bashrc         Documentos   Imagens      Música    Vídeos</pre>
+
+<p>Repare que <code>.bashrc</code> aparece no meio da lista, perto do "b", e não no começo: na ordem do português, o ponto é ignorado (veja <a href="#ordem">A ordem pelo idioma</a>). Os ocultos da Ana são:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>O que é</th></tr>
+<tr><td><code>.bashrc</code></td><td>Configuração do Bash para cada terminal aberto: é onde o Arch define o prompt e o alias do <code>ls</code>.</td></tr>
+<tr><td><code>.bash_profile</code></td><td>Lido no login; no Arch ele só carrega o <code>.bashrc</code>.</td></tr>
+<tr><td><code>.bash_logout</code></td><td>Executado ao sair do login; no Arch, vem só com comentários.</td></tr>
+<tr><td><code>.bash_history</code></td><td>O histórico de comandos digitados.</td></tr>
+<tr><td><code>.cache</code>, <code>.config</code>, <code>.local</code></td><td>Pastas onde os programas guardam cache, configurações e dados de cada usuário.</td></tr>
+<tr><td><code>.ssh</code></td><td>Chaves e configurações do SSH (veja <a href="ssh.html">SSH</a>).</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="ran:ls\s+-[a-zA-Z]*[aA],out:.bash_profile" data-solucao="ls -A">
+<p class="try-task"><strong>Missão 3:</strong> descubra quantos itens ocultos existem na pasta pessoal da Ana. Liste com <code>-a</code> ou <code>-A</code> e conte os que começam com ponto.</p>
+</div>
+
+<hr>
+
+<h2>Tamanhos legíveis: <code>-h</code></h2>
+<p>Ler <code>1566638080</code> bytes não é fácil. Com <code>-h</code> (de <em>human-readable</em>, "legível para humanos") o tamanho aparece em K, M e G, com <strong>vírgula</strong> decimal, como no português. Ele só faz diferença junto com <code>-l</code>:</p>
+
+<pre class="term">$ ls -lh Downloads
+total 0
+-rw-rw-r-- 1 ana ana 1,5G 10 out 21:14 archlinux-x86_64.iso     « 1,5 gibibytes
+-rw-rw-r-- 1 ana ana  48K 15 out 08:47 foto.jpg
+-rw-rw-r-- 1 ana ana 100M  1 out 19:30 fotos-viagem.zip
+-rw-rw-r-- 1 ana ana 2,3M 13 out 11:02 manual.pdf
+-rw-rw-r-- 1 ana ana 5,0M  9 out 20:10 musica.mp3</pre>
+
+<p>As letras são potências de 1024: <code>K</code> = 1024 bytes, <code>M</code> = 1024 K, <code>G</code> = 1024 M. Se preferir potências de 1000, como nos rótulos dos pendrives, use <code>--si</code>: a mesma ISO aparece como <code>1,6G</code>.</p>
+
+<div class="tip">
+<strong>Juntando opções</strong>
+<p><code>ls -l -a -h</code> é o mesmo que <code>ls -lah</code>. Opções de uma letra podem ser grudadas atrás de um único hífen, e a ordem das letras não importa: <code>-lah</code>, <code>-hal</code> e <code>-alh</code> fazem a mesma coisa.</p>
+</div>
+
+<pre class="term">$ ls -lah Documentos
+total 24K
+drwxrwxr-x  3 ana ana 4,0K 15 out 09:07 .               « a própria pasta Documentos
+drwx------ 15 ana ana 4,0K 15 out 08:47 ..              « a pasta de cima (/home/ana)
+-rw-rw-r--  1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r--  1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r--  1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x  3 ana ana 4,0K 15 out 09:15 projetos
+-rw-rw-r--  1 ana ana 8,2K 14 out 17:40 relatorio.odt</pre>
+
+<hr>
+
+<h2>Ordenar: <code>-t</code>, <code>-S</code>, <code>-r</code> e <code>-v</code></h2>
+<p>Por padrão, a lista vem em ordem alfabética. Estas opções mudam o critério:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Vem de</th><th>Ordena por</th></tr>
+<tr><td><code>-t</code></td><td><em>time</em></td><td>Data de modificação, <strong>mais recente primeiro</strong></td></tr>
+<tr><td><code>-S</code></td><td><em>size</em> (maiúsculo!)</td><td>Tamanho, <strong>maior primeiro</strong></td></tr>
+<tr><td><code>-r</code></td><td><em>reverse</em></td><td>Inverte a ordem escolhida (ou a alfabética)</td></tr>
+<tr><td><code>-v</code></td><td><em>version</em></td><td>Números dentro dos nomes na ordem natural (1, 2, 10)</td></tr>
+<tr><td><code>-X</code></td><td><em>extension</em></td><td>Pela extensão (<code>.csv</code>, <code>.log</code>, <code>.odt</code>…)</td></tr>
+<tr><td><code>-U</code></td><td><em>unsorted</em></td><td>Sem ordenar: a ordem em que estão gravados no disco</td></tr>
+<tr><td><code>--group-directories-first</code></td><td>"pastas primeiro"</td><td>Pastas no topo, depois os arquivos (cada grupo em ordem)</td></tr>
+</table>
+</div>
+
+<h3>Por data</h3>
+<pre class="term">$ ls -lt Documentos
+total 16
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos          « o mais recente
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+-rw-rw-r-- 1 ana ana 8394 14 out 17:40 relatorio.odt     « o mais antigo
+$ ls -ltr Documentos
+total 16
+-rw-rw-r-- 1 ana ana 8394 14 out 17:40 relatorio.odt     « com -r, o mais antigo sobe
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos          « e o mais recente fica no fim, perto do prompt</pre>
+
+<p>O <code>ls -ltr</code> é o favorito de quem administra sistemas: numa pasta cheia, o arquivo que acabou de mudar aparece na última linha, logo acima do cursor, sem precisar rolar a tela.</p>
+
+<h3>Por tamanho</h3>
+<pre class="term">$ ls -lS Downloads
+total 0
+-rw-rw-r-- 1 ana ana 1566638080 10 out 21:14 archlinux-x86_64.iso     « o maior
+-rw-rw-r-- 1 ana ana  104857600  1 out 19:30 fotos-viagem.zip
+-rw-rw-r-- 1 ana ana    5242880  9 out 20:10 musica.mp3
+-rw-rw-r-- 1 ana ana    2411520 13 out 11:02 manual.pdf
+-rw-rw-r-- 1 ana ana      49152 15 out 08:47 foto.jpg
+$ ls -lSr Downloads
+total 0
+-rw-rw-r-- 1 ana ana      49152 15 out 08:47 foto.jpg                 « o menor, por causa do -r
+-rw-rw-r-- 1 ana ana    2411520 13 out 11:02 manual.pdf
+-rw-rw-r-- 1 ana ana    5242880  9 out 20:10 musica.mp3
+-rw-rw-r-- 1 ana ana  104857600  1 out 19:30 fotos-viagem.zip
+-rw-rw-r-- 1 ana ana 1566638080 10 out 21:14 archlinux-x86_64.iso</pre>
+
+<div class="warning">
+<strong>Maiúscula e minúscula são opções diferentes</strong>
+<p><code>-S</code> ordena por tamanho; <code>-s</code> (minúsculo) mostra o espaço ocupado no disco antes de cada nome. <code>-R</code> entra nas subpastas; <code>-r</code> inverte a ordem. Confundir as duas não estraga nada, mas a saída fica diferente do que você esperava.</p>
+</div>
+
+<h3>Pastas primeiro</h3>
+<pre class="term">$ ls --group-directories-first Documentos
+projetos  acesso.log  alunos.csv  notas.txt  relatorio.odt</pre>
+
+<div class="try" data-goal="ran:ls\s+.*-[a-zA-Z]*S,out:archlinux-x86_64.iso" data-solucao="ls -lhS Downloads">
+<p class="try-task"><strong>Missão 4:</strong> descubra qual é o <strong>maior</strong> arquivo da pasta <code>Downloads</code>, com tamanhos legíveis. Depois inverta a ordem para ver o menor primeiro.</p>
+</div>
+
+<div class="try" data-goal="ran:ls\s+.*-[a-zA-Z]*t,out:acesso.log" data-solucao="ls -lt Documentos">
+<p class="try-task"><strong>Missão 5:</strong> qual foi o <strong>último arquivo</strong> modificado em <code>Documentos</code>? (A pasta <code>projetos</code> não conta: queremos um arquivo.)</p>
+</div>
+
+<hr>
+
+<h2 id="ordem">A ordem pelo idioma</h2>
+<p>O Arch instalado usa o idioma <code>pt_BR.UTF-8</code>, e o <code>ls</code> ordena como um dicionário em português: ignora acentos, pontos e a diferença entre maiúsculas e minúsculas (só usa essa diferença para desempatar). Veja uma pasta de teste:</p>
+
+<pre class="term" data-cwd="~/ordem">$ ls
+ a                   aula1    aula2   Documentos   Música   Zebra
+'Área de trabalho'   aula10   Aula3   frutas.txt   zebra</pre>
+
+<ul>
+  <li><strong>"Área"</strong> vem logo depois de "a": o acento é ignorado.</li>
+  <li><strong>"Aula3"</strong> fica entre as "aula": maiúscula e minúscula contam como a mesma letra.</li>
+  <li><strong>"zebra"</strong> vem antes de <strong>"Zebra"</strong>: só no empate a minúscula vence.</li>
+  <li><strong>"aula10"</strong> vem antes de "aula2": a comparação é caractere por caractere, e "1" vem antes de "2". O <code>ls</code> não entende números.</li>
+</ul>
+
+<p>Com <code>-v</code>, os números ficam na ordem natural. Mas repare que o <code>-v</code> não segue o idioma: as maiúsculas vêm antes das minúsculas, e os acentos vão para o fim.</p>
+
+<pre class="term" data-cwd="~/ordem">$ ls -v
+ Aula3        Música   a       aula2    frutas.txt  'Área de trabalho'
+ Documentos   Zebra    aula1   aula10   zebra</pre>
+
+<p>Essa é a ordem "do computador", a mesma que o <code>ls</code> usa quando o idioma é o neutro <code>C</code>. Com <code>LC_ALL=C</code>, além da ordem, o <code>ls</code> deixa de entender os acentos e mostra os bytes deles em código:</p>
+
+<pre class="term" data-cwd="~/ordem">$ LC_ALL=C ls
+ Aula3                 Zebra   aula10       zebra
+ Documentos            a       aula2       ''$'\303\201''rea de trabalho'
+'M'$'\303\272''sica'   aula1   frutas.txt</pre>
+
+<div class="tip">
+<strong>Quer números na ordem certa sempre?</strong>
+<p>Dê nomes com zeros à esquerda: <code>aula01</code>, <code>aula02</code>… <code>aula10</code>. Assim qualquer programa ordena certo, sem precisar de <code>-v</code>. A aula <a href="criar.html">touch e mkdir</a> mostra como criar <code>aula01</code> a <code>aula10</code> com um comando só.</p>
+</div>
+
+<div class="try" data-setup="mkdir ordem;;cd ordem;;touch aula1 aula2 aula3 aula10 aula11 aula20" data-goal="ran:ls\s+.*-[a-zA-Z]*v" data-solucao="ls -v">
+<p class="try-task"><strong>Missão 6:</strong> na pasta <code>ordem</code>, rode <code>ls</code> e veja onde ficaram <code>aula10</code> e <code>aula11</code>. Depois liste de modo que a ordem seja 1, 2, 3, 10, 11, 20.</p>
+</div>
+
+<hr>
+
+<h2>Outras opções úteis</h2>
+
+<h3>-d: a pasta, não o conteúdo</h3>
+<p>Quando o argumento é uma pasta, o <code>ls</code> mostra o que tem <strong>dentro</strong> dela. Com <code>-d</code> (de <em>directory</em>) ele mostra a própria pasta. Junto com <code>-l</code>, é o jeito de ver as permissões e o dono de uma pasta:</p>
+
+<pre class="term">$ ls -ld Documentos
+drwxrwxr-x 3 ana ana 4096 15 out 09:07 Documentos
+$ ls -ld /tmp
+drwxrwxrwt 11 root root 240 16 out 14:54 /tmp</pre>
+
+<p>Um truque comum: <code>ls -d */</code> lista só as pastas (o <code>*/</code> é um curinga que pega tudo o que termina em barra, ou seja, pastas; veja <a href="curingas.html">Curingas</a>):</p>
+
+<pre class="term">$ ls -d */
+'Área de trabalho/'   Documentos/   Imagens/   Música/    Vídeos/
+ aur/                 Downloads/    Modelos/   Público/</pre>
+
+<h3>-R: entrar nas subpastas</h3>
+<p>O <code>-R</code> (de <em>recursive</em>, "recursivo") lista a pasta e, depois, cada subpasta, com um título para cada uma:</p>
+
+<pre class="term">$ ls -R Documentos
+Documentos:
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt
+
+Documentos/projetos:
+backup.sh  site
+
+Documentos/projetos/site:
+index.html  style.css</pre>
+
+<div class="warning">
+<strong>Não use -R em pastas enormes</strong>
+<p><code>ls -R /</code> lista o sistema inteiro: são centenas de milhares de linhas e minutos de disco trabalhando. Para procurar um arquivo, use <code>find</code> (veja <a href="find.html">find e locate</a>). Para ver a estrutura de uma pasta pequena, o <code>tree</code> desenha a árvore, mas ele não vem no <code>base</code>: instale com <code>sudo pacman -S tree</code>.</p>
+</div>
+
+<h3>-1: um nome por linha</h3>
+<pre class="term">$ ls -1 Documentos
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt</pre>
+
+<p>Quando a saída do <code>ls</code> vai para outro comando (um <strong>pipe</strong>, <code>|</code>), ele já usa um nome por linha sozinho, sem aspas e sem cores. Por isso <code>ls | wc -l</code> conta os itens:</p>
+
+<pre class="term">$ ls Documentos | cat
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt
+$ ls -1 Documentos | wc -l
+5</pre>
+
+<h3>-F: marcar o tipo com um símbolo</h3>
+<p>O <code>-F</code> (de <em>classify</em>, "classificar") acrescenta um símbolo ao fim de cada nome. É útil quando não há cores, como num texto copiado:</p>
+
+<pre class="term">$ ls -F Documentos/projetos
+backup.sh*  site/                « * executável, / pasta</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Símbolo</th><th>Tipo</th></tr>
+<tr><td><code>/</code></td><td>Pasta</td></tr>
+<tr><td><code>*</code></td><td>Executável</td></tr>
+<tr><td><code>@</code></td><td>Link simbólico</td></tr>
+<tr><td><code>|</code></td><td>Pipe nomeado (FIFO)</td></tr>
+<tr><td><code>=</code></td><td>Socket</td></tr>
+<tr><td>(nada)</td><td>Arquivo comum</td></tr>
+</table>
+</div>
+
+<h3>-i: o número de cada arquivo</h3>
+<p>Cada arquivo tem um número de identificação no sistema de arquivos, o <strong>inode</strong>. O <code>-i</code> mostra esse número antes do nome. Você vai precisar dele ao estudar <a href="links.html">links</a>, porque dois nomes com o mesmo inode são o mesmo arquivo:</p>
+
+<pre class="term">$ ls -i Documentos
+947012 acesso.log  947011 notas.txt  947013 relatorio.odt
+947010 alunos.csv  947014 projetos</pre>
+
+<h3>-n: números em vez de nomes</h3>
+<p>Com <code>-n</code>, dono e grupo aparecem como números (o <strong>UID</strong> e o <strong>GID</strong>). A ana é o usuário 1000, o primeiro usuário comum criado na instalação:</p>
+
+<pre class="term">$ ls -n Documentos/notas.txt
+-rw-rw-r-- 1 1000 1000 69 14 out 17:40 Documentos/notas.txt</pre>
+
+<hr>
+
+<h2>As cores do ls no Arch</h2>
+<p>Quem liga as cores é um <strong>alias</strong> (apelido) que o Arch coloca no <code>~/.bashrc</code> de todo usuário novo. Este é o arquivo inteiro da Ana, como o Arch o criou:</p>
+
+<pre class="file" data-file="~/.bashrc">#
+# ~/.bashrc
+#
+
+# If not running interactively, don't do anything
+[[ $- != *i* ]] &amp;&amp; return
+
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+PS1='[\u@\h \W]\$ '</pre>
+
+<p>A linha <code>alias ls='ls --color=auto'</code> quer dizer: "quando eu digitar <code>ls</code>, rode <code>ls --color=auto</code>". O <code>type</code> confirma:</p>
+
+<pre class="term">$ type ls
+ls está apelidada para `ls --color=auto'</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor</th><th>Efeito</th><th>Quando usar</th></tr>
+<tr><td><code>--color=auto</code></td><td>Colore só quando a saída é a tela; numa pipe ou num arquivo, sem cor</td><td>O padrão do Arch; o melhor para o dia a dia</td></tr>
+<tr><td><code>--color=always</code></td><td>Colore sempre, mesmo numa pipe</td><td>Para ver cores dentro do <code>less -R</code></td></tr>
+<tr><td><code>--color=never</code></td><td>Nunca colore</td><td>Para copiar a saída para um texto</td></tr>
+</table>
+</div>
+
+<h3>O que cada cor quer dizer</h3>
+<p>O Arch não define a variável <code>LS_COLORS</code> (confira: <code>echo $LS_COLORS</code> sai vazio), então o <code>ls</code> usa as cores que já vêm embutidas nele. São estas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Cor</th><th>Tipo</th><th>Exemplo real</th></tr>
+<tr><td>Azul, negrito</td><td>Pasta</td><td><code>Documentos</code>, <code>/etc</code></td></tr>
+<tr><td>Ciano (azul-claro), negrito</td><td>Link simbólico</td><td><code>/bin</code>, <code>/etc/localtime</code></td></tr>
+<tr><td>Verde, negrito</td><td>Executável</td><td><code>backup.sh</code>, tudo em <code>/usr/bin</code></td></tr>
+<tr><td>Amarelo, negrito</td><td>Dispositivo (<code>b</code> ou <code>c</code>)</td><td><code>/dev/sda</code>, <code>/dev/null</code></td></tr>
+<tr><td>Magenta, negrito</td><td>Socket</td><td><code>/run/dbus/system_bus_socket</code></td></tr>
+<tr><td>Amarelo</td><td>Pipe nomeado</td><td>um arquivo criado com <code>mkfifo</code></td></tr>
+<tr><td>Branco com fundo vermelho</td><td>Programa com setuid</td><td><code>/usr/bin/sudo</code>, <code>/usr/bin/passwd</code></td></tr>
+<tr><td>Preto com fundo verde</td><td>Pasta com sticky bit gravável por todos</td><td><code>/tmp</code></td></tr>
+<tr><td>Cor normal</td><td>Arquivo comum</td><td><code>notas.txt</code>, e também <code>.iso</code>, <code>.zip</code>, <code>.jpg</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Vindo do Debian ou do Ubuntu?</strong>
+<p>Lá, o <code>.bashrc</code> roda o programa <code>dircolors</code>, que define <code>LS_COLORS</code> com cores também por extensão: <code>.zip</code> em vermelho, <code>.jpg</code> em magenta. No Arch, sem <code>LS_COLORS</code>, só o <strong>tipo</strong> tem cor; a extensão não muda nada. Se quiser as cores por extensão, acrescente <code>eval "$(dircolors)"</code> ao seu <code>~/.bashrc</code> (veja <a href="https://wiki.archlinux.org/title/Color_output_in_console#ls">Color output in console</a> na Arch Wiki).</p>
+</div>
+
+<h3>Cadê o <code>ll</code>?</h3>
+<p>Muitos tutoriais usam <code>ll</code> como atalho para <code>ls -l</code>. No Arch ele <strong>não existe</strong>: o <code>.bashrc</code> acima só tem os aliases <code>ls</code> e <code>grep</code>.</p>
+
+<pre class="term">$ ll
+bash: ll: comando não encontrado
+$ echo $?
+127                              « 127 = comando não encontrado</pre>
+
+<p>Você pode criar o seu. Primeiro, teste no terminal (vale só até fechá-lo):</p>
+
+<pre class="term">$ alias ll='ls -l'
+$ type ll
+ll está apelidada para `ls -l'
+$ ll Documentos
+total 16
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos
+-rw-rw-r-- 1 ana ana 8394 14 out 17:40 relatorio.odt</pre>
+
+<p>Para que ele valha em todo terminal novo, acrescente a mesma linha <code>alias ll='ls -l'</code> no fim do <code>~/.bashrc</code> com um editor (<code>nano ~/.bashrc</code>; veja <a href="editores.html">nano e vim</a>), salve e recarregue com <code>source ~/.bashrc</code>.</p>
+
+<div class="try" data-goal="alias:ll,ran:^\s*ll\b" data-solucao="alias ll='ls -lh';;ll">
+<p class="try-task"><strong>Missão 7:</strong> confira que <code>ll</code> não existe. Crie o alias <code>ll</code> para <code>ls -lh</code> e use-o para listar a pasta pessoal.</p>
+</div>
+
+<hr>
+
+<h2>Combinações do dia a dia</h2>
+<p>Na prática, você quase sempre junta duas ou três opções. Estas são as mais digitadas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>ls -lah</code></td><td>Tudo, com detalhes, ocultos e tamanhos legíveis: a "visão completa" de uma pasta</td></tr>
+<tr><td><code>ls -ltr</code></td><td>Detalhes, do mais antigo ao mais recente: o último alterado fica perto do cursor</td></tr>
+<tr><td><code>ls -lt | head</code></td><td>Só os mais recentes (o <code>head</code> mostra as 10 primeiras linhas)</td></tr>
+<tr><td><code>ls -lhS | head</code></td><td>Os maiores arquivos de uma pasta</td></tr>
+<tr><td><code>ls -ld PASTA</code></td><td>Permissões e dono da própria pasta</td></tr>
+<tr><td><code>ls -d */</code></td><td>Só as subpastas</td></tr>
+<tr><td><code>ls -1 | wc -l</code></td><td>Quantos itens há na pasta</td></tr>
+</table>
+</div>
+
+<pre class="term">$ ls -lt /var/log | head -5
+total 104
+-rw-rw-r--  1 root utmp            21120 16 out 14:55 wtmp
+-rw-r--r--  1 root root            48748 16 out 14:55 pacman.log      « o pacman acabou de escrever aqui
+drwxr-sr-x+ 3 root systemd-journal  4096 16 out 12:11 journal
+-rw-rw-r--  1 root utmp                0 16 out 12:09 lastlog
+$ ls -lhS Downloads | head -3
+total 0
+-rw-rw-r-- 1 ana ana 1,5G 10 out 21:14 archlinux-x86_64.iso
+-rw-rw-r-- 1 ana ana 100M  1 out 19:30 fotos-viagem.zip</pre>
+
+<p>O <code>| head -5</code> corta a saída nas 5 primeiras linhas: a linha <code>total</code> e os 4 itens mais recentes. Pipes são assunto de <a href="pipes.html">Pipes e xargs</a>.</p>
+
+<div class="try" data-goal="ran:ls\s+-[a-zA-Z]*d,outre:^drwxrwxrwt.*/tmp$" data-solucao="ls -ld /tmp">
+<p class="try-task"><strong>Missão 8:</strong> veja as permissões e o dono da <strong>própria</strong> pasta <code>/tmp</code>, e não do que tem dentro dela. Que letra aparece no fim das permissões?</p>
+</div>
+
+<div class="try" data-goal="ran:ls\s+.*-[a-zA-Z]*R,out:index.html" data-solucao="ls -R Documentos/projetos">
+<p class="try-task"><strong>Missão 9:</strong> liste tudo o que existe dentro de <code>Documentos/projetos</code>, <strong>incluindo</strong> o que está nas subpastas, com um comando só.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de ver uma pasta</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Mostra</th><th>Qual usar</th></tr>
+<tr><td><code>ls</code></td><td>Só os nomes, em colunas</td><td>Uma olhada rápida</td></tr>
+<tr><td><code>ls -lh</code></td><td>Detalhes e tamanhos legíveis</td><td>Conferir datas, tamanhos e donos</td></tr>
+<tr><td><code>ls -lah</code></td><td>Tudo, inclusive ocultos</td><td>Procurar configurações (<code>.bashrc</code>, <code>.config</code>)</td></tr>
+<tr><td><code>ls -ltr</code></td><td>Do mais antigo ao mais novo</td><td>Achar o que acabou de mudar</td></tr>
+<tr><td><code>ls -1</code></td><td>Um nome por linha</td><td>Copiar a lista, mandar para outro comando</td></tr>
+<tr><td><code>ls -R</code> / <code>tree</code></td><td>A pasta e as subpastas</td><td>Pastas pequenas; o <code>tree</code> precisa de <code>sudo pacman -S tree</code></td></tr>
+<tr><td><code>stat arquivo</code></td><td>Todas as datas e detalhes de <strong>um</strong> arquivo</td><td>Quando precisa de precisão (scripts, perícia)</td></tr>
+<tr><td>Gerenciador de arquivos</td><td>Ícones</td><td>No desktop (veja <a href="desktop.html">Instalar um Desktop</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"não foi possível acessar … Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ ls documentos
+ls: não foi possível acessar 'documentos': Arquivo ou diretório inexistente
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> o nome não existe a partir de onde você está. Aqui, o "D" deveria ser maiúsculo: o Linux diferencia maiúsculas.</p>
+<p><strong>Como confirmar:</strong> <code>pwd</code> (estou na pasta certa?) e <code>ls</code> (como o nome está escrito?).</p>
+<p><strong>Como resolver:</strong> digite o começo e use <kbd>Tab</kbd> para completar. Repare no código 2: o <code>ls</code> usa 2 para "problema sério" (não achou o que você pediu).</p>
+</div>
+
+<div class="cenario">
+<strong>Um item existe e o outro não</strong>
+<pre class="term">$ ls -l Documentos/notas.txt nada.txt
+ls: não foi possível acessar 'nada.txt': Arquivo ou diretório inexistente
+-rw-rw-r-- 1 ana ana 69 14 out 17:40 Documentos/notas.txt
+$ echo $?
+2</pre>
+<p><strong>O que aconteceu:</strong> o <code>ls</code> mostra o que conseguiu e reclama do resto. A mensagem de erro sai primeiro porque vai por outro canal, a <strong>saída de erro</strong> (veja <a href="redirecionamento.html">Redirecionamento</a>). O código é 2, porque um dos pedidos falhou.</p>
+</div>
+
+<div class="cenario">
+<strong>"não foi possível abrir o diretório … Permissão negada"</strong>
+<pre class="term">$ ls /root
+ls: não foi possível abrir o diretório '/root': Permissão negada
+$ ls -ld /root
+drwxr-x--- 3 root root 4096 16 out 13:05 /root</pre>
+<p><strong>O que aconteceu:</strong> a pasta existe (o <code>ls -ld</code> a mostra), mas você não tem permissão de ler o conteúdo dela: os "outros" têm <code>---</code>.</p>
+<p><strong>Como resolver:</strong> se for mesmo necessário, <code>sudo ls /root</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"opção inválida"</strong>
+<pre class="term">$ ls -z
+ls: opção inválida -- “z”
+Tente "ls --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> o <code>ls</code> não tem a opção <code>-z</code>. Muitas vezes é uma letra trocada, ou maiúscula no lugar de minúscula.</p>
+<p><strong>Como resolver:</strong> <code>ls --help</code> lista todas as opções, em português (veja <a href="ajuda.html">Obtendo Ajuda</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Não é um diretório"</strong>
+<pre class="term">$ ls Documentos/notas.txt/
+ls: não foi possível acessar 'Documentos/notas.txt/': Não é um diretório</pre>
+<p><strong>O que aconteceu:</strong> a barra no fim diz "isto é uma pasta", mas <code>notas.txt</code> é um arquivo. Acontece quando o <kbd>Tab</kbd> completa uma pasta e você apaga só parte do nome.</p>
+<p><strong>Como resolver:</strong> tire a barra do fim.</p>
+</div>
+
+<div class="cenario">
+<strong>O ls não mostrou o arquivo que eu sei que existe</strong>
+<p><strong>O que aconteceu:</strong> o nome começa com ponto e está oculto.</p>
+<p><strong>Como resolver:</strong> use <code>ls -a</code> ou <code>ls -A</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A ISO tem 1,5 GB, mas o "total" diz 0</strong>
+<p><strong>O que aconteceu:</strong> o <code>total</code> é o espaço ocupado no disco, e a coluna de tamanho é o tamanho declarado do arquivo. Em arquivos esparsos (como os de exemplo da Ana), o primeiro pode ser bem menor.</p>
+<p><strong>Como confirmar:</strong> <code>ls -s</code> mostra o espaço em disco antes de cada nome, e <code>du -sh arquivo</code> também.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-l</code></td><td>Formato longo: tipo, permissões, links, dono, grupo, tamanho, data, nome</td><td><code>ls -l</code></td></tr>
+<tr><td><code>-a</code></td><td>Mostra ocultos, <code>.</code> e <code>..</code></td><td><code>ls -a</code></td></tr>
+<tr><td><code>-A</code></td><td>Mostra ocultos, sem <code>.</code> e <code>..</code></td><td><code>ls -A</code></td></tr>
+<tr><td><code>-h</code></td><td>Tamanhos em K, M, G (com <code>-l</code> ou <code>-s</code>)</td><td><code>ls -lh</code></td></tr>
+<tr><td><code>--si</code></td><td>Como <code>-h</code>, mas em potências de 1000</td><td><code>ls -l --si</code></td></tr>
+<tr><td><code>-t</code></td><td>Ordena por data, mais recente primeiro</td><td><code>ls -lt</code></td></tr>
+<tr><td><code>-S</code></td><td>Ordena por tamanho, maior primeiro</td><td><code>ls -lS</code></td></tr>
+<tr><td><code>-r</code></td><td>Inverte a ordem</td><td><code>ls -ltr</code></td></tr>
+<tr><td><code>-v</code></td><td>Ordem natural de números (1, 2, 10)</td><td><code>ls -v</code></td></tr>
+<tr><td><code>-X</code></td><td>Ordena pela extensão</td><td><code>ls -X</code></td></tr>
+<tr><td><code>-U</code></td><td>Não ordena (ordem do disco)</td><td><code>ls -U</code></td></tr>
+<tr><td><code>--group-directories-first</code></td><td>Pastas antes dos arquivos</td><td><code>ls --group-directories-first</code></td></tr>
+<tr><td><code>-R</code></td><td>Lista também as subpastas</td><td><code>ls -R projetos</code></td></tr>
+<tr><td><code>-d</code></td><td>Mostra a pasta, não o conteúdo</td><td><code>ls -ld /etc</code></td></tr>
+<tr><td><code>-1</code></td><td>Um item por linha</td><td><code>ls -1</code></td></tr>
+<tr><td><code>-F</code></td><td>Marca o tipo (<code>/</code> pasta, <code>*</code> executável, <code>@</code> link)</td><td><code>ls -F</code></td></tr>
+<tr><td><code>-i</code></td><td>Mostra o número do inode</td><td><code>ls -i</code></td></tr>
+<tr><td><code>-n</code></td><td>Dono e grupo como números (UID e GID)</td><td><code>ls -n</code></td></tr>
+<tr><td><code>-s</code></td><td>Espaço ocupado no disco</td><td><code>ls -sh</code></td></tr>
+<tr><td><code>--color=auto|always|never</code></td><td>Quando colorir (o Arch usa <code>auto</code> pelo alias)</td><td><code>ls --color=never</code></td></tr>
+<tr><td><code>--time-style=long-iso</code></td><td>Datas como 2026-10-15 09:07</td><td><code>ls -l --time-style=long-iso</code></td></tr>
+<tr><td><code>--full-time</code></td><td>Data completa, com segundos e fuso</td><td><code>ls -l --full-time</code></td></tr>
+<tr><td><code>--help</code></td><td>Lista todas as opções</td><td><code>ls --help</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Tudo, com detalhes</h3>
+<p>Complete para listar a pasta pessoal com detalhes, ocultos e tamanhos legíveis:</p>
+<div class="ex-code">ls <input data-answer="-lah|-alh|-lha|-hla|-ahl|-hal" aria-label="opções"> ~</div>
+</div>
+
+<div class="exercise">
+<h3>2. O mais antigo primeiro</h3>
+<p>Complete para ordenar por data, com o mais antigo no topo:</p>
+<div class="ex-code">ls -lt<input data-answer="r" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. A própria pasta</h3>
+<p>Complete para ver as permissões da pasta <code>/etc</code>, e não do que tem dentro:</p>
+<div class="ex-code">ls <input data-answer="-ld|-dl" aria-label="opções"> /etc</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Na linha <code>drwxrwxr-x 3 ana ana 4096 15 out 09:15 projetos</code>, o que é <code>15 out 09:15</code>?</p>
+<label><input type="radio" name="q4"> A data em que a pasta foi criada, no formato mês/dia.</label>
+<label><input type="radio" name="q4"> O tamanho da pasta.</label>
+<label><input type="radio" name="q4"> A última modificação: dia 15 de outubro, às 9h15.</label>
+<label><input type="radio" name="q4"> O último acesso da ana.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Uma linha do <code>ls -l</code> mostra <code>12 out  2025</code> em vez de uma hora. Por quê?</p>
+<label><input type="radio" name="q5"> Porque o arquivo está corrompido.</label>
+<label><input type="radio" name="q5"> Porque a modificação foi há mais de seis meses: o ano substitui a hora.</label>
+<label><input type="radio" name="q5"> Porque o arquivo é um link.</label>
+<label><input type="radio" name="q5"> Porque o relógio do sistema está errado.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O primeiro caractere de uma linha do <code>ls -l</code> é <code>l</code>. O que é esse item?</p>
+<label><input type="radio" name="q6"> Um arquivo grande (<em>large</em>).</label>
+<label><input type="radio" name="q6"> Um arquivo de log.</label>
+<label><input type="radio" name="q6"> Uma pasta bloqueada (<em>locked</em>).</label>
+<label><input type="radio" name="q6"> Um link simbólico, um atalho para outro lugar.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">7. Por que <code>ll</code> dá "comando não encontrado" no Arch?</p>
+<label><input type="radio" name="q7"> Porque falta instalar o pacote <code>ll</code>.</label>
+<label><input type="radio" name="q7"> Porque o <code>~/.bashrc</code> do Arch só define os aliases <code>ls</code> e <code>grep</code>.</label>
+<label><input type="radio" name="q7"> Porque só o root pode usar <code>ll</code>.</label>
+<label><input type="radio" name="q7"> Porque o Arch não tem o comando <code>ls</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">8. Numa pasta com <code>aula1</code>, <code>aula2</code> e <code>aula10</code>, em que ordem o <code>ls</code> (sem opções) mostra?</p>
+<label><input type="radio" name="q8"> aula1, aula10, aula2</label>
+<label><input type="radio" name="q8"> aula1, aula2, aula10</label>
+<label><input type="radio" name="q8"> aula10, aula2, aula1</label>
+<label><input type="radio" name="q8"> aula2, aula10, aula1</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ls</code> lista nomes; <code>ls -l</code> mostra sete colunas: tipo e permissões, links, dono, grupo, tamanho, data e nome.</li>
+  <li>No Arch a data vem com o dia antes do mês (<code>15 out 09:07</code>); depois de seis meses, o ano substitui a hora (<code>12 out  2025</code>).</li>
+  <li>O primeiro caractere é o tipo: <code>-</code> arquivo, <code>d</code> pasta, <code>l</code> link, <code>c</code>/<code>b</code> dispositivo, <code>s</code> socket, <code>p</code> pipe.</li>
+  <li><code>-a</code>/<code>-A</code> mostram ocultos, <code>-h</code> deixa tamanhos legíveis, <code>-t</code>/<code>-S</code>/<code>-r</code>/<code>-v</code> mudam a ordem, <code>-d</code> mostra a própria pasta, <code>-R</code> desce nas subpastas.</li>
+  <li>A ordem padrão segue o português: ignora acentos, pontos e maiúsculas.</li>
+  <li>As cores vêm do alias <code>ls='ls --color=auto'</code> do <code>~/.bashrc</code>; no Arch só o tipo tem cor. O <code>ll</code> não existe: crie o seu alias.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>ls</code> é um dos programas do pacote <code>coreutils</code>, apresentados em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>), que tem uma seção sobre o <a href="https://wiki.archlinux.org/title/Core_utilities#ls">ls</a> e alternativas modernas a ele. As cores e o <code>dircolors</code> estão em <a href="https://wiki.archlinux.org/title/Color_output_in_console#ls">Color output in console</a>; os aliases, em <a href="https://wiki.archlinux.org/title/Bash#Aliases">Bash#Aliases</a>; e as letras <code>rwx</code>, em <a href="https://wiki.archlinux.org/title/File_permissions_and_attributes">File permissions and attributes</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

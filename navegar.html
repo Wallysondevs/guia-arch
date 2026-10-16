@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch pwd e cd — saber onde está e mudar de pasta | Guia Arch</title>
+<meta name="description" content="Navegue pelas pastas do Arch Linux com pwd e cd: o prompt do Arch, caminhos absolutos e relativos, .., ~, cd -, nomes com espaço, pushd e popd, os erros reais e missões no terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">pwd e cd</span></h1>
+
+<p class="intro">O terminal está sempre "dentro" de alguma pasta. O <code>pwd</code> diz qual é, e o <code>cd</code> leva você para outra. Com esses dois comandos você anda pelo sistema inteiro sem mouse, e no Arch eles são ainda mais importantes, porque o prompt mostra só um pedaço do caminho.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler o prompt do Arch (<code>[ana@notebook Documentos]$</code>) e saber o que ele <strong>não</strong> mostra.</li>
+  <li>Descobrir em que pasta você está com <code>pwd</code> e <code>pwd -P</code>.</li>
+  <li>Todas as formas do <code>cd</code>: caminho absoluto e relativo, <code>..</code>, <code>~</code>, <code>-</code>, sem argumento e nomes com espaço.</li>
+  <li>Guardar e voltar para pastas com <code>pushd</code> e <code>popd</code>.</li>
+  <li>Entender os erros "Arquivo ou diretório inexistente", "Não é um diretório", "Permissão negada" e "número excessivo de argumentos".</li>
+</ul>
+</div>
+
+<p>Todos os exemplos foram feitos numa instalação real do Arch, com a usuária <strong>ana</strong> na máquina <strong>notebook</strong>. No seu computador, o prompt terá o seu usuário e o nome da sua máquina.</p>
+
+<hr>
+
+<h2>Antes de tudo: a pasta atual</h2>
+<p>Pense no terminal como uma pessoa andando por um prédio de arquivos. Ela está sempre em <strong>uma</strong> sala (uma pasta). Quando você digita <code>ls</code>, ela olha em volta e diz o que tem <em>naquela</em> sala. Quando você abre um arquivo pelo nome, ela procura <em>naquela</em> sala. Essa sala é a <strong>pasta atual</strong>, também chamada de <strong>diretório de trabalho</strong> (<em>working directory</em>). "Diretório" é o nome técnico de pasta.</p>
+
+<p>Quando você abre o terminal, ele começa na sua <strong>pasta pessoal</strong>: <code>/home/ana</code> para a Ana. A pasta pessoal tem um apelido curto: <code>~</code> (til).</p>
+
+<h3>O prompt do Arch mostra só o nome da pasta</h3>
+<p>O texto antes do cursor é o <strong>prompt</strong>. No Arch ele vem definido no arquivo <code>~/.bashrc</code> como <code>PS1='[\u@\h \W]\$ '</code>:</p>
+
+<pre class="term">$ pwd
+/home/ana</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedaço</th><th>Vem de</th><th>Significado</th></tr>
+<tr><td><code>[</code> … <code>]</code></td><td>texto fixo</td><td>Os colchetes são só enfeite: é o estilo do Arch.</td></tr>
+<tr><td><code>ana</code></td><td><code>\u</code> (<em>user</em>)</td><td>Quem está usando o terminal.</td></tr>
+<tr><td><code>@notebook</code></td><td><code>\h</code> (<em>host</em>)</td><td>O nome da máquina. "@" se lê "em".</td></tr>
+<tr><td><code>~</code></td><td><code>\W</code> (<em>working directory</em>)</td><td>O <strong>nome</strong> da pasta atual, só o último pedaço do caminho.</td></tr>
+<tr><td><code>$</code></td><td><code>\$</code></td><td>Você é um usuário comum. Vira <code>#</code> quando você é o root.</td></tr>
+</table>
+</div>
+
+<p>O detalhe importante é o <code>\W</code> maiúsculo: ele mostra só o <strong>nome</strong> da pasta, não o caminho todo. Dentro de <code>/home/ana/Documentos/projetos</code>, o prompt mostra apenas <code>[ana@notebook projetos]$</code>. Se existir outra pasta chamada <code>projetos</code> em outro lugar, o prompt fica igualzinho. Por isso, no Arch, o <code>pwd</code> é o jeito de ter certeza de onde você está.</p>
+
+<div class="note">
+<strong>Vindo do Debian ou do Ubuntu?</strong>
+<p>Lá o prompt é <code>ana@notebook:~/Documentos/projetos$</code>, com o caminho inteiro (<code>\w</code> minúsculo). No Arch é <code>[ana@notebook projetos]$</code>. Os comandos são os mesmos; só o prompt é mais curto. Você pode mudar isso no <code>~/.bashrc</code> (veja <a href="https://wiki.archlinux.org/title/Bash/Prompt_customization">Bash/Prompt customization</a> na Arch Wiki).</p>
+</div>
+
+<hr>
+
+<h2>pwd: onde estou?</h2>
+<p><code>pwd</code> vem de <em>print working directory</em>, "mostre o diretório de trabalho". Ele escreve o <strong>caminho absoluto</strong> da pasta atual, ou seja, o caminho completo, a partir da raiz <code>/</code>.</p>
+
+<dl class="anatomy">
+  <dt>pwd</dt><dd>Mostra o caminho completo da pasta em que o terminal está. Não precisa de nada depois.</dd>
+</dl>
+
+<pre class="term">$ pwd
+/home/ana                    « a raiz /, a pasta home, a pasta ana
+$ echo $?
+0                            « código de saída 0: deu certo</pre>
+
+<p>O <code>echo $?</code> mostra o <strong>código de saída</strong> do comando anterior: <code>0</code> quer dizer sucesso, e qualquer outro número quer dizer erro. Você vai usá-lo nesta aula para conferir o que o <code>cd</code> fez, já que ele não escreve nada quando dá certo.</p>
+
+<h3>pwd -P: o lugar de verdade</h3>
+<p>Algumas "pastas" são, na verdade, atalhos para outras (o nome técnico é <strong>link simbólico</strong>; veja <a href="links.html">Links (ln)</a>). Quando você entra por um atalho, o <code>pwd</code> mostra o atalho. Com <code>-P</code> (de <em>physical</em>, "físico") ele mostra o destino real.</p>
+
+<p>No Arch, <code>/bin</code> é um atalho para <code>/usr/bin</code>, a pasta onde ficam os programas:</p>
+
+<pre class="term">$ cd /bin
+$ pwd
+/bin                         « o caminho por onde você entrou
+$ pwd -P
+/usr/bin                     « onde você realmente está</pre>
+
+<p>O <code>ls -ld</code> (que você vai conhecer na aula <a href="ls.html">ls</a>) mostra esses atalhos. A seta <code>-&gt;</code> aponta para o destino:</p>
+
+<pre class="term">$ ls -ld /bin /sbin /lib /lib64 /usr/sbin
+lrwxrwxrwx 1 root root 7 12 out  2025 /bin -&gt; usr/bin
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib -&gt; usr/lib
+lrwxrwxrwx 1 root root 7 12 out  2025 /lib64 -&gt; usr/lib
+lrwxrwxrwx 1 root root 7 12 out  2025 /sbin -&gt; usr/bin       « no Arch, até o /sbin aponta para /usr/bin
+lrwxrwxrwx 1 root root 3 12 out  2025 /usr/sbin -&gt; bin</pre>
+
+<p>Repare na última linha: no Arch, <code>/sbin</code> e <code>/usr/sbin</code> também levam a <code>/usr/bin</code>. Todos os programas moram numa pasta só. Em outras distribuições, <code>/sbin</code> costuma ser uma pasta separada. A aula <a href="estrutura-diretorios.html">Estrutura de Diretórios</a> explica para que serve cada pasta da raiz.</p>
+
+<hr>
+
+<h2>cd: mudar de pasta</h2>
+<p><code>cd</code> vem de <em>change directory</em>, "mudar de diretório". Ele leva o terminal para outra pasta.</p>
+
+<dl class="anatomy">
+  <dt>cd</dt><dd>O comando que troca a pasta atual.</dd>
+  <dt>Documentos</dt><dd>O <strong>destino</strong>. Pode ser um caminho relativo (a partir de onde você está) ou absoluto (começando com <code>/</code>).</dd>
+</dl>
+
+<pre class="term">$ cd Documentos
+$ pwd
+/home/ana/Documentos
+$ ls
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt</pre>
+
+<p>Três coisas para reparar:</p>
+<ol class="passo">
+  <li>O <code>cd</code> <strong>não mostrou nada</strong>. No Linux, silêncio quer dizer sucesso.</li>
+  <li>O que mudou foi o <strong>prompt</strong>: de <code>[ana@notebook ~]$</code> para <code>[ana@notebook Documentos]$</code>.</li>
+  <li>Agora o <code>ls</code> lista a pasta nova, e não mais a pasta pessoal.</li>
+</ol>
+
+<p>Por curiosidade: o <code>cd</code> e o <code>pwd</code> não são programas guardados em <code>/usr/bin</code>; eles fazem parte do próprio Bash. Faz sentido: só o próprio shell pode mudar a pasta em que ele mesmo está.</p>
+
+<pre class="term">$ type cd pwd
+cd é um comando interno do shell
+pwd é um comando interno do shell</pre>
+
+<hr>
+
+<h2>Caminho relativo e caminho absoluto</h2>
+<p>Há duas formas de dizer para onde ir. A aula <a href="caminhos.html">Caminhos</a> aprofunda o assunto; aqui vai o essencial para o <code>cd</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Começa com</th><th>Parte de</th><th>Exemplo</th></tr>
+<tr><td><strong>Absoluto</strong></td><td><code>/</code></td><td>A raiz do sistema. Funciona de qualquer lugar.</td><td><code>cd /etc/pacman.d</code></td></tr>
+<tr><td><strong>Relativo</strong></td><td>qualquer outra coisa</td><td>A pasta atual. Depende de onde você está.</td><td><code>cd projetos</code></td></tr>
+</table>
+</div>
+
+<p>Um caminho relativo pode ter vários níveis, separados por <code>/</code>:</p>
+
+<pre class="term">$ cd Documentos/projetos/site
+$ pwd
+/home/ana/Documentos/projetos/site</pre>
+
+<p>E um caminho absoluto leva para qualquer lugar, não importa onde você esteja. Aqui a Ana vai para a pasta de configuração dos espelhos do pacman (assunto da aula <a href="espelhos.html">Espelhos</a>):</p>
+
+<pre class="term" data-cwd="~/Documentos/projetos/site">$ cd /etc/pacman.d
+$ pwd
+/etc/pacman.d
+$ ls
+gnupg  mirrorlist</pre>
+
+<h3>Dois nomes especiais: <code>.</code> e <code>..</code></h3>
+<p>Toda pasta tem duas entradas escondidas: <code>.</code> (um ponto) é a própria pasta, e <code>..</code> (dois pontos) é a pasta de cima, a "pasta-mãe".</p>
+
+<dl class="anatomy">
+  <dt>cd</dt><dd>Mudar de pasta…</dd>
+  <dt>..</dt><dd>…para a pasta de cima.</dd>
+</dl>
+
+<pre class="term" data-cwd="/etc/pacman.d">$ cd ..
+$ pwd
+/etc</pre>
+
+<p>Os dois pontos se combinam com outros nomes. <code>../..</code> sobe dois níveis; <code>../Downloads</code> sobe um e entra em <code>Downloads</code>:</p>
+
+<pre class="term">$ cd Documentos/projetos
+$ cd ../..
+$ pwd
+/home/ana
+$ cd Documentos/projetos/site
+$ cd ../../../Downloads              « sobe três níveis e entra em Downloads
+$ pwd
+/home/ana/Downloads</pre>
+
+<p>Já <code>cd .</code> não sai do lugar: "vá para a pasta onde você já está". O ponto é mais útil em outros comandos, como <code>./script.sh</code> ("o script <em>desta</em> pasta").</p>
+
+<hr>
+
+<h2>Atalhos do cd</h2>
+
+<h3>Para casa: <code>cd</code>, <code>cd ~</code> e <code>cd "$HOME"</code></h3>
+<p>O <code>cd</code> sem nada depois leva para a sua pasta pessoal. É o "botão de voltar para casa": se você se perder, digite <code>cd</code> e Enter.</p>
+
+<pre class="term" data-cwd="/etc">$ cd
+$ pwd
+/home/ana</pre>
+
+<p>O <code>~</code> também quer dizer "minha pasta pessoal", e pode ser o começo de um caminho maior:</p>
+
+<pre class="term" data-cwd="/usr/share">$ cd ~/Downloads
+$ pwd
+/home/ana/Downloads</pre>
+
+<p>Quem troca o <code>~</code> por <code>/home/ana</code> é o Bash, antes de chamar o <code>cd</code>. Ele faz o mesmo com <code>~ana</code> (a pasta pessoal da usuária ana) e com a variável <code>$HOME</code>:</p>
+
+<pre class="term">$ echo $HOME
+/home/ana
+$ cd ~ana
+$ pwd
+/home/ana</pre>
+
+<h3>Para a pasta anterior: <code>cd -</code></h3>
+<p>O <code>cd -</code> (hífen) volta para a pasta em que você estava antes, como o botão "voltar" do navegador. Diferente do <code>cd</code> comum, ele <strong>mostra</strong> para onde foi:</p>
+
+<pre class="term">$ cd /etc/pacman.d
+$ cd ..
+$ pwd
+/etc
+$ cd -
+/etc/pacman.d                « voltou e avisou
+$ cd -
+/etc                         « dois cd - seguidos alternam entre as duas pastas
+$ echo $OLDPWD
+/etc/pacman.d</pre>
+
+<p>A pasta anterior fica guardada na variável <code>OLDPWD</code> (<em>old PWD</em>, "o PWD antigo"). O <code>cd -</code> é o mesmo que <code>cd "$OLDPWD"</code>.</p>
+
+<h3>Para a raiz: <code>cd /</code></h3>
+
+<pre class="term">$ cd /
+$ pwd
+/
+$ ls
+bin   dev  home  lib64       mnt  proc  run   srv  tmp  var
+boot  etc  lib   lost+found  opt  root  sbin  sys  usr</pre>
+
+<p>Na raiz o prompt vira <code>[ana@notebook /]$</code>, porque o nome da pasta é a própria barra.</p>
+
+<h3>Resumo das formas do cd</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Vai para</th><th>Mostra algo?</th></tr>
+<tr><td><code>cd Documentos</code></td><td>A pasta <code>Documentos</code> dentro da atual (relativo)</td><td>Não</td></tr>
+<tr><td><code>cd /etc/pacman.d</code></td><td>Um caminho absoluto, de qualquer lugar</td><td>Não</td></tr>
+<tr><td><code>cd ..</code></td><td>A pasta de cima</td><td>Não</td></tr>
+<tr><td><code>cd ../..</code></td><td>Dois níveis acima</td><td>Não</td></tr>
+<tr><td><code>cd</code> (sozinho)</td><td>Sua pasta pessoal</td><td>Não</td></tr>
+<tr><td><code>cd ~</code></td><td>Sua pasta pessoal (o mesmo que <code>cd</code>)</td><td>Não</td></tr>
+<tr><td><code>cd ~/Downloads</code></td><td>Uma pasta dentro da pessoal, de qualquer lugar</td><td>Não</td></tr>
+<tr><td><code>cd -</code></td><td>A pasta anterior</td><td><strong>Sim</strong>, o caminho</td></tr>
+<tr><td><code>cd /</code></td><td>A raiz do sistema</td><td>Não</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="cwd:/etc/pacman.d,ran:^\s*cd\s+-\s*$" data-solucao="cd /etc/pacman.d;;cd;;cd -">
+<p class="try-task"><strong>Missão 1:</strong> vá até <code>/etc/pacman.d</code> e confira com <code>pwd</code>. Depois volte para a sua pasta pessoal e, por fim, retorne a <code>/etc/pacman.d</code> usando <code>cd -</code>. Repare como o prompt muda a cada passo.</p>
+</div>
+
+<div class="try" data-setup="cd /usr/share" data-goal="cwd:~/Documentos/projetos/site" data-solucao="cd ~/Documentos/projetos/site">
+<p class="try-task"><strong>Missão 2:</strong> você está em <code>/usr/share</code>. Com <strong>um único</strong> <code>cd</code>, entre em <code>site</code>, que fica dentro de <code>projetos</code>, que fica dentro de <code>Documentos</code>, na sua pasta pessoal. Dica: comece o caminho com <code>~</code>.</p>
+</div>
+
+<hr>
+
+<h2>Nomes com espaço</h2>
+<p>A pasta "Área de trabalho" tem dois espaços no nome. Para o Bash, o espaço separa as partes de um comando. Então <code>cd Área de trabalho</code> vira um <code>cd</code> com <strong>três</strong> destinos: "Área", "de" e "trabalho". O <code>cd</code> aceita um só, e reclama:</p>
+
+<pre class="term">$ cd Área de trabalho
+bash: cd: número excessivo de argumentos
+$ echo $?
+2</pre>
+
+<p>Há três jeitos de dizer ao Bash que o espaço faz parte do nome. Todos funcionam igual:</p>
+
+<pre class="term">$ cd "Área de trabalho"
+$ pwd
+/home/ana/Área de trabalho
+$ cd ..
+$ cd Área\ de\ trabalho
+$ pwd
+/home/ana/Área de trabalho</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como funciona</th><th>Quando usar</th></tr>
+<tr><td><code>cd "Área de trabalho"</code></td><td>Aspas duplas juntam tudo num nome só</td><td>O jeito mais fácil de ler</td></tr>
+<tr><td><code>cd 'Área de trabalho'</code></td><td>Aspas simples fazem o mesmo, e desligam também <code>$</code> e <code>~</code></td><td>Nomes com <code>$</code> ou <code>!</code></td></tr>
+<tr><td><code>cd Área\ de\ trabalho</code></td><td>A barra invertida "protege" o espaço seguinte</td><td>É o que o <kbd>Tab</kbd> escreve para você</td></tr>
+<tr><td><code>cd Ár</code> + <kbd>Tab</kbd></td><td>O Bash completa o nome sozinho</td><td><strong>Sempre</strong>: evita erros de digitação</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Use o Tab</strong>
+<p>Digite o começo do nome e aperte <kbd>Tab</kbd>: o Bash completa o resto, já com as barras invertidas e a <code>/</code> do fim. Se houver mais de uma opção, aperte <kbd>Tab</kbd> duas vezes para ver a lista. Além de economizar digitação, o Tab é um teste: se ele não completa, o nome não existe ali.</p>
+</div>
+
+<div class="warning">
+<strong>As aspas não podem cobrir o til</strong>
+<p><code>cd "~/Área de trabalho"</code> não funciona: entre aspas, o <code>~</code> é só um til, e o Bash procura uma pasta chamada literalmente <code>~</code>. Deixe o til de fora das aspas: <code>cd ~/"Área de trabalho"</code>. A aula de <a href="https://wallysondevs.github.io/guia-bash/aspas.html">aspas do Guia Bash</a> explica o porquê.</p>
+</div>
+
+<div class="try" data-goal="cwd:~/Área de trabalho" data-solucao="cd &quot;Área de trabalho&quot;">
+<p class="try-task"><strong>Missão 3:</strong> entre na pasta <code>Área de trabalho</code>. Tente primeiro sem aspas e leia o erro. Depois use aspas, ou digite <code>cd Ár</code> e aperte <kbd>Tab</kbd>.</p>
+</div>
+
+<hr>
+
+<h2>pushd e popd: uma pilha de pastas</h2>
+<p>O <code>cd -</code> lembra só <strong>uma</strong> pasta. Quando você precisa visitar algumas pastas e depois voltar exatamente para onde estava, use uma <strong>pilha</strong>: uma lista em que o último que entra é o primeiro que sai, como uma pilha de pratos.</p>
+
+<dl class="anatomy">
+  <dt>pushd</dt><dd>De <em>push directory</em>, "empurrar diretório": guarda a pasta atual no topo da pilha e vai para outra.</dd>
+  <dt>/etc</dt><dd>O destino.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/Documentos">$ pushd /etc
+/etc ~/Documentos                « a pilha: a pasta atual vem primeiro
+$ pushd /var/log
+/var/log /etc ~/Documentos
+$ dirs -v
+ 0  /var/log                     « 0 = onde você está agora
+ 1  /etc
+ 2  ~/Documentos
+$ popd
+/etc ~/Documentos                « tirou /var/log e voltou para /etc
+$ popd
+~/Documentos
+$ pwd
+/home/ana/Documentos</pre>
+
+<dl class="anatomy">
+  <dt>popd</dt><dd>De <em>pop directory</em>, "tirar diretório": tira a pasta do topo da pilha e volta para a próxima.</dd>
+  <dt>dirs -v</dt><dd>Mostra a pilha sem mudar de pasta; o <code>-v</code> (de <em>verbose</em>) põe uma pasta por linha, numerada.</dd>
+</dl>
+
+<p>Quando a pilha acaba, o <code>popd</code> avisa e devolve o código 1:</p>
+
+<pre class="term" data-cwd="~/Documentos">$ popd
+bash: popd: pilha de diretórios está vazia
+$ echo $?
+1</pre>
+
+<div class="try" data-setup="cd Documentos" data-goal="ran:^\s*pushd\b,ran:^\s*popd\b,cwd:~/Documentos" data-solucao="pushd /etc;;pushd /var/log;;dirs -v;;popd;;popd">
+<p class="try-task"><strong>Missão 4:</strong> você está em <code>~/Documentos</code>. Com <code>pushd</code>, visite <code>/etc</code> e depois <code>/var/log</code>. Veja a pilha com <code>dirs -v</code> e volte para <code>Documentos</code> só com <code>popd</code>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de chegar ao mesmo lugar</h2>
+<p>Estando em <code>~/Documentos/projetos</code>, todos estes levam à pasta pessoal:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Como funciona</th><th>Qual usar</th></tr>
+<tr><td><code>cd</code></td><td>Sem argumento, vai para casa</td><td>O mais rápido, no dia a dia</td></tr>
+<tr><td><code>cd ~</code></td><td>O til é a pasta pessoal</td><td>Quando o caminho continua: <code>cd ~/Downloads</code></td></tr>
+<tr><td><code>cd ../..</code></td><td>Sobe dois níveis</td><td>Quando você sabe a distância</td></tr>
+<tr><td><code>cd /home/ana</code></td><td>Caminho absoluto</td><td>Quando quer deixar claro o lugar exato</td></tr>
+<tr><td><code>cd "$HOME"</code></td><td>A variável com a pasta pessoal</td><td>Em scripts que outras pessoas vão rodar (cada uma tem o seu <code>$HOME</code>)</td></tr>
+<tr><td><code>cd -</code></td><td>Volta para a anterior</td><td>Só se a anterior era a pasta pessoal</td></tr>
+<tr><td><code>popd</code></td><td>Volta para a pasta guardada</td><td>Quando você entrou com <code>pushd</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ cd documentos
+bash: cd: documentos: Arquivo ou diretório inexistente
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> não existe pasta com esse nome a partir de onde você está. Aqui o problema é a maiúscula: o Linux diferencia <code>documentos</code> de <code>Documentos</code>. Também pode ser erro de digitação ou você estar na pasta errada.</p>
+<p><strong>Como confirmar:</strong> rode <code>pwd</code> (estou onde penso?) e <code>ls</code> (o nome é esse mesmo?).</p>
+<p><strong>Como resolver:</strong> digite o começo do nome e use <kbd>Tab</kbd> para completar.</p>
+</div>
+
+<div class="cenario">
+<strong>"Não é um diretório"</strong>
+<pre class="term">$ cd frutas.txt
+bash: cd: frutas.txt: Não é um diretório
+$ cd .bashrc
+bash: cd: .bashrc: Não é um diretório</pre>
+<p><strong>O que aconteceu:</strong> o nome existe, mas é um <strong>arquivo</strong>, e o <code>cd</code> só entra em pastas.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l frutas.txt</code>: se a linha começa com <code>-</code>, é arquivo; com <code>d</code>, é pasta (veja <a href="ls.html">ls</a>).</p>
+<p><strong>Como resolver:</strong> para ver o conteúdo de um arquivo, use <code>cat</code> ou <code>less</code> (veja <a href="ver-arquivos.html">cat, less, head, tail</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada"</strong>
+<pre class="term">$ cd /root
+bash: cd: /root: Permissão negada
+$ echo $?
+1
+$ ls -ld /root
+drwxr-x--- 3 root root 4096 16 out 13:05 /root</pre>
+<p><strong>O que aconteceu:</strong> a pasta existe, mas você não tem permissão para entrar. <code>/root</code> é a pasta pessoal do administrador, e o <code>drwxr-x---</code> diz que só o dono (root) e o grupo root podem entrar; a ana não é nenhum dos dois. As pastas pessoais em <code>/home</code> também são fechadas no Arch: o <code>useradd -m</code> as cria com modo <code>700</code> (<code>drwx------</code>), só o dono entra.</p>
+<p><strong>Como resolver:</strong> pense se você precisa mesmo entrar ali. Se precisar, abra um shell de root com <code>sudo -i</code> e saia com <code>exit</code> quando terminar (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). As letras <code>rwx</code> são explicadas em <a href="permissoes.html">Entendendo Permissões</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"número excessivo de argumentos"</strong>
+<pre class="term">$ cd /etc /tmp
+bash: cd: número excessivo de argumentos</pre>
+<p><strong>O que aconteceu:</strong> o <code>cd</code> aceita um destino só, e recebeu dois. É o mesmo erro do <code>cd Área de trabalho</code> sem aspas.</p>
+<p><strong>Como resolver:</strong> passe um destino só; nomes com espaço vão entre aspas.</p>
+</div>
+
+<div class="cenario">
+<strong>"pilha de diretórios está vazia" / "nenhum outro diretório"</strong>
+<pre class="term">$ popd
+bash: popd: pilha de diretórios está vazia
+$ pushd
+bash: pushd: nenhum outro diretório</pre>
+<p><strong>O que aconteceu:</strong> o <code>popd</code> não tem para onde voltar, porque nada foi guardado com <code>pushd</code>. O <code>pushd</code> sem destino troca as duas pastas do topo da pilha, e aqui só havia uma.</p>
+<p><strong>Como resolver:</strong> use <code>dirs -v</code> para ver a pilha antes. Para simplesmente voltar, <code>cd -</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:cd\s+/root,ran:cd\s+frutas\.txt,cwd:/var/log" data-solucao="cd nada;;cd /root;;cd frutas.txt;;cd /var/log">
+<p class="try-task"><strong>Missão 5:</strong> provoque de propósito os erros acima: <code>cd nada</code>, <code>cd /root</code> e <code>cd frutas.txt</code>. Leia cada mensagem e confira o código com <code>echo $?</code>. Termine dentro de <code>/var/log</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Descrição</th></tr>
+<tr><td><code>pwd</code></td><td>Mostra o caminho completo da pasta atual</td></tr>
+<tr><td><code>pwd -P</code></td><td>Mostra a pasta atual sem atalhos (caminho físico)</td></tr>
+<tr><td><code>cd PASTA</code></td><td>Entra na pasta (caminho relativo ou absoluto)</td></tr>
+<tr><td><code>cd</code> / <code>cd ~</code> / <code>cd "$HOME"</code></td><td>Vai para a pasta pessoal</td></tr>
+<tr><td><code>cd ..</code></td><td>Sobe um nível</td></tr>
+<tr><td><code>cd -</code></td><td>Volta para a pasta anterior e mostra qual é (guardada em <code>$OLDPWD</code>)</td></tr>
+<tr><td><code>cd "nome com espaço"</code></td><td>Entra numa pasta cujo nome tem espaços</td></tr>
+<tr><td><code>pushd PASTA</code></td><td>Guarda a atual na pilha e vai para PASTA</td></tr>
+<tr><td><code>popd</code></td><td>Tira a pasta do topo da pilha e volta para a seguinte</td></tr>
+<tr><td><code>dirs -v</code></td><td>Mostra a pilha numerada</td></tr>
+<tr><td><code>echo $?</code></td><td>Mostra o código de saída do último comando (0 = sucesso)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Voltar para casa</h3>
+<p>Qual comando, com <strong>duas letras</strong>, leva você para a sua pasta pessoal de qualquer lugar?</p>
+<div class="ex-code"><input data-answer="cd" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Pasta anterior</h3>
+<p>Complete para voltar à pasta em que você estava antes:</p>
+<div class="ex-code">cd <input data-answer="-" aria-label="argumento"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Nome com espaço</h3>
+<p>Complete para entrar na pasta <code>Área de trabalho</code>:</p>
+<div class="ex-code">cd <input data-answer="&quot;Área de trabalho&quot;|'Área de trabalho'|Área\ de\ trabalho" aria-label="destino"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O prompt mostra <code>[ana@notebook projetos]$</code>. O que você sabe com certeza?</p>
+<label><input type="radio" name="q4"> Que você está em <code>/home/ana/projetos</code>.</label>
+<label><input type="radio" name="q4"> Só que a pasta atual se chama <code>projetos</code>; o caminho completo, só o <code>pwd</code> diz.</label>
+<label><input type="radio" name="q4"> Que você está em <code>/projetos</code>.</label>
+<label><input type="radio" name="q4"> Que você é o root.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Você deu <code>cd /sbin</code>. O que <code>pwd -P</code> mostra no Arch?</p>
+<label><input type="radio" name="q5"> <code>/sbin</code></label>
+<label><input type="radio" name="q5"> <code>/usr/sbin</code></label>
+<label><input type="radio" name="q5"> <code>/usr/bin</code></label>
+<label><input type="radio" name="q5"> Um erro, porque <code>/sbin</code> não existe.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Você está em <code>/home/ana/Documentos/projetos</code>. Para onde leva <code>cd ../../Downloads</code>?</p>
+<label><input type="radio" name="q6"> <code>/home/ana/Downloads</code></label>
+<label><input type="radio" name="q6"> <code>/home/ana/Documentos/Downloads</code></label>
+<label><input type="radio" name="q6"> <code>/home/Downloads</code></label>
+<label><input type="radio" name="q6"> <code>/Downloads</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O prompt do Arch (<code>[ana@notebook Documentos]$</code>) mostra só o <strong>nome</strong> da pasta; o <code>pwd</code> mostra o caminho completo.</li>
+  <li><code>pwd -P</code> ignora atalhos: no Arch, <code>/bin</code> e <code>/sbin</code> levam a <code>/usr/bin</code>.</li>
+  <li><code>cd</code> muda de pasta e não mostra nada quando dá certo; o prompt muda e o código de saída é 0.</li>
+  <li><code>cd</code> sozinho vai para casa, <code>cd ..</code> sobe, <code>cd -</code> volta (e mostra para onde).</li>
+  <li>Nomes com espaço precisam de aspas, de <code>\</code> ou do <kbd>Tab</kbd>.</li>
+  <li><code>pushd</code>/<code>popd</code> guardam pastas numa pilha; <code>dirs -v</code> mostra a pilha.</li>
+  <li>Os erros dizem exatamente o problema: inexistente, "não é um diretório", permissão ou argumentos demais.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>cd</code> e o <code>pwd</code> fazem parte do Bash, descrito em <a href="https://wiki.archlinux.org/title/Bash">Bash</a>; lá estão a seção <a href="https://wiki.archlinux.org/title/Bash#Use_directory_stack_to_navigate">Use directory stack to navigate</a> (a pilha do <code>pushd</code>/<code>popd</code>), a do <a href="https://wiki.archlinux.org/title/Bash#Tab_completion">Tab completion</a> e a do "cd automático" (<a href="https://wiki.archlinux.org/title/Bash#Auto_%22cd%22_when_entering_just_a_path">Auto "cd" when entering just a path</a>). Para mudar o prompt <code>[\u@\h \W]\$</code>, veja <a href="https://wiki.archlinux.org/title/Bash/Prompt_customization">Bash/Prompt customization</a>. A visão geral dos comandos básicos está em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a> (em português: <a href="https://wiki.archlinux.org/title/Core_utilities_(Portugu%C3%AAs)">Core utilities (Português)</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
