@@ -216,7 +216,7 @@ $ pgrep -i networkmanager
 <p>O Chromium roda como <code>chrome</code>; o Visual Studio Code, como <code>code</code> ou <code>electron</code>; um script Python aparece como <code>python3</code>. Quando <code>pgrep nome</code> volta vazio, procure na linha de comando inteira com <code>-f</code> (<em>full</em>): <code>pgrep -af meu_script.py</code>. E use <code>-u ana</code> para ver só os de um usuário.</p>
 </div>
 
-<div class="try" data-setup="sleep 1000 &amp;" data-goal="out:sleep 1000" data-solucao="pgrep -a sleep">
+<div class="try" data-setup="sleep 1000 &amp;" data-goal="outre:[0-9]+ sleep" data-solucao="pgrep -a sleep">
 <p class="try-task"><strong>Missão:</strong> há um <code>sleep</code> rodando em segundo plano. Mostre o PID dele <strong>e</strong> o comando completo com o <code>pgrep</code>.</p>
 </div>
 
