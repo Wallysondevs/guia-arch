@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch sort, uniq, cut, wc, tr — ferramentas de texto | Guia Arch</title>
+<meta name="description" content="Aprenda sort, uniq, cut, wc, tr e column no Arch Linux: cada opção explicada, a receita sort | uniq -c | sort -nr, a armadilha do ponto decimal no locale pt_BR, receitas com os arquivos da ana e o pacman.log. Saídas reais e terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">sort, uniq, cut, wc, tr</span></h1>
+
+<p class="intro">Estes comandos são peças pequenas: cada um faz uma coisa só com texto. Sozinhos parecem simples demais. Encaixados com o <code>|</code> (pipe), respondem perguntas como "qual IP mais acessou meu site?", "quantos pacotes eu instalei?" ou "quais palavras se repetem nesta lista?", sem planilha e sem programar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>wc</code> para contar linhas, palavras, bytes e caracteres.</li>
+  <li><code>sort</code> para ordenar texto, números e tamanhos, e a armadilha do ponto decimal em português.</li>
+  <li><code>uniq</code> para remover ou contar repetições, e por que ele precisa do <code>sort</code> antes.</li>
+  <li><code>cut</code> para recortar colunas, <code>tr</code> para trocar caracteres e <code>column</code> para alinhar tabelas.</li>
+  <li>A receita mais famosa do terminal: <code>sort | uniq -c | sort -nr</code>.</li>
+</ul>
+</div>
+
+<p>Quase todos vêm do <code>coreutils</code>, o pacote dos comandos básicos do GNU; o <code>column</code> vem do <code>util-linux</code>. Os dois fazem parte do <code>base</code>:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/sort /usr/bin/column
+/usr/bin/sort pertence a coreutils 9.12-2
+/usr/bin/column pertence a util-linux 2.42.4-1</pre>
+
+<p>Vamos usar o arquivo <code>frutas.txt</code>, que tem uma fruta por linha, e mais adiante a planilha <code>Documentos/alunos.csv</code>:</p>
+
+<pre class="term">$ cat frutas.txt
+banana
+maçã
+laranja
+banana
+uva
+maçã
+banana</pre>
+
+<hr>
+
+<h2>wc: contar</h2>
+<p><code>wc</code> vem de <em>word count</em>, "contagem de palavras", mas conta mais que isso.</p>
+
+<dl class="anatomy">
+  <dt>wc</dt><dd>O programa que conta.</dd>
+  <dt>frutas.txt</dt><dd>O arquivo a contar.</dd>
+</dl>
+
+<pre class="term">$ wc frutas.txt
+ 7  7 47 frutas.txt
+ « linhas · palavras · bytes · nome</pre>
+
+<p>A resposta tem quatro colunas: <strong>7 linhas</strong>, <strong>7 palavras</strong>, <strong>47 bytes</strong> e o nome do arquivo. Quase sempre você quer só uma delas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Conta</th><th>Exemplo</th><th>Saída</th></tr>
+<tr><td><code>-l</code></td><td>Linhas (<em>lines</em>)</td><td><code>wc -l frutas.txt</code></td><td><code>7 frutas.txt</code></td></tr>
+<tr><td><code>-w</code></td><td>Palavras (<em>words</em>)</td><td><code>wc -w frutas.txt</code></td><td><code>7 frutas.txt</code></td></tr>
+<tr><td><code>-c</code></td><td>Bytes</td><td><code>wc -c frutas.txt</code></td><td><code>47 frutas.txt</code></td></tr>
+<tr><td><code>-m</code></td><td>Caracteres</td><td><code>wc -m frutas.txt</code></td><td><code>43 frutas.txt</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Por que bytes e caracteres dão números diferentes?</strong>
+<p>No UTF-8, letras com acento ocupam 2 bytes. "maçã" tem 4 caracteres, mas 6 bytes (o <code>ç</code> e o <code>ã</code> valem 2 cada):</p>
+<pre class="term">$ echo -n "maçã" | wc -c
+6
+$ echo -n "maçã" | wc -m
+4</pre>
+<p>O <code>-n</code> do <code>echo</code> evita a quebra de linha no fim, que contaria mais um. Para contar letras, use <code>-m</code>.</p>
+</div>
+
+<h3>Só o número, sem o nome</h3>
+<p>Se o texto chega pela entrada (com <code>&lt;</code> ou por um pipe), o <code>wc</code> não sabe o nome do arquivo e mostra só o número. Isso é ótimo em scripts, e responde perguntas do dia a dia do Arch:</p>
+
+<pre class="term">$ wc -l &lt; frutas.txt
+7
+$ ls Downloads | wc -l
+5                                    « 5 itens na pasta Downloads
+$ pacman -Q | wc -l
+408                                  « pacotes instalados
+$ pacman -Qe | wc -l
+45                                   « instalados explicitamente (por você)</pre>
+
+<p>Com vários arquivos, ele soma no fim:</p>
+<pre class="term">$ wc -l Documentos/*.csv Documentos/*.log
+  6 Documentos/alunos.csv
+  6 Documentos/acesso.log
+ 12 total</pre>
+
+<div class="try" data-goal="ran:wc.*acesso\.log,ran:Downloads.*\|.*wc" data-solucao="wc -l Documentos/acesso.log;;ls Downloads | wc -l">
+<p class="try-task"><strong>Missão 1:</strong> descubra quantas linhas tem o arquivo <code>Documentos/acesso.log</code> e quantos itens há dentro da pasta <code>Downloads</code>.</p>
+</div>
+
+<hr>
+
+<h2>sort: ordenar</h2>
+
+<dl class="anatomy">
+  <dt>sort</dt><dd>O programa que ordena linhas.</dd>
+  <dt>frutas.txt</dt><dd>O arquivo. O original não muda: o resultado só aparece na tela.</dd>
+</dl>
+
+<pre class="term">$ sort frutas.txt
+banana
+banana
+banana
+laranja
+maçã
+maçã
+uva</pre>
+
+<p>Com <code>LANG=pt_BR.UTF-8</code> (o idioma que você configurou na instalação), o <code>sort</code> segue a ordem do dicionário em português: entende acentos e trata maiúsculas e minúsculas juntas. Para salvar o resultado, use <code>sort frutas.txt &gt; ordenado.txt</code>, ou <code>-o</code> para gravar no próprio arquivo: <code>sort -o frutas.txt frutas.txt</code>.</p>
+
+<div class="warning">
+<strong>Nunca <code>sort arquivo &gt; arquivo</code></strong>
+<p>O <code>&gt;</code> esvazia o arquivo <strong>antes</strong> de o <code>sort</code> começar a ler, e você perde tudo. Para gravar no próprio arquivo, use <code>-o</code> (veja <a href="redirecionamento.html">Redirecionamento</a>).</p>
+</div>
+
+<h3>Uma opção por vez</h3>
+
+<p><strong><code>-r</code></strong> (<em>reverse</em>) inverte a ordem:</p>
+<pre class="term">$ sort -r frutas.txt
+uva
+maçã
+maçã
+laranja
+banana
+banana
+banana</pre>
+
+<p><strong><code>-u</code></strong> (<em>unique</em>) mostra cada linha uma vez só:</p>
+<pre class="term">$ sort -u frutas.txt
+banana
+laranja
+maçã
+uva</pre>
+
+<p><strong><code>-n</code></strong> (<em>numeric</em>) ordena pelo <strong>valor</strong> do número. Sem ele, o <code>sort</code> compara caractere por caractere, e "10" vem antes de "2" porque "1" vem antes de "2":</p>
+<pre class="term">$ printf '3\n10\n2\n' &gt; notas-prova.txt
+$ sort notas-prova.txt
+10                                   « errado para números
+2
+3
+$ sort -n notas-prova.txt
+2
+3
+10</pre>
+
+<p><strong><code>-h</code></strong> (<em>human</em>) entende tamanhos como <code>8,0K</code>, <code>25M</code>, <code>1,5G</code>. Combina perfeitamente com <code>du -h</code> (veja <a href="discos.html">lsblk, df, du</a>). Quem ocupa mais espaço na pasta da ana? As pastas do AUR:</p>
+<pre class="term">$ du -sh aur/* .cache Documentos | sort -h
+8,0K	.cache
+36K	Documentos
+932K	aur/downgrade
+25M	aur/paru-bin
+35M	aur/yay-bin                     « o maior fica por último</pre>
+
+<p>Repare na vírgula decimal (<code>8,0K</code>): com o sistema em português, o <code>du</code> e o <code>sort -h</code> usam vírgula, e os dois se entendem.</p>
+
+<h3>Ordenar por uma coluna: <code>-t</code> e <code>-k</code></h3>
+<p>O arquivo <code>/etc/passwd</code> tem uma conta por linha, com campos separados por <code>:</code>. O terceiro campo é o número do usuário (UID). Para ordenar por ele:</p>
+
+<dl class="anatomy">
+  <dt>sort</dt><dd>O programa.</dd>
+  <dt>-t:</dt><dd>O separador de colunas é <code>:</code> (de <em>field separator</em>).</dd>
+  <dt>-k3</dt><dd>Ordene pela coluna 3 (de <em>key</em>, "chave").</dd>
+  <dt>-n</dt><dd>Como número.</dd>
+  <dt>/etc/passwd</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ sort -t: -k3 -n /etc/passwd | head -4
+root:x:0:0::/root:/usr/bin/bash
+bin:x:1:1::/:/usr/bin/nologin
+daemon:x:2:2::/:/usr/bin/nologin
+mail:x:8:12::/var/spool/mail:/usr/bin/nologin
+$ sort -t: -k3 -n /etc/passwd | tail -1
+nobody:x:65534:65534:Kernel Overflow User:/:/usr/bin/nologin
+$ grep "^ana:" /etc/passwd
+ana:x:1000:1000::/home/ana:/bin/bash</pre>
+
+<p>O root (UID 0) vem primeiro; as contas de sistema ficam abaixo de 1000; a <code>ana</code>, primeira pessoa criada com <code>useradd</code> na instalação, tem 1000; e o <code>nobody</code>, uma conta especial "sem privilégios", fecha a lista com 65534. No Arch, o quinto campo (o nome completo) fica vazio (<code>::</code>), porque o <code>useradd</code> não pergunta nada (veja <a href="usuarios.html">Usuários e Grupos</a>). Sem <code>-t</code>, as colunas são separadas por espaços.</p>
+
+<h3>A armadilha do ponto decimal em português</h3>
+<p>Em português, o número "nove e meio" se escreve <code>9,5</code>: a vírgula separa os decimais e o ponto separa os milhares (<code>1.500</code>). O <code>sort -n</code> segue essa regra do idioma, que você pode conferir com o <code>locale</code>:</p>
+
+<pre class="term">$ locale decimal_point thousands_sep
+,                                    « separador decimal
+.                                    « separador de milhares</pre>
+
+<p>Só que muitos arquivos, como os CSV exportados por programas, usam o ponto como decimal: <code>9.25</code>. Para o <code>sort -n</code> em pt_BR, o ponto é separador de milhar, então <code>9.25</code> vira <strong>925</strong>, maior que <code>10.0</code> (que vira 100):</p>
+
+<pre class="term">$ cat medias.csv
+Ana,9.25
+Bruno,10.0
+Carla,8.5
+Diego,9.5
+$ sort -t, -k2 -n medias.csv
+Carla,8.5
+Diego,9.5
+Bruno,10.0
+Ana,9.25                             « errado: 9.25 depois de 10.0!
+$ LC_ALL=C sort -t, -k2 -n medias.csv
+Carla,8.5
+Ana,9.25
+Diego,9.5
+Bruno,10.0                           « certo</pre>
+
+<dl class="anatomy">
+  <dt>LC_ALL=C</dt><dd>Só para este comando, usa o idioma "C" (o padrão neutro, em inglês), em que o ponto é o separador decimal. Uma variável escrita antes do comando vale só para ele (veja <a href="script-variaveis.html">Variáveis e Argumentos</a>).</dd>
+  <dt>sort -t, -k2 -n medias.csv</dt><dd>Ordena pela coluna 2, separada por vírgula, como número.</dd>
+</dl>
+
+<p>O <code>sort -g</code> (<em>general numeric</em>) também segue o idioma e lê <code>9.25</code> como 9; às vezes acerta por sorte, mas não é confiável. Regra prática: <strong>números com ponto decimal → <code>LC_ALL=C sort -n</code></strong>; números com vírgula (<code>9,25</code>) → <code>sort -n</code> normal. Os outros programas também mudam: o <code>du</code> e o <code>gzip -l</code> escrevem com vírgula, o <code>awk</code> do Arch (gawk) escreve sempre com ponto (veja <a href="awk.html">awk</a>).</p>
+
+<div class="try" data-setup="printf 'Ana,9.25\nBruno,10.0\nCarla,8.5\nDiego,9.5\n' &gt; medias.csv" data-goal="ran:sort,outre:Ana\,9\.25\nDiego\,9\.5\nBruno\,10\.0" data-solucao="sort -t, -k2 -n medias.csv;;LC_ALL=C sort -t, -k2 -n medias.csv">
+<p class="try-task"><strong>Missão 2:</strong> o arquivo <code>medias.csv</code> tem notas com ponto decimal. Ordene pela nota com <code>sort -t, -k2 -n</code> e veja o erro. Depois conserte com <code>LC_ALL=C</code> na frente.</p>
+</div>
+
+<hr>
+
+<h2>uniq: repetições</h2>
+<p><code>uniq</code> (de <em>unique</em>, "único") junta linhas repetidas. Mas há um detalhe que pega todo mundo: ele só compara cada linha com a <strong>anterior</strong>. Repetições separadas não são vistas:</p>
+
+<pre class="term">$ uniq frutas.txt
+banana
+maçã
+laranja
+banana                               « continua repetida: não estava colada na outra
+uva
+maçã
+banana</pre>
+
+<p>Por isso o <code>uniq</code> quase sempre vem depois do <code>sort</code>: ordenado, tudo o que é igual fica junto.</p>
+
+<pre class="term">$ sort frutas.txt | uniq
+banana
+laranja
+maçã
+uva</pre>
+
+<h3>Contar, só repetidas, só únicas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>O que mostra</th><th>Resultado com as frutas</th></tr>
+<tr><td><code>-c</code></td><td>Cada linha com a quantidade na frente (<em>count</em>)</td><td><code>3 banana</code>, <code>1 laranja</code>, <code>2 maçã</code>, <code>1 uva</code></td></tr>
+<tr><td><code>-d</code></td><td>Só as que se repetem (<em>duplicated</em>)</td><td><code>banana</code>, <code>maçã</code></td></tr>
+<tr><td><code>-u</code></td><td>Só as que aparecem uma vez (<em>unique</em>)</td><td><code>laranja</code>, <code>uva</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ sort frutas.txt | uniq -c
+      3 banana
+      1 laranja
+      2 maçã
+      1 uva
+$ sort frutas.txt | uniq -d
+banana
+maçã
+$ sort frutas.txt | uniq -u
+laranja
+uva</pre>
+
+<hr>
+
+<h2>A receita do ranking: <code>sort | uniq -c | sort -nr</code></h2>
+<p>"O que aparece mais vezes?" Esta é provavelmente a combinação mais útil do terminal. Leia da esquerda para a direita, como uma linha de montagem:</p>
+
+<dl class="anatomy">
+  <dt>sort frutas.txt</dt><dd>Ordena, para que as linhas iguais fiquem juntas.</dd>
+  <dt>| uniq -c</dt><dd>Junta as iguais e põe a quantidade na frente.</dd>
+  <dt>| sort -nr</dt><dd>Ordena pela quantidade (<code>-n</code>), da maior para a menor (<code>-r</code>).</dd>
+</dl>
+
+<pre class="term">$ sort frutas.txt | uniq -c | sort -nr
+      3 banana                       « campeã
+      2 maçã
+      1 uva
+      1 laranja</pre>
+
+<p>Acrescente <code>| head -3</code> no fim para ver só o "top 3".</p>
+
+<h3>Na vida real: quem mais acessou o site?</h3>
+<p>No <code>acesso.log</code>, o IP é o primeiro pedaço de cada linha. O <code>cut</code> (próxima seção) extrai esse pedaço, e a receita faz o resto:</p>
+
+<pre class="term">$ cut -d " " -f 1 Documentos/acesso.log | sort | uniq -c | sort -nr
+      3 192.168.0.10
+      2 192.168.0.23
+      1 192.168.0.57</pre>
+
+<h3>No Arch: o que o pacman mais fez?</h3>
+<p>Cada linha do <code>/var/log/pacman.log</code> tem a data, quem escreveu (<code>[ALPM]</code>, a biblioteca do pacman) e a ação. A terceira "palavra" é a ação:</p>
+
+<pre class="term">$ grep "\[ALPM\]" /var/log/pacman.log | cut -d " " -f 3 | sort | uniq -c | sort -nr
+    408 installed                    « pacotes instalados
+     41 running                      « hooks executados
+     12 transaction                  « começo e fim de cada transação</pre>
+
+<p>Num sistema com alguns meses de uso, aparecem também <code>upgraded</code> e <code>removed</code>. Veja mais sobre esse log em <a href="grep.html">grep</a>.</p>
+
+<div class="try" data-goal="contains:~/ranking.txt=3 192.168.0.10" data-solucao="cut -d &quot; &quot; -f 1 Documentos/acesso.log | sort | uniq -c | sort -nr &gt; ranking.txt;;cat ranking.txt">
+<p class="try-task"><strong>Missão 3:</strong> monte o ranking de IPs de <code>Documentos/acesso.log</code> e salve o resultado em <code>ranking.txt</code>. Dica: construa aos poucos. Rode só o <code>cut</code>, depois acrescente <code>| sort</code>, depois <code>| uniq -c</code>, e assim por diante, até o <code>&gt; ranking.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>cut: recortar colunas</h2>
+<p><code>cut</code> ("cortar") pega só um pedaço de cada linha.</p>
+
+<dl class="anatomy">
+  <dt>cut</dt><dd>O programa.</dd>
+  <dt>-d,</dt><dd>O delimitador, o caractere que separa os campos (de <em>delimiter</em>). Aqui, a vírgula do CSV.</dd>
+  <dt>-f1,4</dt><dd>Quais campos pegar (de <em>field</em>). Pode ser <code>-f1</code>, <code>-f1,4</code>, <code>-f2-4</code> ou <code>-f3-</code> (do 3 até o fim).</dd>
+  <dt>Documentos/alunos.csv</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ cat Documentos/alunos.csv
+nome,idade,cidade,nota
+Ana,29,Recife,9.5
+Bruno,34,Curitiba,7.0
+Carla,22,Salvador,8.5
+Diego,41,Manaus,6.0
+Elisa,27,Porto Alegre,10.0
+$ cut -d, -f1,4 Documentos/alunos.csv
+nome,nota
+Ana,9.5
+Bruno,7.0
+Carla,8.5
+Diego,6.0
+Elisa,10.0
+$ cut -d, -f3 Documentos/alunos.csv
+cidade
+Recife
+Curitiba
+Salvador
+Manaus
+Porto Alegre                         « o espaço não atrapalha: o separador é a vírgula</pre>
+
+<p>No <code>/etc/passwd</code>, o separador é <code>:</code>. O arquivo do Arch da VM tem 26 linhas; o <code>head</code> e o <code>grep</code> só deixam a saída curta:</p>
+
+<pre class="term">$ cut -d: -f1 /etc/passwd | head -3
+root
+bin
+daemon
+$ cut -d: -f1,3 /etc/passwd | grep -E "^(root|ana)"
+root:0
+ana:1000</pre>
+
+<p>Com <code>-c</code> (de <em>characters</em>), ele recorta por posição em vez de campo. Os acentos contam como um caractere:</p>
+<pre class="term">$ cut -c 1-3 frutas.txt
+ban
+maç
+lar
+ban
+uva
+maç
+ban</pre>
+
+<div class="warning">
+<strong>O cut não entende "vários espaços"</strong>
+<p>Para o <code>cut -d " "</code>, cada espaço separa um campo. Em textos alinhados com vários espaços, como a saída do <code>ls -l</code>, os campos ficam vazios e o resultado sai errado:</p>
+<pre class="term">$ ls -l Documentos | cut -d " " -f 5
+
+
+
+
+4096
+8394                                 « linhas vazias: o campo 5 caiu num espaço
+$ ls -l Documentos | tr -s " " | cut -d " " -f 5
+
+389
+132
+69
+4096
+8394                                 « certo: os tamanhos</pre>
+<p>A solução foi espremer os espaços antes, com <code>tr -s " "</code> (logo abaixo). Outra saída é o <code>awk '{print $5}'</code> (veja <a href="awk.html">awk</a>), que já entende espaços variáveis. A primeira linha vazia é a do <code>total</code> do <code>ls -l</code>.</p>
+</div>
+
+<hr>
+
+<h2>tr: trocar caracteres</h2>
+<p><code>tr</code> (de <em>translate</em>, "traduzir") troca um caractere por outro. Ele <strong>não</strong> lê arquivos pelo nome: o texto precisa chegar pela entrada, com <code>|</code> ou <code>&lt;</code>.</p>
+
+<dl class="anatomy">
+  <dt>tr</dt><dd>O programa.</dd>
+  <dt>a-z</dt><dd>Primeiro conjunto: o que procurar (todas as minúsculas).</dd>
+  <dt>A-Z</dt><dd>Segundo conjunto: pelo que trocar, posição por posição (a→A, b→B…).</dd>
+</dl>
+
+<pre class="term">$ echo "Olá Mundo" | tr a-z A-Z
+OLá MUNDO                            « o á não mudou
+$ echo "Olá Mundo" | tr "[:lower:]" "[:upper:]"
+OLá MUNDO                            « nem com as classes</pre>
+
+<p>O <code>tr</code> do GNU trabalha byte a byte, e as letras acentuadas ocupam 2 bytes no UTF-8: elas ficam como estão. Para converter texto acentuado, use o <code>sed</code> ou o <code>awk</code> (o <code>toupper</code> do gawk entende acentos).</p>
+
+<h3>Apagar e espremer</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que faz</th><th>Exemplo</th><th>Saída</th></tr>
+<tr><td><code>tr X Y</code></td><td>Troca X por Y</td><td><code>echo "a-b-c" | tr - _</code></td><td><code>a_b_c</code></td></tr>
+<tr><td><code>tr -d X</code></td><td>Apaga X (<em>delete</em>)</td><td><code>echo banana | tr -d a</code></td><td><code>bnn</code></td></tr>
+<tr><td><code>tr -s X</code></td><td>Espreme X repetido num só (<em>squeeze</em>)</td><td><code>echo "a   b" | tr -s " "</code></td><td><code>a b</code></td></tr>
+</table>
+</div>
+
+<p>Dois truques úteis. Trocar o separador de um CSV (de vírgula para ponto e vírgula, como o Excel em português gosta), lendo o arquivo com <code>&lt;</code>:</p>
+<pre class="term">$ tr "," ";" &lt; Documentos/alunos.csv | head -2
+nome;idade;cidade;nota
+Ana;29;Recife;9.5</pre>
+
+<p>E ver cada pasta do <code>PATH</code> numa linha, trocando <code>:</code> por quebra de linha (<code>\n</code>):</p>
+<pre class="term">$ echo $PATH | tr ":" "\n"
+/usr/local/sbin
+/usr/local/bin
+/usr/bin
+/usr/bin/site_perl
+/usr/bin/vendor_perl
+/usr/bin/core_perl</pre>
+
+<p>Repare na diferença do Arch: não há <code>/bin</code> nem <code>/usr/sbin</code> no <code>PATH</code>, porque os dois são <a href="links.html">links</a> para <code>/usr/bin</code>. As três pastas <code>perl</code> são do pacote <code>perl</code> (que vem como dependência do <code>base</code>). Veja <a href="bashrc.html">.bashrc, alias, PATH</a>.</p>
+
+<hr>
+
+<h2>column: alinhar em tabela</h2>
+<p>O <code>column</code> transforma texto separado por algum caractere numa tabela alinhada, fácil de ler. Ótimo para CSV:</p>
+
+<dl class="anatomy">
+  <dt>column</dt><dd>O programa (do pacote <code>util-linux</code>).</dd>
+  <dt>-t</dt><dd>Monta uma tabela (<em>table</em>): descobre a largura de cada coluna.</dd>
+  <dt>-s,</dt><dd>O separador da entrada é a vírgula (<em>separator</em>). Sem <code>-s</code>, são os espaços.</dd>
+  <dt>Documentos/alunos.csv</dt><dd>O arquivo.</dd>
+</dl>
+
+<pre class="term">$ column -t -s, Documentos/alunos.csv
+nome   idade  cidade        nota
+Ana    29     Recife        9.5
+Bruno  34     Curitiba      7.0
+Carla  22     Salvador      8.5
+Diego  41     Manaus        6.0
+Elisa  27     Porto Alegre  10.0
+$ column -t -s, -o " | " Documentos/alunos.csv
+nome  | idade | cidade       | nota
+Ana   | 29    | Recife       | 9.5
+Bruno | 34    | Curitiba     | 7.0
+Carla | 22    | Salvador     | 8.5
+Diego | 41    | Manaus       | 6.0
+Elisa | 27    | Porto Alegre | 10.0</pre>
+
+<p>O <code>-o</code> (<em>output separator</em>) escolhe o que vai entre as colunas na saída. Também funciona no fim de um pipe:</p>
+
+<pre class="term">$ head -4 /etc/passwd | column -t -s:
+root    x  0  0     /root            /usr/bin/bash
+bin     x  1  1     /                /usr/bin/nologin
+daemon  x  2  2     /                /usr/bin/nologin
+mail    x  8  12    /var/spool/mail  /usr/bin/nologin</pre>
+
+<p>O campo vazio do nome completo (<code>::</code>) virou uma coluna em branco: é o espaço maior antes de <code>/root</code> e de <code>/</code>.</p>
+
+<div class="try" data-goal="ran:column,outre:Elisa +27 +Porto Alegre" data-solucao="column -t -s, Documentos/alunos.csv">
+<p class="try-task"><strong>Missão 4:</strong> mostre o <code>Documentos/alunos.csv</code> como uma tabela alinhada, com o <code>column</code>.</p>
+</div>
+
+<hr>
+
+<h2>Outros três que valem conhecer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>paste</code></td><td>Junta arquivos lado a lado, linha com linha</td><td><code>paste -d, nomes.txt idades.txt</code></td></tr>
+<tr><td><code>rev</code></td><td>Inverte cada linha, caractere por caractere</td><td><code>echo Arch | rev</code> → <code>hcrA</code></td></tr>
+<tr><td><code>diff</code></td><td>Mostra as diferenças entre dois arquivos</td><td><code>diff -u antes.txt depois.txt</code> (muito usado com os <a href="pacnew.html">.pacnew</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Receitas com os arquivos da ana</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Receita</th></tr>
+<tr><td>Quais cidades aparecem na planilha, sem o cabeçalho?</td><td><code>tail -n +2 Documentos/alunos.csv | cut -d, -f3 | sort</code></td></tr>
+<tr><td>Quem tirou a maior nota?</td><td><code>tail -n +2 Documentos/alunos.csv | LC_ALL=C sort -t, -k4 -nr | head -1</code></td></tr>
+<tr><td>Quais páginas foram visitadas, e quantas vezes?</td><td><code>cut -d '"' -f 2 Documentos/acesso.log | sort | uniq -c | sort -nr</code></td></tr>
+<tr><td>Quais frutas aparecem mais de uma vez?</td><td><code>sort frutas.txt | uniq -d</code></td></tr>
+<tr><td>Quantos pacotes eu instalei de propósito?</td><td><code>pacman -Qe | wc -l</code></td></tr>
+<tr><td>Quais pastas ocupam mais espaço?</td><td><code>du -sh ~/* | sort -h | tail -5</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ tail -n +2 Documentos/alunos.csv | sort -t, -k4 -nr
+Elisa,27,Porto Alegre,10.0
+Ana,29,Recife,9.5
+Carla,22,Salvador,8.5
+Bruno,34,Curitiba,7.0
+Diego,41,Manaus,6.0</pre>
+
+<p>O <code>tail -n +2</code> começa na linha 2, pulando o cabeçalho <code>nome,idade,cidade,nota</code>. Aqui o <code>sort -n</code> acertou sem <code>LC_ALL=C</code> porque todas as notas têm uma casa decimal só; com <code>9.25</code> no meio, erraria, como você viu acima. Na dúvida, use <code>LC_ALL=C</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer</h2>
+
+<h3>Remover linhas duplicadas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Diferença</th></tr>
+<tr><td><code>sort -u arquivo</code></td><td>Mais curta. O resultado sai ordenado.</td></tr>
+<tr><td><code>sort arquivo | uniq</code></td><td>Mesmo resultado; permite trocar por <code>uniq -c</code>, <code>-d</code> ou <code>-u</code>.</td></tr>
+<tr><td><code>awk '!visto[$0]++' arquivo</code></td><td>Remove duplicadas <strong>mantendo a ordem original</strong>. Veja <a href="awk.html">awk</a>.</td></tr>
+</table>
+</div>
+
+<h3>Contar linhas</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando</th></tr>
+<tr><td><code>wc -l arquivo</code></td><td>O jeito padrão.</td></tr>
+<tr><td><code>wc -l &lt; arquivo</code></td><td>Quer só o número, sem o nome (scripts).</td></tr>
+<tr><td><code>grep -c padrão arquivo</code></td><td>Quer contar só as linhas que contêm algo (veja <a href="grep.html">grep</a>).</td></tr>
+</table>
+</div>
+
+<h3>Pegar uma coluna</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando</th></tr>
+<tr><td><code>cut -d: -f1</code></td><td>Separador de um caractere só, sempre igual (CSV, <code>/etc/passwd</code>).</td></tr>
+<tr><td><code>tr -s " " | cut -d " " -f5</code></td><td>Espaços variáveis, sem sair do <code>cut</code>.</td></tr>
+<tr><td><code>awk '{print $5}'</code></td><td>Colunas separadas por quantidade variável de espaços (<code>ps</code>, <code>ls -l</code>, <code>df</code>). O mais robusto.</td></tr>
+<tr><td><code>column -t</code></td><td>Não quer recortar, só <strong>ver</strong> as colunas alinhadas.</td></tr>
+</table>
+</div>
+
+<h3>Ordenar números com ponto decimal</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Resultado no Arch em pt_BR</th></tr>
+<tr><td><code>sort -n</code></td><td>Errado com <code>9.25</code> e <code>10.0</code> juntos (o ponto vira separador de milhar)</td></tr>
+<tr><td><code>sort -g</code></td><td>Também segue o idioma; não é confiável</td></tr>
+<tr><td><code>LC_ALL=C sort -n</code></td><td>Certo. Use este.</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="contains:~/unicas.txt=laranja,contains:~/unicas.txt=uva" data-solucao="sort frutas.txt | uniq -u &gt; unicas.txt;;cat unicas.txt">
+<p class="try-task"><strong>Missão 5:</strong> salve em <code>unicas.txt</code> só as frutas que aparecem <strong>uma única vez</strong> em <code>frutas.txt</code>. Dica: <code>sort</code> e depois <code>uniq</code> com a opção certa.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O uniq não removeu as repetidas</strong>
+<pre class="term">$ uniq frutas.txt | wc -l
+7                                    « as mesmas 7 linhas</pre>
+<p><strong>O que aconteceu:</strong> as linhas iguais não estavam coladas. O <code>uniq</code> só compara com a linha anterior.</p>
+<p><strong>Como resolver:</strong> ordene antes: <code>sort frutas.txt | uniq</code>, ou simplesmente <code>sort -u frutas.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O sort colocou 10 antes de 2, ou 9.25 depois de 10.0</strong>
+<p><strong>O que aconteceu:</strong> no primeiro caso, faltou o <code>-n</code>: os números foram comparados como texto. No segundo, o <code>-n</code> estava lá, mas o idioma pt_BR leu o ponto como separador de milhar.</p>
+<p><strong>Como resolver:</strong> <code>sort -n</code> para inteiros; <code>LC_ALL=C sort -n</code> para números com ponto decimal; <code>sort -h</code> para tamanhos como <code>2,4M</code> e <code>1,5G</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O cut devolveu a linha inteira</strong>
+<pre class="term">$ cut -d, -f1 /etc/hostname
+notebook</pre>
+<p><strong>O que aconteceu:</strong> a linha não tem o delimitador (<code>,</code>). Quando não acha o separador, o <code>cut</code> devolve a linha inteira.</p>
+<p><strong>Como resolver:</strong> confira qual é o separador real do arquivo (<code>:</code>, <code>,</code>, tabulação…). Com <code>-s</code>, o <code>cut</code> ignora as linhas sem delimitador.</p>
+</div>
+
+<div class="cenario">
+<strong>"você deve especificar uma lista de bytes, caracteres ou campos"</strong>
+<pre class="term">$ cut frutas.txt
+cut: você deve especificar uma lista de bytes, caracteres ou campos
+Tente "cut --help" para mais informações.</pre>
+<p><strong>Como resolver:</strong> diga o que recortar: <code>-f</code> (campos), <code>-c</code> (caracteres) ou <code>-b</code> (bytes).</p>
+</div>
+
+<div class="cenario">
+<strong>"tr: falta operando" e "tr: operando extra"</strong>
+<pre class="term">$ echo "teste" | tr a
+tr: falta operando depois de “a”
+Dois conjuntos devem ser fornecidos na tradução.
+Tente "tr --help" para mais informações.
+$ tr , ";" Documentos/alunos.csv
+tr: operando extra “Documentos/alunos.csv”
+Tente "tr --help" para mais informações.</pre>
+<p><strong>O que aconteceu:</strong> no primeiro, faltou o segundo conjunto (pelo que trocar). No segundo, o nome do arquivo foi passado como argumento, e o <code>tr</code> não lê arquivos pelo nome.</p>
+<p><strong>Como resolver:</strong> <code>tr a b</code> para trocar, ou <code>tr -d a</code> para apagar; e entregue o arquivo pela entrada: <code>tr , ";" &lt; Documentos/alunos.csv</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente"</strong>
+<pre class="term">$ sort lista.txt
+sort: não foi possível ler: lista.txt: Arquivo ou diretório inexistente
+$ uniq -c lista.txt
+uniq: lista.txt: Arquivo ou diretório inexistente
+$ wc -l lista.txt
+wc: lista.txt: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o arquivo não está na pasta atual. Os três são do coreutils e respondem em português, cada um com o seu jeito.</p>
+<p><strong>Como resolver:</strong> confira o nome com <code>ls</code> e use <kbd>Tab</kbd> para completar.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+
+<h3>wc</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th></tr>
+<tr><td><code>-l</code></td><td>Linhas</td></tr>
+<tr><td><code>-w</code></td><td>Palavras</td></tr>
+<tr><td><code>-c</code></td><td>Bytes</td></tr>
+<tr><td><code>-m</code></td><td>Caracteres</td></tr>
+<tr><td><code>-L</code></td><td>Tamanho da linha mais longa</td></tr>
+</table>
+</div>
+
+<h3>sort</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-r</code></td><td>Ordem inversa</td><td><code>sort -r</code></td></tr>
+<tr><td><code>-n</code></td><td>Numérica (segue o idioma: em pt_BR, vírgula decimal)</td><td><code>sort -n</code></td></tr>
+<tr><td><code>-g</code></td><td>Numérica geral (aceita <code>1e3</code>; também segue o idioma)</td><td><code>sort -g</code></td></tr>
+<tr><td><code>-h</code></td><td>Tamanhos legíveis (K, M, G)</td><td><code>du -sh * | sort -h</code></td></tr>
+<tr><td><code>-u</code></td><td>Remove duplicadas</td><td><code>sort -u</code></td></tr>
+<tr><td><code>-f</code></td><td>Ignora maiúsculas</td><td><code>sort -f</code></td></tr>
+<tr><td><code>-t X</code></td><td>Separador de colunas</td><td><code>sort -t,</code></td></tr>
+<tr><td><code>-k N</code></td><td>Ordena pela coluna N</td><td><code>sort -k2</code></td></tr>
+<tr><td><code>-o arq</code></td><td>Grava o resultado no arquivo</td><td><code>sort -o a.txt a.txt</code></td></tr>
+<tr><td><code>LC_ALL=C sort</code></td><td>Ordem e números do idioma neutro (ponto decimal)</td><td><code>LC_ALL=C sort -n</code></td></tr>
+</table>
+</div>
+
+<h3>uniq</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th></tr>
+<tr><td><code>-c</code></td><td>Conta as repetições</td></tr>
+<tr><td><code>-d</code></td><td>Só as linhas repetidas</td></tr>
+<tr><td><code>-u</code></td><td>Só as linhas que aparecem uma vez</td></tr>
+<tr><td><code>-i</code></td><td>Ignora maiúsculas</td></tr>
+</table>
+</div>
+
+<h3>cut</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-d X</code></td><td>Delimitador (padrão: tabulação)</td><td><code>-d:</code></td></tr>
+<tr><td><code>-f</code></td><td>Campos: <code>1</code>, <code>1,3</code>, <code>2-4</code>, <code>3-</code></td><td><code>-f1,3</code></td></tr>
+<tr><td><code>-c</code></td><td>Caracteres por posição</td><td><code>-c 1-10</code></td></tr>
+<tr><td><code>-s</code></td><td>Ignora linhas sem delimitador</td><td><code>-s</code></td></tr>
+</table>
+</div>
+
+<h3>tr e column</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Descrição</th></tr>
+<tr><td><code>tr a-z A-Z</code></td><td>Troca cada caractere do 1º conjunto pelo correspondente no 2º (sem acentos)</td></tr>
+<tr><td><code>tr "[:lower:]" "[:upper:]"</code></td><td>Mesma coisa, com classes nomeadas</td></tr>
+<tr><td><code>tr -d X</code></td><td>Apaga os caracteres</td></tr>
+<tr><td><code>tr -s X</code></td><td>Espreme repetições</td></tr>
+<tr><td><code>column -t</code></td><td>Alinha em tabela (separador: espaços)</td></tr>
+<tr><td><code>column -t -s,</code></td><td>Alinha usando outro separador de entrada</td></tr>
+<tr><td><code>column -t -o " | "</code></td><td>Escolhe o separador da saída</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só o número de linhas</h3>
+<p>Complete para contar as linhas de <code>notas.txt</code>:</p>
+<div class="ex-code">wc <input data-answer="-l" aria-label="opção"> notas.txt</div>
+</div>
+
+<div class="exercise">
+<h3>2. O ranking</h3>
+<p>Complete a receita que mostra o que mais se repete, do maior para o menor:</p>
+<div class="ex-code">sort lista.txt | uniq <input data-answer="-c" aria-label="opção do uniq"> | sort <input data-answer="-nr|-rn|-n -r|-r -n" aria-label="opções do sort"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Segundo campo de um CSV</h3>
+<p>O arquivo <code>clientes.csv</code> tem linhas como <code>ana,ana@email.com,SP</code>. Complete para pegar só os e-mails:</p>
+<div class="ex-code">cut -d<input data-answer=",|&quot;,&quot;|','" aria-label="delimitador"> -f<input data-answer="2" aria-label="campo"> clientes.csv</div>
+</div>
+
+<div class="exercise">
+<h3>4. Ponto decimal</h3>
+<p>Complete para ordenar <code>precos.txt</code> (números como <code>12.90</code> e <code>9.75</code>) corretamente no Arch em português:</p>
+<div class="ex-code"><input data-answer="LC_ALL=C" aria-label="variável"> sort -n precos.txt</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que <code>uniq</code> geralmente vem depois de <code>sort</code>?</p>
+<label><input type="radio" name="q5"> Porque o <code>uniq</code> só funciona com números.</label>
+<label><input type="radio" name="q5"> Porque o <code>uniq</code> só junta linhas iguais que estejam uma colada na outra.</label>
+<label><input type="radio" name="q5"> Porque o <code>sort</code> apaga as repetidas e o <code>uniq</code> as conta.</label>
+<label><input type="radio" name="q5"> Não há motivo; é só costume.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual comando transforma "arch" em "ARCH"?</p>
+<label><input type="radio" name="q6"> <code>echo arch | cut -c A-Z</code></label>
+<label><input type="radio" name="q6"> <code>tr a-z A-Z arch</code></label>
+<label><input type="radio" name="q6"> <code>echo arch | sort -u</code></label>
+<label><input type="radio" name="q6"> <code>echo arch | tr a-z A-Z</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">7. Num Arch em pt_BR, <code>sort -n</code> colocou <code>9.25</code> depois de <code>10.0</code>. Por quê?</p>
+<label><input type="radio" name="q7"> Em português, o ponto é separador de milhar, então <code>9.25</code> foi lido como 925.</label>
+<label><input type="radio" name="q7"> O <code>-n</code> não funciona com decimais em nenhum idioma.</label>
+<label><input type="radio" name="q7"> Faltou o <code>-r</code>.</label>
+<label><input type="radio" name="q7"> O arquivo tem linhas repetidas.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>wc -l</code> conta linhas; com <code>&lt;</code> ou pipe, mostra só o número; <code>-m</code> conta letras com acento certo.</li>
+  <li><code>sort</code> ordena; <code>-n</code> para números, <code>-h</code> para tamanhos, <code>-r</code> inverte, <code>-u</code> remove duplicadas, <code>-t</code>/<code>-k</code> escolhem a coluna.</li>
+  <li>Em pt_BR, o ponto é separador de milhar: números com ponto decimal pedem <code>LC_ALL=C sort -n</code>.</li>
+  <li><code>uniq</code> só vê repetições coladas; use <code>sort</code> antes. Ranking: <code>sort | uniq -c | sort -nr | head</code>.</li>
+  <li><code>cut -d X -f N</code> recorta colunas com separador fixo; para espaços variáveis, <code>tr -s " "</code> antes ou <code>awk</code>.</li>
+  <li><code>tr</code> troca, apaga (<code>-d</code>) e espreme (<code>-s</code>) caracteres, lendo da entrada; não mexe nos acentuados.</li>
+  <li><code>column -t -s,</code> transforma um CSV numa tabela legível.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>coreutils</code> e o <code>util-linux</code> (com o <code>sort</code>, o <code>cut</code> e o <code>column</code>) estão em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a>; o idioma, as variáveis <code>LANG</code> e <code>LC_*</code> e o efeito delas nos números, em <a href="https://wiki.archlinux.org/title/Locale">Locale</a> (<a href="https://wiki.archlinux.org/title/Locale_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
