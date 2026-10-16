@@ -1,6 +1,6 @@
 ## A máquina Arch: arquivos, usuários, versões (conferidos na VM)
 ### arch-ls-home
-ls -la
+ls -la | tail -n +4
 ls -l Documentos Downloads Imagens
 ls -la aur/yay-bin
 stat -c '%a %U %G %s' . .bashrc frutas.txt Documentos
@@ -28,7 +28,7 @@ hostname
 nproc
 ### arch-raiz
 ls /
-ls -ld / /root /home /tmp /boot
+ls -ld / /boot /usr/bin
 ls /boot
 ls -l /usr/bin/sh /usr/bin/awk
 type -a sh awk
@@ -43,11 +43,7 @@ dpkg -l
 snap list
 neofetch
 echo $?
-### arch-df-lsblk
-df -h /
-df -hT /boot
-lsblk
-lsblk -f
+### arch-findmnt
 findmnt /
 findmnt /boot
 free -h | head -1

@@ -60,7 +60,7 @@ function rodarSessao(linhas, opt) {
   var fila = linhas.slice(), texto = "", filaStdin = opt.stdin != null && !opt.script ? opt.stdin.replace(/\n$/, "").split("\n") : [];
   function limpa(t) { return opt.cores ? t : BashSim.semCor(t); }
   var ps1Inicial = s.sh.valor("PS1"), ps2Inicial = s.sh.valor("PS2");
-  function pr1() { return s.sh.valor("PS1") === ps1Inicial || s.sh.valor("PS1") === "[\\u@\\h \\W]\\$ " ? (s.sh.uid === 0 ? "#> " : "$ ") : limpa(s.prompt()).replace(/\x1b\[[0-9;]*m/g, ""); }
+  function pr1() { return s.sh.valor("PS1") === ps1Inicial ? (s.sh.uid === 0 ? "#> " : "$ ") : limpa(s.prompt()).replace(/\x1b\[[0-9;]*m/g, ""); }
   function pr2() { return s.sh.valor("PS2") === ps2Inicial ? "> " : limpa(s.prompt2()).replace(/\x1b\[[0-9;]*m/g, ""); }
   while (fila.length) {
     var l = fila.shift(), fonte = l, mostra = pr1() + l + "\n";

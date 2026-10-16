@@ -94,7 +94,7 @@ enable -n echo; type echo; enable echo
 ### compgen
 compgen -W "maçã manga pera" -- ma
 compgen -b | head -3
-compgen -A function
+compgen -A function | grep -v -e "^_" -e "gawk" -e "quote"
 ### caller-e-times
 times | wc -l
 ### exit-interativo

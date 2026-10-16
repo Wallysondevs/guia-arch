@@ -29,7 +29,7 @@ ARQUIVOS = """/etc/os-release /usr/lib/os-release /etc/hostname /etc/hosts /etc/
 /etc/mkinitcpio.d/linux-lts.preset /etc/resolv.conf /etc/issue /etc/profile /etc/bash.bashrc /etc/bash.bash_logout
 /etc/environment /etc/machine-id /etc/adjtime /etc/makepkg.conf /etc/nsswitch.conf /etc/login.defs /etc/securetty
 /etc/nginx/nginx.conf /etc/ssh/sshd_config /etc/systemd/journald.conf /etc/systemd/timesyncd.conf
-/etc/xdg/reflector/reflector.conf /etc/subuid /etc/subgid /etc/skel/.bashrc /etc/skel/.bash_profile
+/etc/xdg/reflector/reflector.conf /etc/subuid /etc/subgid /etc/arch-release /proc/sys/kernel/sysrq /sys/module/zswap/parameters/enabled /etc/skel/.bashrc /etc/skel/.bash_profile
 /etc/skel/.bash_logout /etc/sudoers.d /etc/X11 /usr/share/nginx/html/index.html /usr/share/nginx/html/50x.html
 /etc/cron.d /etc/crontab /etc/NetworkManager/NetworkManager.conf /etc/ufw/ufw.conf /etc/snapper/configs
 /etc/zram-generator.conf /etc/systemd/zram-generator.conf /etc/pacman.d/gnupg /etc/pacman.d/hooks
@@ -49,6 +49,27 @@ for p in ARQUIVOS:
     if d["t"] == "d":
         d["ls"] = sorted(os.listdir(p))
     arq[p] = d
+
+# conteúdo dos arquivos pequenos de texto de /etc (um nível) e de algumas pastas de /etc
+for base in ["/etc", "/etc/pacman.d", "/etc/default", "/etc/skel", "/etc/nginx", "/etc/ssh", "/etc/systemd", "/etc/mkinitcpio.d", "/etc/xdg/reflector", "/etc/sudoers.d", "/etc/profile.d"]:
+    try:
+        nomes = sorted(os.listdir(base))
+    except Exception:
+        continue
+    for n in nomes:
+        p = os.path.join(base, n)
+        if p in arq:
+            continue
+        try:
+            d = info(p)
+        except Exception:
+            continue
+        if d["t"] == "f" and d["s"] <= 8192:
+            try:
+                d["c"] = open(p, encoding="utf-8").read()
+                arq[p] = d
+            except Exception:
+                pass
 
 # pastas de um nível (nomes, tipo, modo, dono, tamanho, data)
 PASTAS = """/ /boot /boot/grub /boot/EFI /etc /etc/default /etc/pacman.d /etc/systemd /etc/systemd/system
@@ -108,6 +129,12 @@ CMDS = {
     "journal-disk-usage": ["journalctl", "--disk-usage"],
     "ps": ["ps", "-eo", "user,pid,ppid,pcpu,pmem,vsz,rss,tty,stat,lstart,time,comm,args", "--no-headers"],
     "pacman-log": ["cat", "/var/log/pacman.log"],
+    "resolvectl": ["resolvectl"],
+    "nft": ["nft", "list", "ruleset"],
+    "ufw": ["ufw", "status"],
+    "ufw-verbose": ["ufw", "status", "verbose"],
+    "sysrq": ["sysctl", "kernel.sysrq"],
+    "zswap": ["cat", "/sys/module/zswap/parameters/enabled"],
 }
 for k, c in CMDS.items():
     saidas[k] = run(c, {"SYSTEMD_PAGER": "cat", "SYSTEMD_COLORS": "0", "COLUMNS": "200", "LANG": "pt_BR.UTF-8"})

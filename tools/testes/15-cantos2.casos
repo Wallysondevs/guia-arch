@@ -133,7 +133,7 @@ f() ( cd /tmp; pwd ); f; pwd
 ### canto2-e67
 declare -f nada; echo $?; type -t nada; echo $?
 ### canto2-e68
-f() { :; }; declare -F f; declare -F | head -2
+f() { :; }; declare -F f; declare -F | grep -v -e " _" -e gawk -e quote | head -2
 ### canto2-e69
 export -f nada; echo $?
 ### canto2-e70

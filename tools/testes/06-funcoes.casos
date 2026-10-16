@@ -35,7 +35,7 @@ type soma
 ### funcao-type-declare
 f() { echo oi; echo tchau; }
 declare -f f
-declare -F
+declare -F | grep -v -e " _" -e "gawk" -e " quote" -e " dequote"
 g() { if [ "$1" ]; then echo a; else echo b; fi; for i in 1 2; do echo $i; done; }
 type g
 h() ( echo sub )

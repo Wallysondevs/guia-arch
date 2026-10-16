@@ -182,7 +182,10 @@ saida["provedores"] = prov
 
 # ---- arquivos ----
 QL = """bash pacman nano vim htop nginx openssh linux linux-lts coreutils systemd sudo grub tree
-networkmanager cronie wget curl git flatpak base filesystem pacman-contrib reflector man-db""".split()
+networkmanager cronie wget curl git flatpak base filesystem pacman-contrib reflector man-db snapper ufw podman
+zram-generator btrfs-progs dosfstools e2fsprogs mkinitcpio intel-ucode yay-bin paru-bin downgrade inetutils less
+util-linux iproute2 lvm2 cryptsetup efibootmgr expac fzf jq rsync gawk sed grep findutils procps-ng shadow
+pacman-mirrorlist archlinux-keyring linux-firmware-whence systemd-sysvcompat""".split()
 arquivos = {}
 for n in QL:
     if n in local:
@@ -263,6 +266,14 @@ for n in faltam:
     gatilhos[n]["I"] = hooks_de(n, a, "Install")
 saida["gatilhos"] = gatilhos
 saida["bins"] = {n: ["/" + f for f in arqs_repo.get(n, []) if re.match(r"^usr/bin/[^/]+$", f)] for n in faltam if any(re.match(r"^usr/bin/[^/]+$", f) for f in arqs_repo.get(n, []))}
+
+# ---- pacman -Sl: todos os nomes e versões do repositório (a lista completa, compacta)
+sl = {}
+for l in run(["pacman", "-Sl"]).splitlines():
+    c = l.split(" ")
+    if len(c) >= 3:
+        sl.setdefault(c[0], []).append(c[1] + " " + c[2])
+saida["Sl"] = sl
 
 # ---- cache de pacotes (influi no "Tamanho total download") ----
 saida["cache"] = sorted(os.listdir("/var/cache/pacman/pkg"))

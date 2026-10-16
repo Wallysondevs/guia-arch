@@ -182,7 +182,7 @@
   function mkD(uid, modo, mt) { return { t: "d", c: Object.create(null), m: modo, u: uid, g: uid === 0 ? 0 : uid, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; }
   function mkF(uid, modo, dados, mt, zeros) { var n = { t: "f", d: dados, m: modo, u: uid, g: uid === 0 ? 0 : uid, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; if (zeros != null) { n.d = null; n.z = zeros; } return n; }
   function mkL(alvo, mt) { return { t: "l", alvo: alvo, m: 511, u: 0, g: 0, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; }
-  function mkC(dev, mt) { return { t: "c", dev: dev, m: 438, u: 65534, g: 65534, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; }
+  function mkC(dev, mt) { return { t: "c", dev: dev, m: 438, u: 0, g: 0, mt: mt, ct: mt, at: mt, ino: proxIno++, nl: 1 }; }
   function dataT(Y, M, D, h, m) { return epochDe(Y, M - 1, D, h, m, 0); }
   function tamanho(no) {
     if (no.t === "d") return no.tam || 4096;
@@ -194,7 +194,8 @@
   function blocos(no) { // blocos de 1K usados (como du/ls -s)
     if (no.t === "d") return no.tam != null && no.tam < 4096 ? 0 : 4;
     if (no.t !== "f") return 0;
-    if (no.d == null) return 0; // esparso (como no laboratório)
+    if (no.blocosReais) return no.blocosReais;
+    if (no.d == null) return 0; // esparso (como na VM)
     var t = tamanho(no); return Math.ceil(t / 4096) * 4;
   }
   function dadosDe(no) {
@@ -293,6 +294,7 @@
     var tmp = por("/tmp", mkD(0, 1023, BOOT0)); tmp.tam = 40; tmp.tmpfs = true;
     var rt = por("/root", mkD(0, 488, dataT(2026, 10, 16, 12, 11)));
     rt.c[".bash_history"] = mkF(0, 384, "", dataT(2026, 10, 16, 13, 6));
+    rt.c[".config"] = mkD(0, 448, dataT(2026, 10, 16, 12, 11)); rt.c[".local"] = mkD(0, 493, dataT(2026, 10, 16, 12, 11)); rt.c[".ssh"] = mkD(0, 448, dataT(2026, 10, 16, 12, 11));
     // /dev
     var DV = BOOT0;
     ["null", "zero", "random", "urandom", "full", "tty"].forEach(function (n) { por("/dev/" + n, mkC(n, DV)); });
@@ -307,47 +309,47 @@
     hm.c = Object.create(null); hm.mt = dataT(2026, 10, 16, 12, 10);
     var h = por("/home/ana", mkD(UID, 448, dataT(2026, 10, 15, 8, 47)));
     var d12 = dataT(2026, 10, 12, 8, 3), DF = dataT(2026, 9, 15, 16, 47);
-    // a ordem de criação imita a ordem do readdir na VM (find, du, grep -r)
-    h.c[".bash_logout"] = mkF(UID, 420, TXT.bash_logout, DF);
-    h.c[".bashrc"] = mkF(UID, 420, TXT.bashrc, DF);
-    h.c[".bash_profile"] = mkF(UID, 420, TXT.bash_profile, DF);
-    h.c[".ssh"] = mkD(UID, 448, dataT(2026, 10, 16, 12, 11));
-    h.c[".bash_history"] = mkF(UID, 384, "", dataT(2026, 10, 16, 13, 5));
+    // a ordem de criação imita a ordem do readdir na VM (ext4: ordem do hash dos nomes; find, du, grep -r)
     h.c["frutas.txt"] = mkF(UID, 436, TXT.frutas, dataT(2026, 10, 14, 16, 5));
-    h.c["Documentos"] = mkD(UID, 509, dataT(2026, 10, 15, 9, 7));
-    h.c["Downloads"] = mkD(UID, 509, dataT(2026, 10, 16, 13, 5));
-    h.c["Música"] = mkD(UID, 509, d12);
     h.c["Área de trabalho"] = mkD(UID, 509, d12);
-    h.c["Modelos"] = mkD(UID, 509, d12);
-    h.c["Público"] = mkD(UID, 509, d12);
-    h.c["Vídeos"] = mkD(UID, 509, d12);
-    h.c["Imagens"] = mkD(UID, 509, d12);
-    h.c[".config"] = mkD(UID, 493, dataT(2026, 10, 16, 12, 59));
-    h.c[".config"].c["yay"] = mkD(UID, 493, dataT(2026, 10, 16, 12, 59));
     h.c[".cache"] = mkD(UID, 493, dataT(2026, 10, 16, 13, 0));
     h.c[".cache"].c["yay"] = mkD(UID, 493, dataT(2026, 10, 16, 13, 0));
     h.c[".local"] = mkD(UID, 493, dataT(2026, 10, 16, 13, 0));
     h.c[".local"].c["share"] = mkD(UID, 493, dataT(2026, 10, 16, 13, 0));
+    h.c["Público"] = mkD(UID, 509, d12);
+    h.c[".config"] = mkD(UID, 493, dataT(2026, 10, 16, 12, 59));
+    h.c[".config"].c["yay"] = mkD(UID, 493, dataT(2026, 10, 16, 12, 59));
+    h.c["Imagens"] = mkD(UID, 509, d12);
+    h.c["Modelos"] = mkD(UID, 509, d12);
+    h.c[".bash_logout"] = mkF(UID, 420, TXT.bash_logout, DF);
+    h.c["Música"] = mkD(UID, 509, d12);
+    h.c[".bash_history"] = mkF(UID, 384, "", dataT(2026, 10, 16, 13, 5));
+    h.c[".ssh"] = mkD(UID, 448, dataT(2026, 10, 16, 12, 11));
+    h.c[".bashrc"] = mkF(UID, 420, TXT.bashrc, DF);
+    h.c[".bash_profile"] = mkF(UID, 420, TXT.bash_profile, DF);
+    h.c["Vídeos"] = mkD(UID, 509, d12);
     h.c["aur"] = mkD(UID, 493, dataT(2026, 10, 16, 13, 0));
+    h.c["Downloads"] = mkD(UID, 509, dataT(2026, 10, 16, 13, 5));
+    h.c["Documentos"] = mkD(UID, 509, dataT(2026, 10, 15, 9, 7));
     var doc = h.c["Documentos"].c;
-    doc["alunos.csv"] = mkF(UID, 436, TXT.alunos, dataT(2026, 10, 14, 18, 12));
     doc["notas.txt"] = mkF(UID, 436, TXT.notas, dataT(2026, 10, 14, 17, 40));
     doc["acesso.log"] = mkF(UID, 436, TXT.acesso, dataT(2026, 10, 15, 9, 7));
     doc["relatorio.odt"] = mkF(UID, 436, null, dataT(2026, 10, 14, 17, 40), 8394);
     doc["projetos"] = mkD(UID, 509, dataT(2026, 10, 15, 9, 15));
+    doc["alunos.csv"] = mkF(UID, 436, TXT.alunos, dataT(2026, 10, 14, 18, 12));
     doc["projetos"].c["site"] = mkD(UID, 509, d12);
     doc["projetos"].c["backup.sh"] = mkF(UID, 509, TXT.backup, dataT(2026, 10, 15, 9, 15));
     doc["projetos"].c["site"].c["index.html"] = mkF(UID, 436, "<h1>Olá</h1>\n", d12);
     doc["projetos"].c["site"].c["style.css"] = mkF(UID, 436, "h1 { color: orange; }\n", d12);
     var dl = h.c["Downloads"].c;
-    dl["manual.pdf"] = mkF(UID, 436, null, dataT(2026, 10, 13, 11, 2), 2411520);
     dl["fotos-viagem.zip"] = mkF(UID, 436, null, dataT(2026, 10, 1, 19, 30), 104857600);
+    dl["foto.jpg"] = mkF(UID, 436, null, dataT(2026, 10, 15, 8, 47), 49152);
+    dl["manual.pdf"] = mkF(UID, 436, null, dataT(2026, 10, 13, 11, 2), 2411520);
     dl["musica.mp3"] = mkF(UID, 436, null, dataT(2026, 10, 9, 20, 10), 5242880);
     dl["archlinux-x86_64.iso"] = mkF(UID, 436, null, dataT(2026, 10, 10, 21, 14), 1566638080);
-    dl["foto.jpg"] = mkF(UID, 436, null, dataT(2026, 10, 15, 8, 47), 49152);
     var im = h.c["Imagens"].c;
-    im["perfil.png"] = mkF(UID, 436, null, dataT(2026, 9, 20, 10, 0), 102400);
     im["ferias.jpg"] = mkF(UID, 436, null, dataT(2026, 8, 2, 14, 0), 2097152);
+    im["perfil.png"] = mkF(UID, 436, null, dataT(2026, 9, 20, 10, 0), 102400);
     // ~/aur: os três pacotes do AUR compilados na VM (yay-bin, paru-bin, downgrade)
     if (DADOS && DADOS.home) {
       var aur = h.c["aur"];
@@ -356,7 +358,9 @@
         if (k[0] === "/") return;
         var partes = k.split("/"), pasta = aur.c[partes[0]] || (aur.c[partes[0]] = mkD(UID, 493, e.mt * 1000));
         pasta.mt = Math.max(pasta.mt, e.mt * 1000);
-        pasta.c[partes[1]] = e.d ? mkD(UID, e.m, e.mt * 1000) : (e.c != null ? mkF(UID, e.m, e.c, e.mt * 1000) : mkF(UID, e.m, null, e.mt * 1000, e.s));
+        var nn = pasta.c[partes[1]] = e.d ? mkD(UID, e.m, e.mt * 1000) : (e.c != null ? mkF(UID, e.m, e.c, e.mt * 1000) : mkF(UID, e.m, null, e.mt * 1000, e.s));
+        if (e.d && e.nl) nn.nlf = e.nl; // .git, pkg e src têm subpastas na VM
+        if (!e.d && e.c == null && e.b) nn.blocosReais = e.b; // os .pkg.tar.zst não são esparsos
       });
     }
     // estado do pacman: pacotes instalados (/var/lib/pacman/local), cache e log
@@ -380,6 +384,7 @@
   function listarDir(no) { var k = Object.keys(no.c); return no.tmpfs ? k.reverse() : k; }
   function contarLinks(no) { // nº de ligações de uma pasta = 2 + subpastas
     if (no.t !== "d") return no.nl || 1;
+    if (no.nlf && !Object.keys(no.c).length) return no.nlf;
     var n = 2; for (var k in no.c) if (no.c[k].t === "d") n++; return n;
   }
 
@@ -2227,7 +2232,7 @@
     this.inicio = k.clock;
     this.ultimoBg = null;
     this.ultimoArg = "";
-    this.umask = 2;
+    this.umask = 18; // 022: o padrão do Arch (/etc/login.defs e pam_umask)
     this.hash = Object.create(null);
     this.semErrexit = 0;
     this.trapSaida = false;
@@ -2738,8 +2743,7 @@
     if (pref === "") { var h = this.valor("HOME"); return h === null ? HOME : h; }
     if (pref === "+") { var p = this.valor("PWD"); return p === null ? null : p; }
     if (pref === "-") { var o = this.valor("OLDPWD"); return o === null ? null : o; }
-    var homes = { ana: HOME, root: "/root", daemon: "/usr/sbin", "www-data": "/var/www", nobody: "/nonexistent" };
-    return hasOwn(homes, pref) ? homes[pref] : null;
+    return hasOwn(HOMES, pref) ? HOMES[pref] : null;
   };
   // aplica til no início das partes (e depois de ":" em atribuições)
   SP.aplicarTil = function (partes, atrib) {
@@ -4259,7 +4263,7 @@
       if (b === "env") {
         var progEnv = argI;
         if (/[\s\r]/.test(progEnv) || !(this.acharNoPath(progEnv) || progEnv.indexOf("/") >= 0)) {
-          this.escrever(2, "env: ‘" + progEnv.replace(/\r/g, "\\r").replace(/\t/g, "\\t") + "’: Arquivo ou diretório inexistente\n");
+          this.escrever(2, "env: “" + progEnv.replace(/\r/g, "\\r").replace(/\t/g, "\\t") + "”: Arquivo ou diretório inexistente\n");
           if (/[\s\r]/.test(progEnv)) this.escrever(2, "env: usa -[v]S para passar opções em linhas shebang\n");
           return 127;
         }
@@ -4319,7 +4323,8 @@
     n.scriptNome = caminho;
     if (opt.opcoes) for (var o in opt.opcoes) n.o[o] = opt.opcoes[o];
     if (opt.modoC) n.modoC = true;
-    n.ehSh = !!opt.sh;
+    n.ehSh = false; // no Arch, /usr/bin/sh é o próprio bash (em modo POSIX)
+    if (opt.sh) n.o.posix = 1;
     var self = this;
     var proc = this.k.spawn(n, function* () {
       n.pidShell = proc.pid;
@@ -5903,7 +5908,7 @@
   B("compopt", function* () { return 0; });
   ["ulimit", "suspend", "bind", "coproc"].forEach(function (n) {
     B(n, function* (args) {
-      if (n === "ulimit") { if (args.length === 1 || args[1] === "-f") { this.escrever(1, "unlimited\n"); return 0; } if (args[1] === "-n") { this.escrever(1, "524288\n"); return 0; } if (args[1] === "-a") { this.escrever(1, "real-time non-blocking time  (microseconds, -R) unlimited\ncore file size              (blocks, -c) 0\ndata seg size               (kbytes, -d) unlimited\nfile size                   (blocks, -f) unlimited\nopen files                          (-n) 1024\nstack size                  (kbytes, -s) 8192\ncpu time                   (seconds, -t) unlimited\nmax user processes                  (-u) 63432\n"); return 0; } }
+      if (n === "ulimit") { if (args.length === 1 || args[1] === "-f") { this.escrever(1, "unlimited\n"); return 0; } if (args[1] === "-n") { this.escrever(1, "1024\n"); return 0; } if (args[1] === "-a") { this.escrever(1, "real-time non-blocking time  (microseconds, -R) unlimited\ncore file size              (blocks, -c) 0\ndata seg size               (kbytes, -d) unlimited\nfile size                   (blocks, -f) unlimited\nopen files                          (-n) 1024\nstack size                  (kbytes, -s) 8192\ncpu time                   (seconds, -t) unlimited\nmax user processes                  (-u) 63432\n"); return 0; } }
       this.escrever(2, "(simulador) " + n + " não funciona neste simulador. Experimente no terminal de verdade.\n");
       return 1;
     });
@@ -6305,7 +6310,7 @@
     return this.nome === "ls" || this.nome === "grep" ? 2 : 1;
   };
   function q1(s) { return "'" + s + "'"; }               // aspas simples (quotef/quoteaf)
-  function qa(s) { return "‘" + s + "’"; }              // aspas tipográficas (quote)
+  function qa(s) { return "“" + s + "”"; }              // aspas tipográficas (quote)
   function qn(s) { return precisaAspasLs(s) ? aspasLs(s) : "'" + s + "'"; }
   function qs(s) { return precisaAspasLs(s) ? aspasLs(s) : s; }
 
@@ -6551,21 +6556,21 @@
           cam = i === 0 ? (partes[0] === "" ? "/" : partes[0]) : (cam === "/" ? "/" : cam + "/") + partes[i];
           if (cam === "/" || partes[i] === "." || partes[i] === "..") continue;
           var r = sh.resolver(cam, true);
-          if (r.no) { if (r.no.t !== "d") { io.msg("cannot create directory " + qa(a) + ": Arquivo existe"); st = 1; return; } continue; }
+          if (r.no) { if (r.no.t !== "d") { io.msg("não foi possível criar o diretório " + qa(a) + ": Arquivo existe"); st = 1; return; } continue; }
           var p = sh.paiDe(cam);
-          if (!p.pai || p.pai.t !== "d") { io.msg("cannot create directory " + qa(cam) + ": " + errMsg(p.err || "ENOTDIR")); st = 1; return; }
-          if (!sh.pode(p.pai, 2)) { io.msg("cannot create directory " + qa(cam) + ": Permissão negada"); st = 1; return; }
+          if (!p.pai || p.pai.t !== "d") { io.msg("não foi possível criar o diretório " + qa(cam) + ": " + errMsg(p.err || "ENOTDIR")); st = 1; return; }
+          if (!sh.pode(p.pai, 2)) { io.msg("não foi possível criar o diretório " + qa(cam) + ": Permissão negada"); st = 1; return; }
           p.pai.c[p.nome] = donoDe(sh, mkD(sh.uid, i === partes.length - 1 ? modo : 509 & ~sh.umask | 448, sh.k.clock)); if (p.pai.tmpfs) p.pai.c[p.nome].tmpfs = true; p.pai.mt = sh.k.clock;
           if (g.o.v) io.out("mkdir: foi criado o diretório " + qn(cam) + "\n");
         }
         return;
       }
       var r2 = sh.resolver(a, false);
-      if (r2.no) { io.msg("cannot create directory " + qa(a) + ": Arquivo existe"); st = 1; return; }
+      if (r2.no) { io.msg("não foi possível criar o diretório " + qa(a) + ": Arquivo existe"); st = 1; return; }
       var pp = sh.paiDe(a);
-      if (!pp.pai) { io.msg("cannot create directory " + qa(a) + ": " + errMsg(pp.err || "ENOENT")); st = 1; return; }
-      if (pp.pai.t !== "d") { io.msg("cannot create directory " + qa(a) + ": Não é um diretório"); st = 1; return; }
-      if (!sh.pode(pp.pai, 2)) { io.msg("cannot create directory " + qa(a) + ": Permissão negada"); st = 1; return; }
+      if (!pp.pai) { io.msg("não foi possível criar o diretório " + qa(a) + ": " + errMsg(pp.err || "ENOENT")); st = 1; return; }
+      if (pp.pai.t !== "d") { io.msg("não foi possível criar o diretório " + qa(a) + ": Não é um diretório"); st = 1; return; }
+      if (!sh.pode(pp.pai, 2)) { io.msg("não foi possível criar o diretório " + qa(a) + ": Permissão negada"); st = 1; return; }
       pp.pai.c[pp.nome] = donoDe(sh, mkD(sh.uid, modo, sh.k.clock)); if (pp.pai.tmpfs) pp.pai.c[pp.nome].tmpfs = true; pp.pai.mt = pp.pai.ct = sh.k.clock;
       if (g.o.v) io.out("mkdir: foi criado o diretório " + qn(a) + "\n");
     });
@@ -6678,7 +6683,6 @@
     var destino;
     if (o.t) destino = o.t;
     else { if (ops.length < 2) return io.tente("falta o operando arquivo de destino após " + qn(ops[0])); destino = ops.pop(); }
-    if (o.n && !mover) io.msg("warning: behavior of -n is non-portable and may change in future; use --update=none instead");
     var rd = sh.resolver(destino, true);
     var destDir = rd.no && rd.no.t === "d" && !o.T;
     if (ops.length > 1 && !destDir) { if (!rd.no) { io.msg("o destino " + qn(destino) + " não é um diretório"); return 1; } io.msg("o destino " + qn(destino) + " não é um diretório"); return 1; }
@@ -7173,6 +7177,11 @@
       var out = "";
       linhasDe(txt).forEach(function (l) {
         if (o.f === undefined) {
+          if (o.c !== undefined) { // coreutils 9.12 (Arch): -c conta caracteres em UTF-8
+            var cc = Array.from(l), rc = "";
+            cc.forEach(function (x, i) { if (s2(i + 1)) rc += x; });
+            out += rc + "\n"; return;
+          }
           var b = utf8bytes(l), r = [];
           b.forEach(function (x, i) { if (s2(i + 1)) r.push(x); });
           out += decodUtf8(r) + "\n"; return;
@@ -7939,7 +7948,7 @@
   };
 
   /* ---------- stat / du / df / file / which ---------- */
-  function tipoArqStat(no) { return no.t === "d" ? "directory" : no.t === "l" ? "symbolic link" : no.t === "c" ? "character special file" : (tamanho(no) === 0 ? "regular empty file" : "regular file"); }
+  function tipoArqStat(no) { return no.t === "d" ? "diretório" : no.t === "l" ? "link simbólico" : no.t === "c" ? "arquivo especial de caractere" : (tamanho(no) === 0 ? "arquivo comum vazio" : "arquivo comum"); }
   function dataCompleta(ms) { var t = tm(ms); return t.Y + "-" + dois(t.M + 1) + "-" + dois(t.D) + " " + dois(t.h) + ":" + dois(t.m) + ":" + dois(t.s) + ".000000000 -0300"; }
   EXT.stat = function* (args, io) {
     var g = getopt(args, "cf", { format: "c=", printf: "printf=", dereference: "L", terse: "t", "file-system": "f" }, { validas: "cLtf" });
@@ -7969,11 +7978,11 @@
         return;
       }
       var nomeTxt = no.t === "l" ? qn(p) + " -> " + qn(no.alvo) : p;
-      io.out("  Arquivo: " + nomeTxt + "\n" +
+      io.out("    Arquivo: " + nomeTxt + "\n" +
         "    Tamanho: " + pad(tam, 10, true) + "\tBlocos: " + pad(blk, 10, true) + " bloco de E/S: " + pad(4096, 6, true) + " " + tipoArqStat(no) + "\n" +
-        "Dispositivo: 8,2\tInode: " + pad(no.ino, 11, true) + " Ligações: " + contarLinks(no) + "\n" +
-        "Acesso: (" + ("0000" + (no.m & 4095).toString(8)).slice(-4) + "/" + modoStr(no) + ")  Uid: (" + pad(no.u, 5) + "/" + pad(USUARIOS[no.u] || no.u, 8) + ")   Gid: (" + pad(no.g, 5) + "/" + pad(GRUPOS[no.g] || no.g, 8) + ")\n" +
-        "Acesso: " + dataCompleta(no.at || no.mt) + "\n" +
+        "Dispositivo: " + (no.t === "c" ? "0,7" : "8,3") + "\tInode: " + pad(no.ino, 11, true) + " Links: " + (no.t === "c" ? pad(contarLinks(no), 5, true) + " Tipo de dispositivo: " + ({ "null": "1,3", zero: "1,5", random: "1,8", urandom: "1,9", full: "1,7", tty: "5,0" }[no.dev] || "1,3") : contarLinks(no)) + "\n" +
+        "     Acesso: (" + ("0000" + (no.m & 4095).toString(8)).slice(-4) + "/" + modoStr(no) + ")  Uid: (" + pad(no.u, 5) + "/" + pad(USUARIOS[no.u] || no.u, 8) + ")   Gid: (" + pad(no.g, 5) + "/" + pad(GRUPOS[no.g] || no.g, 8) + ")\n" +
+        "     Acesso: " + dataCompleta(no.at || no.mt) + "\n" +
         "Modificação: " + dataCompleta(no.mt) + "\n" +
         "  Alteração: " + dataCompleta(no.ct || no.mt) + "\n" +
         "    Criação: " + dataCompleta(no.ct || no.mt) + "\n");
@@ -8066,14 +8075,19 @@
     });
     return 0;
   };
+  // GNU which 2.25 (o do Arch): "which: no X in (PATH)"; a saída padrão é bufferizada quando não é terminal
   EXT.which = function* (args, io) {
-    var todos = args[1] === "-a", ops = args.slice(todos ? 2 : 1), sh = io.sh, st = 0;
+    var todos = args[1] === "-a" || args[1] === "--all", ops = args.slice(todos ? 2 : 1), sh = io.sh, st = 0, buf = "", tty = io.tty();
+    if (args[1] === "--version" || args[1] === "-v" || args[1] === "-V") { io.out("GNU which v2.25, Copyright (C) 1999 - 2026 Carlo Wood.\nGNU which comes with ABSOLUTELY NO WARRANTY;\nThis program is free software; your freedom to use, change\nand distribute this program is protected by the GPL.\n"); return 0; }
+    function sai(t) { if (tty) io.out(t); else buf += t; }
+    var path = sh.valor("PATH") || "";
     ops.forEach(function (n) {
-      if (n.indexOf("/") >= 0) { var r = sh.resolver(n, true); if (r.no && r.no.t === "f" && sh.pode(r.no, 1)) io.out(n + "\n"); else st = 1; return; }
-      var path = (sh.valor("PATH") || "").split(":"), achou = false;
-      for (var i = 0; i < path.length; i++) { var c = (path[i] || ".") + "/" + n, r2 = sh.resolver(c, true); if (r2.no && r2.no.t === "f" && sh.pode(r2.no, 1)) { io.out(c + "\n"); achou = true; if (!todos) break; } }
-      if (!achou) st = 1;
+      if (n.indexOf("/") >= 0) { var r = sh.resolver(n, true); if (r.no && r.no.t === "f" && sh.pode(r.no, 1)) sai(n + "\n"); else { io.err("which: no " + n.slice(n.lastIndexOf("/") + 1) + " in (" + n.slice(0, n.lastIndexOf("/")) + ")\n"); st = 1; } return; }
+      var dirs = path.split(":"), achou = false;
+      for (var i = 0; i < dirs.length; i++) { var c = (dirs[i] || ".") + "/" + n, r2 = sh.resolver(c, true); if (r2.no && r2.no.t === "f" && sh.pode(r2.no, 1)) { sai(c + "\n"); achou = true; if (!todos) break; } }
+      if (!achou) { io.err("which: no " + n + " in (" + path + ")\n"); st = 1; }
     });
+    if (buf) io.out(buf);
     return st;
   };
   EXT.whereis = function* (args, io) { args.slice(1).forEach(function (n) { var p = io.sh.acharNoPath(n); io.out(n + ":" + (p ? " " + p : "") + "\n"); }); return 0; };
@@ -8593,7 +8607,7 @@
     }
     var arq = resto[0], r = sh.resolver(arq, true);
     if (!r.no && arq.indexOf("/") < 0) { var p2 = sh.acharNoPath(arq); if (p2) r = sh.resolver(p2, true); }
-    if (!r.no) { io.err((ehSh ? "sh: 0: cannot open " + arq + ": No such file" : "bash: " + arq + ": Arquivo ou diretório inexistente") + "\n"); return ehSh ? 2 : 127; }
+    if (!r.no) { io.err((ehSh ? "sh" : "bash") + ": " + arq + ": Arquivo ou diretório inexistente\n"); return 127; }
     if (r.no.t === "d") { io.err("bash: " + arq + ": é um diretório\n"); return 126; }
     if (!sh.pode(r.no, 4)) { io.err("bash: " + arq + ": Permissão negada\n"); return 126; }
     if (r.no.d === null) { io.err("bash: " + arq + ": impossível executar o arquivo binário\n"); return 126; }
@@ -8801,7 +8815,8 @@
   function SedErr(msg) { this.msg = msg; }
   function compilarSed(script, ere, numExpr) {
     var cmds = [], i = 0, s = script, rotulos = {};
-    function erro(m) { throw new SedErr("-e expressão #" + numExpr + ", caractere " + i + ": " + m); }
+    // o sed 4.10 do Arch: "carácter N" grudado na mensagem (erro da tradução pt_BR) e aspas retas
+    function erro(m) { throw new SedErr("-e expressão #" + numExpr + ", carácter " + i + m.replace(/`([^']*)'/g, "\"$1\"").replace(/: `(.*)$/, ": \"$1\"")); }
     function brancos() { while (i < s.length && (s[i] === " " || s[i] === "\t")) i++; }
     function lerRe(delim) {
       var r = "";
@@ -8971,7 +8986,7 @@
       if (x === "-E" || x === "-r" || x === "--regexp-extended") { o.E = true; continue; }
       if (x === "-s" || x === "--separate") { o.s = true; continue; }
       if (x === "-z" || x === "--null-data") { o.z = true; continue; }
-      if (x === "--version") { io.out("sed (GNU sed) 4.9\nPackaged by Debian\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n"); return 0; }
+      if (x === "--version") { io.out("sed (GNU sed) 4.10\nCopyright (C) 2026 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n"); return 0; }
       if (x === "--help") { io.out(SED_USO); return 0; }
       if (x === "-u" || x === "--unbuffered" || x === "--posix" || x === "--debug" || x === "--sandbox") continue;
       if (x === "-e" || x === "--expression") { o.e.push(a[++i]); continue; }
@@ -9132,24 +9147,47 @@
 
   /* ---------- awk (subconjunto do mawk 1.3.4) ---------- */
   function AwkErr(msg) { this.msg = msg; }
+  // mensagens do gawk 5.4 em pt_BR (conferidas na VM)
+  function erroSintaxeGawk(nome, e, fontes, origem) {
+    var linhas = fontes.join("\n").split("\n"), t = e.tok, ln = t ? t.ln : 1, col = t ? t.col : 0, msg = "erro de sintaxe";
+    if (!t || t.t === "eof" || t.t === "nl" || /missing \}/.test(e.msg)) {
+      msg = "nova linha ou fim de string inesperado";
+      while (ln > 1 && (linhas[ln - 1] === undefined || linhas[ln - 1] === "")) ln--;
+      col = (linhas[ln - 1] || "").length;
+    }
+    var m = /^line (\d+): (runaway string constant|runaway regular expression)/.exec(e.msg);
+    if (m) { ln = +m[1]; msg = m[2] === "runaway string constant" ? "string sem terminação" : "expressão regular sem terminação"; col = (linhas[ln - 1] || "").length; }
+    var pre = nome + ": " + origem + ":" + ln + ": ";
+    return pre + (linhas[ln - 1] || "") + "\n" + pre + repete(" ", col) + "^ " + msg + "\n";
+  }
+  function msgGawk(e) {
+    var m = e.msg.replace(/^run time error: /, "");
+    if (/^division by zero in %/.test(m)) return "tentativa de divisão por zero em `%'";
+    if (/^division by zero/.test(m)) return "tentativa de divisão por zero";
+    var f = /^not enough arguments passed to [^(]*\("([\s\S]*)"\)$/.exec(m);
+    if (f) { var fmt = f[1], pos = e.posFalta != null ? e.posFalta : fmt.lastIndexOf("%"); return "argumentos insuficientes para satisfazer a string de formato\n\t`" + fmt + "'\n\t" + repete(" ", pos + 1) + "^ acabou para este aqui"; }
+    var fn = /^function (\S+) never defined/.exec(m); if (fn) return "função “" + fn[1] + "” não definida";
+    return m;
+  }
   // o mawk trabalha com bytes: dentro do awk as strings são "binárias" (1 caractere = 1 byte)
-  function paraB(s) { var b = utf8bytes(s), r = ""; for (var i = 0; i < b.length; i += 8192) r += String.fromCharCode.apply(null, b.slice(i, i + 8192)); return r; }
-  function deB(s) { var b = new Array(s.length); for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255; return decodUtf8(b); }
+  // o gawk (o awk do Arch) trabalha com caracteres em UTF-8: as strings ficam como estão
+  function paraB(s) { return s; }
+  function deB(s) { return s; }
   function AwkSai(code) { this.code = code; }
   function SN(s) { this.s = s; } // "strnum": texto vindo da entrada (campo, getline, ARGV…)
   SN.prototype.toString = function () { return this.s; };
   var AWK_KW = { BEGIN: 1, END: 1, "function": 1, func: 1, "if": 1, "else": 1, "while": 1, "for": 1, "do": 1, "break": 1, "continue": 1, next: 1, nextfile: 1, exit: 1, "return": 1, "delete": 1, getline: 1, print: 1, printf: 1, "in": 1 };
-  var AWK_BUILTIN = { length: 1, substr: 1, index: 1, split: 1, sub: 1, gsub: 1, match: 1, sprintf: 1, tolower: 1, toupper: 1, "int": 1, sqrt: 1, exp: 1, log: 1, sin: 1, cos: 1, atan2: 1, rand: 1, srand: 1, system: 1, close: 1, fflush: 1 };
+  var AWK_BUILTIN = { gensub: 1, strftime: 1, systime: 1, length: 1, substr: 1, index: 1, split: 1, sub: 1, gsub: 1, match: 1, sprintf: 1, tolower: 1, toupper: 1, "int": 1, sqrt: 1, exp: 1, log: 1, sin: 1, cos: 1, atan2: 1, rand: 1, srand: 1, system: 1, close: 1, fflush: 1 };
   function awkLexer(src) {
-    var t = [], i = 0, ln = 1, prev = null;
-    function push(tok) { tok.ln = ln; t.push(tok); prev = tok; }
+    var t = [], i = 0, ln = 1, prev = null, iniLinha = 0, ini0 = 0;
+    function push(tok) { tok.ln = ln; tok.col = ini0 - iniLinha; t.push(tok); prev = tok; }
     function operando() { return prev && (prev.t === "num" || prev.t === "str" || prev.t === "name" || prev.t === "builtin" || prev.t === "ere" || (prev.t === "op" && (prev.v === ")" || prev.v === "]" || prev.v === "$" || prev.v === "++" || prev.v === "--")) || (prev.t === "kw" && prev.v === "getline")); }
     while (i < src.length) {
-      var c = src[i], m;
-      if (c === "\\" && src[i + 1] === "\n") { i += 2; ln++; continue; }
+      var c = src[i], m; ini0 = i;
+      if (c === "\\" && src[i + 1] === "\n") { i += 2; ln++; iniLinha = i; continue; }
       if (c === " " || c === "\t" || c === "\r") { i++; continue; }
       if (c === "#") { while (i < src.length && src[i] !== "\n") i++; continue; }
-      if (c === "\n") { push({ t: "nl" }); i++; ln++; continue; }
+      if (c === "\n") { push({ t: "nl" }); i++; ln++; iniLinha = i; continue; }
       if ((m = /^([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?/.exec(src.slice(i)))) { push({ t: "num", v: parseFloat(m[0]) }); i += m[0].length; continue; }
       if (c === '"') {
         var s = "", j = i + 1;
@@ -9200,8 +9238,8 @@
   APR.peek = function (o) { return this.t[this.p + (o || 0)]; };
   APR.next = function () { return this.t[this.p++]; };
   APR.ehOp = function (v) { var t = this.peek(); return t.t === "op" && t.v === v; };
-  APR.erro = function (t) { t = t || this.peek(); var perto = t.t === "eof" ? "end of file" : t.t === "nl" ? "end of line" : t.t === "str" ? "\"" + t.v + "\"" : t.t === "ere" ? "/" + t.v + "/" : String(t.v); return new AwkErr("line " + t.ln + ": syntax error at or near " + perto); };
-  APR.espera = function (v) { var t = this.next(); if (!((t.t === "op" || t.t === "kw") && t.v === v)) { if (t.t === "eof" && v === "}") throw new AwkErr("line " + t.ln + ": missing } near end of file"); throw this.erro(t); } return t; };
+  APR.erro = function (t) { t = t || this.peek(); var perto = t.t === "eof" ? "end of file" : t.t === "nl" ? "end of line" : t.t === "str" ? "\"" + t.v + "\"" : t.t === "ere" ? "/" + t.v + "/" : String(t.v); var e = new AwkErr("line " + t.ln + ": syntax error at or near " + perto); e.tok = t; return e; };
+  APR.espera = function (v) { var t = this.next(); if (!((t.t === "op" || t.t === "kw") && t.v === v)) { if (t.t === "eof" && v === "}") { var e0 = new AwkErr("line " + t.ln + ": missing } near end of file"); e0.tok = t; throw e0; } throw this.erro(t); } return t; };
   APR.nls = function () { while (this.peek().t === "nl") this.p++; };
   APR.terms = function () { while (this.peek().t === "nl" || this.ehOp(";")) this.p++; };
   APR.programa = function () {
@@ -9236,7 +9274,7 @@
     var l = [];
     this.terms();
     while (!this.ehOp("}")) {
-      if (this.peek().t === "eof") throw new AwkErr("line " + this.peek().ln + ": missing } near end of file");
+      if (this.peek().t === "eof") { var e1 = new AwkErr("line " + this.peek().ln + ": missing } near end of file"); e1.tok = this.peek(); throw e1; }
       l.push(this.stmt()); this.terms();
     }
     this.next();
@@ -9652,7 +9690,7 @@
       case "substr": {
         var s = this.str(a(0)), L = s.length, ini = Math.trunc(this.num(a(1)));
         var len = args.length > 2 ? Math.trunc(this.num(a(2))) : L;
-        if (ini < 1) { if (args.length > 2) len -= ini; ini = 1; }
+        if (ini < 1) ini = 1; // gawk: começo antes do 1 vira 1, sem mudar o tamanho (conferido na VM)
         if (len <= 0) return "";
         return s.substr(ini - 1, len);
       }
@@ -9664,6 +9702,29 @@
         this.arr[nome] = m2; delete this.v[nome];
         return partes.length;
       }
+      case "gensub": { // extensão do gawk: devolve o texto trocado, sem mudar o original
+        var reG = this.regex(args[0]), repG = this.str(a(1)), how = this.str(a(2)), alvoG = args.length > 3 ? this.str(a(3)) : this.str(this.ler({ k: "campo", e: { k: "num", v: 0 } }));
+        var tudo = /^[gG]/.test(how), nth = tudo ? 0 : Math.max(1, Math.trunc(+how) || 1), rxG = new RegExp(reG.source, reG.flags.replace("g", "") + "g"), outG = "", posG = 0, mG, cont = 0;
+        while ((mG = rxG.exec(alvoG))) {
+          cont++;
+          if (tudo || cont === nth) {
+            outG += alvoG.slice(posG, mG.index);
+            for (var q = 0; q < repG.length; q++) {
+              var ch = repG[q];
+              if (ch === "\\" && /[0-9]/.test(repG[q + 1] || "")) { outG += mG[+repG[q + 1]] || ""; q++; continue; }
+              if (ch === "\\" && repG[q + 1] === "&") { outG += "&"; q++; continue; }
+              if (ch === "\\" && repG[q + 1] === "\\") { outG += "\\"; q++; continue; }
+              outG += ch === "&" ? mG[0] : ch;
+            }
+            posG = mG.index + mG[0].length;
+          }
+          if (mG[0] === "") rxG.lastIndex++;
+          if (!tudo && cont >= nth) break;
+        }
+        return outG + alvoG.slice(posG);
+      }
+      case "systime": return Math.floor(this.io.sh.k.clock / 1000);
+      case "strftime": { var fmtS = args.length ? this.str(a(0)) : "%a %b %e %H:%M:%S %Z %Y", tsS = args.length > 1 ? this.num(a(1)) * 1000 : this.io.sh.k.clock; return formatarData(fmtS, tsS, args.length > 2 && this.num(a(2)) !== 0); }
       case "sub": return this.subst(args, false);
       case "gsub": return this.subst(args, true);
       case "match": {
@@ -9674,8 +9735,8 @@
         return this.v.RSTART;
       }
       case "sprintf": return this.sprintf(this.str(a(0)), args.slice(1).map(function (x) { return self.ev(x); }));
-      case "tolower": return this.str(a(0)).replace(/[A-Z]+/g, function (x) { return x.toLowerCase(); });
-      case "toupper": return this.str(a(0)).replace(/[a-z]+/g, function (x) { return x.toUpperCase(); });
+      case "tolower": return this.str(a(0)).toLowerCase();
+      case "toupper": return this.str(a(0)).toUpperCase();
       case "int": return Math.trunc(this.num(a(0)));
       case "sqrt": return Math.sqrt(this.num(a(0)));
       case "exp": return Math.exp(this.num(a(0)));
@@ -9785,7 +9846,7 @@
         var vals = s.args.map(function (a) { return self.ev(a); });
         var txtP;
         try { txtP = this.sprintf(this.str(vals[0]), vals.slice(1), "printf"); }
-        catch (ep) { if (ep instanceof AwkErr && ep.parcial !== undefined) this.escrever(ep.parcial, s.red); throw ep; }
+        catch (ep) { throw ep; } // o gawk para antes de escrever qualquer parte
         this.escrever(txtP, s.red); return;
       }
       case "if": if (this.bool(this.ev(s.c))) this.exec(s.s1); else if (s.s2) this.exec(s.s2); return;
@@ -9803,8 +9864,8 @@
     }
   };
   EXT.awk = function* (args, io) {
-    var sh = io.sh, a = args.slice(1), fs = null, defs = [], fontes = [], i = 0;
-    var nome = "awk";
+    var sh = io.sh, a = args.slice(1), fs = null, defs = [], fontes = [], i = 0, origem = "lin. de com.";
+    var nome = args[0] === "gawk" ? "gawk" : "awk";
     for (; i < a.length; i++) {
       var x = a[i];
       if (x === "--") { i++; break; }
@@ -9812,10 +9873,11 @@
       if (/^-F./.test(x)) { fs = x.slice(2); continue; }
       if (x === "-v") { defs.push(a[++i]); continue; }
       if (/^-v./.test(x)) { defs.push(x.slice(2)); continue; }
-      if (x === "-f") { var rf = sh.lerArquivo(a[++i]); if (rf.err) { io.err(nome + ": couldn't open file " + a[i] + "\n"); return 2; } fontes.push(rf.txt); continue; }
-      if (/^-W/.test(x)) { var opt = x.length > 2 ? x.slice(2) : a[++i]; if (/^v/.test(opt)) { io.out("mawk 1.3.4 20240123\nCopyright 2008-2023,2024, Thomas E. Dickey\nCopyright 1991-1996,2014, Michael D. Brennan\n\nrandom-funcs:       srandom/random\nregex-funcs:        internal\n\ncompiled limits:\nsprintf buffer      8192\nmaximum-integer     2147483647\n"); return 0; } continue; }
-      if (x === "--version" || x === "-V") { io.out("mawk 1.3.4 20240123\n"); return 0; }
-      if (/^-./.test(x) && x !== "-") { io.err(nome + ": not an option: " + x + "\n"); return 2; }
+      if (x === "-f") { var rf = sh.lerArquivo(a[++i]); if (rf.err) { io.err(nome + ": fatal: não foi possível abrir arquivo-fonte \"" + a[i] + "\" para leitura: " + errMsg(rf.err) + "\n"); return 2; } fontes.push(rf.txt.replace(/\n$/, "")); origem = a[i]; continue; }
+      if (x === "--version" || x === "-V") { io.out("GNU Awk 5.4.1, API 4.1, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)\nCopyright (C) 1989, 1991-2026 Free Software Foundation.\n\nEste programa é software livre; você pode redistribuí-lo e/ou\nmodificá-lo sob os termos da Licença Pública Geral GNU, conforme\npublicada pela Free Software Foundation; tanto a versão 3 da\nLicença como (a seu critério) qualquer versão mais nova.\n\nEste programa é distribuído na expectativa de ser útil, mas SEM\nQUALQUER GARANTIA; sem mesmo a garantia implícita de\nCOMERCIALIZAÇÃO ou de ADEQUAÇÃO A QUALQUER PROPÓSITO EM\nPARTICULAR. Consulte a Licença Pública Geral GNU para obter mais\ndetalhes.\n\nVocê deve ter recebido uma cópia da Licença Pública Geral GNU\njunto com este programa; se não http://www.gnu.org/licenses/.\n"); return 0; }
+      if (/^--(posix|traditional|re-interval|characters-as-bytes|use-lc-numeric|sandbox|lint)$/.test(x) || x === "-e" && false) continue;
+      if (x === "-e" || x === "--source") { fontes.push(a[++i]); continue; }
+      if (/^-./.test(x) && x !== "-") { io.err(nome + ": opção inválida -- “" + x.slice(1, 2) + "”\n"); io.err(AWK_USO); return 2; }
       break;
     }
     if (!fontes.length) {
@@ -9823,13 +9885,13 @@
       fontes.push(a[i++]);
     }
     var operandos = a.slice(i);
-    var dec = localeNum(sh);
+    var dec = "."; // o gawk usa sempre o ponto (só com --posix ou --use-lc-numeric seguiria o locale)
     var prog, funcs;
     try {
       var p = new AwkParser(awkLexer(paraB(fontes.join("\n") + "\n")));
       prog = p.programa(); funcs = p.funcs;
       (p.chamadas || []).forEach(function (n) { if (!funcs[n]) throw new AwkErr("line " + p.t[p.t.length - 1].ln + ": function " + n + " never defined"); });
-    } catch (e) { if (e instanceof AwkErr) { io.err(nome + ": " + deB(e.msg) + "\n"); return 2; } throw e; }
+    } catch (e) { if (e instanceof AwkErr) { io.err(erroSintaxeGawk(nome, e, fontes, origem)); return 1; } throw e; }
     var aw = new Awk(io, prog, funcs, dec);
     var env = sh.exportadas(), envMap = new Map();
     for (var kk in env) envMap.set(kk, new SN(paraB(env[kk])));
@@ -9867,7 +9929,7 @@
           if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(s)) { aplicarDef(s); continue; }
           var txt;
           if (s === "-" || s === "/dev/stdin") txt = stdinTxt || "";
-          else { var r = sh.lerArquivo(deB(s)); if (r.err) { aw.flush(); io.err(nome + ": cannot open \"" + deB(s) + "\" (No such file or directory)\n"); throw new AwkSai(2); } txt = paraB(r.txt !== undefined ? r.txt : ""); }
+          else { var r = sh.lerArquivo(deB(s)); if (r.err) { aw.flush(); io.err(nome + ": fatal: não foi possível abrir arquivo \"" + s + "\" para leitura: " + errMsg(r.err) + "\n"); throw new AwkSai(2); } txt = paraB(r.txt !== undefined ? r.txt : ""); }
           aw.v.FILENAME = s; aw.v.FNR = 0;
           fila = { l: aw.registros(txt), i: 0 };
           achou = true; break;
@@ -9926,7 +9988,7 @@
       try { prog.forEach(function (it) { if (it.tipo === "END") aw.exec(it.acao); }); }
       catch (e2) { if (e2 instanceof AwkSai) codigo = e2.code; else throw e2; }
     } catch (e3) {
-      if (e3 instanceof AwkErr) { io.err(nome + ": " + (/^line |^run time/.test(e3.msg) ? "" : "run time error: ") + deB(e3.msg) + "\n\tFILENAME=\"" + deB(aw.str(aw.v.FILENAME)) + "\" FNR=" + aw.str(aw.v.FNR) + " NR=" + aw.str(aw.v.NR) + "\n"); aw.flush(); return 2; }
+      if (e3 instanceof AwkErr) { aw.flush(); var fnr = +aw.str(aw.v.FNR) || 0; io.err(nome + ": " + origem + ":1: " + (fnr ? "(FILENAME=" + (aw.str(aw.v.FILENAME) || "-") + " FNR=" + fnr + ") " : "") + "fatal: " + msgGawk(e3) + "\n"); return 2; }
       if (e3 === "break" || e3 === "continue") { aw.flush(); return 2; }
       throw e3;
     }
@@ -9934,7 +9996,7 @@
     for (var nm in aw.saidas) { var sd = aw.saidas[nm]; if (sd.pipe) sh.k.rodarAninhado(sh, deB(nm), deB(sd.buf)); else if (sd.ofd) unref(sd.ofd); }
     return codigo;
   };
-  EXT.mawk = EXT.awk; EXT.gawk = function* (args, io) { io.err("(simulador) gawk não está instalado nesta máquina; use awk (que é o mawk).\n"); return 127; };
+  EXT.gawk = EXT.awk;
   var AWK_USO = "Usage: mawk [Options] [Program] [file ...]\n\nProgram:\n    The -f option value is the name of a file containing program text.\n    If no -f option is given, a \"--\" ends option processing; the following\n    parameters are the program text.\n\nOptions:\n    -f program-file  Program  text is read from file instead of from the\n                     command-line.  Multiple -f options are accepted.\n    -F value         sets the field separator, FS, to value.\n    -v var=value     assigns value to program variable var.\n    --               unambiguous end of options.\n\n    Implementation-specific options are prefixed with \"-W\".  They can be\n    abbreviated:\n\n    -W version       show version information and exit.\n    -W dump          show assembler-like listing of program and exit.\n    -W help          show this message and exit.\n    -W interactive   set unbuffered output, line-buffered input.\n    -W exec file     use file as program as well as last option.\n    -W posix         stricter POSIX checking.\n    -W random=number set initial random seed.\n    -W sprintf=number adjust size of sprintf buffer.\n    -W traditional   pre-POSIX 2001.\n    -W usage         show this message and exit.\n";
 
   // roda um comando de shell de forma síncrona (awk system(), "cmd" | getline, print | "cmd")
@@ -10883,6 +10945,31 @@
     io.err("visudo: nenhum editor encontrado (caminho do editor = /usr/bin/vi)\n"); return 1;
   };
   EXT.adduser = undefined;
+  EXT.ufw = function* (args, io) {
+    if (io.sh.uid !== 0) { io.out("ERROR: You need to be root to run this script\n"); return 1; }
+    if (args[1] === "status") { io.out("Status: inactive\n"); return 0; }
+    io.err("(simulador) ligar ou mudar o firewall não é simulado aqui (na VM compartilhada, um ufw sem a porta 22 derrubaria todos).\n"); return 1;
+  };
+  EXT.nft = function* (args, io) {
+    if (io.sh.uid !== 0) { io.err("netlink: Error: cache initialization failed: Operation not permitted\nError: Operation not permitted (perhaps you must be root?)\n"); return 1; }
+    if (args[1] === "list") return 0; // nenhuma regra: sai vazio
+    io.err("(simulador) mudar as regras do nftables não é simulado aqui.\n"); return 1;
+  };
+  EXT.resolvectl = function* (args, io) { io.err("Failed to connect to service /run/systemd/resolve/io.systemd.Resolve: Arquivo ou diretório inexistente\n"); return 1; };
+  EXT.sysctl = function* (args, io) {
+    var VAL = { "kernel.sysrq": "16", "kernel.hostname": "notebook", "kernel.osrelease": "7.2.10-arch1-1", "vm.swappiness": "60", "net.ipv4.ip_forward": "0", "kernel.pid_max": "4194304", "fs.file-max": "9223372036854775807", "vm.dirty_ratio": "20", "kernel.ostype": "Linux" };
+    var a = args.slice(1), so = false, st = 0;
+    if (!a.length) { io.err("(simulador) sysctl sem argumentos: use sysctl CHAVE (ex.: sysctl kernel.sysrq).\n"); return 1; }
+    a.forEach(function (x) {
+      if (x === "-n") { so = true; return; }
+      if (x === "-a") { Object.keys(VAL).sort().forEach(function (k) { io.out(k + " = " + VAL[k] + "\n"); }); return; }
+      if (/=/.test(x)) { if (io.sh.uid !== 0) { io.err("sysctl: permission denied on key \"" + x.split("=")[0] + "\"\n"); st = 255; return; } var kv = x.split("="); VAL[kv[0]] = kv[1]; io.out(kv[0] + " = " + kv[1] + "\n"); return; }
+      var k = x.replace(/\//g, ".");
+      if (VAL[k] === undefined) { io.err("sysctl: cannot stat /proc/sys/" + k.replace(/\./g, "/") + ": Arquivo ou diretório inexistente\n"); st = 255; return; }
+      io.out(so ? VAL[k] + "\n" : k + " = " + VAL[k] + "\n");
+    });
+    return st;
+  };
   EXT.fastfetch = function* (args, io) { io.err("(simulador) o fastfetch desenha o logo do Arch com cores; aqui ele não é simulado.\n"); return 1; };
   /* ---------- pacman ---------- */
   var ERRO_ROOT = "erro: você não pode realizar esta operação a menos que seja root.\n";
@@ -11130,7 +11217,15 @@
       gs.forEach(function (g) { var l = grupoRepo(A, g); if (!l) { io.err("erro: grupo de pacotes \"" + g + "\" não foi encontrado\n"); io.out("\n"); st = 1; return; } l.forEach(function (n) { io.out(m.q ? n + "\n" : g + " " + n + "\n"); }); });
       return st;
     }
-    if (m.l) { var repo = o.alvos[0]; nomesRepo().forEach(function (x) { if (repo && x[0] !== repo) return; var p = repoPac(A, x[1]), i = A.inst[x[1]]; io.out(x[0] + " " + x[1] + " " + p.v + (i ? " [instalado]" : "") + "\n"); }); return 0; }
+    if (m.l) { // a lista completa do repositório (nomes e versões reais da VM)
+      var repos = o.alvos.length ? o.alvos : ["core", "extra"], stL = 0;
+      repos.forEach(function (r) {
+        var t = DADOS.pac.Sl && DADOS.pac.Sl[r];
+        if (t === undefined) { io.err("erro: repositório \"" + r + "\" não foi encontrado\n"); stL = 1; return; }
+        io.out(t.split("\n").map(function (l) { var c = l.split(" "), i = A.inst[c[0]]; if (A.upd && A.upd[c[0]]) c[1] = A.upd[c[0]].v; return r + " " + c[0] + " " + c[1] + (i ? (i.v === c[1] ? " [instalado]" : " [instalado: " + i.v + "]") : ""); }).join("\n") + "\n");
+      });
+      return stL;
+    }
     if (m.p) { /* só imprime as URLs, sem root */ }
     else if (sh.uid !== 0) { io.err(msgPac(sh, ERRO_ROOT, "error: you cannot perform this operation unless you are root.\n")); return 1; }
     if (m.c) {
@@ -11189,6 +11284,8 @@
           sel.forEach(function (ix) { var q = repoPac(A, g[ix]); if (q) alvos.push({ p: q, alvo: true }); });
           continue;
         }
+        var noSl = DADOS.pac.Sl && ["core", "extra"].some(function (r) { return ("\n" + DADOS.pac.Sl[r] + "\n").indexOf("\n" + n + " ") >= 0; });
+        if (noSl) { io.err("(simulador) o pacote " + n + " existe no repositório, mas não faz parte da parte do repositório que este simulador conhece (veja pacman -Si " + n + " na VM).\n"); st = 1; continue; }
         // nome virtual (provides) com um só provedor
         var prov = provedores(A, n).filter(function (x) { return repoPac(A, x); });
         if (prov.length) { alvos.push({ p: repoPac(A, prov[0]), alvo: true }); continue; }
@@ -11397,6 +11494,7 @@
       Object.keys(porPac).forEach(function (kk) {
         achou = true; var c = porPac[kk].c, i = A.inst[c[1]];
         if (m.q) { io.out(kk + "\n"); return; }
+        if (q.indexOf("/") >= 0) { porPac[kk].f.forEach(function (f) { io.out(f + " pertence a " + kk + " " + c[2] + "\n"); }); return; }
         io.out(kk + " " + c[2] + (i ? " [instalado]" : "") + "\n" + porPac[kk].f.map(function (f) { return "    " + f + "\n"; }).join(""));
       });
     });
@@ -12334,6 +12432,7 @@
   // um shell interativo como o do Arch: shell de login que leu /etc/profile, ~/.bash_profile e ~/.bashrc
   function configurarInterativo(sh, tty, login) {
     sh.shopt.expand_aliases = 1; sh.shopt.checkwinsize = 1; if (login) sh.shopt.login_shell = 1;
+    sh.shopt.extglob = 1; sh.shopt.progcomp_alias = 0; // o bash-completion (carregado pelo /etc/bash.bashrc) liga o extglob
     sh.o.histexpand = 1; sh.o.history = 1; sh.o.emacs = 1; sh.o.monitor = tty ? 1 : 0;
     if (sh.uid !== 0) { sh.aliases.ls = "ls --color=auto"; sh.aliases.grep = "grep --color=auto"; } // o root não tem ~/.bashrc
     sh.globais.BASHRCSOURCED = new Var("Y");

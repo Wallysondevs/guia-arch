@@ -67,7 +67,8 @@ function comprimir(lista) {
   return out.join("\n");
 }
 var arquivos = {};
-Object.keys(P.arquivos).forEach(function (n) { arquivos[n] = comprimir(P.arquivos[n]); });
+// o linux-lts fica sem os módulos (.ko.zst), para o arquivo não crescer demais (o linux tem a lista completa)
+Object.keys(P.arquivos).forEach(function (n) { var l = P.arquivos[n]; if (n === "linux-lts") l = l.filter(function (f) { return !/\/kernel\/.+\.ko\.zst$/.test(f); }); arquivos[n] = comprimir(l); });
 // donos: caminho -> pacote (comprimido por prefixo, ordenado)
 var donosOrd = Object.keys(P.donos).sort();
 var donos = { f: comprimir(donosOrd), p: donosOrd.map(function (f) { return T(P.donos[f]); }) };
@@ -76,7 +77,8 @@ Object.keys(P.gatilhos).forEach(function (n) { var g = P.gatilhos[n]; gat[n] = g
 var pac = {
   hooks: P.hooks.map(function (h) { return [h.n, h.d, h.w]; }), gat: gat,
   local: local, repo: repo, grupos: P.grupos, prov: P.provedores, arquivos: arquivos, donos: donos,
-  cache: P.cache, F: P.F, Fdb: P.Fdb, inexistentes: P.alvos_inexistentes, bins: P.bins || {}
+  cache: P.cache, F: P.F, Fdb: P.Fdb, inexistentes: P.alvos_inexistentes, bins: P.bins || {},
+  Sl: (function () { var r = {}; Object.keys(P.Sl || {}).forEach(function (k) { r[k] = P.Sl[k].join("\n"); }); return r; })()
 };
 
 /* ---------------- sistema de arquivos (esqueleto) ---------------- */
@@ -114,7 +116,7 @@ Object.keys(A).forEach(function (cam) {
 });
 // /usr/share/zoneinfo/America/Sao_Paulo (alvo de /etc/localtime)
 var proc = {};
-["/proc/cmdline", "/proc/version", "/proc/cpuinfo", "/proc/meminfo", "/proc/loadavg", "/proc/uptime"].forEach(function (p) { if (A[p]) proc[p] = A[p].c; });
+["/proc/cmdline", "/proc/version", "/proc/cpuinfo", "/proc/meminfo", "/proc/loadavg", "/proc/uptime", "/proc/sys/kernel/sysrq"].forEach(function (p) { if (A[p]) proc[p] = A[p].c; });
 
 /* ---------------- serviços ---------------- */
 // estado limpo (pronto-para-aulas): o que os autores ligaram para testes volta ao padrão
