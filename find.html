@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch find e locate — encontrar arquivos | Guia Arch</title>
+<meta name="description" content="Aprenda a encontrar arquivos no Arch Linux com find, locate (plocate) e fd: cada parte do comando explicada, busca por nome, tipo, tamanho, data e dono, -exec, -delete e -print0, com saídas reais do Arch e terminal simulado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">find e locate</span></h1>
+
+<p class="intro">"Onde eu salvei aquele arquivo?" O <code>find</code> (em inglês, "encontrar") responde essa pergunta. Ele entra nas pastas uma por uma e mostra tudo o que combina com o que você pediu: um nome, um tipo, um tamanho, uma data ou um dono. O <code>locate</code> faz algo parecido, muito mais rápido, mas consulta uma lista pronta que pode estar desatualizada, e no Arch ele nem vem instalado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>find</code> pensa: ponto de partida, testes e ação.</li>
+  <li>Buscar por nome, tipo, tamanho, data e dono, e limitar a profundidade.</li>
+  <li>Combinar testes com "e", "ou" e "não".</li>
+  <li>Fazer algo com o que foi encontrado: <code>-exec</code>, <code>-delete</code> (com cuidado) e <code>-print0</code>.</li>
+  <li>Instalar e usar o <code>locate</code> (pacote <code>plocate</code>) e conhecer o <code>fd</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como o find pensa</h2>
+<p>Imagine que você entra numa sala, abre cada gaveta, cada caixa dentro da gaveta, e pergunta para cada objeto: "é este que eu procuro?". É exatamente o que o <code>find</code> faz com as pastas. Ele vem em todo Arch, no pacote <code>findutils</code>, que faz parte do <code>base</code>:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/find
+/usr/bin/find pertence a findutils 4.11.0-1      « -Qo = "de quem é este arquivo?"
+$ find --version | head -1
+find (GNU findutils) 4.11.0-modified</pre>
+
+<p>Todo comando <code>find</code> tem três partes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Pergunta que responde</th><th>Exemplo</th></tr>
+<tr><td>Ponto de partida</td><td>Onde começar a procurar?</td><td><code>.</code> (aqui), <code>~</code> (pasta pessoal), <code>Documentos</code></td></tr>
+<tr><td>Testes</td><td>O que conta como "achei"?</td><td><code>-name "*.txt"</code>, <code>-type d</code>, <code>-size +10M</code></td></tr>
+<tr><td>Ação</td><td>O que fazer com cada achado?</td><td>Mostrar (padrão), <code>-exec</code>, <code>-delete</code></td></tr>
+</table>
+</div>
+
+<pre class="syntax">find [ponto de partida] [testes] [ação]</pre>
+
+<p>Sem ação, o <code>find</code> só mostra o caminho de cada item encontrado. Sem ponto de partida, ele começa na pasta atual.</p>
+
+<div class="warning">
+<strong>Nunca comece em <code>/</code> sem pensar</strong>
+<p><code>find /</code> percorre o sistema inteiro: centenas de milhares de arquivos, pendrives e HDs externos montados, tudo. Num computador modesto isso trava o disco por minutos. Comece sempre na menor pasta possível (<code>~/Documentos</code>, e não <code>~</code>; <code>~</code>, e não <code>/</code>). Para perguntas sobre arquivos do <strong>sistema</strong>, o Arch tem um atalho muito melhor: o <code>pacman</code> já sabe onde está cada arquivo de cada pacote (<code>pacman -Ql pacote</code>, <code>pacman -Qo arquivo</code>; veja <a href="pacman-avancado.html">pacman Avançado</a>).</p>
+</div>
+
+<hr>
+
+<h2>Buscar pelo nome: <code>-name</code></h2>
+
+<dl class="anatomy">
+  <dt>find</dt><dd>O programa que procura.</dd>
+  <dt>.</dt><dd>O ponto de partida: a pasta atual (e todas as subpastas dela).</dd>
+  <dt>-name</dt><dd>O teste: compara o <strong>nome</strong> de cada arquivo.</dd>
+  <dt>"*.txt"</dt><dd>O padrão: qualquer nome que termine em <code>.txt</code>. Usa os mesmos <a href="curingas.html">curingas</a> do shell (<code>*</code>, <code>?</code>, <code>[abc]</code>). As aspas são obrigatórias (veja abaixo).</dd>
+</dl>
+
+<pre class="term">$ find . -name "*.txt"
+./frutas.txt
+./Documentos/notas.txt</pre>
+
+<p>Cada linha é um caminho a partir do ponto de partida. <code>./frutas.txt</code> está na própria pasta pessoal; <code>./Documentos/notas.txt</code> está dentro de <code>Documentos</code>. O <code>find</code> entrou nas subpastas sozinho.</p>
+
+<div class="note">
+<strong>A ordem não é alfabética</strong>
+<p>O <code>find</code> mostra os arquivos na ordem em que estão gravados no disco. Na sua máquina a ordem pode sair diferente. Para ordenar, use um pipe com o <a href="texto.html"><code>sort</code></a>:</p>
+<pre class="term">$ find . -name "*.txt" | sort
+./Documentos/notas.txt
+./frutas.txt</pre>
+</div>
+
+<h3>Por que as aspas?</h3>
+<p>Sem aspas, quem lê o <code>*</code> é o <strong>shell</strong>, antes do <code>find</code>. Se houver arquivos <code>.jpg</code> na pasta atual, o shell troca <code>*.jpg</code> pelos nomes deles, e o <code>find</code> recebe uma ordem sem sentido:</p>
+
+<pre class="term" data-cwd="~/viagem">$ ls
+foto1.jpg  foto2.jpg
+$ find . -name *.jpg
+find: os caminhos devem preceder a expressão: "foto2.jpg"
+find: possível padrão sem aspas após o predicado "-name'?
+$ find . -name "*.jpg"
+./foto2.jpg
+./foto1.jpg</pre>
+
+<p>O shell transformou o primeiro comando em <code>find . -name foto1.jpg foto2.jpg</code>: o <code>foto2.jpg</code> sobrou solto, e o <code>find</code> achou que fosse uma segunda pasta de partida no lugar errado. A segunda linha da mensagem até dá a dica: "possível padrão sem aspas". Regra simples: <strong>sempre coloque o padrão entre aspas</strong>.</p>
+
+<div class="tip">
+<strong>Por que às vezes funciona sem aspas?</strong>
+<p>Se não houver nenhum <code>.jpg</code> na pasta atual, o Bash entrega o <code>*.jpg</code> intacto e tudo parece certo. Se houver <strong>um</strong>, o comando vira <code>-name foto1.jpg</code> e procura só esse nome, sem erro nenhum. É o pior caso: o resultado sai errado em silêncio. Por isso, aspas sempre.</p>
+</div>
+
+<h3>Ignorar maiúsculas: <code>-iname</code></h3>
+<p>O <code>-name</code> diferencia maiúsculas de minúsculas: <code>FOTO.JPG</code> e <code>foto.jpg</code> são nomes diferentes. O <code>-iname</code> (o <em>i</em> é de <em>insensitive</em>, "insensível") não diferencia:</p>
+
+<pre class="term">$ find . -iname "*.JPG"
+./Imagens/ferias.jpg
+./Downloads/foto.jpg</pre>
+
+<div class="try" data-goal="contains:~/lista.txt=frutas.txt,contains:~/lista.txt=notas.txt" data-solucao="find ~ -name &quot;*.txt&quot; &gt; lista.txt;;cat lista.txt">
+<p class="try-task"><strong>Missão 1:</strong> encontre todos os arquivos <code>.txt</code> da pasta pessoal e salve a lista no arquivo <code>lista.txt</code>. Dica: <code>find … &gt; lista.txt</code> (o <code>&gt;</code> manda a saída para um arquivo; veja <a href="redirecionamento.html">Redirecionamento</a>). Confira com <code>cat lista.txt</code>.</p>
+</div>
+
+<hr>
+
+<h2>Buscar pelo tipo: <code>-type</code></h2>
+<p>Às vezes você quer só pastas, ou só arquivos. O teste <code>-type</code> filtra pelo tipo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor</th><th>Tipo</th><th>Exemplo</th></tr>
+<tr><td><code>f</code></td><td>Arquivo comum (<em>file</em>)</td><td><code>find . -type f</code></td></tr>
+<tr><td><code>d</code></td><td>Pasta (<em>directory</em>)</td><td><code>find . -type d</code></td></tr>
+<tr><td><code>l</code></td><td>Link simbólico (<em>link</em>; veja <a href="links.html">Links</a>)</td><td><code>find . -type l</code></td></tr>
+<tr><td><code>f,l</code></td><td>Vários tipos, separados por vírgula</td><td><code>find . -type f,l</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ find Documentos -type d
+Documentos
+Documentos/projetos
+Documentos/projetos/site</pre>
+
+<p>Repare que o próprio ponto de partida, <code>Documentos</code>, aparece na lista: ele também é uma pasta.</p>
+
+<hr>
+
+<h2>Limitar a profundidade: <code>-maxdepth</code></h2>
+<p>Por padrão o <code>find</code> desce em todas as subpastas, até o fundo. O <code>-maxdepth</code> (profundidade máxima) diz até onde ir: <code>1</code> é só o conteúdo da pasta de partida, <code>2</code> inclui as subpastas dela, e assim por diante. O parente dele, <code>-mindepth</code>, pula os primeiros níveis (<code>-mindepth 1</code> esconde a própria pasta de partida).</p>
+
+<dl class="anatomy">
+  <dt>find .</dt><dd>Comece na pasta atual.</dd>
+  <dt>-maxdepth 1</dt><dd>Não entre em nenhuma subpasta.</dd>
+  <dt>-type f</dt><dd>Só arquivos comuns.</dd>
+</dl>
+
+<pre class="term">$ find . -maxdepth 1 -type f
+./frutas.txt
+./.bash_logout
+./.bash_history
+./.bashrc
+./.bash_profile</pre>
+
+<p>Diferente do <a href="ls.html"><code>ls</code></a>, o <code>find</code> mostra os arquivos ocultos (os que começam com ponto) sem precisar de opção extra. Estes quatro <code>.bash*</code> são os que o <code>useradd -m</code> do Arch copia para toda pasta pessoal nova.</p>
+
+<div class="tip">
+<strong>Coloque -maxdepth logo depois do ponto de partida</strong>
+<p>Ele vale para a busca toda, não só para o teste ao lado. Escrito em outro lugar, o <code>find</code> funciona, mas reclama:</p>
+<pre class="term" data-cwd="~/Documentos">$ find . -type f -maxdepth 1
+find: aviso: você especificou a opção global -maxdepth após o argumento -type, mas as opções globais não são posicionais (ou seja, -maxdepth afeta testes especificados antes disso assim como aqueles especificados após). Por favor, especifique opções globais antes de outros argumentos.
+./notas.txt
+./acesso.log
+./relatorio.odt
+./alunos.csv</pre>
+</div>
+
+<hr>
+
+<h2>Buscar pelo tamanho: <code>-size</code></h2>
+<p>Disco cheio? Procure os arquivos grandes. O número leva um sinal e uma letra de unidade:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th></tr>
+<tr><td><code>-size +10M</code></td><td>Maior que 10 megabytes</td></tr>
+<tr><td><code>-size -100k</code></td><td>Menor que 100 kilobytes</td></tr>
+<tr><td><code>-size +1G</code></td><td>Maior que 1 gigabyte</td></tr>
+<tr><td><code>-size 0</code></td><td>Exatamente zero (vazio)</td></tr>
+</table>
+</div>
+
+<p>Unidades: <code>c</code> = bytes, <code>k</code> = kilobytes, <code>M</code> = megabytes, <code>G</code> = gigabytes. Sem o sinal, o tamanho precisa ser exatamente aquele, o que quase nunca é o que você quer.</p>
+
+<pre class="term">$ find Downloads -size +10M
+Downloads/fotos-viagem.zip
+Downloads/archlinux-x86_64.iso
+$ find ~/Downloads -type f -size +1M -size -10M      « dois testes: entre 1 e 10 MB
+/home/ana/Downloads/manual.pdf
+/home/ana/Downloads/musica.mp3</pre>
+
+<p>Para ver o tamanho de cada um, junte com uma ação (veja <a href="#exec">-exec</a>, mais abaixo).</p>
+
+<div class="warning">
+<strong>A pegadinha do <code>-size -1k</code></strong>
+<p>O <code>find</code> arredonda o tamanho <strong>para cima</strong>, na unidade que você escolheu. O <code>frutas.txt</code> tem 47 bytes, que viram "1 k". E 1 não é menor que 1:</p>
+<pre class="term">$ find ~ -maxdepth 1 -name "*.txt" -size -1k
+$ find ~ -maxdepth 1 -name "*.txt" -size -1024c
+/home/ana/frutas.txt</pre>
+<p>Para "menor que" com números pequenos, use bytes (<code>c</code>). Com números grandes (<code>-size -100M</code>) a diferença não importa.</p>
+</div>
+
+<hr>
+
+<h2>Buscar pela data: <code>-mtime</code> e <code>-mmin</code></h2>
+<p><code>-mtime</code> conta em <strong>dias</strong> desde a última modificação (<em>modification time</em>); <code>-mmin</code> conta em <strong>minutos</strong>. O sinal muda o sentido:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Significado</th><th>Uso típico</th></tr>
+<tr><td><code>-mtime -1</code></td><td>Modificado nas últimas 24 horas</td><td>"O que eu mexi hoje?"</td></tr>
+<tr><td><code>-mtime -2</code></td><td>Modificado nas últimas 48 horas</td><td>"…e ontem?"</td></tr>
+<tr><td><code>-mtime +30</code></td><td>Modificado há mais de 30 dias</td><td>Arquivos e backups antigos</td></tr>
+<tr><td><code>-mmin -10</code></td><td>Modificado nos últimos 10 minutos</td><td>"Que arquivo esse programa acabou de criar?"</td></tr>
+</table>
+</div>
+
+<p>Para ver isso funcionando, crie um arquivo "antigo" com o <code>touch -d</code>, que muda a data de modificação (veja <a href="criar.html">touch e mkdir</a>):</p>
+
+<pre class="term">$ touch -d "2026-01-01" velho.txt
+$ ls -l velho.txt
+-rw-r--r-- 1 ana ana 0  1 jan  2026 velho.txt     « de outro ano: o ls mostra o ano no lugar da hora
+$ find . -maxdepth 1 -mtime +30
+./velho.txt
+$ touch novo.txt
+$ find . -maxdepth 1 -mmin -10
+.                                               « a pasta mudou: ganhou dois arquivos
+./novo.txt</pre>
+
+<p>Repare na permissão <code>-rw-r--r--</code> do arquivo novo: no Arch, a <code>umask</code> padrão é <code>022</code>, então os arquivos novos nascem sem escrita para o grupo (veja <a href="chown.html">chown, chgrp, umask</a>).</p>
+
+<div class="note">
+<strong>Logs antigos no Arch</strong>
+<p>Em outros sistemas é comum procurar <code>/var/log/*.gz</code> antigos. No Arch quase não existem logs em texto: o registro do sistema fica no journal do systemd (veja <a href="journal.html">Logs (journalctl)</a>), que se limpa sozinho. O log em texto mais famoso do Arch é o <code>/var/log/pacman.log</code>, um arquivo só, que você lê com o <a href="grep.html"><code>grep</code></a>.</p>
+</div>
+
+<hr>
+
+<h2>Buscar pelo dono e pela permissão</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>O que encontra</th><th>Exemplo real</th></tr>
+<tr><td><code>-user</code></td><td>Arquivos de um dono</td><td><code>find Documentos -user ana -name "*.csv"</code> → <code>Documentos/alunos.csv</code></td></tr>
+<tr><td><code>-group</code></td><td>Arquivos de um grupo</td><td><code>find ~ -group wheel</code> (não acha nada: tudo é do grupo <code>ana</code>)</td></tr>
+<tr><td><code>-perm</code></td><td>Arquivos com certa permissão</td><td><code>find Documentos -type f -perm 775</code> → <code>Documentos/projetos/backup.sh</code></td></tr>
+<tr><td><code>-empty</code></td><td>Arquivos vazios e pastas vazias</td><td><code>find logs -empty</code></td></tr>
+<tr><td><code>-newer</code></td><td>Mais novos que outro arquivo</td><td><code>find Documentos -newer Documentos/notas.txt</code></td></tr>
+<tr><td><code>-path</code></td><td>Compara o caminho inteiro, não só o nome</td><td><code>find Documentos -path "*/site/*"</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ find Documentos -newer Documentos/notas.txt
+Documentos
+Documentos/acesso.log
+Documentos/projetos
+Documentos/projetos/backup.sh
+Documentos/alunos.csv
+$ find Documentos -path "*/site/*"
+Documentos/projetos/site/index.html
+Documentos/projetos/site/style.css</pre>
+
+<p>O <code>notas.txt</code> foi modificado em <code>14 out 17:40</code>; tudo o que mudou depois disso aparece na primeira busca. Na segunda, o <code>-path</code> olha o caminho todo, então pega os arquivos que estão <strong>dentro</strong> de uma pasta <code>site</code>. As permissões (<code>775</code>, <code>644</code>…) são explicadas em <a href="chmod.html">chmod</a>.</p>
+
+<hr>
+
+<h2>Combinar testes: e, ou, não</h2>
+<p>Vários testes lado a lado precisam ser <strong>todos</strong> verdadeiros (um "e" implícito). Para "ou", use <code>-o</code> (<em>or</em>); para "não", use <code>!</code> ou <code>-not</code>.</p>
+
+<dl class="anatomy">
+  <dt>find .</dt><dd>Comece aqui.</dd>
+  <dt>\( -name "*.jpg" -o -name "*.png" \)</dt><dd>Nome termina em .jpg <strong>ou</strong> .png. Os parênteses agrupam o "ou"; a barra invertida impede o shell de interpretá-los (para o Bash, <code>(</code> tem outro sentido).</dd>
+  <dt>-size +1M</dt><dd><strong>E</strong> maior que 1 MB.</dd>
+</dl>
+
+<pre class="term">$ find . \( -name "*.jpg" -o -name "*.png" \)
+./Imagens/ferias.jpg
+./Imagens/perfil.png
+./Downloads/foto.jpg
+$ find . \( -name "*.jpg" -o -name "*.png" \) -size +1M
+./Imagens/ferias.jpg
+$ find Documentos -type f ! -name "*.txt"
+Documentos/acesso.log
+Documentos/relatorio.odt
+Documentos/projetos/site/index.html
+Documentos/projetos/site/style.css
+Documentos/projetos/backup.sh
+Documentos/alunos.csv</pre>
+
+<p>A última busca pede arquivos que <strong>não</strong> terminam em <code>.txt</code>: o <code>notas.txt</code> ficou de fora.</p>
+
+<hr>
+
+<h2 id="exec">Fazer algo com o que foi encontrado</h2>
+
+<h3><code>-exec</code>: rodar um comando em cada achado</h3>
+
+<dl class="anatomy">
+  <dt>find . -name "*.sh"</dt><dd>Encontre os scripts…</dd>
+  <dt>-exec</dt><dd>…e, para cada um, execute:</dd>
+  <dt>ls -l</dt><dd>o comando que você quiser…</dd>
+  <dt>{}</dt><dd>…onde <code>{}</code> é trocado pelo caminho do arquivo encontrado.</dd>
+  <dt>\;</dt><dd>Fim do comando. A barra impede o shell de usar o <code>;</code> para ele mesmo.</dd>
+</dl>
+
+<pre class="term">$ find . -name "*.sh" -exec ls -l {} \;
+-rwxrwxr-x 1 ana ana 45 15 out 09:15 ./Documentos/projetos/backup.sh
+$ find Documentos -name "*.csv" -exec wc -l {} \;
+6 Documentos/alunos.csv                          « o wc contou 6 linhas</pre>
+
+<p>Terminando com <code>+</code> em vez de <code>\;</code>, o <code>find</code> junta todos os achados e roda o comando <strong>uma vez só</strong>, o que é bem mais rápido com muitos arquivos:</p>
+
+<pre class="term">$ find Downloads -size +10M -exec ls -lh {} +
+-rw-rw-r-- 1 ana ana 1,5G 10 out 21:14 Downloads/archlinux-x86_64.iso
+-rw-rw-r-- 1 ana ana 100M  1 out 19:30 Downloads/fotos-viagem.zip</pre>
+
+<p>Repare nos detalhes do Arch em pt_BR: o tamanho usa vírgula (<code>1,5G</code>) e a data vem com o dia antes do mês (<code>10 out</code>). Como foi um <code>ls</code> só, ele ordenou os dois arquivos em ordem alfabética.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Final</th><th>Quantas vezes o comando roda</th><th>Quando usar</th></tr>
+<tr><td><code>-exec cmd {} \;</code></td><td>Uma vez para cada arquivo</td><td>Comandos que aceitam um arquivo só, ou quando a ordem importa</td></tr>
+<tr><td><code>-exec cmd {} +</code></td><td>Uma vez, com todos os arquivos</td><td>Comandos que aceitam vários arquivos (<code>ls</code>, <code>rm</code>, <code>chmod</code>, <code>wc</code>…): mais rápido</td></tr>
+<tr><td><code>-ok cmd {} \;</code></td><td>Uma vez por arquivo, perguntando antes</td><td>Quando você quer confirmar cada um (responda <code>s</code> ou <code>n</code>)</td></tr>
+</table>
+</div>
+
+<h3><code>-delete</code>: apagar o que foi encontrado</h3>
+
+<div class="warning">
+<strong>Perigo: -delete não pede confirmação e não tem lixeira</strong>
+<p>Rode a busca <strong>sem</strong> <code>-delete</code> primeiro, leia a lista, e só então acrescente <code>-delete</code> <strong>no fim</strong>. A ordem importa: o <code>find</code> avalia da esquerda para a direita, então <code>-delete</code> antes dos testes apaga <strong>tudo</strong>.</p>
+</div>
+
+<pre class="term" data-cwd="~/projeto">$ find . -name "*.tmp"                 « 1. confira a lista
+./cache/b.tmp
+./cache/a.tmp
+$ find . -name "*.tmp" -delete         « 2. apague
+$ find . -name "*.tmp"                 « 3. confira de novo: nada sobrou
+$ echo $?
+0</pre>
+
+<p>E o erro de ordem, feito de propósito numa pasta de teste:</p>
+
+<pre class="term">$ mkdir -p teste/sub &amp;&amp; touch teste/a.txt teste/b.tmp teste/sub/c.txt
+$ find teste -delete -name "*.tmp"     « -delete ANTES do teste
+$ ls teste
+ls: não foi possível acessar 'teste': Arquivo ou diretório inexistente</pre>
+
+<p>Sumiu a pasta inteira, com o <code>a.txt</code> e o <code>sub/c.txt</code> que você queria guardar. O <code>-delete</code> rodou para cada item antes de o <code>-name</code> ser testado. Não houve pergunta, nem mensagem.</p>
+
+<div class="try" data-setup="mkdir -p logs;;touch logs/vazio1.log logs/vazio2.log;;echo erro grave &gt; logs/sistema.log" data-goal="absent:~/logs/vazio1.log,absent:~/logs/vazio2.log,file:~/logs/sistema.log" data-solucao="find logs -empty;;find logs -empty -delete;;ls logs">
+<p class="try-task"><strong>Missão 2:</strong> a pasta <code>logs</code> tem arquivos vazios misturados com um que tem conteúdo. Apague só os vazios usando <code>find</code> com <code>-empty</code> e <code>-delete</code>. Antes de apagar, rode a busca sem <code>-delete</code> para conferir.</p>
+</div>
+
+<h3><code>-print0</code>: nomes com espaço sem susto</h3>
+<p>Muitas vezes o resultado do <code>find</code> vai para outro programa por um pipe, com o <code>xargs</code> (veja <a href="pipes.html">Pipes e xargs</a>). O problema: o <code>xargs</code> separa os nomes nos espaços. No Arch em português, a pasta <code>Área de trabalho</code> tem dois:</p>
+
+<pre class="term">$ find . -maxdepth 1 -name "Área*" | xargs ls -ld
+ls: não foi possível acessar './Área': Arquivo ou diretório inexistente
+ls: não foi possível acessar 'de': Arquivo ou diretório inexistente
+ls: não foi possível acessar 'trabalho': Arquivo ou diretório inexistente
+$ find . -maxdepth 1 -name "Área*" -print0 | xargs -0 ls -ld
+drwxrwxr-x 2 ana ana 4096 12 out 08:03 ./Área de trabalho</pre>
+
+<dl class="anatomy">
+  <dt>-print0</dt><dd>Separa os nomes com o caractere nulo (o byte zero), em vez de uma quebra de linha. Nenhum nome de arquivo pode conter esse caractere.</dd>
+  <dt>xargs -0</dt><dd>Avisa o <code>xargs</code> que a separação é pelo nulo. Os dois andam sempre juntos.</dd>
+</dl>
+
+<p>Na tela, o <code>-print0</code> sozinho parece estranho: os nomes saem grudados, e o próximo prompt aparece na mesma linha, porque não há quebra de linha no fim. Ele foi feito para outro programa ler, não você. Se puder escolher, <code>-exec … {} +</code> resolve o mesmo problema sem pipe.</p>
+
+<hr>
+
+<h2>O que o find devolve</h2>
+<p>O <code>find</code> mostra um caminho por linha. Quando não encontra nada, <strong>não mostra nada e devolve 0</strong>: para ele, a busca correu bem, só não teve resultado. O código vira <code>1</code> quando algo deu errado no caminho, como uma pasta sem permissão.</p>
+
+<pre class="term">$ find . -name "*.mp4"
+$ echo $?
+0                                  « nada encontrado, mas sem erro
+$ find /root -name "*.conf"
+find: “/root”: Permissão negada
+$ echo $?
+1                                  « houve erro</pre>
+
+<p>Por isso, em scripts, não use o código do <code>find</code> para saber se algo foi achado. Conte as linhas:</p>
+
+<pre class="term">$ find . -name "*.mp4" | wc -l
+0</pre>
+
+<hr>
+
+<h2>Formas diferentes de procurar arquivos</h2>
+
+<h3>locate: busca instantânea numa lista pronta</h3>
+<p>O <code>locate</code> não percorre as pastas: ele consulta um <strong>banco de dados</strong> com o caminho de todos os arquivos do sistema, montado antes por outro programa, o <code>updatedb</code>. Por isso a resposta é instantânea, mas arquivos criados depois da última atualização da lista não aparecem.</p>
+
+<p>No Arch, o <code>locate</code> <strong>não vem instalado</strong>, e o Bash do Arch não sugere pacotes:</p>
+
+<pre class="term">$ locate notas
+bash: locate: comando não encontrado
+$ echo $?
+127                                « 127 = comando não existe</pre>
+
+<p>Como descobrir qual pacote tem um comando que você não tem? O próprio <code>pacman</code> responde, com a busca de arquivos <code>-F</code> (de <em>files</em>; a lista de arquivos dos repositórios precisa ter sido baixada uma vez com <code>sudo pacman -Fy</code>):</p>
+
+<pre class="term">$ pacman -F locate updatedb
+extra/gstreamer-docs 1.28.8-1
+    usr/share/doc/gstreamer/html/assets/js/search/locate
+extra/plocate 1.1.25-1
+    usr/bin/locate                   « é este: um programa em usr/bin
+extra/plocate 1.1.25-1
+    usr/bin/updatedb</pre>
+
+<p>O pacote é o <code>plocate</code> (o <em>p</em> é de <em>posting list</em>, a técnica que o deixa rápido). Ele substitui o antigo <code>mlocate</code>. Instale com o <code>sudo</code>:</p>
+
+<pre class="term">$ sudo pacman -S plocate
+[sudo] senha para ana:
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) plocate-1.1.25-1
+
+Tamanho total download:   0,15 MiB
+Tamanho total instalado:  0,50 MiB
+
+:: Continuar a instalação? [S/n]          « responda S e Enter</pre>
+
+<p>Instalado, o <code>locate</code> ainda não funciona: a lista não existe. Monte a primeira com o <code>updatedb</code>, como root (ele precisa ler todas as pastas do sistema). Leva de alguns segundos a alguns minutos, e não mostra nada:</p>
+
+<pre class="term">$ sudo updatedb</pre>
+
+<dl class="anatomy">
+  <dt>updatedb</dt><dd>Percorre o disco inteiro e grava a lista em <code>/var/lib/plocate/plocate.db</code>. É ele, e não o <code>locate</code>, que faz o trabalho pesado.</dd>
+  <dt>/etc/updatedb.conf</dt><dd>O que fica de fora da lista. No Arch: <code>/tmp</code>, <code>/media</code>, <code>/mnt</code>, <code>/var/cache</code>, pastas <code>.git</code> e sistemas de arquivos de rede ou de pendrive. Ou seja: o <code>locate</code> não acha arquivos no pendrive.</dd>
+  <dt>plocate-updatedb.timer</dt><dd>Um <a href="timers.html">timer do systemd</a> que roda o <code>updatedb</code> uma vez por dia (<code>OnCalendar=daily</code>). O pacote já o deixa ligado ao <code>timers.target</code>, então ele passa a rodar sozinho a partir do próximo boot.</dd>
+</dl>
+
+<p>Pronto: agora a busca é instantânea.</p>
+
+<dl class="anatomy">
+  <dt>locate</dt><dd>Busca na lista pronta.</dd>
+  <dt>-i</dt><dd>Ignora maiúsculas e minúsculas.</dd>
+  <dt>FERIAS</dt><dd>Um <strong>pedaço</strong> do caminho. Não precisa de <code>*</code>: qualquer caminho que contenha o texto aparece.</dd>
+</dl>
+
+<p>As saídas abaixo são reais, com um detalhe: no laboratório do guia não rodamos o <code>updatedb</code> do sistema inteiro (ele lê o disco todo). Montamos uma lista só da pasta da <code>ana</code>, um truque que você também pode usar, sem root:</p>
+
+<pre class="term">$ updatedb -l 0 -U ~ -o ~/.minha-lista.db     « lista só da pasta pessoal
+$ ls -lh ~/.minha-lista.db
+-rw-r----- 1 ana ana 32K 16 out 14:57 /home/ana/.minha-lista.db
+$ locate -d ~/.minha-lista.db notas
+/home/ana/Documentos/notas.txt
+$ locate -d ~/.minha-lista.db -i FERIAS
+/home/ana/Imagens/ferias.jpg
+$ locate -d ~/.minha-lista.db -c .jpg
+2                                         « -c só conta
+$ locate -d ~/.minha-lista.db "*.csv"
+/home/ana/Documentos/alunos.csv</pre>
+
+<p>Com a lista do sistema (depois do <code>sudo updatedb</code>), é o mesmo comando sem o <code>-d</code>: <code>locate notas</code>, <code>locate -i ferias</code>. A diferença é que podem aparecer também arquivos do sistema cujo caminho contém o texto. No <code>updatedb</code> da pasta pessoal: <code>-U</code> diz por onde começar, <code>-o</code> onde gravar a lista e <code>-l 0</code> desliga a checagem de permissões (só faz sentido numa lista sua).</p>
+
+<div class="note">
+<strong>Arquivo novo não aparece no locate (e arquivo apagado continua aparecendo)</strong>
+<pre class="term">$ touch Documentos/recibo-luz.pdf
+$ locate -d ~/.minha-lista.db recibo
+$ echo $?
+1                                         « não achou: a lista é de antes
+$ updatedb -l 0 -U ~ -o ~/.minha-lista.db
+$ locate -d ~/.minha-lista.db recibo
+/home/ana/Documentos/recibo-luz.pdf
+$ rm Documentos/recibo-luz.pdf
+$ locate -d ~/.minha-lista.db recibo
+/home/ana/Documentos/recibo-luz.pdf       « já foi apagado, mas a lista não sabe</pre>
+<p>Diferente do <code>find</code>, o <code>locate</code> devolve <strong>1</strong> quando não acha nada. Para arquivos de hoje, use o <code>find</code> (ou rode <code>sudo updatedb</code> antes).</p>
+</div>
+
+<div class="try" data-goal="pkg:plocate" data-solucao="sudo pacman -S plocate" data-stdin="ana\nS">
+<p class="try-task"><strong>Missão 3:</strong> tente <code>locate notas</code> e veja o erro. Descubra com <code>pacman -F locate</code> qual pacote traz o comando e instale-o com o <code>sudo</code> (a senha da ana é <code>ana</code>). Confira com <code>pacman -Q plocate</code>.</p>
+</div>
+
+<h3>fd: um find mais simples (ilustrativo)</h3>
+<p>O <code>fd</code> é um programa moderno, do repositório <code>extra</code>, que faz o trabalho mais comum do <code>find</code> com menos digitação: o padrão vem direto, sem <code>-name</code> e sem aspas, ignora maiúsculas quando o padrão é todo minúsculo, pula arquivos ocultos e respeita os <code>.gitignore</code>. Não vem instalado; o pacman mostra o que entraria:</p>
+
+<pre class="term">$ sudo pacman -S fd
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (2) jemalloc-1:5.4.0-1  fd-10.5.0-3      « traz uma dependência junto
+
+Tamanho total download:   1,44 MiB
+Tamanho total instalado:  4,54 MiB
+
+:: Continuar a instalação? [S/n]</pre>
+
+<p>Na VM do guia nada foi instalado: as saídas abaixo são do <code>fd</code> 10.5.0 real, rodado a partir do pacote baixado, sem instalar. No simulador ele não existe.</p>
+
+<pre class="term">$ fd notas
+Documentos/notas.txt
+$ fd -e jpg                      « -e = extensão
+Downloads/foto.jpg
+Imagens/ferias.jpg
+$ fd -H bashrc                   « -H = inclui os ocultos
+.bashrc
+$ fd -t d proj                   « -t d = só pastas
+Documentos/projetos/</pre>
+
+<h3>Busca do gerenciador de arquivos</h3>
+<p>Se você instalou um desktop (veja <a href="desktop.html">Instalar um Desktop</a>), o gerenciador de arquivos tem busca: no Nautilus (GNOME) e no Dolphin (KDE), entre na pasta e pressione <kbd>Ctrl</kbd>+<kbd>F</kbd>. É ótimo para quem não lembra o nome exato e quer ver miniaturas.</p>
+
+<h3>Qual usar?</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td><code>find</code></td><td><code>find ~ -name "*.pdf"</code></td><td>Você precisa de filtros (tamanho, data, tipo, dono) ou de agir sobre os achados. Sempre instalado.</td></tr>
+<tr><td><code>locate</code></td><td><code>locate -i contrato</code></td><td>Você quer a resposta na hora, no sistema inteiro, e o arquivo não é de hoje. Precisa do <code>plocate</code> e do <code>updatedb</code>.</td></tr>
+<tr><td><code>fd</code></td><td><code>fd -e pdf</code></td><td>Buscas rápidas por nome no dia a dia, com menos digitação. Precisa instalar.</td></tr>
+<tr><td><code>pacman -Qo</code> / <code>-Ql</code> / <code>-F</code></td><td><code>pacman -Qo /usr/bin/find</code></td><td>A pergunta é sobre arquivos de <strong>pacotes</strong>: de quem é, o que um pacote instalou, quem fornece um comando.</td></tr>
+<tr><td>Gerenciador de arquivos</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Prefere ver ícones e miniaturas.</td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="ran:find.*-size,out:fotos-viagem.zip" data-solucao="find Downloads -size +50M;;find Downloads -size +50M -exec ls -lh {} +">
+<p class="try-task"><strong>Missão 4:</strong> descubra quais arquivos da pasta <code>Downloads</code> têm mais de 50 MB. Depois, use <code>-exec ls -lh {} +</code> para ver o tamanho de cada um.</p>
+</div>
+
+<div class="try" data-setup="touch -d 2026-01-15 Documentos/contrato-velho.txt" data-goal="ran:find.*-mtime,out:contrato-velho.txt" data-solucao="find Documentos -mtime +30">
+<p class="try-task"><strong>Missão 5:</strong> dentro de <code>Documentos</code> há um arquivo que ninguém mexe há meses. Encontre-o com <code>-mtime</code> (modificado há mais de 30 dias).</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"os caminhos devem preceder a expressão"</strong>
+<pre class="term" data-cwd="~/viagem">$ find . -name *.jpg
+find: os caminhos devem preceder a expressão: "foto2.jpg"
+find: possível padrão sem aspas após o predicado "-name'?</pre>
+<p><strong>O que aconteceu:</strong> o padrão estava sem aspas e o shell trocou <code>*.jpg</code> pelos nomes dos arquivos da pasta atual.</p>
+<p><strong>Como confirmar:</strong> <code>echo find . -name *.jpg</code> mostra o comando que o <code>find</code> realmente recebe.</p>
+<p><strong>Como resolver:</strong> coloque o padrão entre aspas: <code>find . -name "*.jpg"</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma enxurrada de "Permissão negada"</strong>
+<pre class="term">$ find trabalho -name "*.conf"
+trabalho/notas/app.conf
+find: “trabalho/privada”: Permissão negada
+find: “trabalho/fiscal”: Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> o <code>find</code> tentou entrar em pastas que você não pode ler. O resultado útil fica misturado com os erros. Fora da pasta pessoal (em <code>/etc</code>, <code>/var</code>…) são dezenas de linhas assim.</p>
+<p><strong>Como resolver:</strong> mande os erros para o "lixo" com <code>2&gt;/dev/null</code> (veja <a href="redirecionamento.html">Redirecionamento</a>). O código de saída continua 1, avisando que algo não foi lido:</p>
+<pre class="term">$ find trabalho -name "*.conf" 2&gt;/dev/null
+trabalho/notas/app.conf</pre>
+<p>Se você <strong>precisa</strong> olhar dentro dessas pastas, use <code>sudo find …</code>, mas só numa pasta pequena e específica.</p>
+</div>
+
+<div class="cenario">
+<strong>Não apareceu nada, mas o arquivo existe</strong>
+<pre class="term">$ find . -name "Notas.txt"
+$</pre>
+<p><strong>O que aconteceu:</strong> o nome real é <code>notas.txt</code>, com n minúsculo. O <code>-name</code> diferencia maiúsculas. Outras causas comuns: começar a busca na pasta errada, um <code>-maxdepth</code> pequeno demais, ou digitar o nome inteiro quando só lembra um pedaço.</p>
+<p><strong>Como resolver:</strong> use <code>-iname</code> e curingas dos dois lados:</p>
+<pre class="term">$ find ~ -iname "*notas*"
+/home/ana/Documentos/notas.txt</pre>
+</div>
+
+<div class="cenario">
+<strong>"faltando argumento para -exec"</strong>
+<pre class="term">$ find . -name "*.sh" -exec ls -l {}
+find: faltando argumento para "-exec"</pre>
+<p><strong>O que aconteceu:</strong> faltou o <code>\;</code> (ou <code>+</code>) que fecha o comando do <code>-exec</code>.</p>
+<p><strong>Como resolver:</strong> <code>find . -name "*.sh" -exec ls -l {} \;</code></p>
+</div>
+
+<div class="cenario">
+<strong>Erros do <code>-type</code></strong>
+<pre class="term">$ find . -type x
+find: Argumento desconhecido para -type: x
+$ find . -type pasta
+find: Deve-se separar vários argumentos para -type usando: ","</pre>
+<p><strong>O que aconteceu:</strong> o <code>-type</code> aceita só letras (<code>f</code>, <code>d</code>, <code>l</code>…). Com uma palavra, o <code>find</code> acha que você quis passar vários tipos de uma vez e pede vírgulas.</p>
+<p><strong>Como resolver:</strong> use a letra: <code>find . -type d</code>. Para vários tipos, separe por vírgula: <code>-type f,d</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"locate: comando não encontrado" ou o locate não acha nada</strong>
+<pre class="term">$ locate notas
+bash: locate: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> o pacote <code>plocate</code> não vem no Arch. Se ele já está instalado e mesmo assim não acha nada, a lista ainda não foi montada (o timer só roda uma vez por dia) ou o arquivo é mais novo que ela.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S plocate</code> e <code>sudo updatedb</code>. Ou use o <code>find</code>, que sempre existe e sempre está atualizado.</p>
+</div>
+
+<hr>
+
+<h2>Referência de opções</h2>
+<h3>find</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-name</code></td><td>Nome, com curingas; diferencia maiúsculas</td><td><code>-name "*.log"</code></td></tr>
+<tr><td><code>-iname</code></td><td>Nome, sem diferenciar maiúsculas</td><td><code>-iname "*.jpg"</code></td></tr>
+<tr><td><code>-path</code></td><td>Caminho inteiro, com curingas</td><td><code>-path "*/site/*"</code></td></tr>
+<tr><td><code>-type</code></td><td><code>f</code> arquivo, <code>d</code> pasta, <code>l</code> link; vários com vírgula</td><td><code>-type d</code></td></tr>
+<tr><td><code>-size</code></td><td>Tamanho: <code>+</code> maior, <code>-</code> menor; <code>c k M G</code> (arredonda para cima)</td><td><code>-size +100M</code></td></tr>
+<tr><td><code>-mtime</code> / <code>-mmin</code></td><td>Modificado há N dias / minutos</td><td><code>-mtime -7</code></td></tr>
+<tr><td><code>-newer</code></td><td>Mais novo que outro arquivo</td><td><code>-newer notas.txt</code></td></tr>
+<tr><td><code>-maxdepth</code> / <code>-mindepth</code></td><td>Profundidade máxima / mínima</td><td><code>-maxdepth 2</code></td></tr>
+<tr><td><code>-empty</code></td><td>Arquivo ou pasta vazia</td><td><code>-empty</code></td></tr>
+<tr><td><code>-user</code> / <code>-group</code></td><td>Dono / grupo do arquivo</td><td><code>-user ana</code></td></tr>
+<tr><td><code>-perm</code></td><td>Permissões</td><td><code>-perm 644</code></td></tr>
+<tr><td><code>-o</code> / <code>!</code> / <code>\( \)</code></td><td>"ou" / "não" / agrupar</td><td><code>! -name "*.txt"</code></td></tr>
+<tr><td><code>-exec … {} \;</code></td><td>Roda um comando para cada achado</td><td><code>-exec ls -l {} \;</code></td></tr>
+<tr><td><code>-exec … {} +</code></td><td>Roda um comando com todos os achados juntos</td><td><code>-exec ls -lh {} +</code></td></tr>
+<tr><td><code>-ok … {} \;</code></td><td>Como <code>-exec</code>, mas pergunta antes de cada um</td><td><code>-ok rm {} \;</code></td></tr>
+<tr><td><code>-delete</code></td><td>Apaga os achados (sempre no fim!)</td><td><code>-name "*.tmp" -delete</code></td></tr>
+<tr><td><code>-print0</code></td><td>Separa por caractere nulo, seguro para nomes com espaço</td><td><code>-print0 | xargs -0 …</code></td></tr>
+</table>
+</div>
+<h3>locate (pacote plocate)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Descrição</th><th>Exemplo</th></tr>
+<tr><td><code>-i</code></td><td>Ignora maiúsculas</td><td><code>locate -i readme</code></td></tr>
+<tr><td><code>-c</code></td><td>Só conta quantos resultados</td><td><code>locate -c .jpg</code></td></tr>
+<tr><td><code>-l N</code></td><td>Mostra no máximo N resultados</td><td><code>locate -l 5 .conf</code></td></tr>
+<tr><td><code>-b</code></td><td>Compara só o nome (o final do caminho)</td><td><code>locate -b '\notas.txt'</code></td></tr>
+<tr><td><code>-d arquivo</code></td><td>Usa outra lista</td><td><code>locate -d ~/.minha-lista.db notas</code></td></tr>
+<tr><td><code>sudo updatedb</code></td><td>Atualiza a lista do sistema</td><td><code>sudo updatedb</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só pastas</h3>
+<p>Complete para listar apenas as <strong>pastas</strong> dentro de <code>Documentos</code>:</p>
+<div class="ex-code">find Documentos -type <input data-answer="d" aria-label="tipo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Arquivos grandes</h3>
+<p>Complete para encontrar arquivos <strong>maiores que 500 MB</strong> na pasta pessoal:</p>
+<div class="ex-code">find ~ -size <input data-answer="+500M" aria-label="tamanho"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Sem diferenciar maiúsculas</h3>
+<p>Complete para achar <code>Relatorio.PDF</code>, <code>relatorio.pdf</code> e variações:</p>
+<div class="ex-code">find ~ <input data-answer="-iname" aria-label="teste"> "relatorio.pdf"</div>
+</div>
+
+<div class="exercise">
+<h3>4. Qual pacote?</h3>
+<p>Complete para descobrir qual pacote dos repositórios traz o comando <code>updatedb</code>:</p>
+<div class="ex-code">pacman <input data-answer="-F" aria-label="opção"> updatedb</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>find . -name "*.mp4"</code> não mostrou nada. O que <code>echo $?</code> mostra logo depois?</p>
+<label><input type="radio" name="q5"> 1, porque não achou nada.</label>
+<label><input type="radio" name="q5"> 0, porque a busca rodou sem erros.</label>
+<label><input type="radio" name="q5"> 127, porque o comando não existe.</label>
+<label><input type="radio" name="q5"> Uma mensagem de erro.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Você acabou de instalar o <code>plocate</code> e roda <code>locate notas</code>. Nada aparece. Por quê?</p>
+<label><input type="radio" name="q6"> O locate só procura em <code>/usr</code>.</label>
+<label><input type="radio" name="q6"> Precisa reiniciar o computador para o comando existir.</label>
+<label><input type="radio" name="q6"> A lista ainda não foi montada: falta o <code>sudo updatedb</code>.</label>
+<label><input type="radio" name="q6"> O locate só funciona como root.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. Qual comando é <strong>perigoso</strong> e pode apagar tudo na pasta?</p>
+<label><input type="radio" name="q7"> <code>find . -name "*.tmp"</code></label>
+<label><input type="radio" name="q7"> <code>find . -name "*.tmp" -delete</code></label>
+<label><input type="radio" name="q7"> <code>find . -name "*.tmp" -exec ls {} \;</code></label>
+<label><input type="radio" name="q7"> <code>find . -delete -name "*.tmp"</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>find [onde] [testes] [ação]</code>: sem ação, ele só mostra os caminhos. Comece na menor pasta possível, nunca em <code>/</code> à toa.</li>
+  <li>Sempre coloque o padrão de <code>-name</code> entre aspas.</li>
+  <li>Filtros principais: <code>-name</code>, <code>-iname</code>, <code>-type</code>, <code>-size</code>, <code>-mtime</code>, <code>-user</code>, <code>-maxdepth</code>.</li>
+  <li><code>-exec cmd {} \;</code> roda um comando por achado; <code>{} +</code> roda uma vez com todos; <code>-print0 | xargs -0</code> protege nomes com espaço.</li>
+  <li>Confira a lista antes de usar <code>-delete</code>, e ponha <code>-delete</code> sempre no fim.</li>
+  <li><code>find</code> devolve 0 mesmo sem achar nada; <code>2&gt;/dev/null</code> esconde os erros de permissão.</li>
+  <li>No Arch, o <code>locate</code> vem do pacote <code>plocate</code>: <code>sudo pacman -S plocate</code> e <code>sudo updatedb</code>. O <code>pacman -F</code> descobre o pacote de qualquer comando.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <code>locate</code>, o <code>updatedb</code> e o timer diário estão em <a href="https://wiki.archlinux.org/title/Locate">Locate</a>; o <code>find</code>, o <code>fd</code> e outras alternativas modernas, em <a href="https://wiki.archlinux.org/title/Core_utilities">Core utilities</a>; e a busca de arquivos de pacotes (<code>pacman -Qo</code>, <code>-Ql</code>, <code>-F</code>), em <a href="https://wiki.archlinux.org/title/Pacman#Querying_package_databases">pacman: Querying package databases</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">pacman em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
