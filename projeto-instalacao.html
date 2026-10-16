@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Projeto: Instalação Completa do Zero numa VM | Guia Arch</title>
+<meta name="description" content="Projeto passo a passo: instalar o Arch Linux do zero numa máquina virtual, do VirtualBox ao yay, com os comandos exatos usados na VM do guia, o tempo de cada etapa, o que você deve ver em cada ponto e uma tabela de problemas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Instalação Completa do Zero</span></h1>
+
+<p class="intro">Neste projeto você instala o Arch Linux inteiro numa máquina virtual, do botão "Nova" do VirtualBox até um sistema atualizado, com ferramentas de compilação e o <code>yay</code> para o AUR. É o mesmo caminho que o coordenador do guia fez para criar a VM de laboratório: os comandos abaixo são exatamente os que ele rodou, e os "o que você deve ver" são trechos das saídas reais. As explicações ficam nas aulas; aqui é o roteiro para seguir de uma vez, conferindo cada etapa.</p>
+
+<div class="note">
+<strong>Antes de começar</strong>
+<ul>
+  <li><strong>Tempo:</strong> de 2 a 3 horas na primeira vez (a maior parte esperando downloads). Dá para parar entre etapas: desligue a VM só depois de um ponto de verificação.</li>
+  <li><strong>Precisa de:</strong> um computador com 8 GB de RAM ou mais, 35 GB livres em disco, internet e o VirtualBox instalado.</li>
+  <li><strong>Leia antes</strong> (ou tenha aberta) a aula de cada etapa: o projeto diz <em>o que</em> fazer; a aula explica <em>por que</em> e o que fazer quando dá errado.</li>
+  <li>No live, os prompts aparecem como <code>root@archiso ~ #</code>; dentro do <code>arch-chroot</code>, como <code>[root@archiso /]#</code>; no sistema instalado, <code>[ana@notebook ~]$</code>.</li>
+</ul>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Aula</th><th>Tempo estimado</th></tr>
+<tr><td>1. Criar a VM</td><td><a href="preparar.html">Baixar e Verificar a ISO</a></td><td>10 a 15 min</td></tr>
+<tr><td>2. Baixar e conferir a ISO</td><td><a href="preparar.html">Baixar e Verificar a ISO</a></td><td>10 a 30 min (depende da internet)</td></tr>
+<tr><td>3. Ligar o live</td><td><a href="ambiente-live.html">O Ambiente Live</a></td><td>5 a 10 min</td></tr>
+<tr><td>4. Particionar</td><td><a href="particionar.html">Particionar o Disco</a></td><td>10 min</td></tr>
+<tr><td>5. Formatar e montar</td><td><a href="formatar-montar.html">Formatar e Montar</a></td><td>5 min</td></tr>
+<tr><td>6. Espelhos e pacstrap</td><td><a href="pacstrap.html">Espelhos e pacstrap</a></td><td>10 a 30 min (na VM do guia: 7 min para 765 MiB)</td></tr>
+<tr><td>7. Configurar (chroot)</td><td><a href="configurar.html">Configurar o Sistema</a></td><td>20 a 30 min</td></tr>
+<tr><td>8. GRUB</td><td><a href="bootloader.html">Bootloader</a></td><td>5 a 10 min</td></tr>
+<tr><td>9. Primeiro boot</td><td><a href="primeiro-boot.html">Primeiro Boot</a></td><td>10 min</td></tr>
+<tr><td>10. Pós-instalação</td><td><a href="atualizar.html">Atualizar</a>, <a href="yay-paru.html">yay e paru</a></td><td>20 a 40 min</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Etapa 1: a máquina virtual</h2>
+<ol class="passo">
+  <li><strong>Crie a VM</strong> no VirtualBox com: tipo <em>Linux / Arch Linux (64-bit)</em>, <strong>4096 MB</strong> de RAM, <strong>2 CPUs</strong>, disco <strong>30 GB</strong> VDI dinamicamente alocado. Os detalhes e o porquê de cada valor estão em <a href="preparar.html">Baixar e Verificar a ISO</a>.</li>
+  <li><strong>Ligue o EFI:</strong> <em>Configurações → Sistema → Placa-mãe → Habilitar EFI</em>. Sem isso, a VM liga em modo BIOS e as etapas 4 e 8 não batem com o guia.</li>
+  <li><strong>Rede:</strong> deixe o padrão (NAT). A VM terá internet pelo seu computador.</li>
+</ol>
+<p><strong>O que você deve ver:</strong> a VM na lista do VirtualBox, desligada, com "EFI" marcado nas configurações de sistema.</p>
+
+<hr>
+
+<h2>Etapa 2: a ISO conferida</h2>
+<ol class="passo">
+  <li><strong>Baixe</strong> a ISO mais recente e o <code>sha256sums.txt</code> de um espelho (o guia usou a <code>archlinux-2026.06.01-x86_64.iso</code>).</li>
+  <li><strong>Confira</strong> a soma, na pasta do download:
+<pre class="term" data-cwd="~/Downloads">$ sha256sum -c --ignore-missing sha256sums.txt
+archlinux-2026.06.01-x86_64.iso: OK
+</pre></li>
+  <li><strong>Coloque a ISO</strong> no drive óptico da VM (<em>Configurações → Armazenamento</em>).</li>
+</ol>
+<p><strong>O que você deve ver:</strong> <code>OK</code> (e não <code>FAILED</code>). A conferência com assinatura PGP está na aula <a href="preparar.html">Baixar e Verificar a ISO</a>.</p>
+
+<hr>
+
+<h2>Etapa 3: o ambiente live</h2>
+<ol class="passo">
+  <li><strong>Ligue a VM</strong> e escolha a primeira opção do menu da ISO. Espere o prompt <code>root@archiso ~ #</code>.</li>
+  <li><strong>Teclado, modo de boot, rede e relógio:</strong>
+<pre class="term" data-host="archiso" data-user="root">#> loadkeys br-abnt2
+#> cat /sys/firmware/efi/fw_platform_size
+64
+#> ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes of data.
+64 bytes from 209.126.35.79: icmp_seq=1 ttl=64 time=44.0 ms
+…
+3 packets transmitted, 3 received, 0% packet loss, time 5616ms
+#> timedatectl
+               Local time: Fri 2026-10-16 15:01:23 UTC
+…
+System clock synchronized: yes
+              NTP service: active
+…
+</pre></li>
+</ol>
+<p><strong>O que você deve ver:</strong> <code>64</code> (UEFI de 64 bits), <code>0% packet loss</code> e <code>System clock synchronized: yes</code>. Se o arquivo <code>fw_platform_size</code> não existe, você está em modo BIOS: volte à etapa 1 e ligue o EFI. Aula: <a href="ambiente-live.html">O Ambiente Live</a>.</p>
+
+<hr>
+
+<h2>Etapa 4: particionar</h2>
+
+<div class="warning">
+<strong>Este passo apaga o disco</strong>
+<p>Na VM o disco está vazio e não há risco. Num computador de verdade, confira três vezes o nome do disco com <code>lsblk</code> antes do <code>w</code> do fdisk.</p>
+</div>
+
+<ol class="passo">
+  <li><strong>Ache o disco:</strong>
+<pre class="term" data-host="archiso" data-user="root">#> lsblk
+NAME  MAJ:MIN RM SIZE RO TYPE MOUNTPOINTS
+loop0   7:0    0 986M  1 loop /run/archiso/airootfs
+sda     8:0    0  30G  0 disk                         « o disco da VM
+sr0    11:0    1 1.5G  1 rom  /run/archiso/bootmnt
+</pre></li>
+  <li><strong>Particione com <code>fdisk /dev/sda</code></strong>, digitando estas respostas (cada linha, um <kbd>Enter</kbd>; "Enter" sozinho aceita o padrão):
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Digite</th><th>O que faz</th></tr>
+<tr><td><code>g</code></td><td>nova tabela GPT</td></tr>
+<tr><td><code>n</code>, Enter, Enter, <code>+1G</code></td><td>partição 1, 1 GiB</td></tr>
+<tr><td><code>t</code>, <code>1</code></td><td>tipo da partição 1: EFI System</td></tr>
+<tr><td><code>n</code>, Enter, Enter, <code>+4G</code></td><td>partição 2, 4 GiB</td></tr>
+<tr><td><code>t</code>, <code>2</code>, <code>19</code></td><td>tipo da partição 2: Linux swap</td></tr>
+<tr><td><code>n</code>, Enter, Enter, Enter</td><td>partição 3, o resto do disco</td></tr>
+<tr><td><code>p</code></td><td>mostra a tabela (confira!)</td></tr>
+<tr><td><code>w</code></td><td>grava e sai</td></tr>
+</table>
+</div>
+(Na VM do guia, essas respostas foram enviadas ao fdisk com um <code>printf</code>, para gravar a saída; o resultado é o mesmo.)</li>
+</ol>
+<p><strong>O que você deve ver</strong> no <code>p</code>, antes do <code>w</code>:</p>
+<pre class="term" data-host="archiso" data-user="root">Device        Start      End  Sectors Size Type
+/dev/sda1      2048  2099199  2097152   1G EFI System
+/dev/sda2   2099200 10487807  8388608   4G Linux swap
+/dev/sda3  10487808 62912511 52424704  25G Linux filesystem
+</pre>
+<p>Três partições: 1G <em>EFI System</em>, 4G <em>Linux swap</em>, 25G <em>Linux filesystem</em>. Aula: <a href="particionar.html">Particionar o Disco</a>.</p>
+
+<hr>
+
+<h2>Etapa 5: formatar e montar</h2>
+<ol class="passo">
+  <li><strong>Formate</strong> (FAT32 na EFI, swap, ext4 na raiz):
+<pre class="term" data-host="archiso" data-user="root">#> mkfs.fat -F 32 /dev/sda1
+mkfs.fat 4.2 (2021-01-31)
+#> mkswap /dev/sda2
+Setting up swapspace version 1, size = 4 GiB (4294963200 bytes)
+no label, UUID=02576132-0458-4975-916f-94e08af9a31c
+#> mkfs.ext4 /dev/sda3
+mke2fs 1.47.4 (6-Mar-2025)
+…
+Writing superblocks and filesystem accounting information: done
+</pre></li>
+  <li><strong>Monte</strong>, a raiz primeiro:
+<pre class="term" data-host="archiso" data-user="root">#> mount /dev/sda3 /mnt
+#> mount --mkdir /dev/sda1 /mnt/boot
+#> swapon /dev/sda2
+</pre></li>
+</ol>
+<p><strong>O que você deve ver</strong> no <code>lsblk -f</code> (os UUIDs serão outros na sua máquina):</p>
+<pre class="term" data-host="archiso" data-user="root">#> lsblk -f
+NAME   FSTYPE   FSVER            LABEL       UUID                                 FSAVAIL FSUSE% MOUNTPOINTS
+…
+sda
+|-sda1 vfat     FAT32                        C509-6CB1                              1022M     0% /mnt/boot
+|-sda2 swap     1                            02576132-0458-4975-916f-94e08af9a31c                [SWAP]
+`-sda3 ext4     1.0                          75d167c8-1dad-4d0a-a0ae-b063058a18e9   23.2G     0% /mnt
+</pre>
+<p>As três colunas da direita são o que importa: <code>/mnt/boot</code>, <code>[SWAP]</code>, <code>/mnt</code>. Aula: <a href="formatar-montar.html">Formatar e Montar</a>.</p>
+
+<hr>
+
+<h2>Etapa 6: espelhos e pacstrap</h2>
+<ol class="passo">
+  <li><strong>Escolha os espelhos</strong> mais rápidos do Brasil:
+<pre class="term" data-host="archiso" data-user="root">#> reflector --country Brazil --protocol https --latest 5 --sort rate --save /etc/pacman.d/mirrorlist
+[2026-10-16 15:02:03] WARNING: failed to rate http(s) download (https://archlinux.c3sl.ufpr.br/extra/os/x86_64/extra.db): Download timed out after 5 second(s).
+[2026-10-16 15:02:09] WARNING: failed to rate http(s) download (https://mirrors.ic.unicamp.br/archlinux/extra/os/x86_64/extra.db): Download timed out after 5 second(s).
+</pre>
+Os <code>WARNING</code> são normais: espelhos lentos na hora do teste ficam de fora.</li>
+  <li><strong>Instale o sistema base</strong> (troque <code>intel-ucode</code> por <code>amd-ucode</code> se o seu processador for AMD):
+<pre class="term" data-host="archiso" data-user="root">#> pacstrap -K /mnt base linux linux-firmware intel-ucode networkmanager sudo nano vim man-db man-pages texinfo grub efibootmgr openssh
+</pre>
+Se ele perguntar entre provedores (<code>iptables</code>, <code>mkinitcpio</code>), aceite o padrão com <kbd>Enter</kbd>.</li>
+</ol>
+<p><strong>O que você deve ver:</strong> <code>Packages (193)</code> (o número muda com o tempo), <code>Total Download Size: 765.50 MiB</code>, a instalação de cada pacote e, no fim, os ganchos até <code>(18/18) Updating the info directory file...</code>, sem nenhuma linha <code>error</code> no final. Um aviso é esperado no meio: <code>WARNING: sd-vconsole: "/etc/vconsole.conf" not found</code> (resolvido na etapa 7). Aula: <a href="pacstrap.html">Espelhos e pacstrap</a>.</p>
+
+<hr>
+
+<h2>Etapa 7: configurar o sistema</h2>
+<p>Tudo explicado em <a href="configurar.html">Configurar o Sistema</a>. Na VM do guia, cada comando dentro do chroot foi rodado de fora como <code>arch-chroot /mnt comando</code>; aqui está o jeito normal, entrando uma vez.</p>
+<ol class="passo">
+  <li><strong>fstab</strong> (uma vez só!), ainda fora do chroot:
+<pre class="term" data-host="archiso" data-user="root">#> genfstab -U /mnt &gt;&gt; /mnt/etc/fstab
+#> cat /mnt/etc/fstab
+…
+# /dev/sda3
+UUID=75d167c8-1dad-4d0a-a0ae-b063058a18e9	/         	ext4      	rw,relatime	0 1
+…
+</pre>
+<strong>Confira:</strong> três linhas <code>UUID=</code> (raiz, <code>/boot</code>, swap), cada uma uma vez só.</li>
+  <li><strong>Entre</strong> no sistema novo:
+<pre class="term" data-host="archiso" data-user="root">#> arch-chroot /mnt
+</pre></li>
+  <li><strong>Fuso, idioma, teclado, nome:</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
+#> hwclock --systohc
+#> nano /etc/locale.gen                      « tire o # de en_US.UTF-8 UTF-8 e pt_BR.UTF-8 UTF-8
+#> locale-gen
+Generating locales...
+  en_US.UTF-8... done
+  pt_BR.UTF-8... done
+Generation complete.
+#> echo 'LANG=pt_BR.UTF-8' &gt; /etc/locale.conf
+#> echo 'KEYMAP=br-abnt2' &gt; /etc/vconsole.conf
+#> echo notebook &gt; /etc/hostname
+</pre>
+<strong>Confira:</strong> os dois idiomas com <code>done</code>.</li>
+  <li><strong>initramfs:</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> mkinitcpio -P
+…
+  -&gt; Running build hook: [sd-vconsole]
+…
+==&gt; Initcpio image generation successful
+</pre>
+<strong>Confira:</strong> <code>successful</code> e <strong>nenhum</strong> <code>WARNING</code> do <code>sd-vconsole</code>.</li>
+  <li><strong>Senhas, usuária e sudo:</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> passwd
+New password:
+Retype new password:
+passwd: password updated successfully
+#> useradd -m -G wheel -s /bin/bash ana
+#> passwd ana
+New password:
+Retype new password:
+passwd: password updated successfully
+#> EDITOR=nano visudo                       « tire o # de: %wheel ALL=(ALL:ALL) ALL
+#> visudo -c
+/etc/sudoers: parsed OK
+#> id ana
+uid=1000(ana) gid=1000(ana) groups=1000(ana),998(wheel)
+</pre></li>
+  <li><strong>Rede (e SSH) no boot:</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> systemctl enable NetworkManager sshd
+</pre></li>
+</ol>
+
+<hr>
+
+<h2>Etapa 8: o GRUB</h2>
+<ol class="passo">
+  <li><strong>Instale e gere o menu</strong>, ainda no chroot:
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+Installing for x86_64-efi platform.
+Installation finished. No error reported.
+#> grub-mkconfig -o /boot/grub/grub.cfg
+Generating grub configuration file ...
+Found linux image: /boot/vmlinuz-linux
+Found initrd image: /boot/intel-ucode.img /boot/initramfs-linux.img
+Warning: os-prober will not be executed to detect other bootable partitions.
+…
+done
+</pre></li>
+  <li><strong>Confira a entrada no firmware:</strong>
+<pre class="term" data-host="archiso" data-user="root" data-cwd="/">#> efibootmgr
+BootCurrent: 0001
+Timeout: 0 seconds
+BootOrder: 0003,0000,0001,0002
+…
+Boot0003* GRUB	HD(1,GPT,42528876-2401-45ed-aa76-555fea61a03e,0x800,0x200000)/\EFI\GRUB\grubx64.efi
+</pre></li>
+</ol>
+<p><strong>O que você deve ver:</strong> <code>No error reported</code>, <code>Found linux image</code> e uma entrada <code>GRUB</code> em primeiro no <code>BootOrder</code>. Os avisos de <code>os-prober</code> são normais. Aula: <a href="bootloader.html">Bootloader</a>.</p>
+
+<div class="tip">
+<strong>Tire um snapshot agora</strong>
+<p>Antes de reiniciar, é um ótimo momento para um <strong>snapshot</strong> da VM (<em>Máquina → Criar Snapshot</em> com ela ligada, ou depois de desligar). Se o primeiro boot der errado, você volta a este ponto em segundos. A VM do guia tem os snapshots <code>instalacao-base</code> e <code>pronto-para-aulas</code>.</p>
+</div>
+
+<hr>
+
+<h2>Etapa 9: primeiro boot</h2>
+<ol class="passo">
+  <li><strong>Saia, desmonte, reinicie:</strong>
+<pre class="term" data-host="archiso" data-user="root">#> exit
+#> umount -R /mnt
+#> reboot
+</pre></li>
+  <li><strong>Ejete a ISO</strong> (<em>Dispositivos → Discos Ópticos → Remover disco do drive virtual</em>).</li>
+  <li><strong>Espere o menu do GRUB</strong> (5 segundos) e a tela <code>notebook login:</code>. Entre como <code>ana</code>.</li>
+  <li><strong>Confira:</strong>
+<pre class="term">$ hostnamectl
+ Static hostname: notebook
+…
+$ localectl
+System Locale: LANG=pt_BR.UTF-8
+    VC Keymap: br-abnt2
+   X11 Layout: (unset)
+$ systemctl --failed
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+
+0 loaded units listed.
+$ pacman -Q | wc -l
+193
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda3        25G  2.3G   21G  10% /
+</pre></li>
+</ol>
+<p><strong>O que você deve ver:</strong> <code>notebook</code>, <code>pt_BR.UTF-8</code>, <code>br-abnt2</code>, zero serviços com falha e uns 2,3 GB usados. O checklist completo (rede, fuso, sudo) está em <a href="primeiro-boot.html">Primeiro Boot</a>.</p>
+
+<hr>
+
+<h2>Etapa 10: pós-instalação</h2>
+<ol class="passo">
+  <li><strong>Ligue o relógio pela internet</strong> (a instalação manual não liga; veja <a href="primeiro-boot.html">Primeiro Boot</a>): <code>sudo timedatectl set-ntp true</code>.</li>
+  <li><strong>Atualize tudo</strong> e instale as ferramentas de compilação e o Git. Na VM do guia, o coordenador fez isso numa transação só, junto com os pacotes das outras aulas; para o projeto, basta:
+<pre class="term">$ sudo pacman -Syu
+$ sudo pacman -S --needed base-devel git
+</pre>
+O <code>-Syu</code> sincroniza e atualiza o sistema inteiro (<a href="atualizar.html">Atualizar o Sistema</a>); o <code>--needed</code> pula o que já estiver instalado. Se o pacman perguntar entre provedores, aceite o padrão.</li>
+  <li><strong>Instale o yay</strong> (ajudante do AUR) compilando o pacote <code>yay-bin</code>:
+<pre class="term">$ mkdir -p ~/aur &amp;&amp; cd ~/aur &amp;&amp; git clone https://aur.archlinux.org/yay-bin.git
+Clonando em 'yay-bin'...
+$ cd yay-bin
+$ makepkg -s --noconfirm
+==&gt; Criando o pacote: yay-bin 13.0.1-1 (sex 16 out 2026 12:59:31)
+…
+==&gt; Validando source_x86_64 arquivos com sha256sums...
+    yay_13.0.1_x86_64.tar.gz ... Passou
+…
+==&gt; Compilação concluída: yay-bin 13.0.1-1 (sex 16 out 2026 12:59:43)
+$ sudo pacman -U yay-bin-*.pkg.tar.zst
+…
+Pacotes (2) yay-bin-13.0.1-1  yay-bin-debug-13.0.1-1
+…
+:: Continuar a instalação? [S/n]
+…
+instalando yay-bin...
+</pre>
+Esses são os comandos da VM do guia (lá, o <code>pacman -U</code> foi rodado como root, com <code>--noconfirm</code>). O <code>makepkg -s</code> baixa e confere a fonte (<code>Passou</code>) e cria o pacote; o <code>pacman -U</code> instala o arquivo <code>.pkg.tar.zst</code> gerado. No dia a dia, <code>makepkg -si</code> faz as duas coisas de uma vez (o <code>-i</code> chama o <code>pacman -U</code> no fim, pedindo a senha do <code>sudo</code>). Antes de compilar qualquer coisa do AUR, leia o <code>PKGBUILD</code> (<a href="aur-seguranca.html">AUR com Segurança</a>).</li>
+  <li><strong>Confira:</strong>
+<pre class="term" data-cwd="~/aur/yay-bin">$ yay --version
+yay v13.0.1 - libalpm v16.0.1
+$ pacman -Qm
+yay-bin 13.0.1-1
+yay-bin-debug 13.0.1-1
+</pre>
+O <code>pacman -Qm</code> lista os pacotes que não vieram dos repositórios oficiais: os do AUR (o <code>-debug</code> é gerado junto pelo <code>makepkg</code>). Aulas: <a href="aur.html">O que é o AUR</a>, <a href="makepkg.html">makepkg</a>, <a href="yay-paru.html">yay e paru</a>.</li>
+</ol>
+
+<p><strong>Projeto concluído.</strong> Você tem um Arch mínimo, em português, com sudo, rede, GRUB e acesso ao AUR. Próximos projetos: <a href="projeto-desktop.html">Montar um Desktop KDE</a> e <a href="projeto-snapshots.html">Btrfs com Snapshots Automáticos</a>.</p>
+
+<hr>
+
+<h2>Problemas que aconteceram de verdade (e outros comuns)</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Etapa</th><th>Mensagem ou sintoma</th><th>Causa</th><th>Solução</th></tr>
+<tr><td>3</td><td><code>fw_platform_size</code> não existe</td><td>VM ou pendrive em modo BIOS</td><td>Ligar o EFI na VM (etapa 1) e reiniciar o live</td></tr>
+<tr><td>3</td><td><code>ping: archlinux.org: Temporary failure in name resolution</code></td><td>Sem rede no live</td><td>Cabo/NAT na VM; Wi-Fi com <code>iwctl</code> (<a href="ambiente-live.html">Ambiente Live</a>)</td></tr>
+<tr><td>6</td><td><code>WARNING: failed to rate http(s) download … timed out</code> (reflector)</td><td>Espelho lento no momento do teste <strong>(aconteceu na VM)</strong></td><td>Nada: o reflector o deixa de fora</td></tr>
+<tr><td>6</td><td><code>error: failed retrieving file '…' from mirror.ufscar.br : Operation too slow</code></td><td>Um espelho travou no meio do download <strong>(aconteceu na VM)</strong></td><td>Nada: o pacman tenta o próximo espelho da lista; só preocupe se a instalação terminar com erro</td></tr>
+<tr><td>6</td><td><code>WARNING: sd-vconsole: "/etc/vconsole.conf" not found</code></td><td>O pacstrap gera o initramfs antes de você configurar o teclado <strong>(aconteceu na VM)</strong></td><td>Normal; some no <code>mkinitcpio -P</code> da etapa 7</td></tr>
+<tr><td>7</td><td>Linhas repetidas no fstab</td><td><code>genfstab … &gt;&gt;</code> rodado duas vezes</td><td>Apagar as repetidas ou gerar de novo com <code>&gt;</code> (<a href="configurar.html">Configurar</a>)</td></tr>
+<tr><td>7</td><td><code>visudo: no editor found (editor path = /usr/bin/vi)</code></td><td>Não existe <code>vi</code></td><td><code>EDITOR=nano visudo</code></td></tr>
+<tr><td>8</td><td><code>EFI variables are not supported on this system.</code></td><td>Live iniciado em modo BIOS</td><td>Reiniciar em UEFI e rodar o <code>grub-install</code> de novo (<a href="bootloader.html">Bootloader</a>)</td></tr>
+<tr><td>9</td><td>Cai no firmware ou no shell UEFI</td><td>Firmware não acha a entrada do GRUB</td><td><code>grub-install … --removable</code> pelo chroot</td></tr>
+<tr><td>9</td><td>Liga sem rede</td><td>Faltou <code>systemctl enable NetworkManager</code></td><td><code>sudo systemctl enable --now NetworkManager</code></td></tr>
+<tr><td>10</td><td><code>erro: falha ao sincronizar todas as bases de dados (não foi possível travar a base de dados)</code></td><td>Um desligamento forçado deixou a trava <code>/var/lib/pacman/db.lck</code> para trás <strong>(aconteceu na VM)</strong></td><td>Conferir que nenhum pacman está rodando (<code>pgrep -a pacman</code> sem resposta) e apagar a trava: <code>sudo rm /var/lib/pacman/db.lck</code> (<a href="problemas-update.html">Erros de Atualização</a>)</td></tr>
+<tr><td>10</td><td><code>==&gt; Dependências faltando:</code> / <code>-&gt; fzf</code> no <code>makepkg</code></td><td>O pacote do AUR precisa de algo dos repositórios que não está instalado <strong>(aconteceu na VM, com o <code>downgrade</code>)</strong></td><td>Usar <code>makepkg -s</code> (instala as dependências) ou instalar a dependência antes (<a href="makepkg.html">makepkg</a>)</td></tr>
+<tr><td>depois</td><td>Partição EFI com <code>Dirty bit is set</code> no <code>fsck.fat</code></td><td>Desligamento forçado da VM <strong>(aconteceu na VM)</strong></td><td><code>fsck.fat</code> (pacote <code>dosfstools</code>) com a partição desmontada (<a href="recuperar-boot.html">Recuperar o Boot</a>)</td></tr>
+<tr><td>depois</td><td>Depois de instalar o <code>linux-lts</code>, o GRUB liga o LTS</td><td>A ordem dos kernels no menu <strong>(aconteceu na VM)</strong></td><td><code>GRUB_TOP_LEVEL</code> (<a href="kernels.html">Kernels</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Checklist final</h2>
+<ol class="passo">
+  <li>A VM liga sozinha, sem a ISO, e mostra o menu do GRUB.</li>
+  <li><code>notebook login:</code> aparece e a ana entra com a senha dela.</li>
+  <li><code>localectl</code> mostra <code>pt_BR.UTF-8</code> e <code>br-abnt2</code>; <code>timedatectl</code> mostra <code>America/Sao_Paulo</code>.</li>
+  <li><code>ping -c 3 archlinux.org</code> responde.</li>
+  <li><code>systemctl --failed</code> mostra <code>0 loaded units listed.</code></li>
+  <li><code>sudo whoami</code> responde <code>root</code>.</li>
+  <li><code>pacman -Syu</code> diz que não há nada a fazer.</li>
+  <li><code>yay --version</code> responde.</li>
+</ol>
+
+<div class="try" data-goal="ran:systemctl --failed,out:0 loaded units listed" data-solucao="systemctl --failed">
+<p class="try-task"><strong>Missão:</strong> no terminal simulado (que imita a VM do guia já instalada), faça o item 5 do checklist.</p>
+</div>
+
+<div class="try" data-goal="out:pt_BR.UTF-8,out:br-abnt2" data-solucao="cat /etc/locale.conf /etc/vconsole.conf">
+<p class="try-task"><strong>Missão:</strong> faça a primeira parte do item 3 do checklist: confira idioma e teclado com um comando só (o <code>localectl</code>, ou um <code>cat</code> dos dois arquivos que você escreveu na etapa 7).</p>
+</div>
+
+<hr>
+
+<h2>Na Arch Wiki</h2>
+<p>Este projeto é o <a href="https://wiki.archlinux.org/title/Installation_guide">Installation guide</a> da Arch Wiki (em português: <a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">Guia de instalação</a>) seguido à risca, mais os primeiros passos de <a href="https://wiki.archlinux.org/title/General_recommendations">General recommendations</a>. Para a máquina virtual, veja <a href="https://wiki.archlinux.org/title/VirtualBox">VirtualBox</a> (em especial "Installation in EFI mode"); para a etapa 10, <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a>, <a href="https://wiki.archlinux.org/title/Arch_User_Repository">Arch User Repository</a> e <a href="https://wiki.archlinux.org/title/AUR_helpers">AUR helpers</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -254,8 +254,8 @@ root
 
 <p>Se o <code>sudo</code> respondeu <code>root</code>, a linha do <code>wheel</code> no <code>sudoers</code> está certa (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
 
-<div class="try" data-goal="out:notebook" data-solucao="hostnamectl">
-<p class="try-task"><strong>Missão:</strong> no terminal simulado, use o comando do systemd que mostra o nome da máquina e o hardware.</p>
+<div class="try" data-goal="out:notebook" data-solucao="cat /etc/hostname">
+<p class="try-task"><strong>Missão:</strong> no terminal simulado, descubra o nome da máquina: com o comando do systemd que mostra o nome e o hardware, ou lendo o arquivo onde ele foi gravado na instalação.</p>
 </div>
 
 <div class="try" data-goal="ran:systemctl --failed,out:0 loaded units listed" data-solucao="systemctl --failed">
