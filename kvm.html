@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch KVM — máquinas virtuais com QEMU, libvirt e VirtualBox | Guia Arch</title>
+<meta name="description" content="Máquinas virtuais no Arch Linux: checar suporte com lscpu, QEMU/KVM + libvirt + virt-manager (tamanho real da instalação), grupo libvirt, virsh, e VirtualBox com virtualbox-host-dkms.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Máquinas Virtuais (KVM)</span></h1>
+
+<p class="intro">Uma <strong>máquina virtual</strong> (VM) é um computador inteiro simulado dentro do seu: com BIOS/UEFI, disco, placa de rede e o seu próprio kernel. Com ela você testa outra distribuição, o Windows ou a própria instalação do Arch sem arriscar a máquina de verdade. Todo este guia foi conferido numa VM. No Linux, o caminho mais rápido é o <strong>KVM</strong>, que já vem dentro do kernel.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As peças: KVM, QEMU, libvirt e virt-manager, e quem faz o quê.</li>
+  <li>Conferir se o seu processador tem virtualização (e o que aparece dentro de uma VM).</li>
+  <li>Instalar o conjunto no Arch, com o tamanho real, e pôr o usuário no grupo <code>libvirt</code>.</li>
+  <li>Os comandos básicos do <code>virsh</code>.</li>
+  <li>O VirtualBox no Arch: módulos do kernel e DKMS.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>As peças do quebra-cabeça</h2>
+<p>Pense numa locadora de carros. Alguém fabrica o motor, alguém monta o carro, alguém administra a frota e alguém atende no balcão:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>O que faz</th><th>Analogia</th><th>Pacote no Arch</th></tr>
+<tr><td><strong>KVM</strong></td><td>Módulo do kernel (<code>kvm_intel</code> ou <code>kvm_amd</code>) que usa a virtualização do processador para a VM rodar quase na velocidade real</td><td>O motor</td><td>Já vem no <code>linux</code></td></tr>
+<tr><td><strong>QEMU</strong></td><td>O programa que simula o resto do computador (disco, rede, vídeo, USB) e usa o KVM como motor</td><td>O carro</td><td><code>qemu-desktop</code> (ou <code>qemu-base</code>, sem interface gráfica)</td></tr>
+<tr><td><strong>libvirt</strong></td><td>Um serviço que guarda e administra as VMs (rede, discos, ligar no boot), com o comando <code>virsh</code></td><td>A administração da frota</td><td><code>libvirt</code></td></tr>
+<tr><td><strong>virt-manager</strong></td><td>Janela gráfica para criar e usar VMs (conversa com o libvirt)</td><td>O balcão</td><td><code>virt-manager</code></td></tr>
+<tr><td><strong>dnsmasq</strong></td><td>Dá IP (DHCP) e DNS para a rede padrão das VMs (NAT)</td><td>O manobrista</td><td><code>dnsmasq</code></td></tr>
+</table>
+</div>
+
+<p>Você pode usar o QEMU sozinho (linha de comando longa), mas o conjunto libvirt + virt-manager é o mais confortável, parecido com o VirtualBox.</p>
+
+<hr>
+
+<h2>O processador tem virtualização?</h2>
+<p>O KVM precisa de uma extensão do processador: <strong>VT-x</strong> na Intel (a opção <code>vmx</code>) ou <strong>AMD-V</strong> na AMD (a opção <code>svm</code>). Quase todo processador desde 2010 tem, mas ela pode estar <strong>desligada no firmware</strong> (BIOS/UEFI), com nomes como "Intel Virtualization Technology", "SVM Mode" ou "Virtualization".</p>
+
+<dl class="anatomy">
+  <dt>lscpu</dt><dd>Mostra as informações do processador (em pt_BR no Arch configurado).</dd>
+  <dt>| grep -i virt</dt><dd>Filtra as linhas com "virt", sem diferenciar maiúsculas (<code>-i</code>).</dd>
+</dl>
+
+<p>Num computador de verdade com Intel e VT-x ligado, a linha que interessa é <code>Virtualização: VT-x</code> (na AMD, <code>AMD-V</code>). Na VM do guia, que roda dentro do VirtualBox, a saída real é outra:</p>
+
+<pre class="term">$ lscpu | grep -i virt
+Tamanhos de endereço:                      46 bits physical, 48 bits virtual   « nada a ver: só tem "virtual" no nome
+Tipo de virtualização:                     completo                            « ESTE processador é virtual
+$ lscpu | grep -E 'Nome do modelo|hipervisor'
+Nome do modelo:                            Intel(R) Xeon(R) CPU E5-2630 v4 @ 2.20GHz
+Fabricante do hipervisor:                  KVM</pre>
+
+<p>Leia com atenção: <strong>não existe</strong> a linha <code>Virtualização: VT-x</code>. As linhas <code>Fabricante do hipervisor</code> e <code>Tipo de virtualização: completo</code> dizem o contrário do que procuramos: este Arch <strong>está dentro</strong> de uma VM (o VirtualBox se apresenta ao convidado pela interface "KVM" de paravirtualização), e não pode criar VMs aceleradas. O VirtualBox não repassa o VT-x para o convidado se a <strong>virtualização aninhada</strong> (<em>nested</em>) não estiver ligada nas configurações da VM.</p>
+
+<p>Outras três formas de conferir, com as saídas reais da VM:</p>
+
+<pre class="term">$ grep -c -E 'vmx|svm' /proc/cpuinfo
+0                                                « nenhum núcleo com vmx/svm
+$ echo $?
+1                                                « grep não achou nada
+$ ls -l /dev/kvm
+ls: não foi possível acessar '/dev/kvm': Arquivo ou diretório inexistente
+$ systemd-detect-virt
+oracle                                           « estou dentro do VirtualBox (Oracle)</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Num PC com VT-x/AMD-V ligado</th><th>Na VM do guia</th></tr>
+<tr><td><code>lscpu | grep -i virt</code></td><td><code>Virtualização: VT-x</code> (ou <code>AMD-V</code>)</td><td>Só "Tipo de virtualização: completo"</td></tr>
+<tr><td><code>grep -c -E 'vmx|svm' /proc/cpuinfo</code></td><td>Um número &gt; 0 (um por núcleo)</td><td><code>0</code></td></tr>
+<tr><td><code>ls -l /dev/kvm</code></td><td><code>crw-rw-rw- 1 root kvm … /dev/kvm</code></td><td>Não existe</td></tr>
+<tr><td><code>systemd-detect-virt</code></td><td><code>none</code> (máquina física)</td><td><code>oracle</code></td></tr>
+</table>
+</div>
+
+<p>Qual usar? <code>ls -l /dev/kvm</code> é o teste definitivo: se o arquivo existe, o KVM está pronto. Os outros dizem <strong>por que</strong> não está.</p>
+
+<h3>O que o kernel diz quando falta VT-x</h3>
+<p>O módulo do KVM é carregado sozinho no boot quando o processador tem suporte. Forçando o carregamento na VM do guia:</p>
+
+<pre class="term">#> modprobe kvm_intel
+modprobe: ERROR: could not insert 'kvm_intel': Operation not supported
+#> echo $?
+1
+#> dmesg | grep kvm_intel
+[ 1474.053519] kvm_intel: VMX not supported by CPU 1</pre>
+
+<p>Num PC físico, a mesma mensagem quer dizer: <strong>ligue a virtualização no firmware</strong>. (O teste carregou o módulo genérico <code>kvm</code> como dependência; ele foi descarregado depois com <code>modprobe -r kvm irqbypass</code>.)</p>
+
+<hr>
+
+<h2>Instalar QEMU/KVM, libvirt e virt-manager</h2>
+<p>O conjunto completo, visto na VM com o <code>previa</code> (a transação real, respondida com "não": nada foi instalado):</p>
+
+<pre class="term">#> previa -S qemu-desktop libvirt virt-manager dnsmasq
+resolvendo dependências...
+:: Há 2 provedores disponíveis para jack:
+:: Repositório extra
+   1) jack2  2) pipewire-jack
+
+Digite um número (padrão=1):
+procurando pacotes conflitantes...
+
+Pacotes (167) aalib-1.4rc5-19  adwaita-cursors-51.0-1  adwaita-fonts-51.0-2
+              adwaita-icon-theme-51.0-1  adwaita-icon-theme-legacy-46.2-3
+              …                                           « (encurtado: 167 pacotes)
+              qemu-audio-pipewire-11.1.2-1  qemu-base-11.1.2-1
+              …
+              qemu-system-x86-11.1.2-1  qemu-system-x86-firmware-11.1.2-1
+              …
+              virt-install-5.1.0-4  virtiofsd-1.14.0-1
+              …
+              dnsmasq-2.93-1  libvirt-1:12.8.0-1
+              qemu-desktop-11.1.2-1  virt-manager-5.1.0-4
+
+Tamanho total download:    96,19 MiB
+Tamanho total instalado:  467,29 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Três coisas para entender nesta saída:</p>
+<ul>
+  <li><strong>A pergunta de provedor.</strong> Algum pacote precisa de "um JACK" (servidor de áudio profissional), e dois pacotes oferecem isso. Se o seu Arch usa PipeWire para o som (o padrão nos desktops atuais), escolha <code>2) pipewire-jack</code>; o padrão <code>1) jack2</code> instala um servidor de áudio à parte. Veja <a href="pacman-avancado.html">pacman Avançado</a>.</li>
+  <li><strong>167 pacotes, 467 MiB.</strong> Numa instalação mínima (sem desktop), o virt-manager traz GTK, ícones e bibliotecas de vídeo e áudio. Num desktop GNOME ou KDE, boa parte já estaria instalada e a conta seria bem menor.</li>
+  <li><strong><code>qemu-desktop</code> é um meta-pacote</strong> que puxa dezenas de <code>qemu-*</code> pequenos (áudio, vídeo, USB, interfaces). Para um servidor sem tela, <code>qemu-base</code> basta: 22 pacotes, 23,21 MiB de download e 124,04 MiB instalados (também conferido com o <code>previa</code>).</li>
+</ul>
+
+<h3>Depois de instalar (ilustrativo)</h3>
+<p>Como sempre no Arch, instalar não liga o serviço, nem dá permissão ao seu usuário:</p>
+
+<ol class="passo">
+<li><strong>Ligar o libvirt</strong>. O libvirt moderno é dividido em vários daemons pequenos, ativados por socket; o atalho clássico ainda funciona:
+<pre class="file" data-file="ilustrativo">sudo systemctl enable --now libvirtd.service</pre></li>
+<li><strong>Entrar no grupo <code>libvirt</code></strong> para criar e controlar VMs do sistema sem digitar senha a cada vez. O grupo é criado pelo próprio pacote:
+<pre class="file" data-file="ilustrativo">sudo usermod -aG libvirt ana
+# saia da sessão e entre de novo, depois confira:
+groups</pre></li>
+<li><strong>Ligar a rede padrão</strong> (NAT, 192.168.122.0/24), que vem desligada:
+<pre class="file" data-file="ilustrativo">sudo virsh net-start default
+sudo virsh net-autostart default</pre></li>
+<li><strong>Abrir o virt-manager</strong> pelo menu ("Gerenciador de máquinas virtuais") e criar a VM: escolher a ISO, memória, CPUs, disco. Marque "Personalizar configuração antes de instalar" e, em Visão geral → Firmware, escolha <strong>UEFI</strong> (vem do pacote <code>edk2-ovmf</code>, que está na lista acima) para treinar a instalação UEFI do Arch.</li>
+</ol>
+
+<div class="note">
+<strong>Sessão do sistema × sessão do usuário</strong>
+<p>O libvirt tem duas "conexões": <code>qemu:///system</code> (VMs do sistema, com rede NAT completa; é a padrão do virt-manager e a que precisa do grupo <code>libvirt</code>) e <code>qemu:///session</code> (VMs só do seu usuário, sem root, com rede mais limitada). Para começar, use a do sistema.</p>
+</div>
+
+<div class="warning">
+<strong>O grupo libvirt é poderoso</strong>
+<p>Quem controla o libvirt do sistema pode criar uma VM com acesso aos discos da máquina. Como o grupo <code>docker</code> (veja <a href="containers.html">Docker e Podman</a>), ponha nele só quem já poderia ser administrador. Grupos em <a href="usuarios.html">Usuários e Grupos</a>.</p>
+</div>
+
+<hr>
+
+<h2>virsh: o libvirt pelo terminal (ilustrativo)</h2>
+<p>O <code>virsh</code> faz tudo o que o virt-manager faz, e é o jeito de administrar VMs num servidor sem tela. Os comandos mais usados (a VM do guia não tem VT-x, então eles não foram rodados aqui):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>virsh list --all</code></td><td>Lista as VMs (ligadas e desligadas), com estado <code>executando</code>/<code>desligado</code></td></tr>
+<tr><td><code>virsh start arch-teste</code></td><td>Liga a VM</td></tr>
+<tr><td><code>virsh shutdown arch-teste</code></td><td>Pede para a VM desligar (como apertar o botão)</td></tr>
+<tr><td><code>virsh destroy arch-teste</code></td><td>Desliga à força (como tirar da tomada). Não apaga nada, apesar do nome</td></tr>
+<tr><td><code>virsh autostart arch-teste</code></td><td>Liga a VM junto com o computador</td></tr>
+<tr><td><code>virsh dominfo arch-teste</code></td><td>Memória, CPUs, estado</td></tr>
+<tr><td><code>virsh snapshot-create-as arch-teste antes-update</code></td><td>Tira um snapshot (disco qcow2)</td></tr>
+<tr><td><code>virsh undefine arch-teste --remove-all-storage</code></td><td>Apaga a VM <strong>e os discos</strong> (cuidado)</td></tr>
+<tr><td><code>virsh net-list --all</code></td><td>Lista as redes virtuais</td></tr>
+</table>
+</div>
+
+<p>No libvirt, uma VM se chama <strong>domínio</strong> (<em>domain</em>), por isso <code>dominfo</code>. A configuração de cada VM é um arquivo XML (<code>virsh dumpxml arch-teste</code> mostra; <code>virsh edit arch-teste</code> edita).</p>
+
+<h3>O disco da VM: qemu-img</h3>
+<p>Os discos ficam em <code>/var/lib/libvirt/images/</code>, no formato <strong>qcow2</strong> (<em>QEMU copy-on-write</em>): o arquivo cresce conforme a VM grava e aceita snapshots.</p>
+<pre class="file" data-file="ilustrativo">qemu-img create -f qcow2 arch-teste.qcow2 20G   # 20 GiB "prometidos", quase nada ocupado
+qemu-img info arch-teste.qcow2                    # tamanho virtual × tamanho real no disco</pre>
+
+<div class="tip">
+<strong>Btrfs e discos de VM</strong>
+<p>Se a sua raiz é Btrfs, desligue o copy-on-write na pasta das imagens antes de criar os discos (<code>chattr +C /var/lib/libvirt/images</code>): Btrfs com CoW em cima de qcow2 (que também é CoW) fica lento e fragmentado. Veja <a href="btrfs.html">Btrfs e Subvolumes</a>.</p>
+</div>
+
+<hr>
+
+<h2>VirtualBox no Arch</h2>
+<p>O VirtualBox (da Oracle) é o que roda a VM deste guia. Ele <strong>não usa o KVM</strong>: traz seus próprios módulos de kernel (<code>vboxdrv</code> e companhia). E aqui mora a pegadinha do Arch: módulos de kernel precisam ser compilados para <strong>cada versão</strong> de kernel, e o kernel do Arch muda quase toda semana.</p>
+
+<pre class="term">#> previa -S virtualbox
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (43) dkms-3.4.4-1  double-conversion-3.4.0-1  glu-9.0.3-3
+             …                                          « (encurtado: bibliotecas Qt 6, xcb, SDL)
+             qt6-base-6.12.0-3  qt6-scxml-6.12.0-1  qt6-tools-6.12.0-1
+             …
+             virtualbox-host-dkms-7.2.20-1  …  virtualbox-7.2.20-1
+
+Tamanho total download:    85,60 MiB
+Tamanho total instalado:  376,91 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>Repare que veio <code>virtualbox-host-dkms</code> e <code>dkms</code>. O pacote <code>virtualbox</code> depende de <code>VIRTUALBOX-HOST-MODULES</code> (um nome "virtual", em maiúsculas), e quem o fornece é o <code>virtualbox-host-dkms</code>:</p>
+
+<pre class="term">$ pacman -Si virtualbox-host-dkms | grep -E '^(Provê|Depende)'
+Provê                : VIRTUALBOX-HOST-MODULES
+Depende de           : dkms  gcc  make
+$ pacman -Si virtualbox-host-modules-arch
+erro: o pacote "virtualbox-host-modules-arch" não foi encontrado</pre>
+
+<h3>virtualbox-host-modules-arch × virtualbox-host-dkms</h3>
+<p>Durante anos o Arch ofereceu duas opções. Em outubro de 2026, só a segunda existe nos repositórios (a primeira aparece em muitos tutoriais antigos):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>virtualbox-host-modules-arch</code></th><th><code>virtualbox-host-dkms</code></th></tr>
+<tr><td>Como era/é</td><td>Módulos já compilados para o kernel <code>linux</code> padrão</td><td>Código-fonte; o <strong>DKMS</strong> compila os módulos na sua máquina a cada kernel novo</td></tr>
+<tr><td>Kernels atendidos</td><td>Só o <code>linux</code></td><td>Qualquer um (<code>linux-lts</code>, <code>linux-zen</code>…), desde que o <code>-headers</code> dele esteja instalado</td></tr>
+<tr><td>Precisa de</td><td>Nada</td><td><code>linux-headers</code> (e <code>linux-lts-headers</code> etc. para os outros kernels)</td></tr>
+<tr><td>No Arch hoje</td><td>Não encontrado no repositório (out/2026)</td><td>A opção oficial</td></tr>
+</table>
+</div>
+
+<p>DKMS (<em>Dynamic Kernel Module Support</em>) é um sistema que, por um <a href="hooks.html">hook do pacman</a>, recompila módulos de terceiros sempre que um kernel é instalado ou atualizado. Por isso a atualização do kernel fica alguns minutos mais lenta. Se esquecer os headers, o VirtualBox não liga as VMs ("Kernel driver not installed (rc=-1908)"). Veja <a href="kernels.html">Kernels</a>.</p>
+
+<pre class="file" data-file="ilustrativo: VirtualBox no Arch">sudo pacman -S virtualbox linux-headers     # + linux-lts-headers se usar o LTS
+sudo modprobe vboxdrv                        # ou reinicie
+sudo usermod -aG vboxusers ana               # só para usar USB nas VMs</pre>
+
+<div class="note">
+<strong>Arch como convidado</strong>
+<p>Se o Arch é a VM (como no guia), o pacote é outro: <code>virtualbox-guest-utils</code> (redimensionar a tela, área de transferência, pastas compartilhadas), com o serviço <code>vboxservice</code>. No QEMU/KVM, o equivalente é <code>qemu-guest-agent</code> e, para a tela, <code>spice-vdagent</code>.</p>
+</div>
+
+<hr>
+
+<h2>Qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>QEMU/KVM + virt-manager</th><th>VirtualBox</th><th>GNOME Boxes</th></tr>
+<tr><td>Motor</td><td>KVM (no kernel)</td><td>Módulos próprios (DKMS)</td><td>QEMU/KVM por baixo</td></tr>
+<tr><td>Desempenho</td><td>O melhor no Linux</td><td>Bom</td><td>O do KVM</td></tr>
+<tr><td>Atualização do kernel</td><td>Nada a fazer</td><td>DKMS recompila (precisa dos headers)</td><td>Nada a fazer</td></tr>
+<tr><td>Facilidade</td><td>Média (muitas opções)</td><td>Alta</td><td>Muito alta (poucas opções)</td></tr>
+<tr><td>Outros sistemas host</td><td>Só Linux</td><td>Linux, Windows, macOS (a mesma VM roda em todos)</td><td>Só Linux</td></tr>
+<tr><td>Servidor sem tela</td><td>Sim (<code>virsh</code>)</td><td>Sim (<code>VBoxManage</code>, <code>VBoxHeadless</code>)</td><td>Não</td></tr>
+<tr><td><strong>Escolha quando…</strong></td><td>Quer o melhor desempenho e aprender a ferramenta "de servidor"</td><td>Já tem VMs do VirtualBox ou divide-as com Windows/macOS</td><td>Só quer testar uma ISO rapidinho</td></tr>
+</table>
+</div>
+
+<p>Containers (<a href="containers.html">Docker e Podman</a>) são outra coisa: mais leves, mas sempre com o mesmo kernel. Para testar outra distribuição Linux só pela linha de comando, um container basta; para testar uma <strong>instalação</strong>, um bootloader ou outro kernel, só uma VM serve.</p>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"KVM is not available" / "KVM não disponível"</strong>
+<p><strong>O que aconteceu:</strong> o virt-manager não achou <code>/dev/kvm</code>. A VM até roda, mas emulada, dezenas de vezes mais lenta.</p>
+<p><strong>Como confirmar:</strong> <code>ls -l /dev/kvm</code>; <code>lscpu | grep -i virt</code>; <code>dmesg | grep -i kvm</code> (ex.: <code>kvm_intel: VMX not supported by CPU 1</code>).</p>
+<p><strong>Como resolver:</strong> ligue VT-x/AMD-V (às vezes "SVM") no firmware. Se o Arch é ele mesmo uma VM, ligue a virtualização aninhada no programa de fora (no VirtualBox: Configurações → Sistema → Processador → "Habilitar VT-x/AMD-V aninhado").</p>
+</div>
+
+<div class="cenario">
+<strong>"modprobe: ERROR: could not insert 'kvm_intel': Operation not supported"</strong>
+<p><strong>O que aconteceu:</strong> o processador não oferece VMX (desligado no firmware ou VM sem aninhamento). Saída real na VM do guia, acima.</p>
+<p><strong>Como resolver:</strong> o mesmo do anterior. Não adianta instalar nada.</p>
+</div>
+
+<div class="cenario">
+<strong>"authentication unavailable: no polkit agent available" / "Permission denied" no virt-manager</strong>
+<p><strong>O que aconteceu:</strong> seu usuário não está no grupo <code>libvirt</code>, ou entrou mas não fez logout.</p>
+<p><strong>Como resolver:</strong> <code>sudo usermod -aG libvirt $USER</code>, saia e entre de novo, confira com <code>groups</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Network 'default' is not active"</strong>
+<p><strong>O que aconteceu:</strong> a rede NAT padrão vem desligada (ou falta o <code>dnsmasq</code>).</p>
+<p><strong>Como resolver:</strong> <code>sudo virsh net-start default</code> e <code>sudo virsh net-autostart default</code>; confira <code>pacman -Q dnsmasq</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>VirtualBox: "Kernel driver not installed (rc=-1908)"</strong>
+<p><strong>O que aconteceu:</strong> o módulo <code>vboxdrv</code> não foi compilado para o kernel atual: faltam os headers ou você atualizou o kernel e não reiniciou.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S linux-headers</code> (o DKMS compila na hora), depois <code>sudo modprobe vboxdrv</code> ou reinicie.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>lscpu | grep -i virt</code></td><td>VT-x/AMD-V presente? (ou "estou numa VM")</td></tr>
+<tr><td><code>ls -l /dev/kvm</code></td><td>O KVM está pronto?</td></tr>
+<tr><td><code>systemd-detect-virt</code></td><td>Estou numa VM? Qual?</td></tr>
+<tr><td><code>sudo pacman -S qemu-desktop libvirt virt-manager dnsmasq</code></td><td>Conjunto completo (desktop)</td></tr>
+<tr><td><code>sudo pacman -S qemu-base libvirt dnsmasq</code></td><td>Conjunto de servidor (sem tela)</td></tr>
+<tr><td><code>sudo systemctl enable --now libvirtd</code></td><td>Liga o libvirt</td></tr>
+<tr><td><code>sudo usermod -aG libvirt ana</code></td><td>Permite usar VMs do sistema</td></tr>
+<tr><td><code>virsh list --all</code></td><td>Lista as VMs</td></tr>
+<tr><td><code>qemu-img create -f qcow2 disco.qcow2 20G</code></td><td>Cria um disco de VM</td></tr>
+<tr><td><code>sudo pacman -S virtualbox linux-headers</code></td><td>VirtualBox (módulos via DKMS)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O teste definitivo</h3>
+<p>Qual arquivo de dispositivo precisa existir para o KVM funcionar?</p>
+<div class="ex-code">ls -l <input data-answer="/dev/kvm" aria-label="arquivo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O grupo</h3>
+<p>Complete para dar à ana acesso às VMs do sistema:</p>
+<div class="ex-code">sudo usermod -aG <input data-answer="libvirt" aria-label="grupo"> ana</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Na VM do guia, <code>lscpu</code> mostra "Fabricante do hipervisor: KVM" e "Tipo de virtualização: completo". Isso quer dizer que…</p>
+<label><input type="radio" name="q3"> o KVM está pronto para criar VMs.</label>
+<label><input type="radio" name="q3"> o processador tem VT-x ligado.</label>
+<label><input type="radio" name="q3"> este Arch está rodando dentro de uma máquina virtual.</label>
+<label><input type="radio" name="q3"> falta instalar o <code>qemu-desktop</code>.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Você usa <code>linux-lts</code> e instalou o VirtualBox. O que mais precisa?</p>
+<label><input type="radio" name="q4"> <code>virtualbox-host-modules-arch</code>.</label>
+<label><input type="radio" name="q4"> <code>linux-lts-headers</code>, para o DKMS compilar os módulos.</label>
+<label><input type="radio" name="q4"> Nada: o VirtualBox usa o KVM.</label>
+<label><input type="radio" name="q4"> O grupo <code>libvirt</code>.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para um servidor sem interface gráfica, qual pacote do QEMU é mais adequado?</p>
+<label><input type="radio" name="q5"> <code>qemu-base</code></label>
+<label><input type="radio" name="q5"> <code>qemu-desktop</code></label>
+<label><input type="radio" name="q5"> <code>virt-manager</code></label>
+<label><input type="radio" name="q5"> <code>virtualbox</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>KVM (kernel) é o motor, QEMU simula o computador, libvirt administra, virt-manager é a janela.</li>
+  <li>Sem VT-x/AMD-V não há KVM: <code>ls -l /dev/kvm</code> é o teste; ligue no firmware.</li>
+  <li>Dentro de uma VM, <code>lscpu</code> mostra o hipervisor, não "VT-x"; só com virtualização aninhada dá para criar VMs.</li>
+  <li><code>qemu-desktop libvirt virt-manager dnsmasq</code>, <code>systemctl enable --now libvirtd</code>, grupo <code>libvirt</code>.</li>
+  <li>VirtualBox no Arch: módulos via <code>virtualbox-host-dkms</code> + <code>linux-headers</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> <a href="https://wiki.archlinux.org/title/KVM">KVM</a> (checar suporte, virtualização aninhada), <a href="https://wiki.archlinux.org/title/QEMU">QEMU</a> (QEMU sem libvirt, qcow2, UEFI com OVMF), <a href="https://wiki.archlinux.org/title/Libvirt">libvirt</a> (grupos, redes, <code>virsh</code>), <a href="https://wiki.archlinux.org/title/VirtualBox">VirtualBox</a> (módulos, convidado Arch) e <a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support">Dynamic Kernel Module Support</a> (DKMS).</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
