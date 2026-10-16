@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Funções — organizar scripts Bash em funções | Guia Arch</title>
+<meta name="description" content="Funções no Bash para o usuário do Arch Linux: definir, chamar, argumentos, local, return x echo, bibliotecas com source, limpeza com trap e um script de manutenção (checkupdates, órfãos, paccache, serviços, AUR) organizado com main, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Funções</span></h1>
+
+<p class="intro">Uma <strong>função</strong> é um bloco de comandos com nome. Você escreve uma vez e chama quantas vezes quiser, como se fosse um comando novo. Funções deixam scripts grandes organizados em partes pequenas, cada uma com um trabalho só, como o script de manutenção do Arch que você vai montar no fim desta aula.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como definir e chamar uma função, e passar argumentos para ela.</li>
+  <li>A diferença entre <code>return</code> (código de saída: "está instalado?") e <code>echo</code> (resultado: "qual a versão?").</li>
+  <li>Por que usar <code>local</code> nas variáveis da função.</li>
+  <li>Como reaproveitar funções com <code>source</code> e fazer limpeza automática com <code>trap</code>.</li>
+  <li>Como organizar um script real inteiro em funções, com uma função <code>main</code>.</li>
+</ul>
+</div>
+
+<p>Antes, leia <a href="script-condicionais.html">Condicionais</a> e <a href="script-lacos.html">Laços</a>. Os exemplos rodam na máquina <strong>notebook</strong>, com a usuária <strong>ana</strong>; as saídas vêm de um Arch Linux real.</p>
+
+<hr>
+
+<h2>Definir e chamar</h2>
+<p>Pense numa função como uma <strong>receita com nome</strong> dentro do livro de receitas (o script). Em vez de copiar os passos toda vez, você escreve "faça o molho" e todo mundo sabe o que é.</p>
+
+<pre class="syntax">nome_da_funcao() {
+  comandos
+}
+
+nome_da_funcao arg1 arg2</pre>
+
+<dl class="anatomy">
+  <dt>titulo()</dt><dd>O nome da função. Os parênteses vazios dizem "isto é uma função". Nunca se coloca nada dentro deles.</dd>
+  <dt>{</dt><dd>Abre o corpo da função.</dd>
+  <dt>echo "== $1 =="</dt><dd>O que a função faz. <code>$1</code> é o primeiro argumento que <strong>ela</strong> recebeu.</dd>
+  <dt>}</dt><dd>Fecha o corpo.</dd>
+</dl>
+
+<pre class="file" data-file="titulo.sh">#!/usr/bin/env bash
+titulo() {
+  echo "== $1 =="
+}
+
+titulo "Pacotes do AUR"
+pacman -Qqm
+titulo "Kernel"
+uname -r</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./titulo.sh
+== Pacotes do AUR ==
+downgrade
+paru-bin
+yay-bin
+yay-bin-debug
+== Kernel ==
+7.2.10-arch1-1</pre>
+
+<ul>
+  <li>Definir a função <strong>não executa nada</strong>. Ela só roda quando é chamada.</li>
+  <li>A função precisa estar <strong>definida antes</strong> da linha que a chama, ou seja, mais acima no arquivo.</li>
+  <li>Para chamar, escreva o nome como um comando, <strong>sem parênteses</strong>: <code>titulo "Kernel"</code>.</li>
+</ul>
+
+<h3>Também funciona no terminal</h3>
+<p>Funções não são só para scripts. Crie uma direto no terminal e veja como o Bash a enxerga:</p>
+<pre class="term">$ versao() { pacman -Q "$1" | cut -d' ' -f2; }
+$ versao bash
+5.3.20-1
+$ type versao
+versao é uma função
+versao ()
+{
+    pacman -Q "$1" | cut -d' ' -f2
+}</pre>
+<p>Ela dura até você fechar o terminal. Para ter sempre, coloque no <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>).</p>
+
+<div class="try" data-goal="func:versao,out:5.3.20-1" data-solucao="versao() { pacman -Q &quot;$1&quot; | cut -d' ' -f2; };;type versao;;versao bash">
+<p class="try-task"><strong>Missão:</strong> crie no terminal a função <code>versao() { pacman -Q "$1" | cut -d' ' -f2; }</code> (atenção ao <code>;</code> antes do <code>}</code>) e chame <code>versao bash</code>. Depois veja a definição com <code>type versao</code> e experimente <code>versao pacman</code>.</p>
+</div>
+
+<div class="note">
+<strong>Outra forma de escrever</strong>
+<p>O Bash também aceita <code>function titulo { … }</code>. Funciona igual, mas a forma <code>titulo() { … }</code> é a mais comum e também roda em outros shells.</p>
+</div>
+
+<hr>
+
+<h2>Argumentos dentro da função</h2>
+<p>Dentro da função, <code>$1</code>, <code>$2</code>, <code>$@</code> e <code>$#</code> são os argumentos <strong>da função</strong>, não os do script. Cada função recebe os seus.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Dentro da função significa</th></tr>
+<tr><td><code>$1</code>, <code>$2</code>…</td><td>1º, 2º… argumento passado à função</td></tr>
+<tr><td><code>$@</code></td><td>Todos os argumentos (use <code>"$@"</code>, entre aspas)</td></tr>
+<tr><td><code>$#</code></td><td>Quantos argumentos a função recebeu</td></tr>
+<tr><td><code>$0</code></td><td>Continua sendo o nome do script</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="argumentos.sh">#!/usr/bin/env bash
+mostrar() {
+  echo "Recebi $# argumento(s): $@"
+}
+
+mostrar bash pacman linux
+mostrar "uma frase só"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./argumentos.sh
+Recebi 3 argumento(s): bash pacman linux
+Recebi 1 argumento(s): uma frase só          « com aspas, a frase é um argumento só</pre>
+
+<hr>
+
+<h2>O que a função devolve: echo ou return</h2>
+<p>Esta é a parte que mais confunde. Uma função pode devolver duas coisas diferentes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>echo</code> (saída)</th><th><code>return</code> (código)</th></tr>
+<tr><td>O que é</td><td>Texto escrito na tela</td><td>Número de 0 a 255, o código de saída</td></tr>
+<tr><td>Para quê</td><td>Devolver um resultado ("qual a versão do pacman?")</td><td>Responder sim ou não ("o htop está instalado?")</td></tr>
+<tr><td>Como pegar</td><td><code>valor=$(funcao)</code></td><td><code>if funcao; then</code> ou <code>$?</code></td></tr>
+</table>
+</div>
+
+<h3>Devolver um resultado com echo</h3>
+<pre class="file" data-file="versao.sh">#!/usr/bin/env bash
+versao() {
+  local linha
+  linha=$(pacman -Q "$1")
+  echo "${linha#* }"
+}
+
+v=$(versao pacman)
+echo "O pacman está na versão $v"</pre>
+
+<dl class="anatomy">
+  <dt>linha=$(pacman -Q "$1")</dt><dd>Guarda "pacman 7.1.0.r9.g54d9411-3".</dd>
+  <dt>echo "${linha#* }"</dt><dd>Escreve a linha sem o começo até o primeiro espaço: só a versão. Esse <code>echo</code> é o "resultado" da função.</dd>
+  <dt>v=$(versao pacman)</dt><dd>Captura o que a função escreveu, em vez de deixar ir para a tela.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./versao.sh
+O pacman está na versão 7.1.0.r9.g54d9411-3</pre>
+
+<h3>Responder "sim ou não" com o código</h3>
+<p>Uma função que só testa algo pode usar o código do último comando. Aqui, o código do <code>pacman -Qi</code> vira o código da função:</p>
+
+<pre class="file" data-file="instalado.sh">#!/usr/bin/env bash
+instalado() {
+  pacman -Qi "$1" &gt; /dev/null 2&gt;&amp;1
+}
+
+if instalado htop; then
+  echo "htop está instalado"
+fi
+
+instalado firefox
+echo "Código devolvido para firefox: $?"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./instalado.sh
+htop está instalado
+Código devolvido para firefox: 1</pre>
+
+<p>Repare como <code>if instalado htop</code> se lê quase como português. Com <code>return</code>, você escolhe o código explicitamente: <code>return 0</code> (sucesso) ou <code>return 1</code> (falha). Sem <code>return</code>, a função devolve o código do último comando que rodou.</p>
+
+<div class="warning">
+<strong>return não devolve texto nem números grandes</strong>
+<p><code>return 300</code> não devolve 300: o código só vai de 0 a 255, e 300 vira 44 (300 − 256). Para devolver um valor, use <code>echo</code>.</p>
+<pre class="term">$ f() { return 300; }
+$ f; echo $?
+44</pre>
+</div>
+
+<div class="tryscript" data-file="confere-pacotes.sh" data-goal="out:htop: sim,out:firefox: não,src:instalado\s*\(\)">
+<p class="try-task"><strong>Missão:</strong> o laço já chama <code>instalado "$p"</code>, mas a função ainda não existe. Escreva, <strong>antes</strong> do laço, a função <code>instalado()</code> que devolve o código do <code>pacman -Qi "$1"</code> (sem mostrar nada na tela) e clique em Rodar. A saída deve ter <code>htop: sim</code> e <code>firefox: não</code>.</p>
+<pre class="script">#!/usr/bin/env bash
+# escreva a função instalado() aqui
+
+
+for p in htop firefox vim; do
+  if instalado "$p"; then
+    echo "$p: sim"
+  else
+    echo "$p: não"
+  fi
+done
+</pre>
+<pre class="solucao">#!/usr/bin/env bash
+instalado() {
+  pacman -Qi "$1" &gt; /dev/null 2&gt;&amp;1
+}
+
+for p in htop firefox vim; do
+  if instalado "$p"; then
+    echo "$p: sim"
+  else
+    echo "$p: não"
+  fi
+done
+</pre>
+</div>
+
+<hr>
+
+<h2>Variáveis locais: <code>local</code></h2>
+<p>Por padrão, uma variável criada dentro da função vale <strong>no script inteiro</strong>. Isso pode estragar uma variável de mesmo nome usada em outro lugar. Com <code>local</code>, ela só existe dentro da função.</p>
+
+<pre class="file" data-file="local.sh">#!/usr/bin/env bash
+pacote="global"
+
+sem_local() { pacote="mudei"; }
+com_local() { local pacote="só aqui dentro"; echo "dentro: $pacote"; }
+
+com_local
+echo "depois de com_local: $pacote"
+sem_local
+echo "depois de sem_local: $pacote"</pre>
+
+<pre class="term" data-cwd="~/scripts">$ ./local.sh
+dentro: só aqui dentro
+depois de com_local: global                « o local não vazou
+depois de sem_local: mudei                 « sem local, a variável de fora foi alterada</pre>
+
+<div class="tip">
+<strong>Regra prática</strong>
+<p>Toda variável criada dentro de uma função leva <code>local</code>, a não ser que você queira mesmo mudar uma variável do script. Em laços dentro de funções, inclusive a do <code>for</code>: <code>local p; for p in …</code>.</p>
+</div>
+
+<hr>
+
+<h2>Reaproveitar funções: <code>source</code></h2>
+<p>Funções que você usa em vários scripts podem morar num arquivo separado, uma "biblioteca". O <code>source</code> (ou o atalho <code>.</code>) carrega esse arquivo dentro do script atual. Aqui, mensagens no estilo do <code>makepkg</code>, com <code>==&gt;</code> na frente:</p>
+
+<pre class="file" data-file="lib.sh"># lib.sh — funções reaproveitáveis (não precisa de shebang nem chmod +x)
+info() { echo "==&gt; $*"; }
+erro() { echo "==&gt; ERRO: $*" &gt;&amp;2; }</pre>
+
+<pre class="file" data-file="usa-lib.sh">#!/usr/bin/env bash
+source "$(dirname "$0")/lib.sh"
+
+info "Contando os pacotes do AUR"
+info "Você tem $(pacman -Qqm | wc -l) pacotes do AUR"
+erro "Exemplo de mensagem de erro"</pre>
+
+<dl class="anatomy">
+  <dt>source</dt><dd>Lê o arquivo e executa no script atual, como se o conteúdo estivesse colado ali.</dd>
+  <dt>"$(dirname "$0")</dt><dd>A pasta onde o script está. Assim ele acha a <code>lib.sh</code> de qualquer lugar de onde for chamado.</dd>
+  <dt>/lib.sh"</dt><dd>O arquivo da biblioteca.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./usa-lib.sh
+==&gt; Contando os pacotes do AUR
+==&gt; Você tem 4 pacotes do AUR
+==&gt; ERRO: Exemplo de mensagem de erro</pre>
+
+<p>É exatamente assim que o <code>makepkg</code> lê um <a href="pkgbuild.html">PKGBUILD</a>: o PKGBUILD é um arquivo Bash cheio de variáveis e funções (<code>build()</code>, <code>package()</code>), e o <code>makepkg</code> o carrega com <code>source</code> e chama as funções na ordem certa.</p>
+
+<hr>
+
+<h2>Limpeza automática: <code>trap</code></h2>
+<p>Scripts às vezes criam arquivos temporários. O <code>trap</code> ("armadilha") registra uma função para rodar quando o script termina, mesmo que termine por erro ou por <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+
+<pre class="file" data-file="temporario.sh">#!/usr/bin/env bash
+tmp=$(mktemp)
+
+limpar() {
+  rm -f "$tmp"
+  echo "Arquivo temporário apagado."
+}
+trap limpar EXIT
+
+pacman -Qqe &gt; "$tmp"
+echo "Guardei $(wc -l &lt; "$tmp") nomes em $tmp"
+exit 0</pre>
+
+<dl class="anatomy">
+  <dt>mktemp</dt><dd>Cria um arquivo vazio com nome aleatório em <code>/tmp</code> e mostra o caminho.</dd>
+  <dt>trap</dt><dd>Registra o que fazer quando algo acontecer.</dd>
+  <dt>limpar</dt><dd>A função que será chamada.</dd>
+  <dt>EXIT</dt><dd>Quando: na saída do script, por qualquer motivo.</dd>
+</dl>
+
+<pre class="term" data-cwd="~/scripts">$ ./temporario.sh
+Guardei 45 nomes em /tmp/tmp.HZVPyWAMIR
+Arquivo temporário apagado.</pre>
+
+<p>O nome muda a cada execução. No Arch, <code>/tmp</code> fica na memória (é um <code>tmpfs</code>) e é esvaziado a cada boot, mas não conte com isso: limpe você mesmo. O próprio <code>checkupdates</code> usa um <code>trap … EXIT</code> para apagar a trava do banco temporário dele.</p>
+
+<hr>
+
+<h2>Exemplo completo: o relatório de manutenção</h2>
+<p>Este script junta as aulas de shell script num relatório da saúde do Arch. Ele <strong>só mostra</strong>, não muda nada. Cada função tem um trabalho; a <code>main</code> coordena tudo.</p>
+
+<pre class="file" data-file="~/.local/bin/manutencao">#!/usr/bin/env bash
+# manutencao — um relatório rápido da saúde do Arch
+# Uso: manutencao        (não muda nada; só mostra)
+
+set -uo pipefail
+
+titulo() {
+  echo
+  echo "== $1 =="
+}
+
+atualizacoes() {
+  local lista codigo
+  lista=$(checkupdates)
+  codigo=$?
+  case $codigo in
+    0) echo "$(wc -l &lt;&lt;&lt; "$lista") atualização(ões) pendente(s). Rode: sudo pacman -Syu" ;;
+    2) echo "Nada para atualizar." ;;
+    *) echo "Não consegui consultar os espelhos (código $codigo)." ;;
+  esac
+}
+
+orfaos() {
+  local lista
+  lista=$(pacman -Qdtq)
+  if [ -z "$lista" ]; then
+    echo "Nenhum pacote órfão."
+  else
+    echo "Órfãos: $(echo $lista)"
+    echo "Para remover: sudo pacman -Rns \$(pacman -Qdtq)"
+  fi
+}
+
+cache() {
+  local tamanho
+  tamanho=$(du -sh /var/cache/pacman/pkg 2&gt;/dev/null | cut -f1)
+  echo "O cache do pacman ocupa $tamanho."
+  paccache -dk2
+}
+
+servicos_falhos() {
+  local qtd
+  qtd=$(systemctl --failed --no-legend | wc -l)
+  if (( qtd == 0 )); then
+    echo "Nenhum serviço falhou."
+  else
+    systemctl --failed --no-legend
+  fi
+}
+
+aur() {
+  local p
+  for p in $(pacman -Qqm); do
+    [[ $p == *-debug ]] &amp;&amp; continue
+    echo "  $(pacman -Q "$p")"
+  done
+}
+
+main() {
+  echo "Relatório de $(uname -n), kernel $(uname -r)"
+  titulo "Atualizações";    atualizacoes
+  titulo "Órfãos";          orfaos
+  titulo "Cache";           cache
+  titulo "Serviços";        servicos_falhos
+  titulo "Pacotes do AUR";  aur
+}
+
+main "$@"</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Aula onde você viu</th></tr>
+<tr><td><code>atualizacoes</code></td><td>Usa os três códigos do <code>checkupdates</code> (0, 1, 2).</td><td><a href="script-condicionais.html">Condicionais</a></td></tr>
+<tr><td><code>orfaos</code></td><td><code>pacman -Qdtq</code> lista as dependências que ninguém mais usa. Vazio = nenhum órfão (o código é 1, por isso o script <strong>não</strong> usa <code>set -e</code>).</td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>cache</code></td><td>O tamanho do cache e um <code>paccache -dk2</code>: <code>-d</code> (<em>dry run</em>) só mostra o que apagaria se ficassem 2 versões de cada pacote (<code>-k2</code>).</td><td><a href="cache-orfaos.html">Cache e Órfãos</a></td></tr>
+<tr><td><code>servicos_falhos</code></td><td><code>systemctl --failed --no-legend</code> lista só as unidades que falharam, sem cabeçalho nem rodapé.</td><td><a href="systemd.html">systemctl</a></td></tr>
+<tr><td><code>aur</code></td><td>Laço sobre <code>pacman -Qqm</code>, pulando os <code>-debug</code>.</td><td><a href="script-lacos.html">Laços</a></td></tr>
+<tr><td><code>main "$@"</code></td><td>A única linha "solta" do script. Repassa os argumentos do script para a <code>main</code>.</td><td>esta aula</td></tr>
+</table>
+</div>
+
+<pre class="term">$ manutencao
+Relatório de notebook, kernel 7.2.10-arch1-1
+
+== Atualizações ==
+Nada para atualizar.
+
+== Órfãos ==
+Nenhum pacote órfão.
+
+== Cache ==
+O cache do pacman ocupa 1,3G.
+==&gt; no candidate packages found for pruning
+
+== Serviços ==
+Nenhum serviço falhou.
+
+== Pacotes do AUR ==
+  downgrade 12.0.4-1
+  paru-bin 2.1.0-1
+  yay-bin 13.0.1-1</pre>
+
+<p>O <code>paccache</code> não achou nada para apagar porque o cache da Ana tem uma versão só de cada pacote (ela instalou tudo há pouco). Com <code>-k0</code> ("não guarde nenhuma"), o ensaio mostra quanto o cache inteiro ocupa:</p>
+
+<pre class="term">$ paccache -dk0 | tail -2
+
+==&gt; finished dry run: 404 candidates (disk space saved: 1.26 GiB)</pre>
+
+<p>Para apagar de verdade, troque o <code>-d</code> por <code>-r</code> (<em>remove</em>) e use <code>sudo</code>: <code>sudo paccache -rk2</code>. O <code>pacman-contrib</code> também traz o <code>paccache.timer</code>, que faz isso toda semana (veja <a href="timers.html">Timers</a>). O <code>checkupdates</code> e o <code>paccache</code> não funcionam no terminal simulado.</p>
+
+<div class="note">
+<strong>Por que uma função <code>main</code>?</strong>
+<p>Com tudo em funções e uma só chamada no fim, você lê o script de cima para baixo como um índice (a <code>main</code>), e nenhuma função é chamada antes de estar definida, porque a última linha só roda depois que o Bash leu o arquivo inteiro.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de reaproveitar comandos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td>Alias</td><td><code>alias atualizar='sudo pacman -Syu'</code></td><td>É só um atalho para um comando com opções fixas (veja <a href="bashrc.html">.bashrc</a>).</td></tr>
+<tr><td>Função no .bashrc</td><td><code>versao() { pacman -Q "$1" | cut -d' ' -f2; }</code></td><td>Precisa de argumentos ou de mais de um comando, no seu terminal.</td></tr>
+<tr><td>Função no script</td><td><code>orfaos() { … }</code></td><td>Uma parte do script que se repete ou merece um nome.</td></tr>
+<tr><td>Biblioteca com source</td><td><code>source lib.sh</code></td><td>As mesmas funções em vários scripts.</td></tr>
+<tr><td>Script separado</td><td><code>~/.local/bin/manutencao</code></td><td>É uma ferramenta completa, usada de qualquer lugar (e por timers).</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Uma função útil para o seu .bashrc</strong>
+<p><code>pacinfo() { pacman -Qi "$1" | grep -E '^(Nome|Versão|Tamanho instalado|Data de instalação)'; }</code> mostra só as quatro linhas que você costuma procurar na ficha de um pacote. Um alias não conseguiria, porque precisa pôr o argumento no meio do comando.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"comando não encontrado" ao chamar a função</strong>
+<pre class="term" data-cwd="~/scripts">$ cat saudar-antes.sh
+#!/usr/bin/env bash
+titulo "Kernel"
+titulo() {
+  echo "== $1 =="
+}
+$ ./saudar-antes.sh
+./saudar-antes.sh: linha 2: titulo: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> a chamada está <strong>acima</strong> da definição no arquivo. O Bash lê de cima para baixo e ainda não conhecia a função.</p>
+<p><strong>Como resolver:</strong> mova as definições para o topo e as chamadas para o fim. Ou use o padrão <code>main</code> no fim do arquivo.</p>
+</div>
+
+<div class="cenario">
+<strong>O terminal mostra <code>&gt;</code> depois de definir a função</strong>
+<pre class="term">$ f() { echo oi }
+&gt;</pre>
+<p><strong>O que aconteceu:</strong> numa linha só, o último comando antes do <code>}</code> precisa de <code>;</code>. Sem ele, o Bash acha que o <code>}</code> é um argumento do <code>echo</code> e continua esperando o fechamento.</p>
+<p><strong>Como resolver:</strong> <kbd>Ctrl</kbd>+<kbd>C</kbd> e escreva <code>f() { echo oi; }</code>, com <code>;</code> e espaço depois do <code>{</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"erro de sintaxe próximo ao token inesperado `('" ao criar a função <code>ls</code> ou <code>grep</code></strong>
+<pre class="term">$ ls() { ls -l "$@"; }
+bash: erro de sintaxe próximo ao token inesperado `('
+$ alias
+alias grep='grep --color=auto'
+alias ls='ls --color=auto'</pre>
+<p><strong>O que aconteceu:</strong> o <code>~/.bashrc</code> do Arch já define os aliases <code>ls</code> e <code>grep</code>. O alias é trocado <strong>antes</strong> de tudo, então o Bash leu <code>ls --color=auto() {</code>, que não é uma definição válida.</p>
+<p><strong>Como resolver:</strong> dê outro nome à função (<code>lsl</code>), ou desfaça o alias antes (<code>unalias ls</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"excedido o nível máximo de aninhamento": a função chama a si mesma</strong>
+<pre class="term">$ FUNCNEST=20
+$ pacman() { pacman -Q "$@"; }
+$ pacman bash
+bash: pacman: excedido o nível máximo de aninhamento de avaliação (20)</pre>
+<p><strong>O que aconteceu:</strong> dentro da função <code>pacman</code>, o nome <code>pacman</code> chama… a própria função, de novo e de novo. Aqui limitamos a 20 níveis com <code>FUNCNEST</code> para ver a mensagem; sem esse limite, o Bash segue se chamando até esgotar a memória e cair.</p>
+<p><strong>Como resolver:</strong> dentro da função, use <code>command pacman</code>, que pula as funções e chama o programa de verdade. Ou, melhor, não dê a uma função o nome de um comando existente.</p>
+<pre class="term">$ pacman() { command pacman -Q "$@"; }
+$ pacman bash
+bash 5.3.20-1</pre>
+</div>
+
+<div class="cenario">
+<strong>"local: somente pode ser usado em uma função"</strong>
+<pre class="term">$ local x=1
+bash: local: somente pode ser usado em uma função</pre>
+<p><strong>O que aconteceu:</strong> <code>local</code> só existe dentro de funções.</p>
+<p><strong>Como resolver:</strong> fora de funções, crie a variável normalmente: <code>x=1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"return: possível retornar … apenas de uma função"</strong>
+<pre class="term">$ return 1
+bash: return: possível retornar (`return') apenas de uma função ou script carregado (com `source')</pre>
+<p><strong>O que aconteceu:</strong> <code>return</code> sai de uma função. Para encerrar o script inteiro, o comando é outro.</p>
+<p><strong>Como resolver:</strong> no corpo principal do script, use <code>exit 1</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Item</th><th>Sintaxe</th></tr>
+<tr><td>Definir</td><td><code>nome() { comandos; }</code></td></tr>
+<tr><td>Chamar</td><td><code>nome arg1 arg2</code></td></tr>
+<tr><td>Argumentos</td><td><code>$1 $2 "$@" $#</code></td></tr>
+<tr><td>Variável local</td><td><code>local var=valor</code></td></tr>
+<tr><td>Devolver valor</td><td><code>echo "$resultado"</code> + <code>x=$(nome)</code></td></tr>
+<tr><td>Devolver código</td><td><code>return 0</code> / <code>return 1</code></td></tr>
+<tr><td>Testar com if</td><td><code>if instalado htop; then</code></td></tr>
+<tr><td>Carregar biblioteca</td><td><code>source arquivo.sh</code> ou <code>. arquivo.sh</code></td></tr>
+<tr><td>Limpeza na saída</td><td><code>trap funcao EXIT</code></td></tr>
+<tr><td>Organizar</td><td><code>main() { …; }</code> + <code>main "$@"</code> no fim</td></tr>
+<tr><td>Ver a definição</td><td><code>type nome</code></td></tr>
+<tr><td>Chamar o programa, não a função</td><td><code>command nome</code></td></tr>
+<tr><td>Apagar a função</td><td><code>unset -f nome</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Definir</h3>
+<p>Complete a definição da função <code>ola</code>:</p>
+<div class="ex-code">ola<input data-answer="()" aria-label="parênteses"> { echo "Olá!"; }</div>
+</div>
+
+<div class="exercise">
+<h3>2. Capturar o resultado</h3>
+<p>Complete para guardar a saída de <code>versao bash</code> na variável <code>v</code>:</p>
+<div class="ex-code">v=<input data-answer="$(versao bash)|`versao bash`" aria-label="captura"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Variável só da função</h3>
+<p>Complete para que <code>qtd</code> exista só dentro da função:</p>
+<div class="ex-code">contar_aur() { <input data-answer="local" aria-label="palavra-chave"> qtd=$(pacman -Qqm | wc -l); echo "$qtd"; }</div>
+</div>
+
+<div class="exercise">
+<h3>4. A última linha</h3>
+<p>Complete a última linha de um script organizado com <code>main</code>, repassando os argumentos:</p>
+<div class="ex-code">main <input data-answer="&quot;$@&quot;|$@" aria-label="argumentos"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Qual a forma certa de uma função devolver a versão de um pacote para quem a chamou?</p>
+<label><input type="radio" name="q5"> <code>return "7.1.0"</code></label>
+<label><input type="radio" name="q5"> <code>echo "7.1.0"</code>, e quem chama usa <code>$(funcao)</code></label>
+<label><input type="radio" name="q5"> <code>exit "7.1.0"</code></label>
+<label><input type="radio" name="q5"> <code>local "7.1.0"</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Para que serve <code>trap limpar EXIT</code>?</p>
+<label><input type="radio" name="q6"> Para impedir que o script seja encerrado.</label>
+<label><input type="radio" name="q6"> Para chamar <code>limpar</code> a cada linha do script.</label>
+<label><input type="radio" name="q6"> Para chamar <code>limpar</code> quando o script terminar, por qualquer motivo.</label>
+<label><input type="radio" name="q6"> Para apagar a função <code>limpar</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Defina com <code>nome() { …; }</code> antes de chamar; chame como um comando, sem parênteses.</li>
+  <li><code>$1</code>, <code>$@</code> e <code>$#</code> dentro da função são os argumentos dela.</li>
+  <li><code>echo</code> devolve resultados (pegue com <code>$(…)</code>); <code>return</code> devolve só o código de 0 a 255, ótimo para <code>if instalado htop</code>.</li>
+  <li>Use <code>local</code> em toda variável da função; <code>source</code> reaproveita bibliotecas; <code>trap … EXIT</code> garante a limpeza.</li>
+  <li>Organize scripts grandes em funções pequenas e uma <code>main "$@"</code> no fim. Cuidado com nomes que já são aliases ou comandos.</li>
+</ul>
+
+<p><strong>Para ir mais fundo:</strong> no Guia Bash, veja <a href="https://wallysondevs.github.io/guia-bash/funcoes.html">funções</a>, <a href="https://wallysondevs.github.io/guia-bash/funcoes-retorno.html">retorno de funções</a>, <a href="https://wallysondevs.github.io/guia-bash/trap.html">trap</a> e <a href="https://wallysondevs.github.io/guia-bash/boas-praticas.html">boas práticas</a>; e, para juntar tudo, os projetos <a href="https://wallysondevs.github.io/guia-bash/projeto-backup.html">backup</a> e <a href="https://wallysondevs.github.io/guia-bash/projeto-cli.html">ferramenta de linha de comando</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> a rotina que o script <code>manutencao</code> automatiza está em <a href="https://wiki.archlinux.org/title/System_maintenance">System maintenance</a>; o <code>paccache</code> e o <code>checkupdates</code> são explicados em <a href="https://wiki.archlinux.org/title/Pacman#Cleaning_the_package_cache">pacman: Cleaning the package cache</a> e em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks">pacman/Tips and tricks</a>; e a página <a href="https://wiki.archlinux.org/title/PKGBUILD">PKGBUILD</a> mostra as funções (<code>build()</code>, <code>package()</code>) que o <code>makepkg</code> carrega com <code>source</code>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
