@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch ip, ping, ss — ver e testar a rede pelo terminal | Guia Arch</title>
+<meta name="description" content="Aprenda ip a, ip -br a, ip link, ip route, ip neigh, ping -c, tracepath e ss -tulpn no Arch Linux: cada linha da saída explicada, os códigos de saída do ping, as portas abertas, o resolvectl desligado e os erros reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">ip, ping, ss</span></h1>
+
+<p class="intro">Três ferramentas respondem quase todas as perguntas sobre a rede: <code>ip</code> mostra as placas, os endereços e as rotas; <code>ping</code> testa se um destino responde; <code>ss</code> lista as conexões e as portas abertas. No Arch, as três vêm no meta-pacote <code>base</code>, ou seja, existem em qualquer instalação, até na mais mínima.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler a saída completa do <code>ip a</code> linha por linha, e a versão resumida <code>ip -br a</code>.</li>
+  <li>Ver as placas com <code>ip link</code>, o gateway com <code>ip route</code> e os vizinhos com <code>ip neigh</code>.</li>
+  <li>Usar o <code>ping</code> com <code>-c</code>, entender cada linha (que no Arch sai em português) e os códigos de saída 0, 1 e 2.</li>
+  <li>Ver o caminho até um site com <code>tracepath</code> (e por que o <code>traceroute</code> não vem instalado).</li>
+  <li>Descobrir quais portas estão abertas, e qual programa usa cada uma, com <code>ss -tulpn</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula é a continuação de <a href="rede.html">NetworkManager e iwd</a>: lá você viu <strong>quem</strong> configura a rede; aqui você aprende a <strong>conferir</strong> o resultado. Os exemplos são reais, da VM do guia: a máquina <strong>notebook</strong>, ligada por cabo (placa <code>enp0s3</code>), dentro do VirtualBox. Por isso os endereços são <code>10.0.2.x</code>; no seu computador, provavelmente serão <code>192.168.0.x</code> ou <code>192.168.1.x</code>.</p>
+
+<hr>
+
+<h2>De onde vêm esses comandos</h2>
+<p>No Arch, cada comando vem de um pacote. Saber qual ajuda a entender o que existe numa instalação nova:</p>
+
+<pre class="term">$ pacman -Qo /usr/bin/ip /usr/bin/ss /usr/bin/ping /usr/bin/tracepath
+/usr/bin/ip pertence a iproute2 7.2.0-1
+/usr/bin/ss pertence a iproute2 7.2.0-1
+/usr/bin/ping pertence a iputils 20250605-1
+/usr/bin/tracepath pertence a iputils 20250605-1</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pacote</th><th>Traz</th><th>Vem no <code>base</code>?</th></tr>
+<tr><td><code>iproute2</code></td><td><code>ip</code>, <code>ss</code>, <code>bridge</code>, <code>tc</code></td><td>Sim</td></tr>
+<tr><td><code>iputils</code></td><td><code>ping</code>, <code>tracepath</code>, <code>arping</code></td><td>Sim</td></tr>
+<tr><td><code>inetutils</code></td><td><code>hostname</code>, <code>telnet</code>, <code>ftp</code></td><td><strong>Não</strong> (a VM tem porque as aulas usam)</td></tr>
+<tr><td><code>traceroute</code></td><td><code>traceroute</code></td><td><strong>Não</strong></td></tr>
+<tr><td><code>net-tools</code></td><td><code>ifconfig</code>, <code>netstat</code>, <code>route</code> (antigos)</td><td><strong>Não</strong>, e não precisa</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E o ifconfig e o netstat?</strong>
+<p>Tutoriais antigos usam <code>ifconfig</code> e <code>netstat</code>, do pacote <code>net-tools</code>, parado há anos. O Arch não os instala:</p>
+<pre class="term">$ ifconfig
+bash: ifconfig: comando não encontrado
+$ netstat -tulpn
+bash: netstat: comando não encontrado</pre>
+<p>Use os equivalentes modernos: <code>ip a</code> no lugar do <code>ifconfig</code> e <code>ss</code> no lugar do <code>netstat</code>. As opções do <code>ss</code> foram feitas parecidas com as do <code>netstat</code> de propósito.</p>
+</div>
+
+<hr>
+
+<h2>O comando ip</h2>
+<p>O <code>ip</code> é a ferramenta oficial de rede do kernel Linux. Ele mostra o que o <strong>kernel</strong> sabe agora, não importa quem configurou (NetworkManager, systemd-networkd, você à mão). Ele trabalha com <strong>objetos</strong>, e cada objeto é uma parte da rede:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Objeto</th><th>Abreviação</th><th>Mostra</th></tr>
+<tr><td><code>ip address</code></td><td><code>ip a</code></td><td>Os endereços IP de cada placa</td></tr>
+<tr><td><code>ip link</code></td><td><code>ip l</code></td><td>As placas em si: ligadas ou não, endereço físico (MAC)</td></tr>
+<tr><td><code>ip route</code></td><td><code>ip r</code></td><td>As rotas: por onde sai cada destino (e o gateway)</td></tr>
+<tr><td><code>ip neighbour</code></td><td><code>ip n</code> ou <code>ip neigh</code></td><td>Os vizinhos: aparelhos da rede local que o computador já encontrou</td></tr>
+</table>
+</div>
+
+<p>Qualquer abreviação sem ambiguidade funciona: <code>ip a</code>, <code>ip addr</code> e <code>ip address</code> são o mesmo comando. <strong>Ver</strong> a rede não precisa de root; só <strong>mudar</strong> precisa (veja <a href="#mudar">mais abaixo</a>).</p>
+
+<hr>
+
+<h2>Ver os endereços: <code>ip -br a</code></h2>
+<p>Comece pela versão resumida, uma linha por placa:</p>
+
+<dl class="anatomy">
+  <dt>ip</dt><dd>A ferramenta de rede.</dd>
+  <dt>-br</dt><dd>De <em>brief</em>, "resumido": uma linha por placa. Vem <strong>antes</strong> do objeto.</dd>
+  <dt>a</dt><dd>O objeto <code>address</code>: os endereços.</dd>
+</dl>
+
+<pre class="term">$ ip -br a
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621c/64 fe80::9c83:cf89:6133:11ca/64</pre>
+
+<p>São três colunas: o <strong>nome da placa</strong>, o <strong>estado</strong> e os <strong>endereços</strong>. O endereço que quase sempre interessa é o primeiro, o <strong>IPv4</strong> da placa que está <code>UP</code>: <code>10.0.2.15/24</code>. O <code>/24</code> diz o tamanho da rede (os três primeiros números, <code>10.0.2</code>, identificam a rede; o último, a máquina).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nome</th><th>O que é</th></tr>
+<tr><td><code>lo</code></td><td><em>Loopback</em>: a placa virtual que o computador usa para falar consigo mesmo (<code>127.0.0.1</code>). Sempre existe e sempre aparece como <code>UNKNOWN</code>, o que é normal.</td></tr>
+<tr><td><code>enp0s3</code>, <code>eno1</code>, <code>enp2s0</code></td><td>Placa de <strong>cabo</strong> (Ethernet). <code>en</code> = Ethernet; <code>p0s3</code> = a posição dela no barramento PCI (barramento 0, slot 3). O nome é fixo: não muda se você colocar outra placa.</td></tr>
+<tr><td><code>wlan0</code>, <code>wlp3s0</code></td><td>Placa <strong>Wi-Fi</strong>. <code>wl</code> = <em>wireless</em>, "sem fio".</td></tr>
+<tr><td><code>docker0</code>, <code>podman0</code>, <code>virbr0</code>, <code>wg0</code></td><td>Placas virtuais criadas por containers, máquinas virtuais ou VPN.</td></tr>
+</table>
+</div>
+
+<p>Na coluna de estado, <code>UP</code> quer dizer ligada e com conexão; <code>DOWN</code>, desligada ou sem cabo.</p>
+
+<div class="tip">
+<strong>Com cores e só o que está ligado</strong>
+<p>Acrescente <code>-c</code> (de <em>color</em>): <code>ip -br -c a</code> pinta o estado de verde ou vermelho e os endereços IPv4 e IPv6 em cores diferentes. E <code>ip -br a show up</code> esconde as placas desligadas, útil num notebook com várias placas virtuais.</p>
+</div>
+
+<h3>Os endereços IPv6</h3>
+<p>Ao lado do IPv4 aparecem endereços longos, com <code>:</code>. O que começa com <code>fe80::</code> é <strong>de enlace local</strong>: toda placa tem um, e ele só vale dentro da rede local. O que começa com <code>fd17:…</code> foi dado pelo roteador (aqui, o roteador virtual do VirtualBox). Para o dia a dia você pode ignorá-los; para ver só um tipo, use <code>-4</code> ou <code>-6</code>: <code>ip -4 a</code>.</p>
+
+<hr>
+
+<h2>A saída completa: <code>ip a</code></h2>
+<p>Sem o <code>-br</code>, o <code>ip</code> mostra todos os detalhes. Veja a saída real da VM:</p>
+
+<pre class="term">$ ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host noprefixroute
+       valid_lft forever preferred_lft forever
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000   « placa 2
+    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff                                                    « MAC
+    altname enx08002774b203                                                                               « outro nome
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3                            « o IPv4
+       valid_lft 86267sec preferred_lft 86267sec                                                          « validade
+    inet6 fd17:625c:f037:2:3074:376a:4fe9:621c/64 scope global dynamic noprefixroute
+       valid_lft 86269sec preferred_lft 14269sec
+    inet6 fe80::9c83:cf89:6133:11ca/64 scope link noprefixroute                                           « IPv6 local
+       valid_lft forever preferred_lft forever</pre>
+
+<p>Cada placa é um bloco que começa com um número. Dentro do bloco da <code>enp0s3</code>, linha por linha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedaço</th><th>Significado</th></tr>
+<tr><td><code>2: enp0s3:</code></td><td>Número interno da placa e o nome dela.</td></tr>
+<tr><td><code>&lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;</code></td><td>As "bandeiras" da placa. <code>UP</code>: ela foi ligada. <code>LOWER_UP</code>: há sinal físico (cabo conectado ou Wi-Fi associado). <strong>Sem <code>LOWER_UP</code>, o cabo está solto.</strong></td></tr>
+<tr><td><code>mtu 1500</code></td><td>Tamanho máximo de cada pacote, em bytes. 1500 é o padrão das redes com cabo.</td></tr>
+<tr><td><code>qdisc fq_codel</code></td><td>A "fila" que organiza os pacotes que saem. Pode ignorar.</td></tr>
+<tr><td><code>state UP</code></td><td>O estado do enlace (a mesma coluna do <code>-br</code>).</td></tr>
+<tr><td><code>link/ether 08:00:27:74:b2:03</code></td><td>O endereço físico (<strong>MAC</strong>) da placa, gravado de fábrica. <code>brd ff:ff:…</code> é o endereço "para todos".</td></tr>
+<tr><td><code>altname enx08002774b203</code></td><td>Um nome alternativo da mesma placa, montado a partir do MAC. Os dois nomes funcionam.</td></tr>
+<tr><td><code>inet 10.0.2.15/24</code></td><td>O endereço <strong>IPv4</strong> e o tamanho da rede (<code>/24</code> = máscara <code>255.255.255.0</code>).</td></tr>
+<tr><td><code>brd 10.0.2.255</code></td><td>Endereço de <em>broadcast</em>: falar com todos da rede local de uma vez.</td></tr>
+<tr><td><code>scope global</code></td><td>Vale fora da máquina (o <code>127.0.0.1</code> é <code>scope host</code>: só dentro dela).</td></tr>
+<tr><td><code>dynamic</code></td><td>O endereço veio por <strong>DHCP</strong>: foi "emprestado" pelo roteador. Um IP fixo não tem essa palavra.</td></tr>
+<tr><td><code>noprefixroute</code></td><td>Quem criou a rota para essa rede foi o NetworkManager, não o kernel sozinho.</td></tr>
+<tr><td><code>valid_lft 86267sec</code></td><td>Por quanto tempo o empréstimo ainda vale: 86267 segundos, quase 24 horas. O NetworkManager renova antes de acabar.</td></tr>
+</table>
+</div>
+
+<p>Para ver uma placa só, diga qual: <code>ip a show enp0s3</code> (ou <code>ip a show dev enp0s3</code>). Juntando com <code>-4</code>, sobra só o IPv4:</p>
+
+<pre class="term">$ ip -4 a show enp0s3
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    altname enx08002774b203
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3
+       valid_lft 85726sec preferred_lft 85726sec</pre>
+
+<p>Se a placa não existe, o <code>ip</code> avisa (em inglês) e devolve código 1:</p>
+<pre class="term">$ ip a show dev nada
+Device "nada" does not exist.
+$ echo $?
+1</pre>
+
+<hr>
+
+<h2>As placas: <code>ip link</code></h2>
+<p>O <code>ip link</code> mostra as placas sem os endereços IP: só o nome, as bandeiras e o MAC. É o comando para responder "a placa existe? o cabo está ligado?".</p>
+
+<pre class="term">$ ip link
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
+    altname enx08002774b203
+$ ip -br link
+lo               UNKNOWN        00:00:00:00:00:00 &lt;LOOPBACK,UP,LOWER_UP&gt;
+enp0s3           UP             08:00:27:74:b2:03 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;      « nome, estado, MAC, bandeiras</pre>
+
+<p>Num notebook, se a placa Wi-Fi <strong>não aparece</strong> no <code>ip link</code>, o kernel não a reconheceu (falta driver ou firmware). Se aparece mas está <code>DOWN</code>, ela existe e só não está conectada.</p>
+
+<h3>Estatísticas: <code>ip -s link</code></h3>
+<p>Com <code>-s</code> (<em>statistics</em>), o <code>ip</code> conta o tráfego que passou pela placa desde o boot:</p>
+
+<pre class="term">$ ip -s link show enp0s3
+2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
+    RX:  bytes packets errors dropped  missed   mcast
+         81168     544      0       0       0       1     « recebidos
+    TX:  bytes packets errors dropped carrier collsns
+        118642     486      0       0       0       0     « enviados
+    altname enx08002774b203</pre>
+
+<p><strong>RX</strong> (de <em>receive</em>) é o que chegou e <strong>TX</strong> (de <em>transmit</em>), o que saiu. Números crescendo em <code>errors</code> ou <code>dropped</code> indicam cabo ruim, placa com defeito ou Wi-Fi fraco.</p>
+
+<hr>
+
+<h2>Rotas e gateway: <code>ip route</code></h2>
+<p>A tabela de rotas diz por onde sai cada destino. A linha mais importante é a <strong>rota padrão</strong> (<em>default</em>): tudo o que não é da rede local vai para o <strong>gateway</strong>, que normalmente é o roteador.</p>
+
+<pre class="term">$ ip route
+default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100                   « o gateway
+10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15 metric 100                « a rede local</pre>
+
+<dl class="anatomy">
+  <dt>default</dt><dd>Qualquer destino que não tenha uma rota mais específica (a internet inteira).</dd>
+  <dt>via 10.0.2.2</dt><dd>Mande para este endereço: o <strong>gateway</strong>. Na VM é o roteador virtual do VirtualBox; em casa, o seu roteador.</dd>
+  <dt>dev enp0s3</dt><dd>Saindo por esta placa.</dd>
+  <dt>proto dhcp</dt><dd>A rota foi recebida por DHCP (quem a instalou foi o NetworkManager).</dd>
+  <dt>src 10.0.2.15</dt><dd>O endereço de origem que os pacotes vão usar.</dd>
+  <dt>metric 100</dt><dd>Prioridade: com duas rotas iguais (cabo e Wi-Fi juntos), vence a de número <strong>menor</strong>. O NetworkManager dá 100 ao cabo e 600 ao Wi-Fi, por isso o cabo ganha.</dd>
+</dl>
+
+<p>A segunda linha diz que os endereços <code>10.0.2.0</code> a <code>10.0.2.255</code> (<code>/24</code>) estão "ali do lado" (<code>scope link</code>): são alcançados direto, sem passar pelo roteador.</p>
+
+<p>Quer saber por qual caminho um endereço específico vai sair? Pergunte direto com <code>ip route get</code>:</p>
+
+<pre class="term">$ ip route get 1.1.1.1
+1.1.1.1 via 10.0.2.2 dev enp0s3 src 10.0.2.15 uid 1000
+    cache</pre>
+
+<p>O IPv6 tem a sua própria tabela, vista com <code>ip -6 route</code> (na VM, o gateway IPv6 é <code>fe80::2</code>):</p>
+<pre class="term">$ ip -6 r
+fd17:625c:f037:2::/64 dev enp0s3 proto ra metric 100 pref medium
+fe80::/64 dev enp0s3 proto kernel metric 1024 pref medium
+default via fe80::2 dev enp0s3 proto ra metric 100 pref medium</pre>
+
+<div class="warning">
+<strong>Sem linha <code>default</code>, sem internet</strong>
+<p>Se o <code>ip route</code> não mostra nenhuma linha começando com <code>default</code>, o computador não sabe como sair da rede local: nenhum site abre, mesmo com IP na placa. Quase sempre o DHCP falhou ou o gerenciador de rede não está rodando; veja <a href="rede.html">NetworkManager e iwd</a>.</p>
+</div>
+
+<hr>
+
+<h2>Vizinhos: <code>ip neigh</code></h2>
+<p>Para falar com um aparelho da rede local, o computador precisa do MAC dele. O <code>ip neigh</code> mostra a "agenda" de vizinhos que ele já descobriu:</p>
+
+<pre class="term">$ ip neigh
+10.0.2.2 dev enp0s3 lladdr 52:54:00:12:35:00 REACHABLE          « o gateway respondeu há pouco
+10.0.2.3 dev enp0s3 lladdr 52:54:00:12:35:00 STALE              « o DNS: conhecido, mas faz tempo
+fe80::2 dev enp0s3 lladdr 52:54:00:12:35:00 router STALE</pre>
+
+<p><code>lladdr</code> é o MAC do vizinho. <code>REACHABLE</code> quer dizer "respondeu recentemente"; <code>STALE</code>, "conheço, mas faz tempo que não confirmo"; <code>FAILED</code>, "tentei e ninguém respondeu" (aparelho desligado ou IP errado). Na VM, os três vizinhos têm o mesmo MAC porque são todos o mesmo roteador virtual do VirtualBox.</p>
+
+<hr>
+
+<h2 id="mudar">Mudar a rede com <code>ip</code>: precisa de root, e é temporário</h2>
+<p>O <code>ip</code> também liga e desliga placas, põe endereços e cria rotas (<code>ip link set</code>, <code>ip addr add</code>, <code>ip route add</code>). Como usuária comum, o kernel recusa:</p>
+
+<pre class="term">$ ip link set enp0s3 down
+RTNETLINK answers: Operation not permitted
+$ echo $?
+2</pre>
+
+<p>Com <code>sudo</code> funcionaria, mas há dois motivos para quase nunca fazer isso no dia a dia:</p>
+<ul>
+  <li><strong>Tudo some no próximo boot</strong> (e às vezes antes: o NetworkManager pode desfazer a mudança). Configuração permanente se faz no gerenciador de rede, com <code>nmcli</code> (veja <a href="rede.html">NetworkManager e iwd</a>).</li>
+  <li><strong>Por SSH, derrubar a placa corta o seu próprio acesso.</strong> Por isso o comando acima não foi repetido com <code>sudo</code> na VM do guia.</li>
+</ul>
+
+<hr>
+
+<h2>ping: o destino responde?</h2>
+<p>O <code>ping</code> manda pequenos pacotes de teste (do protocolo <strong>ICMP</strong>, o "de serviço" da internet) e mede quanto tempo a resposta demora. No Linux ele <strong>não para sozinho</strong>: sem limite, continua até você apertar <kbd>Ctrl</kbd>+<kbd>C</kbd>. Por isso quase sempre se usa <code>-c</code>.</p>
+
+<dl class="anatomy">
+  <dt>ping</dt><dd>O programa (o nome imita o "ping" do sonar).</dd>
+  <dt>-c 3</dt><dd>De <em>count</em>: envia 3 pacotes e para.</dd>
+  <dt>archlinux.org</dt><dd>O destino: um nome ou um IP.</dd>
+</dl>
+
+<pre class="term">$ ping -c 3 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes de dados.                 « o nome virou este IP
+64 bytes de 209.126.35.79: icmp_seq=1 ttl=64 tempo=41.6 ms                « resposta 1, em 41,6 ms
+64 bytes de 209.126.35.79: icmp_seq=2 ttl=64 tempo=40.9 ms
+64 bytes de 209.126.35.79: icmp_seq=3 ttl=64 tempo=41.7 ms
+
+--- archlinux.org estatísticas de ping ---
+3 pacotes transmitidos, 3 recebidos, 0% packet loss, time 2384ms           « nenhum perdido
+rtt min/avg/max/mdev = 40.864/41.369/41.660/0.358 ms                        « mínimo/médio/máximo/variação
+$ echo $?
+0</pre>
+
+<p>Repare: no Arch o <code>ping</code> fala português ("bytes de dados", "tempo=", "estatísticas de ping"), porque o pacote <code>iputils</code> traz a tradução. Só algumas partes ficam em inglês (<code>packet loss</code>, <code>time</code>, <code>rtt</code>). Os números usam ponto (<code>41.6</code>), não vírgula.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Significado</th></tr>
+<tr><td><code>PING archlinux.org (209.126.35.79)</code></td><td>O DNS funcionou: o nome foi traduzido para este IP. Se o erro aparecer aqui, o problema é de nome (veja <a href="curl-wget.html">curl, wget, dig</a>).</td></tr>
+<tr><td><code>56(84) bytes de dados</code></td><td>Cada pacote leva 56 bytes de dados (84 com os cabeçalhos).</td></tr>
+<tr><td><code>icmp_seq=1</code></td><td>Número do pacote. Se aparecer 1, 2, 4, o 3 se perdeu.</td></tr>
+<tr><td><code>ttl=64</code></td><td>"Tempo de vida": quantos roteadores o pacote ainda poderia atravessar.</td></tr>
+<tr><td><code>tempo=41.6 ms</code></td><td>Ida e volta, em milissegundos. Até uns 50 ms é rápido; acima de 200 ms dá para sentir num jogo ou numa chamada.</td></tr>
+<tr><td><code>0% packet loss</code></td><td>Porcentagem de pacotes sem resposta. O ideal é 0%.</td></tr>
+<tr><td><code>rtt min/avg/max/mdev</code></td><td>Tempos mínimo, médio, máximo e a variação (<em>mdev</em>). Variação alta = conexão instável.</td></tr>
+</table>
+</div>
+
+<p>O tempo depende do momento. Rodado de novo, minutos depois, o mesmo comando na VM deu <code>tempo=166 ms</code>, <code>829 ms</code> e <code>745 ms</code>: a rede estava ocupada. Por isso vale mandar vários pacotes e olhar a média.</p>
+
+<h3>Sem <code>-c</code>: parar com Ctrl+C</h3>
+<p>Sem limite, o <code>ping</code> continua. Ao apertar <kbd>Ctrl</kbd>+<kbd>C</kbd>, ele para e mostra o resumo do que mandou até ali (na VM: 3 pacotes em cerca de 3 segundos):</p>
+<pre class="term">$ ping archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes de dados.
+64 bytes de 209.126.35.79: icmp_seq=1 ttl=64 tempo=42.8 ms
+64 bytes de 209.126.35.79: icmp_seq=2 ttl=64 tempo=44.7 ms
+64 bytes de 209.126.35.79: icmp_seq=3 ttl=64 tempo=41.5 ms
+^C                                                                   « aqui a ana apertou Ctrl+C
+--- archlinux.org estatísticas de ping ---
+3 pacotes transmitidos, 3 recebidos, 0% packet loss, time 2927ms
+rtt min/avg/max/mdev = 41.539/43.004/44.683/1.292 ms</pre>
+
+<h3>O que o ping devolve: códigos 0, 1 e 2</h3>
+<p>Em scripts, o que importa é o <strong>código de saída</strong> (<code>echo $?</code>). O <code>ping</code> usa três valores, e cada um aponta para um problema diferente:</p>
+
+<pre class="term">$ ping -c 2 -W 1 10.0.2.99
+PING 10.0.2.99 (10.0.2.99) 56(84) bytes de dados.
+
+--- 10.0.2.99 estatísticas de ping ---
+2 pacotes transmitidos, 0 recebidos, 100% packet loss, time 1613ms
+
+$ echo $?
+1                                                    « enviou, mas ninguém respondeu
+$ ping -c 1 nao-existe.invalid
+ping: nao-existe.invalid: Nome ou serviço desconhecido
+$ echo $?
+2                                                    « erro antes de enviar: o nome não existe
+$ ping -c 1 127.0.0.1 &gt; /dev/null; echo $?
+0                                                    « respondeu</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Quer dizer</th><th>Causa típica</th></tr>
+<tr><td><code>0</code></td><td>Pelo menos uma resposta chegou</td><td>Tudo certo</td></tr>
+<tr><td><code>1</code></td><td>Os pacotes saíram, mas nenhum voltou</td><td>Máquina desligada, IP errado ou ping bloqueado</td></tr>
+<tr><td><code>2</code></td><td>Erro antes de enviar</td><td>Nome inexistente (DNS), sem rede, opção errada (<code>ping</code> sozinho: <code>ping: usage error: Endereço de destino requerido</code>)</td></tr>
+</table>
+</div>
+
+<p>O <code>-W 1</code> (de <em>wait</em>) espera no máximo 1 segundo por resposta. Com isso dá para escrever, por exemplo: <code>ping -c 1 -W 2 10.0.2.2 &gt; /dev/null &amp;&amp; echo "roteador ok"</code>.</p>
+
+<h3>Outras opções úteis</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Faz</th><th>Exemplo</th></tr>
+<tr><td><code>-c N</code></td><td>Envia N pacotes e para</td><td><code>ping -c 4 archlinux.org</code></td></tr>
+<tr><td><code>-W N</code></td><td>Espera no máximo N segundos por cada resposta</td><td><code>ping -c 1 -W 1 10.0.2.2</code></td></tr>
+<tr><td><code>-i N</code></td><td>Intervalo entre pacotes, em segundos (o padrão é 1)</td><td><code>ping -i 0.5 -c 10 10.0.2.2</code></td></tr>
+<tr><td><code>-q</code></td><td>Silencioso: só o resumo final</td><td><code>ping -q -c 20 archlinux.org</code></td></tr>
+<tr><td><code>-4</code> / <code>-6</code></td><td>Força IPv4 ou IPv6</td><td><code>ping -6 -c 2 archlinux.org</code></td></tr>
+</table>
+</div>
+
+<pre class="term">$ ping -4 -q -c 4 -i 0.5 archlinux.org
+PING archlinux.org (209.126.35.79) 56(84) bytes de dados.
+
+--- archlinux.org estatísticas de ping ---
+4 pacotes transmitidos, 4 recebidos, 0% packet loss, time 2402ms
+rtt min/avg/max/mdev = 41.530/65.171/133.336/39.367 ms
+$ ping -6 -c 2 -W 2 archlinux.org
+PING archlinux.org (2604:cac0:a104:d::3) 56 bytes de dados                  « pelo IPv6
+64 bytes de 2604:cac0:a104:d::3: icmp_seq=1 ttl=255 tempo=58.9 ms
+64 bytes de 2604:cac0:a104:d::3: icmp_seq=2 ttl=255 tempo=50.6 ms
+
+--- archlinux.org estatísticas de ping ---
+2 pacotes transmitidos, 2 recebidos, 0% packet loss, time 1059ms
+rtt min/avg/max/mdev = 50.614/54.752/58.890/4.138 ms</pre>
+
+<div class="note">
+<strong>Ping sem resposta nem sempre é problema</strong>
+<p>Muitos servidores e firewalls bloqueiam o ping de propósito. Se o site abre no navegador mas o ping dá 100% de perda, a sua rede está bem. Para testar um site de verdade, use o <code>curl</code> (veja <a href="curl-wget.html">curl, wget, dig</a>).</p>
+</div>
+
+<h3>O roteiro de diagnóstico</h3>
+<p>Quando "a internet não funciona", teste nesta ordem. O primeiro passo que falhar mostra onde está o problema:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste, nesta ordem</th><th>Se falhar, o problema é…</th></tr>
+<tr><td><code>ip -br a</code> mostra um IPv4 na placa?</td><td>Cabo, Wi-Fi ou DHCP (veja <a href="rede.html">NetworkManager e iwd</a>)</td></tr>
+<tr><td><code>ip route</code> tem a linha <code>default via</code>?</td><td>DHCP ou configuração do gerenciador</td></tr>
+<tr><td><code>ping -c 3 IP-do-gateway</code> (o <code>via</code>; na VM, <code>10.0.2.2</code>)</td><td>A rede local ou o roteador</td></tr>
+<tr><td><code>ping -c 3 1.1.1.1</code></td><td>A saída do roteador para a internet (o provedor)</td></tr>
+<tr><td><code>ping -c 3 archlinux.org</code></td><td>O DNS, se o passo anterior funcionou</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>O caminho até o destino: <code>tracepath</code></h2>
+<p>Entre você e um site há vários roteadores; cada um é um <strong>salto</strong> (<em>hop</em>). O <code>tracepath</code>, que vem no <code>iputils</code> junto com o <code>ping</code>, mostra os saltos um a um, para descobrir <strong>onde</strong> a conexão para.</p>
+
+<dl class="anatomy">
+  <dt>tracepath</dt><dd>O programa (não precisa de root).</dd>
+  <dt>-n</dt><dd>Mostra só os IPs, sem tentar descobrir o nome de cada roteador (mais rápido).</dd>
+  <dt>-m 6</dt><dd>No máximo 6 saltos (o padrão é 30).</dd>
+  <dt>archlinux.org</dt><dd>O destino.</dd>
+</dl>
+
+<pre class="term">$ tracepath -n -m 6 archlinux.org
+ 1?: [LOCALHOST]                      pmtu 1500                  « a própria máquina
+ 1:  10.0.2.2                                              0.416ms        « salto 1: o roteador do VirtualBox
+ 1:  10.0.2.2                                              0.357ms
+ 2:  192.168.0.1                                          81.732ms asymm  1     « salto 2: o roteador da casa
+ 3:  192.168.0.1                                           7.363ms pmtu 0
+ 3:  falha no envio
+     Resumir: pmtu 0</pre>
+
+<p>Cada linha numerada é um salto, com o tempo até ele. <code>pmtu</code> é o maior pacote que passa pelo caminho. <code>asymm</code> quer dizer que a resposta voltou por um caminho diferente da ida. Sem o <code>-n</code>, os nomes aparecem no lugar dos números (na VM, <code>_gateway</code> para o 10.0.2.2, nome que o systemd dá ao gateway).</p>
+
+<div class="note">
+<strong>Por que a VM não passa do salto 3</strong>
+<p>A rede da VM é a "NAT" do VirtualBox, que não repassa as respostas que o <code>tracepath</code> precisa ouvir dos roteadores da internet; por isso ela para no roteador de casa com <code>falha no envio</code> ("Resumir" é a tradução, um pouco estranha, de <em>Resume</em>). Num computador ligado direto no roteador, a lista continua até o destino. Saltos que não respondem aparecem como <code>no reply</code>, e isso é comum: muitos roteadores não respondem de propósito.</p>
+</div>
+
+<h3>E o traceroute?</h3>
+<p>O clássico <code>traceroute</code> não vem no Arch:</p>
+<pre class="term">$ traceroute archlinux.org
+bash: traceroute: comando não encontrado</pre>
+<p>Ele é um pacote à parte, pequeno. A transação real (respondida com <code>n</code>, então nada foi instalado na VM):</p>
+<pre class="term" data-user="root">#> pacman -S traceroute
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) traceroute-2.1.6-1
+
+Tamanho total download:   0,04 MiB
+Tamanho total instalado:  0,08 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+<p>Para o dia a dia, o <code>tracepath</code> basta. O <code>traceroute</code> tem mais opções (usar TCP na porta 443, por exemplo: <code>traceroute -T -p 443</code>, como root), úteis quando o caminho bloqueia os pacotes comuns. Outra opção popular é o <code>mtr</code> (pacote <code>mtr</code>), que junta <code>ping</code> e <code>traceroute</code> numa tela que se atualiza sozinha.</p>
+
+<hr>
+
+<h2>ss: conexões e portas abertas</h2>
+<p>O <code>ss</code> (de <em>socket statistics</em>) lista as conexões de rede. Um <strong>socket</strong> é a "tomada" que um programa abre para conversar pela rede, numa <strong>porta</strong> (um número de 1 a 65535: 22 é o SSH, 80 o HTTP, 443 o HTTPS). A combinação mais usada é <code>ss -tulpn</code>, que responde "quais portas estão esperando conexões nesta máquina?". Você vai usá-la antes de mexer no <a href="firewall.html">firewall</a>.</p>
+
+<dl class="anatomy">
+  <dt>ss</dt><dd>O programa.</dd>
+  <dt>-t</dt><dd>Conexões <strong>TCP</strong> (a maioria: web, SSH, e-mail).</dd>
+  <dt>-u</dt><dd>Conexões <strong>UDP</strong> (DNS, DHCP, jogos, vídeo).</dd>
+  <dt>-l</dt><dd>Só as que estão <em>listening</em>, "escutando", à espera de alguém.</dd>
+  <dt>-p</dt><dd>Mostra o programa (<em>process</em>) dono de cada porta.</dd>
+  <dt>-n</dt><dd>Números em vez de nomes: <code>22</code> em vez de <code>ssh</code>.</dd>
+</dl>
+
+<p>Como usuária comum:</p>
+<pre class="term">$ ss -tulpn
+Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*                   « alguém escuta na porta 22
+tcp   LISTEN 0      128             [::]:22           [::]:*</pre>
+
+<p>A coluna <code>Process</code> veio vazia. Não é erro: o <code>sshd</code> pertence ao root, e o Linux não deixa uma usuária comum ver os detalhes dos processos de outro usuário. Com <code>sudo</code>, o nome aparece:</p>
+
+<pre class="term">$ sudo ss -tulpn
+Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
+tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))     « o servidor SSH
+tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Significado</th></tr>
+<tr><td><code>Netid</code></td><td>O protocolo: <code>tcp</code> ou <code>udp</code>.</td></tr>
+<tr><td><code>State</code></td><td><code>LISTEN</code>: esperando conexões. <code>UNCONN</code>: porta UDP aberta (UDP não tem "conexão"). <code>ESTAB</code>: conexão estabelecida.</td></tr>
+<tr><td><code>Recv-Q</code> / <code>Send-Q</code></td><td>Filas de dados. Numa porta <code>LISTEN</code>, o <code>Send-Q</code> (128) é quantas conexões podem esperar na fila.</td></tr>
+<tr><td><code>Local Address:Port</code></td><td>Em qual endereço e porta o programa escuta. <code>0.0.0.0</code> = todas as placas IPv4; <code>[::]</code> = todas IPv6; <code>127.0.0.1</code> = <strong>só a própria máquina</strong> (ninguém de fora alcança).</td></tr>
+<tr><td><code>Peer Address:Port</code></td><td>O outro lado. <code>*</code> quando ainda não há ninguém.</td></tr>
+<tr><td><code>Process</code></td><td>Programa, PID e número do descritor. Completo só com <code>sudo</code>.</td></tr>
+</table>
+</div>
+
+<p>Essa lista curta é típica de um Arch: no Arch, <strong>nenhum serviço vem ligado</strong>, então só aparece o que você habilitou. Na VM, só o SSH. Quando outro autor do guia estava com o <code>nginx</code> ligado, apareceram também as portas 80 e 8080. Num desktop, é comum ver a impressora (631) e a descoberta de rede do avahi (5353, UDP).</p>
+
+<h3>Conexões ativas: <code>ss -tn</code></h3>
+<p>Sem o <code>-l</code>, o <code>ss</code> mostra as conexões já estabelecidas. Na VM, são as sessões SSH dos autores do guia, vindas do roteador do VirtualBox (<code>10.0.2.2</code>):</p>
+
+<pre class="term">$ ss -tn
+State Recv-Q Send-Q Local Address:Port Peer Address:Port
+ESTAB 0      0          10.0.2.15:22       10.0.2.2:49668      « alguém conectado no SSH
+ESTAB 0      0          10.0.2.15:22       10.0.2.2:34228
+$ sudo ss -tnp
+State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+ESTAB 0      0          10.0.2.15:22       10.0.2.2:47354 users:(("sshd-session",pid=1088,fd=7),("sshd-session",pid=1066,fd=7))</pre>
+
+<p>A porta do outro lado (<code>49668</code>) é sorteada pelo cliente a cada conexão. Cada sessão SSH aparece como um processo <code>sshd-session</code>.</p>
+
+<h3>Filtrar uma porta</h3>
+<p>O <code>ss</code> aceita filtros no fim. <code>sport</code> é a porta de origem (a sua), <code>dport</code>, a de destino:</p>
+<pre class="term">$ ss -tln sport = :22
+State  Recv-Q Send-Q Local Address:Port Peer Address:Port
+LISTEN 0      128          0.0.0.0:22        0.0.0.0:*
+LISTEN 0      128             [::]:22           [::]:*</pre>
+<p>O jeito "de pipe" também funciona e é mais fácil de lembrar: <code>sudo ss -tlnp | grep 22</code> (veja <a href="grep.html">grep</a>).</p>
+
+<hr>
+
+<h2>E o resolvectl?</h2>
+<p>Muitos tutoriais mostram o DNS com <code>resolvectl status</code>. O comando existe no Arch (vem no <code>systemd</code>), mas depende do serviço <code>systemd-resolved</code>, que vem <strong>desligado</strong>. Na VM, quem cuida do DNS é o NetworkManager, escrevendo o <code>/etc/resolv.conf</code>. Resultado:</p>
+
+<pre class="term">$ resolvectl status
+Failed to connect to service /run/systemd/resolve/io.systemd.Resolve: Arquivo ou diretório inexistente
+$ echo $?
+1
+$ cat /etc/resolv.conf
+# Generated by NetworkManager
+search lan
+nameserver 10.0.2.3                    « o servidor de DNS em uso
+nameserver fd17:625c:f037:2::3</pre>
+
+<p>Não é defeito: é o padrão do Arch. Para ligar o resolved, veja a seção de DNS de <a href="rede.html">NetworkManager e iwd</a>; para perguntar ao DNS, use as ferramentas de <a href="curl-wget.html">curl, wget, dig</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de descobrir o seu IP</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Mostra</th><th>Quando usar</th></tr>
+<tr><td><code>ip -br a</code></td><td>Todas as placas, uma por linha</td><td>O jeito mais claro, no terminal.</td></tr>
+<tr><td><code>ip -4 a show enp0s3</code></td><td>Só o IPv4 de uma placa, com detalhes</td><td>Investigar uma placa.</td></tr>
+<tr><td><code>ip route get 1.1.1.1</code></td><td>O IP usado para sair para a internet (<code>src</code>)</td><td>Com várias placas, para saber qual é usada.</td></tr>
+<tr><td><code>hostname -i</code></td><td>Só o endereço</td><td>Precisa do pacote <code>inetutils</code>; no Arch, a opção <code>-I</code> do Debian não existe.</td></tr>
+<tr><td><code>nmcli device show enp0s3</code></td><td>IP, gateway e DNS juntos</td><td>Para ver o que o NetworkManager configurou.</td></tr>
+</table>
+</div>
+
+<pre class="term">$ hostname -i
+10.0.2.15
+$ hostname -I
+hostname: invalid option -- 'I'
+Try 'hostname --help' or 'hostname --usage' for more information.</pre>
+
+<p>Repare: esse é o IP <strong>da rede local</strong>. O IP com que você aparece na internet (o do roteador) só se descobre perguntando a um site; veja <a href="curl-wget.html">curl, wget, dig</a>.</p>
+
+<hr>
+
+<h2>Experimente</h2>
+<p>O terminal simulado tem a rede da VM: as placas, os endereços e as rotas são os reais. (<code>ping</code>, <code>ss</code> e <code>tracepath</code> não funcionam nele: para esses, use as saídas desta aula ou o seu Arch.)</p>
+
+<div class="try" data-goal="ran:^\s*ip\s+(-br\s+|-brief\s+)(-c\s+)?a(ddr|ddress)?\b,out:10.0.2.15/24" data-solucao="ip -br a">
+<p class="try-task"><strong>Missão 1:</strong> mostre os endereços de todas as placas, <strong>uma linha por placa</strong>. Qual é o IPv4 da placa com cabo?</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*ip\s+(-\S+\s+)*r(oute)?\b,out:default via 10.0.2.2" data-solucao="ip route">
+<p class="try-task"><strong>Missão 2:</strong> descubra o <strong>gateway</strong> da máquina: mostre a tabela de rotas e encontre a linha <code>default</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*ip\s+(-\S+\s+)*l(ink)?\b,out:08:00:27:74:b2:03" data-solucao="ip -br link">
+<p class="try-task"><strong>Missão 3:</strong> qual é o endereço físico (MAC) da placa <code>enp0s3</code>? Use o objeto do <code>ip</code> que mostra as placas sem os IPs.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"Nome ou serviço desconhecido"</strong>
+<pre class="term">$ ping -c 1 nao-existe.invalid
+ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
+<p><strong>O que aconteceu:</strong> o computador não conseguiu transformar o nome em IP: erro de digitação, DNS sem resposta ou nenhuma rede.</p>
+<p><strong>Como confirmar:</strong> teste um IP direto, sem nome: <code>ping -c 3 1.1.1.1</code>. Se o IP responde e o nome não, o problema é o DNS. Veja os servidores em <code>cat /etc/resolv.conf</code>.</p>
+<p><strong>Como resolver:</strong> confira a grafia; depois, o DNS do perfil no NetworkManager (<a href="rede.html">NetworkManager e iwd</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>100% de perda de pacotes</strong>
+<pre class="term">$ ping -c 2 -W 1 10.0.2.99
+PING 10.0.2.99 (10.0.2.99) 56(84) bytes de dados.
+
+--- 10.0.2.99 estatísticas de ping ---
+2 pacotes transmitidos, 0 recebidos, 100% packet loss, time 1613ms</pre>
+<p><strong>O que aconteceu:</strong> o destino não respondeu (código 1). Pode estar desligado, num IP diferente ou bloqueando ping.</p>
+<p><strong>Como confirmar:</strong> faça ping no seu gateway (o <code>via</code> do <code>ip route</code>). Se nem o gateway responde, o problema é a sua própria conexão.</p>
+</div>
+
+<div class="cenario">
+<strong>A placa aparece DOWN, sem IP ou sem <code>default</code></strong>
+<p><strong>O que aconteceu:</strong> no <code>ip -br a</code>, a placa está <code>DOWN</code> ou sem endereço IPv4; ou o <code>ip route</code> não tem a linha <code>default</code>.</p>
+<p><strong>Como confirmar:</strong> <code>ip a show enp0s3</code>: sem <code>LOWER_UP</code>, o cabo está solto ou o Wi-Fi não está associado. Com <code>LOWER_UP</code> mas sem <code>inet</code>, o DHCP falhou. Veja também <code>systemctl is-active NetworkManager</code>.</p>
+<p><strong>Como resolver:</strong> confira o cabo; reconecte com <code>nmcli connection up NOME</code>; se o gerenciador estiver parado, <code>sudo systemctl enable --now NetworkManager</code> (veja <a href="rede.html">NetworkManager e iwd</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"RTNETLINK answers: Operation not permitted"</strong>
+<pre class="term">$ ip link set enp0s3 down
+RTNETLINK answers: Operation not permitted</pre>
+<p><strong>O que aconteceu:</strong> você tentou <strong>mudar</strong> a rede como usuária comum (código 2).</p>
+<p><strong>Como resolver:</strong> mudanças pedem <code>sudo</code>, e são temporárias. Para algo permanente, use o <code>nmcli</code>. Nunca derrube a placa pela qual você está conectado por SSH.</p>
+</div>
+
+<div class="cenario">
+<strong>"ifconfig: comando não encontrado" / "netstat: comando não encontrado"</strong>
+<p><strong>O que aconteceu:</strong> são do pacote antigo <code>net-tools</code>, que o Arch não instala.</p>
+<p><strong>Como resolver:</strong> use <code>ip a</code> no lugar do <code>ifconfig</code> e <code>ss -tulpn</code> no lugar do <code>netstat -tulpn</code>. Não há necessidade de instalar o net-tools.</p>
+</div>
+
+<div class="cenario">
+<strong>"hostname: invalid option -- 'I'"</strong>
+<p><strong>O que aconteceu:</strong> o <code>hostname -I</code> é do Debian e do Ubuntu. O <code>hostname</code> do Arch vem do <code>inetutils</code> e não tem essa opção (e, numa instalação nova, nem o <code>hostname</code> existe: <code>bash: hostname: comando não encontrado</code>).</p>
+<p><strong>Como resolver:</strong> <code>hostname -i</code>, ou melhor, <code>ip -br a</code>. Para o nome da máquina sem instalar nada: <code>cat /etc/hostname</code> ou <code>hostnamectl</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O ss não mostra o programa</strong>
+<p><strong>O que aconteceu:</strong> sem root, a coluna <code>Process</code> fica vazia para portas de outros usuários (quase todos os serviços são do root).</p>
+<p><strong>Como resolver:</strong> <code>sudo ss -tulpn</code> (veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Faz</th></tr>
+<tr><td><code>ip -br -c a</code></td><td>Endereços, uma linha por placa, com cores</td></tr>
+<tr><td><code>ip a</code> · <code>ip a show enp0s3</code> · <code>ip -4 a</code></td><td>Todos os detalhes · uma placa · só IPv4</td></tr>
+<tr><td><code>ip link</code> · <code>ip -br link</code></td><td>As placas, o estado e o MAC</td></tr>
+<tr><td><code>ip -s link show enp0s3</code></td><td>Tráfego e erros da placa</td></tr>
+<tr><td><code>ip route</code> · <code>ip -6 route</code></td><td>Rotas e gateway (IPv4 · IPv6)</td></tr>
+<tr><td><code>ip route get 1.1.1.1</code></td><td>Por onde sai um destino</td></tr>
+<tr><td><code>ip neigh</code></td><td>Vizinhos da rede local e seus MACs</td></tr>
+<tr><td><code>ping -c 4 destino</code></td><td>Testa se responde (código 0, 1 ou 2)</td></tr>
+<tr><td><code>ping -c 1 -W 1 destino</code></td><td>Teste rápido, para scripts</td></tr>
+<tr><td><code>tracepath -n destino</code></td><td>Os saltos até o destino</td></tr>
+<tr><td><code>ss -tulpn</code> · <code>sudo ss -tulpn</code></td><td>Portas escutando · com o nome do programa</td></tr>
+<tr><td><code>ss -tn</code></td><td>Conexões TCP estabelecidas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Endereços resumidos</h3>
+<p>Complete para ver os endereços de todas as placas, uma por linha:</p>
+<div class="ex-code">ip <input data-answer="-br a|-br addr|-br address|-brief a|-br -c a|-c -br a|-brief address" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Ping limitado</h3>
+<p>Complete para enviar exatamente 5 pacotes ao gateway da VM:</p>
+<div class="ex-code">ping <input data-answer="-c 5|-c5" aria-label="opção"> 10.0.2.2</div>
+</div>
+
+<div class="exercise">
+<h3>3. Portas com o programa</h3>
+<p>Complete para listar as portas TCP e UDP escutando, com números e o nome do programa:</p>
+<div class="ex-code">sudo ss <input data-answer="-tulpn|-tulnp|-tlunp|-lntup|-plntu|-ltunp|-tunlp|-ultpn" aria-label="opções"></div>
+</div>
+
+<div class="exercise">
+<h3>4. O caminho</h3>
+<p>Complete com o programa do <code>iputils</code> que mostra os saltos até o destino, sem pedir root:</p>
+<div class="ex-code"><input data-answer="tracepath" aria-label="programa"> -n archlinux.org</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. No <code>ip route</code>, qual linha mostra o gateway?</p>
+<label><input type="radio" name="q5"> A que começa com <code>10.0.2.0/24</code></label>
+<label><input type="radio" name="q5"> A que começa com <code>default via</code></label>
+<label><input type="radio" name="q5"> A que tem <code>scope link</code></label>
+<label><input type="radio" name="q5"> Nenhuma; o gateway só aparece no <code>ip a</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. <code>ping -c 1 nada.invalid; echo $?</code> mostra qual código?</p>
+<label><input type="radio" name="q6"> 0</label>
+<label><input type="radio" name="q6"> 1</label>
+<label><input type="radio" name="q6"> 2</label>
+<label><input type="radio" name="q6"> 127</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. No <code>ip a</code>, a placa mostra <code>&lt;BROADCAST,MULTICAST,UP&gt;</code>, sem <code>LOWER_UP</code>. O que isso indica?</p>
+<label><input type="radio" name="q7"> O DNS está errado.</label>
+<label><input type="radio" name="q7"> A placa está com IP fixo.</label>
+<label><input type="radio" name="q7"> O NetworkManager está desligado.</label>
+<label><input type="radio" name="q7"> A placa está ligada, mas sem sinal físico: cabo solto ou Wi-Fi não associado.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">8. A Ana rodou <code>ss -tulpn</code> e a coluna Process veio vazia. Por quê?</p>
+<label><input type="radio" name="q8"> Usuária comum não vê os processos de outros usuários; é preciso <code>sudo</code>.</label>
+<label><input type="radio" name="q8"> O SSH está parado.</label>
+<label><input type="radio" name="q8"> Faltou instalar o <code>net-tools</code>.</label>
+<label><input type="radio" name="q8"> O <code>-p</code> não existe no Arch.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ip</code> e <code>ss</code> (pacote <code>iproute2</code>) e <code>ping</code> e <code>tracepath</code> (<code>iputils</code>) vêm no <code>base</code>; <code>ifconfig</code>, <code>netstat</code> e <code>traceroute</code>, não.</li>
+  <li><code>ip -br a</code> mostra o IP de cada placa; <code>ip a</code>, todos os detalhes (<code>LOWER_UP</code> = cabo/sinal; <code>dynamic</code> = DHCP).</li>
+  <li><code>ip route</code> mostra o gateway na linha <code>default via</code>; sem ela não há internet.</li>
+  <li><code>ping -c N</code> testa resposta, em português no Arch; código 0 = respondeu, 1 = sem resposta, 2 = erro (nome inexistente).</li>
+  <li><code>tracepath</code> mostra os saltos até o destino.</li>
+  <li><code>ss -tulpn</code> lista as portas abertas; o nome do programa só aparece com <code>sudo</code>.</li>
+  <li><code>resolvectl</code> falha porque o <code>systemd-resolved</code> vem desligado: o DNS está no <code>/etc/resolv.conf</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a> (<a href="https://wiki.archlinux.org/title/Network_configuration_(Portugu%C3%AAs)">em português</a>) explica o <code>ip</code>, os nomes das placas, a verificação da conexão com <code>ping</code> e a lista de portas com <code>ss</code>; os detalhes da placa com cabo estão em <a href="https://wiki.archlinux.org/title/Network_configuration/Ethernet">Network configuration/Ethernet</a>; o DNS (e por que o <code>resolvectl</code> depende de um serviço) em <a href="https://wiki.archlinux.org/title/Domain_name_resolution">Domain name resolution</a> e <a href="https://wiki.archlinux.org/title/Systemd-resolved">systemd-resolved</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

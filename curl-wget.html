@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch curl, wget e dig — internet e DNS pelo terminal | Guia Arch</title>
+<meta name="description" content="Baixe arquivos e teste sites e DNS no Arch Linux com curl, wget, dig e drill: o que já vem instalado (o curl vem com o pacman), códigos HTTP, -I, -L, -o, -O, -s, -f, os códigos de erro do curl e do wget, e o pacote bind, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">curl, wget, dig</span></h1>
+
+<p class="intro">Três ferramentas conversam com a internet pelo terminal. O <code>curl</code> faz requisições de todo tipo e mostra o que o servidor respondeu: é o favorito para testar sites e APIs. O <code>wget</code> é especialista em baixar arquivos. O <code>dig</code> pergunta ao DNS qual é o endereço de um nome. No Arch, só o <code>curl</code> vem garantido; os outros são pacotes à parte.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que todo Arch tem <code>curl</code>, e de qual pacote vêm o <code>wget</code>, o <code>dig</code> e o <code>drill</code>.</li>
+  <li>Ver o cabeçalho e o código HTTP de um site com <code>curl -I</code>, seguir redirecionamentos com <code>-L</code> e salvar com <code>-o</code> e <code>-O</code>.</li>
+  <li>Usar <code>curl -s</code>, <code>-f</code> e o código de saída em scripts (6, 7, 22, 28).</li>
+  <li>Baixar e retomar downloads com <code>wget</code>, que no Arch fala português.</li>
+  <li>Perguntar ao DNS com <code>dig</code>, <code>nslookup</code>, <code>host</code> e <code>drill</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que a rede já funciona (veja <a href="ip.html">ip, ping, ss</a>). Todas as saídas são da VM do guia, baixando arquivos pequenos de verdade do site <code>archlinux.org</code>, numa pasta de teste.</p>
+
+<hr>
+
+<h2>O que já vem instalado</h2>
+<p>O <code>curl</code> está em todo Arch por um motivo simples: o próprio <code>pacman</code> depende dele para baixar pacotes (a biblioteca <code>libcurl</code>). Veja a linha "Necessário para":</p>
+
+<pre class="term">$ pacman -Qi curl
+Nome                 : curl
+Versão               : 8.23.0-1
+…
+Necessário para      : appstream  cfitsio  devtools  flatpak  gettext  git  libelf  networkmanager  ostree  pacman  tpm2-tss   « o pacman precisa dele
+…
+Motivo da instalação : Instalado como dependência de outro pacote</pre>
+
+<p>Os outros, não. A situação de um Arch recém-instalado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Pacote</th><th>Vem instalado?</th></tr>
+<tr><td><code>curl</code></td><td><code>curl</code></td><td><strong>Sim</strong> (dependência do <code>pacman</code>)</td></tr>
+<tr><td><code>wget</code></td><td><code>wget</code></td><td>Não (a VM do guia tem, porque as aulas usam)</td></tr>
+<tr><td><code>dig</code>, <code>nslookup</code>, <code>host</code></td><td><code>bind</code></td><td>Não</td></tr>
+<tr><td><code>drill</code></td><td><code>ldns</code></td><td>Não</td></tr>
+<tr><td><code>getent</code></td><td><code>glibc</code></td><td>Sim</td></tr>
+<tr><td><code>resolvectl</code></td><td><code>systemd</code></td><td>Sim, mas o serviço <code>systemd-resolved</code> vem desligado (veja <a href="ip.html">ip, ping, ss</a>)</td></tr>
+</table>
+</div>
+
+<p>No Debian e no Ubuntu, o <code>dig</code> vem num pacote chamado <code>dnsutils</code> (ou <code>bind9-dnsutils</code>). No Arch, ele faz parte do pacote <code>bind</code>, que é o servidor de DNS inteiro; o antigo <code>bind-tools</code> não existe mais. Não sabe de qual pacote vem um comando? Pergunte ao pacman com <code>-F</code> (de <em>files</em>; veja <a href="pacman-avancado.html">pacman Avançado</a>):</p>
+
+<pre class="term">$ dig +short archlinux.org
+bash: dig: comando não encontrado
+$ pacman -F dig
+extra/bind 9.20.29-1
+    usr/bin/dig                                « é este
+extra/epic4 2.10.11-2
+    usr/share/epic/script/dig                  « outro arquivo com o mesmo nome, não é o comando
+extra/gstreamer-docs 1.28.8-1
+    usr/share/doc/gstreamer/html/assets/js/search/dig
+$ pacman -F drill
+core/ldns 1.9.2-1
+    usr/bin/drill</pre>
+
+<p>O que a instalação traria (transação real, respondida com <code>n</code>: nada foi instalado na VM):</p>
+
+<pre class="term" data-user="root">#> pacman -S bind
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (6) dnssec-anchors-20250524-1  jemalloc-1:5.4.0-1
+            libmaxminddb-1.14.1-1  liburcu-0.15.7-1  libuv-1.52.1-2
+            bind-9.20.29-1
+
+Tamanho total download:   2,86 MiB
+Tamanho total instalado:  9,69 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<p>O <code>bind</code> traz o servidor (<code>named</code>), mas instalá-lo <strong>não</strong> liga servidor nenhum: como todo serviço no Arch, o <code>named</code> fica desligado até alguém dar <code>systemctl enable</code>. Você ganha só os comandos. Se quiser algo menor, o <code>ldns</code> (0,48 MiB) traz o <code>drill</code>, parecido com o <code>dig</code>.</p>
+
+<div class="note">
+<strong>Como as saídas do dig foram feitas</strong>
+<p>Para não instalar nada na VM compartilhada, os pacotes <code>bind</code> e <code>ldns</code> foram baixados numa pasta temporária e os programas rodaram de lá, sem instalar. As saídas desta aula são, portanto, do <code>dig</code> 9.20.29 e do <code>drill</code> 1.9.2 do Arch, na VM, exatamente como ficam depois de um <code>sudo pacman -S bind</code>.</p>
+</div>
+
+<hr>
+
+<h2>Códigos HTTP em 30 segundos</h2>
+<p>Todo site responde a um pedido com um número de três dígitos, o <strong>código HTTP</strong>. O primeiro dígito já diz muito:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Faixa</th><th>Quer dizer</th><th>Exemplos</th></tr>
+<tr><td><code>2xx</code></td><td>Deu certo</td><td><code>200 OK</code></td></tr>
+<tr><td><code>3xx</code></td><td>Redirecionamento: "o conteúdo está em outro endereço"</td><td><code>301 Moved Permanently</code>, <code>302 Found</code></td></tr>
+<tr><td><code>4xx</code></td><td>Erro do pedido (o seu lado)</td><td><code>403 Forbidden</code>, <code>404 Not Found</code></td></tr>
+<tr><td><code>5xx</code></td><td>Erro do servidor</td><td><code>500</code>, <code>502 Bad Gateway</code>, <code>503</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>curl: conversar com servidores</h2>
+<p>O <code>curl</code> (de <em>client URL</em>) pede um endereço e mostra a resposta <strong>na tela</strong>, por padrão. Experimente com um arquivo pequeno de texto, o <code>robots.txt</code> do site do Arch (as regras para robôs de busca):</p>
+
+<pre class="term">$ curl https://archlinux.org/robots.txt
+User-agent: *
+Disallow: /packages/search/
+Disallow: /packages/?
+Disallow: /packages/?*
+Sitemap: https://www.archlinux.org/sitemap.xml
+Crawl-delay: 2</pre>
+
+<p>Numa página HTML, isso despeja centenas de linhas de código no terminal. Por isso, para testar um site, a opção mais usada é a <code>-I</code>, que pede só o <strong>cabeçalho</strong> da resposta.</p>
+
+<h3>Só o cabeçalho: -I</h3>
+<dl class="anatomy">
+  <dt>curl</dt><dd>O programa.</dd>
+  <dt>-I</dt><dd>I maiúsculo, de <em>head</em> (<code>--head</code>): só o cabeçalho, sem o conteúdo da página.</dd>
+  <dt>https://archlinux.org</dt><dd>O endereço, com o <code>https://</code>.</dd>
+</dl>
+
+<pre class="term">$ curl -I https://archlinux.org
+HTTP/2 200                                                 « protocolo HTTP/2 e código 200: deu certo
+server: nginx                                              « o programa servidor
+date: Fri, 16 Oct 2026 17:55:58 GMT                        « hora do servidor (em GMT, 3 h à frente de Brasília)
+content-type: text/html; charset=utf-8                     « o tipo do conteúdo: uma página HTML
+content-length: 25437                                      « tamanho, em bytes (uns 25 KB)
+cache-control: max-age=307
+content-security-policy: base-uri 'none'; form-action 'self'; default-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'
+x-content-type-options: nosniff
+referrer-policy: strict-origin
+cross-origin-opener-policy: same-origin
+x-frame-options: DENY
+vary: Cookie
+strict-transport-security: max-age=31536000; includeSubdomains; preload   « "só me acesse por https" (1 ano)
+x-cache-status: HIT                                        « veio do cache do servidor
+
+$ echo $?
+0</pre>
+
+<p>A primeira linha é a que importa: <code>200</code>. As outras são informações que o servidor manda sobre a resposta; as que começam com <code>x-</code> e as de segurança (<code>content-security-policy</code>, <code>x-frame-options</code>) são instruções para o navegador. O <code>curl</code> e as respostas HTTP ficam sempre em inglês, qualquer que seja o idioma do sistema. Num terminal de verdade, o nome de cada campo aparece em negrito.</p>
+
+<h3>Seguir redirecionamentos: -L</h3>
+<p>Peça o endereço com <code>http://</code> (sem o "s") e veja o que acontece:</p>
+
+<pre class="term">$ curl -I http://archlinux.org
+HTTP/1.1 301 Moved Permanently                 « "mudou-se para sempre"
+Server: nginx
+Date: Fri, 16 Oct 2026 17:55:35 GMT
+Content-Type: text/html
+Content-Length: 162
+Connection: keep-alive
+Location: https://archlinux.org/              « o endereço novo
+</pre>
+
+<p>Sem <code>-L</code>, o curl para no primeiro redirecionamento e só mostra para onde ele aponta (o campo <code>Location</code>). Com <code>-L</code> (de <em>location</em>), ele segue até o destino final. Aqui, filtrando só as linhas de código e de endereço com o <a href="grep.html">grep</a>:</p>
+
+<pre class="term">$ curl -sIL http://archlinux.org | grep -iE "^(http|location)"
+HTTP/1.1 301 Moved Permanently
+Location: https://archlinux.org/
+HTTP/2 200                                    « seguiu e chegou</pre>
+
+<h3>Salvar em arquivo: -o e -O</h3>
+<p>Para guardar a resposta num arquivo em vez de mostrar na tela, há duas opções, que diferem só na letra maiúscula:</p>
+
+<dl class="anatomy">
+  <dt>-o pagina.html</dt><dd><strong>o minúsculo</strong>: salva com o nome que <strong>você</strong> escolher.</dd>
+  <dt>-O</dt><dd><strong>O maiúsculo</strong>: salva com o nome que está no fim do endereço (<code>robots.txt</code>). Não funciona se o endereço termina em <code>/</code>.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b7">$ curl -o pagina.html https://archlinux.org
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+100  25437 100  25437   0      0  20382      0   00:01   00:01              0
+$ curl -O https://archlinux.org/robots.txt
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+100    149 100    149   0      0     99      0   00:01   00:01              0
+$ ls -l
+total 32
+-rw-r--r-- 1 ana ana 25437 16 out 14:55 pagina.html
+-rw-r--r-- 1 ana ana   149 16 out 14:55 robots.txt</pre>
+
+<p>Quando salva em arquivo, o curl desenha uma tabela de progresso, que vai se atualizando durante o download. Lendo a linha final: <code>100</code>% de <code>25437</code> bytes recebidos, velocidade média de download (<code>Dload</code>) de 20382 bytes por segundo, tempo total e gasto de 1 segundo.</p>
+
+<h3>Silencioso: -s (e -S)</h3>
+<p>Em scripts, a tabela de progresso atrapalha. O <code>-s</code> (de <em>silent</em>) esconde a tabela <strong>e também as mensagens de erro</strong>. Junte com <code>-S</code> (maiúsculo, <em>show-error</em>) para continuar vendo os erros:</p>
+
+<pre class="term" data-cwd="/tmp/b7">$ curl -s -O https://archlinux.org/robots.txt
+$ echo $?
+0                                  « nada na tela, mas deu certo</pre>
+
+<h3>Só o código, em uma linha: -w</h3>
+<p>O <code>-w</code> (de <em>write-out</em>) escreve informações no fim. Junto com <code>-s -o /dev/null</code> (descartar o conteúdo; veja <a href="redirecionamento.html">Redirecionamento</a>), sobra só o que você pediu:</p>
+
+<pre class="term">$ curl -s -o /dev/null -w "%{http_code}\n" https://archlinux.org
+200
+$ curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" https://archlinux.org/naoexiste
+404 0.819087s                                « página inexistente, respondeu em 0,8 s
+$ curl -sSL -o /dev/null -w "%{http_code} %{url_effective}\n" http://archlinux.org
+200 https://archlinux.org/                   « onde o -L terminou</pre>
+
+<h3>curl em scripts: -f e o código de saída</h3>
+<p>Atenção a esta pegadinha: por padrão, o curl considera "sucesso" qualquer resposta do servidor, <strong>até um 404</strong>. O código de saída é 0:</p>
+
+<pre class="term">$ curl -s https://archlinux.org/naoexiste | head -3; echo "código: ${PIPESTATUS[0]}"
+&lt;!DOCTYPE html&gt;
+
+&lt;html lang="en"&gt;
+código: 0                                    « a página de erro veio, e o curl achou ótimo</pre>
+
+<p>Com <code>-f</code> (de <em>fail</em>), uma resposta 400 ou maior vira erro <strong>22</strong>. O trio <code>-fsS</code> é o mais usado em scripts: falha nos erros HTTP, sem tabela, mas mostrando a mensagem:</p>
+
+<pre class="term">$ curl -fsS https://archlinux.org/naoexiste
+curl: (22) The requested URL returned error: 404
+$ echo $?
+22</pre>
+
+<p>Assim dá para escrever: <code>curl -fsS https://meusite.com.br/ &gt; /dev/null || echo "site fora do ar"</code>.</p>
+
+<h3>Mais opções do curl</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Faz</th></tr>
+<tr><td><code>-I</code></td><td>Só o cabeçalho</td></tr>
+<tr><td><code>-L</code></td><td>Segue redirecionamentos</td></tr>
+<tr><td><code>-o arq</code> / <code>-O</code></td><td>Salva em arquivo (nome escolhido / nome do endereço)</td></tr>
+<tr><td><code>-s</code> / <code>-S</code></td><td>Silencioso / mas mostra os erros</td></tr>
+<tr><td><code>-f</code></td><td>Erro (código 22) para respostas 4xx e 5xx</td></tr>
+<tr><td><code>-w "%{http_code}\n"</code></td><td>Escreve o código (ou o tempo, o endereço final…) no fim</td></tr>
+<tr><td><code>-C -</code></td><td>Continua um download interrompido</td></tr>
+<tr><td><code>-m 10</code></td><td>Desiste depois de 10 segundos (<em>max time</em>)</td></tr>
+<tr><td><code>-v</code></td><td>Mostra a conversa inteira com o servidor (útil para depurar)</td></tr>
+<tr><td><code>-X POST</code></td><td>Escolhe o método HTTP</td></tr>
+<tr><td><code>-H "Nome: valor"</code></td><td>Acrescenta um cabeçalho</td></tr>
+<tr><td><code>-d 'dados'</code></td><td>Envia dados (um POST de formulário)</td></tr>
+<tr><td><code>--json '{"a":1}'</code></td><td>Envia JSON com os cabeçalhos certos (curl 7.82 ou mais novo; o Arch tem o 8.23)</td></tr>
+<tr><td><code>-u usuario:senha</code></td><td>Autenticação básica</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Seu IP público</strong>
+<p>O IP que aparece no <code>ip a</code> é o da rede local. Para saber com qual IP você aparece na internet, pergunte a um site: <code>curl -s https://ifconfig.me/ip</code>. A resposta é um único endereço, como <code>203.0.113.45</code> (exemplo ilustrativo: o da VM não foi publicado, por ser o endereço real da casa do autor). Pode vir em IPv6.</p>
+</div>
+
+<hr>
+
+<h2>wget: baixar arquivos</h2>
+<p>O <code>wget</code> (de <em>web get</em>, "pegar da web") foi feito para baixar: ele <strong>sempre</strong> salva em arquivo, mostra o progresso e sabe retomar downloads. Não vem no Arch mínimo: instale com <code>sudo pacman -S wget</code> (na VM, versão 1.25.0).</p>
+
+<dl class="anatomy">
+  <dt>wget</dt><dd>O programa.</dd>
+  <dt>-O arch.html</dt><dd>Opcional: o nome do arquivo salvo (<strong>O maiúsculo</strong>, ao contrário do curl). Sem ele, o wget usa o nome do endereço (<code>index.html</code> quando o endereço termina em <code>/</code>).</dd>
+  <dt>https://archlinux.org</dt><dd>O endereço.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b7">$ wget -O arch.html https://archlinux.org
+--2026-10-16 15:09:22--  https://archlinux.org/                                       « data, hora e endereço
+Carregou certificado CA "/etc/ssl/certs/ca-certificates.crt"                         « os certificados confiáveis
+Resolvendo archlinux.org (archlinux.org)... 209.126.35.79, 2604:cac0:a104:d::3        « o nome virou IP (DNS)
+Conectando-se a archlinux.org (archlinux.org)|209.126.35.79|:443... conectado.        « porta 443 = https
+A requisição HTTP foi enviada, aguardando resposta... 200 OK                          « o servidor respondeu "OK"
+Tamanho: 25437 (25K) [text/html]
+Salvando em: ‘arch.html’
+
+arch.html           100%[===================&gt;]  24,84K  --.-KB/s    em 0s
+
+2026-10-16 15:09:23 (56,3 MB/s) - ‘arch.html’ salvo [25437/25437]                    « terminou: bytes salvos/total</pre>
+
+<p>Ao contrário do curl, o wget conta a história do download <strong>em português</strong> (o pacote traz a tradução): resolveu o nome, conectou, recebeu a resposta <code>200 OK</code>, mostrou o tamanho e salvou. Esse download foi rápido demais para a velocidade aparecer na barra (<code>--.-KB/s</code>); o resumo final mostra a média, 56,3 MB/s. A barra <code>[====&gt;]</code> cresce durante o download. Quando a saída não é um terminal (num script que grava um log, por exemplo), a barra vira uma linha de pontos: <code>0K .......... .......... ....  100%  103K=0,2s</code>.</p>
+
+<h3>Opções do wget</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Faz</th><th>Exemplo</th></tr>
+<tr><td><code>-O arquivo</code></td><td>Salva com outro nome (<code>-O -</code> manda para a tela)</td><td><code>wget -O arch.iso URL</code></td></tr>
+<tr><td><code>-c</code></td><td>Continua um download interrompido</td><td><code>wget -c URL</code></td></tr>
+<tr><td><code>-q</code></td><td>Silencioso: não mostra nada</td><td><code>wget -qO- URL</code></td></tr>
+<tr><td><code>-P pasta</code></td><td>Salva dentro de outra pasta</td><td><code>wget -P ~/Downloads URL</code></td></tr>
+<tr><td><code>--spider</code></td><td>Só confere se o endereço existe, sem baixar</td><td><code>wget --spider URL</code></td></tr>
+<tr><td><code>-S</code></td><td>Mostra o cabeçalho da resposta do servidor</td><td><code>wget -S --spider URL</code></td></tr>
+<tr><td><code>-i lista.txt</code></td><td>Baixa todos os endereços de um arquivo, um por linha</td><td><code>wget -i links.txt</code></td></tr>
+</table>
+</div>
+
+<p>O <code>-qO-</code> (silencioso, salvando na "tela") faz o wget se comportar como o curl:</p>
+<pre class="term">$ wget -q -O- https://archlinux.org/robots.txt | head -2
+User-agent: *
+Disallow: /packages/search/</pre>
+
+<h3>Retomar um download grande: -c</h3>
+<p>Caiu a conexão no meio da ISO do Arch (veja <a href="preparar.html">Baixar e Verificar a ISO</a>)? Rode o mesmo comando com <code>-c</code> (de <em>continue</em>) na mesma pasta: o wget pede ao servidor só o pedaço que falta. Se o arquivo já estiver completo, ele avisa e não baixa nada:</p>
+
+<pre class="term" data-cwd="/tmp/b7">$ wget -c -O arch.html https://archlinux.org
+--2026-10-16 15:09:23--  https://archlinux.org/
+Carregou certificado CA "/etc/ssl/certs/ca-certificates.crt"
+Resolvendo archlinux.org (archlinux.org)... 209.126.35.79, 2604:cac0:a104:d::3
+Conectando-se a archlinux.org (archlinux.org)|209.126.35.79|:443... conectado.
+A requisição HTTP foi enviada, aguardando resposta... 200 OK
+
+    O arquivo já foi completamente obtido; não há nada a ser feito.</pre>
+
+<h3>Conferir sem baixar: --spider</h3>
+<pre class="term">$ wget --spider -S https://archlinux.org/robots.txt
+O modo aranha está habilitado. Verifique se o arquivo remoto existe.
+--2026-10-16 14:56:21--  https://archlinux.org/robots.txt
+Carregou certificado CA "/etc/ssl/certs/ca-certificates.crt"
+Resolvendo archlinux.org (archlinux.org)... 209.126.35.79, 2604:cac0:a104:d::3
+Conectando-se a archlinux.org (archlinux.org)|209.126.35.79|:443... conectado.
+A requisição HTTP foi enviada, aguardando resposta...
+  HTTP/1.1 200 OK                                       « o -S mostra o cabeçalho, indentado
+  Server: nginx
+  Date: Fri, 16 Oct 2026 17:56:24 GMT
+  Content-Type: text/plain
+  Content-Length: 149
+  Last-Modified: Mon, 22 Jul 2024 20:56:13 GMT          « quando o arquivo mudou pela última vez
+  Connection: keep-alive
+  ETag: "669ec76d-95"
+  Strict-Transport-Security: max-age=31536000; includeSubdomains; preload
+  Accept-Ranges: bytes                                  « o servidor aceita retomar (-c)
+Tamanho: 149 [text/plain]
+O arquivo remoto existe.
+$ echo $?
+0</pre>
+
+<h3>Erros do wget e seus códigos</h3>
+<pre class="term">$ wget https://archlinux.org/naoexiste
+--2026-10-16 14:56:19--  https://archlinux.org/naoexiste
+Carregou certificado CA "/etc/ssl/certs/ca-certificates.crt"
+Resolvendo archlinux.org (archlinux.org)... 209.126.35.79, 2604:cac0:a104:d::3
+Conectando-se a archlinux.org (archlinux.org)|209.126.35.79|:443... conectado.
+A requisição HTTP foi enviada, aguardando resposta... 404 Not Found
+2026-10-16 14:56:20 ERRO 404: Not Found.                « a página não existe
+
+$ echo $?
+8                                                        « o servidor respondeu com erro
+$ wget https://nada.invalid/
+--2026-10-16 14:56:20--  https://nada.invalid/
+Carregou certificado CA "/etc/ssl/certs/ca-certificates.crt"
+Resolvendo nada.invalid (nada.invalid)... falha: Nome ou serviço desconhecido.
+wget: não foi possível resolver endereço de máquina ‘nada.invalid’
+$ echo $?
+4                                                        « falha de rede (aqui, DNS)</pre>
+
+<p>Diferente do curl, o wget já trata o 404 como erro, sem precisar de opção.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código do wget</th><th>Significado</th></tr>
+<tr><td><code>0</code></td><td>Tudo certo</td></tr>
+<tr><td><code>4</code></td><td>Falha de rede (nome não resolveu, conexão recusada…)</td></tr>
+<tr><td><code>5</code></td><td>Erro no certificado SSL</td></tr>
+<tr><td><code>8</code></td><td>O servidor respondeu com erro (404, 500…)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>curl ou wget: qual usar?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Melhor</th><th>Por quê</th></tr>
+<tr><td>Ver se um site está no ar, o código HTTP, o cabeçalho</td><td><code>curl -I</code></td><td>Mostra a resposta crua, sem salvar nada.</td></tr>
+<tr><td>Testar uma API, mandar JSON, POST, cabeçalhos</td><td><code>curl</code></td><td>Tem opções para tudo (<code>-X</code>, <code>-H</code>, <code>-d</code>, <code>--json</code>).</td></tr>
+<tr><td>Baixar um arquivo grande e poder retomar</td><td><code>wget -c</code></td><td>Salva sozinho, barra de progresso clara, retoma fácil.</td></tr>
+<tr><td>Baixar uma lista de arquivos</td><td><code>wget -i lista.txt</code></td><td>Um comando para todos.</td></tr>
+<tr><td>Num Arch recém-instalado, sem instalar nada</td><td><code>curl</code></td><td>É o único dos dois que sempre está lá.</td></tr>
+<tr><td>Num script que precisa saber se deu erro</td><td><code>curl -fsS</code> ou <code>wget -q</code></td><td>Os dois devolvem código diferente de 0 nos erros (o curl só com <code>-f</code>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>DNS: de nome para endereço</h2>
+<p>O <strong>DNS</strong> (<em>Domain Name System</em>) é a "agenda telefônica" da internet: traduz <code>archlinux.org</code> em <code>209.126.35.79</code>. Toda vez que o <code>ping</code>, o <code>curl</code> ou o <code>wget</code> mostram "Resolvendo…", é o DNS trabalhando. Quando um site "não abre" mas o <code>ping 1.1.1.1</code> funciona, quase sempre o culpado é o DNS.</p>
+
+<h3>getent: sempre disponível</h3>
+<p>O <code>getent</code> vem com a <code>glibc</code>, então existe em qualquer Arch. Ele resolve o nome <strong>do mesmo jeito que os programas resolvem</strong>, incluindo o arquivo <code>/etc/hosts</code>:</p>
+
+<pre class="term">$ getent hosts archlinux.org
+2604:cac0:a104:d::3 archlinux.org             « prefere o IPv6 quando existe
+$ getent ahostsv4 archlinux.org
+209.126.35.79   STREAM archlinux.org          « só IPv4
+209.126.35.79   DGRAM
+209.126.35.79   RAW</pre>
+
+<h3>dig: perguntar ao DNS em detalhes</h3>
+<p>O <code>dig</code> (de <em>domain information groper</em>, "o que tateia informações de domínio") pergunta direto ao servidor de DNS e mostra a resposta completa. Comece pela forma curta, com <code>+short</code>:</p>
+
+<pre class="term">$ dig +short archlinux.org
+209.126.35.79</pre>
+
+<p>Sem o <code>+short</code>, a saída é longa, mas tem partes úteis:</p>
+
+<pre class="term">$ dig archlinux.org
+
+; &lt;&lt;&gt;&gt; DiG 9.20.29 &lt;&lt;&gt;&gt; archlinux.org                          « versão do dig e a pergunta
+;; global options: +cmd
+;; Got answer:
+;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NOERROR, id: 38234    « NOERROR: o nome existe
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 65494
+;; QUESTION SECTION:
+;archlinux.org.			IN	A                              « a pergunta: qual o IPv4 (registro A)?
+
+;; ANSWER SECTION:
+archlinux.org.		1	IN	A	209.126.35.79                « a resposta
+
+;; Query time: 2 msec
+;; SERVER: 10.0.2.3#53(10.0.2.3) (UDP)                       « quem respondeu: o DNS do /etc/resolv.conf
+;; WHEN: Fri Oct 16 15:01:58 -03 2026
+;; MSG SIZE  rcvd: 58</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Significado</th></tr>
+<tr><td><code>status: NOERROR</code></td><td>A pergunta foi respondida. <code>NXDOMAIN</code> = o nome não existe; <code>SERVFAIL</code> = o servidor de DNS falhou.</td></tr>
+<tr><td><code>QUESTION SECTION</code></td><td>O que foi perguntado. <code>A</code> = endereço IPv4.</td></tr>
+<tr><td><code>ANSWER SECTION</code></td><td>A resposta: nome, <strong>TTL</strong> (segundos que a resposta pode ficar guardada em cache; aqui, 1), classe <code>IN</code> (internet), tipo e valor.</td></tr>
+<tr><td><code>Query time</code></td><td>Quanto a resposta demorou.</td></tr>
+<tr><td><code>SERVER</code></td><td>Qual servidor respondeu, na porta 53 (a do DNS). Na VM, o <code>10.0.2.3</code> do VirtualBox; em casa, normalmente o roteador.</td></tr>
+</table>
+</div>
+
+<p>Um nome inexistente não é erro para o <code>dig</code> (código 0); o problema aparece no <code>status</code>:</p>
+<pre class="term">$ dig nada.invalid | grep status
+;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NXDOMAIN, id: 45022</pre>
+
+<h3>Tipos de registro e outro servidor</h3>
+<p>Além do endereço, o DNS guarda outras informações, cada uma num <strong>tipo de registro</strong>. Saídas reais:</p>
+
+<pre class="term">$ dig +short AAAA archlinux.org
+2604:cac0:a104:d::3
+$ dig +short MX archlinux.org
+10 mail.archlinux.org.
+$ dig +short NS archlinux.org
+oxygen.ns.hetzner.com.
+hydrogen.ns.hetzner.com.
+helium.ns.hetzner.de.
+$ dig +short -x 1.1.1.1
+one.one.one.one.
+$ dig +short @1.1.1.1 archlinux.org
+209.126.35.79</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pergunta</th></tr>
+<tr><td><code>dig +short archlinux.org</code></td><td>IPv4 (registro <code>A</code>, o padrão)</td></tr>
+<tr><td><code>dig +short AAAA archlinux.org</code></td><td>IPv6</td></tr>
+<tr><td><code>dig +short MX archlinux.org</code></td><td>Servidor de e-mail (o número é a prioridade)</td></tr>
+<tr><td><code>dig +short NS archlinux.org</code></td><td>Os servidores de DNS responsáveis pelo domínio</td></tr>
+<tr><td><code>dig +short -x 1.1.1.1</code></td><td>DNS reverso: o nome de um IP</td></tr>
+<tr><td><code>dig +short @1.1.1.1 archlinux.org</code></td><td>Pergunta a um servidor específico (aqui, o da Cloudflare)</td></tr>
+</table>
+</div>
+
+<p>Perguntar a outro servidor com <code>@</code> é o teste clássico: se <code>dig @1.1.1.1 nome</code> responde e o <code>dig nome</code> normal não, o problema está no DNS configurado na sua máquina (veja <a href="rede.html">NetworkManager e iwd</a>).</p>
+
+<h3>nslookup e host</h3>
+<p>O mesmo pacote <code>bind</code> traz mais dois: o <code>nslookup</code>, antigo e que também existe no Windows, e o <code>host</code>, que responde em frases curtas:</p>
+
+<pre class="term">$ nslookup archlinux.org
+Server:		10.0.2.3
+Address:	10.0.2.3#53
+
+Non-authoritative answer:                    « veio de um cache, não do servidor "dono" do domínio
+Name:	archlinux.org
+Address: 209.126.35.79
+Name:	archlinux.org
+Address: 2604:cac0:a104:d::3
+$ host archlinux.org
+archlinux.org has address 209.126.35.79
+archlinux.org has IPv6 address 2604:cac0:a104:d::3
+archlinux.org mail is handled by 10 mail.archlinux.org.</pre>
+
+<h3>drill: a alternativa do ldns</h3>
+<p>O <code>drill</code> funciona como o <code>dig</code>, com uma saída parecida, e vem num pacote bem menor (<code>ldns</code>, do repositório <code>core</code>):</p>
+
+<pre class="term">$ drill archlinux.org
+;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, rcode: NOERROR, id: 1437
+;; flags: qr rd ra ; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+;; QUESTION SECTION:
+;; archlinux.org.	IN	A
+
+;; ANSWER SECTION:
+archlinux.org.	43	IN	A	209.126.35.79
+
+;; AUTHORITY SECTION:
+
+;; ADDITIONAL SECTION:
+
+;; Query time: 1 msec
+;; SERVER: 10.0.2.3
+;; WHEN: Fri Oct 16 15:02:14 2026
+;; MSG SIZE  rcvd: 47</pre>
+
+<p>O <code>drill</code> não tem o <code>+short</code>; para outro tipo ou outro servidor, a ordem é a mesma do dig: <code>drill MX archlinux.org</code>, <code>drill @1.1.1.1 archlinux.org</code>.</p>
+
+<h3>Formas diferentes de resolver um nome</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pacote</th><th>Quando usar</th></tr>
+<tr><td><code>getent hosts nome</code></td><td><code>glibc</code> (sempre)</td><td>Ver o que os programas veem, incluindo o <code>/etc/hosts</code>. Sem instalar nada.</td></tr>
+<tr><td><code>dig +short nome</code></td><td><code>bind</code></td><td>O mais usado em diagnóstico; pergunta direto ao DNS.</td></tr>
+<tr><td><code>host nome</code></td><td><code>bind</code></td><td>Resposta curta e legível (IPv4, IPv6 e e-mail).</td></tr>
+<tr><td><code>nslookup nome</code></td><td><code>bind</code></td><td>Hábito de quem vem do Windows.</td></tr>
+<tr><td><code>drill nome</code></td><td><code>ldns</code></td><td>Quer algo como o dig num pacote pequeno.</td></tr>
+<tr><td><code>resolvectl query nome</code></td><td><code>systemd</code></td><td>Só se o <code>systemd-resolved</code> estiver ligado (no Arch padrão, não está).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<p>O terminal simulado não acessa a internet (o <code>curl</code> e o <code>wget</code> respondem com um aviso do simulador), mas o <code>pacman</code> dele conhece os pacotes reais. Use-o para descobrir e instalar as ferramentas.</p>
+
+<div class="try" data-goal="ran:^\s*pacman\s+-F\s+dig\b,out:extra/bind" data-solucao="pacman -F dig">
+<p class="try-task"><strong>Missão 1:</strong> o comando <code>dig</code> não existe. Descubra com o <code>pacman</code> qual pacote do repositório traz o arquivo <code>usr/bin/dig</code>.</p>
+</div>
+
+<div class="try" data-goal="pkg:bind" data-solucao="sudo pacman -S bind" data-stdin="ana\nS">
+<p class="try-task"><strong>Missão 2:</strong> instale o pacote que traz o <code>dig</code>, o <code>host</code> e o <code>nslookup</code>. Confira a lista de dependências e o tamanho antes de responder <code>S</code>. (A senha da ana é <code>ana</code>.)</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*pacman\s+-Qi\s+curl\b,out:Necessário para" data-solucao="pacman -Qi curl">
+<p class="try-task"><strong>Missão 3:</strong> mostre as informações do pacote <code>curl</code> instalado e encontre, na linha "Necessário para", o motivo de ele existir em todo Arch.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>curl: (6) Could not resolve host</strong>
+<pre class="term">$ curl https://nada.invalid/
+curl: (6) Could not resolve host: nada.invalid
+$ echo $?
+6</pre>
+<p><strong>O que aconteceu:</strong> o DNS não achou o nome. Erro de digitação, ou DNS sem resposta.</p>
+<p><strong>Como confirmar:</strong> <code>getent hosts nada.invalid</code> volta vazio (código 2); teste o mesmo nome com <code>dig @1.1.1.1</code>. No wget, o mesmo problema aparece como <code>não foi possível resolver endereço de máquina</code> (código 4).</p>
+</div>
+
+<div class="cenario">
+<strong>curl: (7) Could not connect to server</strong>
+<pre class="term">$ curl http://127.0.0.1:8080/
+curl: (7) Failed to connect to 127.0.0.1:8080 after 0 ms: Could not connect to server
+$ echo $?
+7</pre>
+<p><strong>O que aconteceu:</strong> a máquina existe, mas nada escuta naquela porta. O serviço está parado ou usa outra porta.</p>
+<p><strong>Como confirmar:</strong> <code>ss -tln</code> mostra as portas abertas (veja <a href="ip.html">ip, ping, ss</a>); <code>systemctl status nginx</code> mostra se o serviço está rodando (veja <a href="systemd.html">systemctl e Serviços</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>curl: (28) Connection timed out</strong>
+<pre class="term">$ curl -m 2 http://192.0.2.1/
+curl: (28) Connection timed out after 2005 milliseconds
+$ echo $?
+28</pre>
+<p><strong>O que aconteceu:</strong> ninguém respondeu dentro do tempo (aqui, 2 segundos, pelo <code>-m 2</code>). Máquina desligada, IP errado ou um firewall descartando os pacotes.</p>
+</div>
+
+<div class="cenario">
+<strong>O 404 "passou" no script</strong>
+<p><strong>O que aconteceu:</strong> sem <code>-f</code>, o curl devolve 0 mesmo quando o site responde 404 ou 500 (veja o exemplo com <code>PIPESTATUS</code> acima).</p>
+<p><strong>Como resolver:</strong> use <code>curl -fsS</code>; aí o código vira 22 e o <code>||</code> do script funciona.</p>
+</div>
+
+<div class="cenario">
+<strong>"dig: comando não encontrado" (ou wget, ou nslookup)</strong>
+<pre class="term">$ dig +short archlinux.org
+bash: dig: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> no Arch, o <code>dig</code>, o <code>host</code> e o <code>nslookup</code> vêm no pacote <code>bind</code>, e o <code>wget</code> no pacote <code>wget</code>; nenhum vem no <code>base</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S bind</code> (ou <code>wget</code>). Enquanto isso, <code>getent hosts nome</code> resolve nomes e <code>curl -O URL</code> baixa arquivos sem instalar nada. Para qualquer comando que falte, <code>pacman -F comando</code> diz o pacote (rode <code>sudo pacman -Fy</code> uma vez antes, para baixar a lista de arquivos).</p>
+</div>
+
+<div class="cenario">
+<strong>curl: (60) SSL certificate problem</strong>
+<p><strong>O que aconteceu:</strong> o certificado do site não é confiável: vencido, para outro nome, autoassinado, ou o <strong>relógio do seu computador está errado</strong>. No Arch, a última causa é comum logo depois da instalação, porque o NTP vem desligado.</p>
+<p><strong>Como confirmar:</strong> <code>timedatectl</code>; se a hora estiver errada e <code>NTP service: inactive</code>, ligue com <code>sudo timedatectl set-ntp true</code>. Não "resolva" com <code>curl -k</code> (ignora a segurança).</p>
+</div>
+
+<hr>
+
+<h2>Os códigos de erro do curl</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Significado</th></tr>
+<tr><td><code>0</code></td><td>Sucesso (inclusive 404, se não usar <code>-f</code>)</td></tr>
+<tr><td><code>6</code></td><td>Não resolveu o nome (DNS)</td></tr>
+<tr><td><code>7</code></td><td>Não conectou (porta fechada, serviço parado)</td></tr>
+<tr><td><code>22</code></td><td>Resposta HTTP 400 ou mais, com <code>-f</code></td></tr>
+<tr><td><code>28</code></td><td>Tempo esgotado</td></tr>
+<tr><td><code>60</code></td><td>Certificado SSL não confiável</td></tr>
+</table>
+</div>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>curl URL</code></td><td>Mostra a resposta na tela</td></tr>
+<tr><td><code>curl -I URL</code> · <code>curl -IL URL</code></td><td>Só o cabeçalho · seguindo redirecionamentos</td></tr>
+<tr><td><code>curl -o nome URL</code> · <code>curl -O URL</code></td><td>Salva com o nome escolhido · com o nome do endereço</td></tr>
+<tr><td><code>curl -s -o /dev/null -w "%{http_code}\n" URL</code></td><td>Só o código HTTP</td></tr>
+<tr><td><code>curl -fsS URL</code></td><td>Para scripts: erro 22 em 4xx/5xx</td></tr>
+<tr><td><code>wget URL</code> · <code>wget -O nome URL</code></td><td>Baixa · com outro nome</td></tr>
+<tr><td><code>wget -c URL</code></td><td>Retoma um download</td></tr>
+<tr><td><code>wget -qO- URL</code></td><td>Mostra na tela, como o curl</td></tr>
+<tr><td><code>wget --spider -S URL</code></td><td>Confere se existe e mostra o cabeçalho</td></tr>
+<tr><td><code>getent hosts nome</code></td><td>Resolve um nome (sempre instalado)</td></tr>
+<tr><td><code>dig +short nome</code> · <code>dig +short MX nome</code> · <code>dig @1.1.1.1 nome</code></td><td>IP · e-mail · outro servidor (pacote <code>bind</code>)</td></tr>
+<tr><td><code>host nome</code> · <code>nslookup nome</code> · <code>drill nome</code></td><td>Outras formas de perguntar ao DNS</td></tr>
+<tr><td><code>pacman -F comando</code></td><td>Descobre o pacote que traz um comando</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só o cabeçalho</h3>
+<p>Complete para ver o código HTTP e o cabeçalho de <code>https://archlinux.org</code>:</p>
+<div class="ex-code">curl <input data-answer="-I|--head" aria-label="opção"> https://archlinux.org</div>
+</div>
+
+<div class="exercise">
+<h3>2. Salvar com o nome do endereço</h3>
+<p>Complete para salvar o arquivo como <code>robots.txt</code>, sem digitar o nome:</p>
+<div class="ex-code">curl <input data-answer="-O|--remote-name" aria-label="opção"> https://archlinux.org/robots.txt</div>
+</div>
+
+<div class="exercise">
+<h3>3. Continuar o download</h3>
+<p>Complete para retomar o download interrompido de uma ISO com o wget:</p>
+<div class="ex-code">wget <input data-answer="-c|--continue" aria-label="opção"> https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso</div>
+</div>
+
+<div class="exercise">
+<h3>4. Só os IPs</h3>
+<p>Complete para ver apenas o endereço de <code>archlinux.org</code> com o dig:</p>
+<div class="ex-code">dig <input data-answer="+short" aria-label="opção"> archlinux.org</div>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Num Arch recém-instalado, qual destes comandos funciona sem instalar nada?</p>
+<label><input type="radio" name="q5"> <code>curl -I https://archlinux.org</code></label>
+<label><input type="radio" name="q5"> <code>wget https://archlinux.org</code></label>
+<label><input type="radio" name="q5"> <code>dig archlinux.org</code></label>
+<label><input type="radio" name="q5"> <code>nslookup archlinux.org</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. <code>curl -fsS https://archlinux.org/naoexiste; echo $?</code> mostra qual código?</p>
+<label><input type="radio" name="q6"> 0</label>
+<label><input type="radio" name="q6"> 6</label>
+<label><input type="radio" name="q6"> 404</label>
+<label><input type="radio" name="q6"> 22</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">7. No Arch, de qual pacote vem o <code>dig</code>?</p>
+<label><input type="radio" name="q7"> <code>dnsutils</code></label>
+<label><input type="radio" name="q7"> <code>bind</code></label>
+<label><input type="radio" name="q7"> <code>bind-tools</code></label>
+<label><input type="radio" name="q7"> <code>iputils</code></label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>curl</code> vem em todo Arch (o <code>pacman</code> depende dele); <code>wget</code> (<code>wget</code>), <code>dig</code>/<code>host</code>/<code>nslookup</code> (<code>bind</code>) e <code>drill</code> (<code>ldns</code>) são instalados à parte. <code>pacman -F</code> descobre o pacote.</li>
+  <li><code>curl -I</code> mostra o cabeçalho; <code>-L</code> segue redirecionamentos; <code>-o</code>/<code>-O</code> salvam; <code>-s</code> silencia.</li>
+  <li>Em scripts: <code>curl -fsS</code> e o código de saída (6 DNS, 7 conexão, 22 erro HTTP, 28 tempo).</li>
+  <li><code>wget</code> baixa e fala português; <code>-c</code> retoma; os erros dão código 4 (rede) ou 8 (servidor).</li>
+  <li><code>getent hosts</code> resolve sem instalar nada; <code>dig +short nome</code> pergunta ao DNS; <code>@1.1.1.1</code> testa outro servidor.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o <a href="https://wiki.archlinux.org/title/CURL">cURL</a> e o <a href="https://wiki.archlinux.org/title/Wget">Wget</a> têm páginas próprias, com as opções e a configuração (<code>~/.wgetrc</code>, proxy); as ferramentas de DNS (<code>dig</code>, <code>drill</code>, <code>getent</code>) e a ordem em que o sistema resolve os nomes estão em <a href="https://wiki.archlinux.org/title/Domain_name_resolution">Domain name resolution</a>; o pacote <code>bind</code> como servidor, em <a href="https://wiki.archlinux.org/title/BIND">BIND</a>; e o <code>pacman -F</code>, em <a href="https://wiki.archlinux.org/title/Pacman#Search_for_a_package_that_contains_a_specific_file">pacman: Search for a package that contains a specific file</a> (<a href="https://wiki.archlinux.org/title/Pacman_(Portugu%C3%AAs)">pacman em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

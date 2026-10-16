@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arch rede — NetworkManager, nmcli, iwd, IP fixo, DNS, ip e ss | Guia Arch</title>
-<meta name="description" content="Rede no Arch Linux com NetworkManager: nmcli general, device, connection, Wi-Fi, nmtui, IP fixo, DNS e /etc/resolv.conf, ip a, ip route, ping, ss -tulpn, e as alternativas iwd e systemd-networkd, com saídas reais.">
+<title>Arch rede — NetworkManager, nmcli, iwd, IP fixo e DNS | Guia Arch</title>
+<meta name="description" content="Rede no Arch Linux com NetworkManager: nmcli general, device, connection, Wi-Fi, nmtui, IP fixo, DNS e /etc/resolv.conf, e as alternativas iwd e systemd-networkd, com saídas reais.">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -18,7 +18,7 @@
 
 <h1><span class="hl">NetworkManager</span> e iwd</h1>
 
-<p class="intro">No Arch, a rede não "simplesmente funciona" sozinha: alguém precisa pedir um endereço ao roteador, escolher o Wi-Fi e configurar o DNS. Esse "alguém" é um <strong>gerenciador de rede</strong>, e você escolhe qual na instalação. O mais comum, e o da VM do guia, é o <strong>NetworkManager</strong>, controlado pelo comando <code>nmcli</code>. Nesta aula você aprende a usá-lo, a conferir a rede com <code>ip</code>, <code>ping</code> e <code>ss</code>, e conhece as alternativas.</p>
+<p class="intro">No Arch, a rede não "simplesmente funciona" sozinha: alguém precisa pedir um endereço ao roteador, escolher o Wi-Fi e configurar o DNS. Esse "alguém" é um <strong>gerenciador de rede</strong>, e você escolhe qual na instalação. O mais comum, e o da VM do guia, é o <strong>NetworkManager</strong>, controlado pelo comando <code>nmcli</code>. Nesta aula você aprende a usá-lo e conhece as alternativas; a conferência da rede com <code>ip</code>, <code>ping</code> e <code>ss</code> tem aula própria.</p>
 
 <div class="note">
 <strong>Você vai aprender</strong>
@@ -26,7 +26,7 @@
   <li>Ver o estado da rede com <code>nmcli general</code>, <code>nmcli device</code> e <code>nmcli connection</code>.</li>
   <li>Conectar a um Wi-Fi com <code>nmcli</code> e com o <code>nmtui</code>.</li>
   <li>Configurar IP fixo e DNS (e de onde vem o <code>/etc/resolv.conf</code>).</li>
-  <li>Diagnosticar com <code>ip a</code>, <code>ip route</code>, <code>ping</code> e <code>ss -tulpn</code>.</li>
+  <li>Onde continuar o diagnóstico (<code>ip</code>, <code>ping</code>, <code>ss</code>) depois de configurar.</li>
   <li>Quando usar iwd ou systemd-networkd em vez do NetworkManager.</li>
 </ul>
 </div>
@@ -237,119 +237,21 @@ notebook
 
 <hr>
 
-<h2>Diagnóstico: ip, ping, ss</h2>
+<h2>Conferir a rede: ip, ping, ss</h2>
+<p>O NetworkManager <strong>configura</strong> a rede; para <strong>conferir</strong> o resultado, use as ferramentas do kernel, que vêm no <code>base</code>: <code>ip</code> mostra as placas, os endereços e as rotas; <code>ping</code> testa se um destino responde; <code>ss</code> lista as portas abertas. Na VM, o resumo é este:</p>
 
-<h3>ip a: endereços</h3>
-<p>O comando <code>ip</code> (pacote <code>iproute2</code>) mostra o que o kernel sabe, independentemente do gerenciador. <code>ip a</code> = <code>ip address</code>:</p>
-
-<pre class="term">$ ip a
-1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host noprefixroute
-       valid_lft forever preferred_lft forever
-2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
-    altname enx08002774b203
-    inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3
-       valid_lft 83747sec preferred_lft 83747sec
-    inet6 fd17:625c:f037:2:3074:376a:4fe9:621c/64 scope global dynamic noprefixroute
-       valid_lft 86301sec preferred_lft 14301sec
-    inet6 fe80::9c83:cf89:6133:11ca/64 scope link noprefixroute
-       valid_lft forever preferred_lft forever</pre>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Pedaço</th><th>Significado</th></tr>
-<tr><td><code>2: enp0s3:</code></td><td>Número e nome da placa</td></tr>
-<tr><td><code>&lt;…,UP,LOWER_UP&gt;</code></td><td><code>UP</code> = ligada; <code>LOWER_UP</code> = cabo conectado / Wi-Fi associado. Sem <code>LOWER_UP</code>: cabo solto.</td></tr>
-<tr><td><code>state UP</code></td><td>Estado do enlace</td></tr>
-<tr><td><code>link/ether 08:00:27:…</code></td><td>Endereço MAC</td></tr>
-<tr><td><code>altname enx08002774b203</code></td><td>Outro nome da mesma placa (baseado no MAC)</td></tr>
-<tr><td><code>inet 10.0.2.15/24</code></td><td>O IPv4 e a rede</td></tr>
-<tr><td><code>dynamic</code> / <code>valid_lft 83747sec</code></td><td>Veio por DHCP, "emprestado" por mais ~23 horas (renova sozinho)</td></tr>
-<tr><td><code>inet6 fe80::…</code> <code>scope link</code></td><td>IPv6 local, só vale na rede local</td></tr>
-</table>
-</div>
-
-<p>Para uma visão de uma linha por placa, <code>-br</code> (<em>brief</em>):</p>
 <pre class="term">$ ip -br a
 lo               UNKNOWN        127.0.0.1/8 ::1/128
-enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621c/64 fe80::9c83:cf89:6133:11ca/64</pre>
+enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621c/64 fe80::9c83:cf89:6133:11ca/64
+$ ip route
+default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100        « o gateway (o mesmo IP4.GATEWAY do nmcli)
+10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15 metric 100</pre>
+
+<p>Cada linha dessas saídas, o <code>ping</code> com seus códigos de saída, o <code>tracepath</code>, o <code>ss -tulpn</code> e o roteiro de diagnóstico "placa → gateway → IP → nome" têm uma aula própria: <a href="ip.html">ip, ping, ss</a>. Para testar sites e DNS (<code>curl</code>, <code>dig</code>), veja <a href="curl-wget.html">curl, wget, dig</a>.</p>
 
 <div class="try" data-goal="out:enp0s3" data-solucao="ip a">
 <p class="try-task"><strong>Missão:</strong> mostre os endereços IP da máquina e descubra o nome da placa com fio.</p>
 </div>
-
-<h3>ip route: o caminho</h3>
-<pre class="term">$ ip route
-default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100
-10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15 metric 100</pre>
-
-<dl class="anatomy">
-  <dt>default via 10.0.2.2</dt><dd>A <strong>rota padrão</strong>: tudo que não é da rede local vai para o roteador 10.0.2.2. Sem essa linha, não há internet.</dd>
-  <dt>dev enp0s3 proto dhcp</dt><dd>Pela placa enp0s3; a rota veio do DHCP.</dd>
-  <dt>10.0.2.0/24 … scope link</dt><dd>A rede local: endereços 10.0.2.x são alcançados direto, sem roteador.</dd>
-  <dt>metric 100</dt><dd>Prioridade (menor ganha), quando há duas rotas (cabo e Wi-Fi juntos).</dd>
-</dl>
-
-<h3>ping: tem alguém aí?</h3>
-<pre class="term">$ ping -c 3 archlinux.org
-PING archlinux.org (209.126.35.79) 56(84) bytes de dados.
-64 bytes de 209.126.35.79: icmp_seq=1 ttl=64 tempo=41.6 ms
-64 bytes de 209.126.35.79: icmp_seq=2 ttl=64 tempo=40.9 ms
-64 bytes de 209.126.35.79: icmp_seq=3 ttl=64 tempo=41.7 ms
-
---- archlinux.org estatísticas de ping ---
-3 pacotes transmitidos, 3 recebidos, 0% packet loss, time 2384ms
-rtt min/avg/max/mdev = 40.864/41.369/41.660/0.358 ms
-$ echo $?
-0</pre>
-
-<p><code>-c 3</code> manda 3 pacotes e para (sem ele, o <code>ping</code> continua até <kbd>Ctrl</kbd>+<kbd>C</kbd>). A primeira linha mostra que o DNS funcionou (o nome virou <code>209.126.35.79</code>); cada resposta mostra o tempo de ida e volta. Os três resultados possíveis, com códigos de saída diferentes:</p>
-
-<pre class="term">$ ping -c 2 -W 2 10.0.2.99
-PING 10.0.2.99 (10.0.2.99) 56(84) bytes de dados.
-
---- 10.0.2.99 estatísticas de ping ---
-2 pacotes transmitidos, 0 recebidos, 100% packet loss, time 1555ms
-
-$ echo $?
-1                                « ninguém respondeu (máquina desligada, ou bloqueia ping)
-$ ping -c 1 nao-existe.invalid
-ping: nao-existe.invalid: Nome ou serviço desconhecido
-$ echo $?
-2                                « o nome não foi traduzido: problema de DNS (ou de digitação)</pre>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Teste, nesta ordem</th><th>Se falhar, o problema é…</th></tr>
-<tr><td><code>ip -br a</code> mostra um IP na placa?</td><td>Cabo/Wi-Fi ou DHCP</td></tr>
-<tr><td><code>ping -c 3 IP-do-gateway</code> (o <code>default via</code>)</td><td>A rede local / o roteador</td></tr>
-<tr><td><code>ping -c 3 1.1.1.1</code></td><td>A saída para a internet</td></tr>
-<tr><td><code>ping -c 3 archlinux.org</code></td><td>O DNS (se o anterior funcionou)</td></tr>
-</table>
-</div>
-
-<h3>ss -tulpn: quem está escutando</h3>
-<p><code>ss</code> (<em>socket statistics</em>) mostra as portas abertas. É o que você confere antes de mexer no firewall (veja <a href="firewall.html">Firewall</a>).</p>
-
-<dl class="anatomy">
-  <dt>-t / -u</dt><dd>TCP / UDP.</dd>
-  <dt>-l</dt><dd>Só quem está <em>listening</em> (esperando conexões).</dd>
-  <dt>-p</dt><dd>Mostra o processo (precisa de sudo para os de outros usuários).</dd>
-  <dt>-n</dt><dd>Números (porta 22) em vez de nomes (ssh).</dd>
-</dl>
-
-<pre class="term">$ sudo ss -tulpn
-Netid State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess
-tcp   LISTEN 0      511          0.0.0.0:8080      0.0.0.0:*    users:(("nginx",pid=97069,fd=5),("nginx",pid=97068,fd=5))
-tcp   LISTEN 0      511          0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=97069,fd=6),("nginx",pid=97068,fd=6))
-tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*    users:(("sshd",pid=310,fd=6))
-tcp   LISTEN 0      128             [::]:22           [::]:*    users:(("sshd",pid=310,fd=7))</pre>
-
-<p>Leia assim: o <code>sshd</code> espera conexões na porta 22, em todos os endereços IPv4 (<code>0.0.0.0</code>) e IPv6 (<code>[::]</code>); naquele momento outro autor estava com o <code>nginx</code> ligado, nas portas 80 e 8080. Um endereço <code>127.0.0.1:porta</code> quer dizer "só aceita conexões da própria máquina". Sem <code>sudo</code>, a coluna <code>Process</code> sai vazia para serviços do root.</p>
 
 <hr>
 
@@ -428,9 +330,7 @@ ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
 <tr><td><code>nmcli radio wifi on|off</code></td><td>Liga/desliga o Wi-Fi</td></tr>
 <tr><td><code>sudo nmcli connection modify NOME ipv4.method manual ipv4.addresses …</code></td><td>IP fixo</td></tr>
 <tr><td><code>nmtui</code></td><td>Menus no terminal</td></tr>
-<tr><td><code>ip a</code> · <code>ip -br a</code> · <code>ip route</code></td><td>Endereços · resumo · rotas</td></tr>
-<tr><td><code>ping -c 3 destino</code></td><td>Testa se responde</td></tr>
-<tr><td><code>sudo ss -tulpn</code></td><td>Portas abertas e processos</td></tr>
+<tr><td><code>ip -br a</code> · <code>ip route</code></td><td>Conferir endereços e gateway (detalhes em <a href="ip.html">ip, ping, ss</a>)</td></tr>
 <tr><td><code>cat /etc/resolv.conf</code> · <code>getent hosts nome</code></td><td>DNS em uso · testar uma tradução</td></tr>
 <tr><td><code>sudo hostnamectl hostname nome</code></td><td>Muda o nome da máquina</td></tr>
 </table>
@@ -453,9 +353,9 @@ ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
 </div>
 
 <div class="exercise">
-<h3>3. Portas abertas</h3>
-<p>Complete para listar as portas TCP e UDP em escuta, com processos e números:</p>
-<div class="ex-code">sudo ss <input data-answer="-tulpn|-tulnp|-tlunp|-lntup|-plunt" aria-label="opções"></div>
+<h3>3. Reconectar</h3>
+<p>Complete para ativar de novo o perfil "Conexão cabeada 1":</p>
+<div class="ex-code">nmcli connection <input data-answer="up" aria-label="ação"> 'Conexão cabeada 1'</div>
 </div>
 
 <div class="mc" data-answer="3">
@@ -490,7 +390,7 @@ ping: nao-existe.invalid: Nome ou serviço desconhecido</pre>
   <li><code>nmcli general</code>, <code>device</code> e <code>connection</code> mostram o estado; <code>nmcli device wifi connect</code> e <code>nmtui</code> conectam.</li>
   <li>IP fixo e DNS se mudam no <strong>perfil</strong> (<code>nmcli connection modify</code>), não editando arquivos.</li>
   <li>O <code>/etc/resolv.conf</code> é escrito pelo NetworkManager; o <code>systemd-resolved</code> vem desligado.</li>
-  <li>Diagnóstico: <code>ip -br a</code> → <code>ip route</code> → <code>ping</code> (gateway, IP, nome) → <code>ss -tulpn</code>.</li>
+  <li>Para conferir a rede: <code>ip -br a</code> e <code>ip route</code>; o diagnóstico completo está em <a href="ip.html">ip, ping, ss</a>.</li>
   <li>Alternativas: <code>iwd</code> (Wi-Fi leve) e <code>systemd-networkd</code> (servidores).</li>
 </ul>
 

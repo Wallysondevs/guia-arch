@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch .bashrc, alias e PATH — configurar o terminal | Guia Arch</title>
+<meta name="description" content="O .bashrc e o .bash_profile reais do Arch Linux explicados linha a linha: o prompt [\u@\h \W]\$, alias (criar, listar, unalias, permanente), o PATH e o ~/.local/bin, which e type, source, export, /etc/profile, /etc/profile.d, /etc/bash.bashrc e o bash-completion.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">.bashrc, alias e PATH</span></h1>
+
+<p class="intro">Toda vez que você abre um terminal, o <code>bash</code> (o programa que lê o que você digita) executa alguns arquivos de configuração. O principal é o <code>~/.bashrc</code>: é ali que você cria atalhos (<strong>alias</strong>), define variáveis e diz onde o sistema deve procurar programas (o <strong>PATH</strong>). O Arch entrega uma configuração mínima, de 10 linhas, e espera que você monte a sua.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que tem no <code>~/.bashrc</code> e no <code>~/.bash_profile</code> do Arch, e a diferença entre os dois.</li>
+  <li>Ler o prompt <code>[\u@\h \W]\$</code> e mudá-lo.</li>
+  <li>Criar, listar e remover alias (<code>alias</code>, <code>unalias</code>) e torná-los permanentes com <code>source</code>.</li>
+  <li>Ver o PATH, acrescentar o <code>~/.local/bin</code> e descobrir o que vai rodar com <code>which</code> e <code>type</code>.</li>
+  <li>Onde fica a configuração do sistema todo (<code>/etc/profile</code>, <code>/etc/profile.d/</code>, <code>/etc/bash.bashrc</code>) e como o bash-completion completa comandos com <kbd>Tab</kbd>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Antes dos arquivos: variáveis</h2>
+<p>Uma <strong>variável</strong> é um nome que guarda um valor. O bash já começa com várias, chamadas <strong>variáveis de ambiente</strong>, que os programas consultam para saber quem você é, qual é a sua pasta pessoal e assim por diante. Para ler uma, coloque <code>$</code> antes do nome (veja também <a href="script-variaveis.html">Variáveis e Argumentos</a>):</p>
+
+<dl class="anatomy">
+  <dt>echo</dt><dd>Mostra na tela o que recebeu.</dd>
+  <dt>$HOME</dt><dd>O <code>$</code> pede ao bash para trocar o nome pelo valor antes de rodar o <code>echo</code>.</dd>
+</dl>
+
+<pre class="term">$ echo $SHELL $HOME $USER $LANG
+/bin/bash /home/ana ana pt_BR.UTF-8
+$ echo $EDITOR
+                                       « vazia: o Arch não define um editor padrão</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Variável</th><th>Guarda</th><th>Valor na VM do guia</th></tr>
+<tr><td><code>HOME</code></td><td>Sua pasta pessoal</td><td><code>/home/ana</code></td></tr>
+<tr><td><code>USER</code></td><td>Seu nome de usuário</td><td><code>ana</code></td></tr>
+<tr><td><code>SHELL</code></td><td>O seu shell de login</td><td><code>/bin/bash</code></td></tr>
+<tr><td><code>LANG</code></td><td>Idioma e formato regional</td><td><code>pt_BR.UTF-8</code> (veio do <code>/etc/locale.conf</code>, feito na <a href="configurar.html">instalação</a>)</td></tr>
+<tr><td><code>PATH</code></td><td>Onde procurar programas</td><td><code>/usr/local/sbin:/usr/local/bin:/usr/bin:…</code></td></tr>
+<tr><td><code>PS1</code></td><td>O desenho do prompt</td><td><code>[\u@\h \W]\$ </code></td></tr>
+<tr><td><code>EDITOR</code></td><td>Editor usado por <code>crontab -e</code>, <code>git commit</code>, <code>systemctl edit</code>…</td><td>vazia</td></tr>
+</table>
+</div>
+
+<p>Para ver todas as variáveis de ambiente, use <code>env</code> (ou <code>printenv</code>); para uma só, <code>printenv NOME</code>, que devolve código 1 se ela não existir.</p>
+
+<hr>
+
+<h2>Os arquivos do Arch: .bashrc e .bash_profile</h2>
+<p>Quando um usuário é criado com <code>useradd -m</code> (veja <a href="usuarios.html">Usuários e Grupos</a>), a pasta pessoal ganha três arquivos ocultos, copiados de <code>/etc/skel</code> (de <em>skeleton</em>, "esqueleto"). Eles vêm do pacote <code>bash</code>:</p>
+
+<pre class="term">$ ls -la /etc/skel
+total 20
+drwxr-xr-x  2 root root 4096 16 out 12:08 .
+drwxr-xr-x 70 root root 4096 16 out 14:51 ..
+-rw-r--r--  1 root root   21 15 set 16:47 .bash_logout
+-rw-r--r--  1 root root   57 15 set 16:47 .bash_profile
+-rw-r--r--  1 root root  172 15 set 16:47 .bashrc
+$ pacman -Qo /etc/skel/.bashrc
+/etc/skel/.bashrc pertence a bash 5.3.20-1</pre>
+
+<h3>O ~/.bashrc, linha por linha</h3>
+<p>São 172 bytes. O arquivo inteiro:</p>
+
+<pre class="term">$ cat ~/.bashrc
+#
+# ~/.bashrc
+#
+
+# If not running interactively, don't do anything
+[[ $- != *i* ]] &amp;&amp; return
+
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+PS1='[\u@\h \W]\$ '</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que faz</th></tr>
+<tr><td><code># …</code></td><td>Comentários: o bash ignora tudo depois do <code>#</code>.</td></tr>
+<tr><td><code>[[ $- != *i* ]] &amp;&amp; return</code></td><td>"Se este shell não é interativo, pare aqui." O <code>$-</code> guarda as opções do shell; o <code>i</code> aparece quando há uma pessoa digitando. Assim, scripts e comandos remotos (<code>ssh máquina comando</code>) não carregam alias e prompt, que só servem para gente.</td></tr>
+<tr><td><code>alias ls='ls --color=auto'</code></td><td>É por isso que o <code>ls</code> tem cores: o <code>ls</code> que você digita vira <code>ls --color=auto</code>.</td></tr>
+<tr><td><code>alias grep='grep --color=auto'</code></td><td>Destaca em cor o trecho encontrado pelo <a href="grep.html">grep</a>.</td></tr>
+<tr><td><code>PS1='[\u@\h \W]\$ '</code></td><td>O desenho do prompt (seção própria, abaixo).</td></tr>
+</table>
+</div>
+
+<p>Compare com outras distribuições: o Arch <strong>não</strong> tem <code>ll</code>, <code>la</code>, histórico configurado nem prompt colorido. É o "faça você mesmo" do Arch: o mínimo, e você acrescenta o que quiser.</p>
+
+<h3>O ~/.bash_profile e o ~/.bash_logout</h3>
+<pre class="term">$ cat ~/.bash_profile
+#
+# ~/.bash_profile
+#
+
+[[ -f ~/.bashrc ]] &amp;&amp; . ~/.bashrc
+$ cat ~/.bash_logout
+#
+# ~/.bash_logout
+#</pre>
+
+<p>O <code>.bash_profile</code> só tem uma linha de verdade: "se o <code>~/.bashrc</code> existe (<code>-f</code>), leia-o" (o <code>.</code> é o mesmo que <code>source</code>, explicado adiante). O <code>.bash_logout</code> roda quando você sai de um shell de login, e vem vazio.</p>
+
+<h3>Shell de login × shell interativo: quem lê o quê</h3>
+<p>Por que dois arquivos? Porque o bash é aberto de dois jeitos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Tipo de shell</th><th>Lê</th></tr>
+<tr><td>Login no TTY (tela preta, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F3</kbd>) ou entrar por <code>ssh</code></td><td><strong>De login</strong></td><td><code>/etc/profile</code>, depois <code>~/.bash_profile</code> (que lê o <code>~/.bashrc</code>)</td></tr>
+<tr><td>Abrir um terminal no desktop (GNOME, KDE…), ou digitar <code>bash</code></td><td><strong>Interativo, não de login</strong></td><td><code>/etc/bash.bashrc</code>, depois <code>~/.bashrc</code></td></tr>
+<tr><td>Rodar um script (<code>bash script.sh</code>)</td><td>Não interativo</td><td>Nenhum dos dois</td></tr>
+</table>
+</div>
+
+<p>Dá para perguntar ao bash qual é o caso:</p>
+<pre class="term">$ shopt -q login_shell &amp;&amp; echo "shell de login" || echo "não é de login"
+não é de login
+$ bash -lc 'shopt -q login_shell &amp;&amp; echo "shell de login"'
+shell de login                                       « o -l abre um shell de login</pre>
+
+<p>A regra prática da Arch Wiki:</p>
+<ul>
+  <li><strong><code>~/.bashrc</code></strong>: alias, funções, o prompt, opções do terminal. Tudo o que é "para gente digitando".</li>
+  <li><strong><code>~/.bash_profile</code></strong>: variáveis de ambiente que valem para a sessão inteira (<code>PATH</code>, <code>EDITOR</code>), lidas uma vez no login.</li>
+</ul>
+
+<div class="note">
+<strong>E o ~/.profile dos tutoriais?</strong>
+<p>Muitos tutoriais (do Debian e do Ubuntu) mandam editar o <code>~/.profile</code>. Num shell de login, o bash lê <strong>só o primeiro</strong> que existir entre <code>~/.bash_profile</code>, <code>~/.bash_login</code> e <code>~/.profile</code>. Como o Arch já cria o <code>~/.bash_profile</code>, um <code>~/.profile</code> que você criar será <strong>ignorado</strong> pelo bash. No Arch, use o <code>~/.bash_profile</code>.</p>
+</div>
+
+<hr>
+
+<h2>O prompt do Arch: PS1</h2>
+<p>O prompt <code>[ana@notebook ~]$</code> é desenhado a partir da variável <code>PS1</code> (<em>Prompt String 1</em>). Os pedaços com barra invertida são trocados a cada linha:</p>
+
+<pre class="term">$ echo "$PS1"
+[\u@\h \W]\$</pre>
+
+<dl class="anatomy">
+  <dt>[</dt><dd>Um colchete, literal.</dd>
+  <dt>\u</dt><dd>O <strong>usuário</strong> (<em>user</em>): <code>ana</code>.</dd>
+  <dt>@</dt><dd>Uma arroba, literal.</dd>
+  <dt>\h</dt><dd>O nome da máquina (<em>hostname</em>), até o primeiro ponto: <code>notebook</code>.</dd>
+  <dt>\W</dt><dd>Só o <strong>nome</strong> da pasta atual (W maiúsculo); a pasta pessoal aparece como <code>~</code>. Em <code>/home/ana/Documentos/projetos</code>, mostra <code>projetos</code>.</dd>
+  <dt>]</dt><dd>Fecha o colchete.</dd>
+  <dt>\$</dt><dd><code>$</code> para usuários comuns, <code>#</code> para o root. É assim que o prompt do root vira <code>[root@notebook ~]#</code>.</dd>
+</dl>
+
+<p>Para experimentar, mude o <code>PS1</code> no próprio terminal. Vale só até fechar (ou até reler o <code>.bashrc</code>):</p>
+
+<pre class="term">$ PS1='\u em \w\$ '
+ana em ~$ cd Documentos/projetos
+ana em ~/Documentos/projetos$ cd                      « \w (minúsculo): o caminho inteiro
+ana em ~$ source ~/.bashrc
+[ana@notebook ~]$                                     « voltou ao PS1 do .bashrc</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Vira</th><th>Código</th><th>Vira</th></tr>
+<tr><td><code>\u</code></td><td>usuário</td><td><code>\w</code></td><td>caminho completo (<code>~/Documentos/projetos</code>)</td></tr>
+<tr><td><code>\h</code></td><td>máquina</td><td><code>\W</code></td><td>só a pasta (<code>projetos</code>)</td></tr>
+<tr><td><code>\t</code></td><td>hora (<code>14:30:00</code>)</td><td><code>\d</code></td><td>data (<code>sex out 16</code>)</td></tr>
+<tr><td><code>\$</code></td><td><code>$</code> ou <code>#</code></td><td><code>\n</code></td><td>quebra de linha</td></tr>
+</table>
+</div>
+
+<p>Cores entram com códigos de escape, sempre entre <code>\[</code> e <code>\]</code> (para o bash não errar a largura da linha). Um prompt verde e em negrito: <code>PS1='\[\e[1;32m\][\u@\h \W]\$\[\e[0m\] '</code> (<code>1;32</code> = negrito verde; <code>0</code> = volta ao normal). Gostou? Troque a linha <code>PS1=</code> do seu <code>~/.bashrc</code>.</p>
+
+<p>Se o <code>.bashrc</code> não definir nenhum <code>PS1</code>, quem desenha o prompt é o <code>/etc/bash.bashrc</code>, com o mesmo <code>[\u@\h \W]\$</code> (veja a seção do sistema, abaixo). O root, que tem o seu próprio <code>/root/.bashrc</code>, cai nesse caso quando o arquivo não existe.</p>
+
+<hr>
+
+<h2>alias: atalhos para comandos</h2>
+<p>Um <strong>alias</strong> ("apelido") é um nome curto que o bash troca por um comando maior, antes de rodar. Para ver todos, digite <code>alias</code> sem nada. No Arch, a lista é curtíssima:</p>
+
+<pre class="term">$ alias
+alias grep='grep --color=auto'
+alias ls='ls --color=auto'
+$ ll
+bash: ll: comando não encontrado
+$ echo $?
+127                                   « 127 = comando não encontrado</pre>
+
+<p>O <code>ll</code> que você vê em tutoriais não é um programa: é um alias que outras distribuições trazem pronto. No Arch, você cria.</p>
+
+<h3>Criar um alias</h3>
+<dl class="anatomy">
+  <dt>alias</dt><dd>O comando que cria apelidos.</dd>
+  <dt>ll</dt><dd>O nome do atalho.</dd>
+  <dt>=</dt><dd>Sem espaço antes nem depois.</dd>
+  <dt>'ls -lh'</dt><dd>O comando completo, entre aspas simples (por causa do espaço; veja <a href="script-variaveis.html">Variáveis</a> sobre aspas).</dd>
+</dl>
+
+<pre class="term">$ alias ll='ls -lh'
+$ ll Documentos
+total 16K
+-rw-rw-r-- 1 ana ana  389 15 out 09:07 acesso.log
+-rw-rw-r-- 1 ana ana  132 14 out 18:12 alunos.csv
+-rw-rw-r-- 1 ana ana   69 14 out 17:40 notas.txt
+drwxrwxr-x 3 ana ana 4,0K 15 out 09:15 projetos
+-rw-rw-r-- 1 ana ana 8,2K 14 out 17:40 relatorio.odt</pre>
+
+<p>O <code>ll Documentos</code> virou <code>ls -lh Documentos</code>: o que você escreve depois do alias é acrescentado no fim. (As colunas do <code>ls -l</code> estão explicadas em <a href="ls.html">ls</a>.)</p>
+
+<h3>Listar, conferir e remover</h3>
+<pre class="term">$ type ll
+ll está apelidada para `ls -lh'
+$ alias
+alias grep='grep --color=auto'
+alias ll='ls -lh'
+alias ls='ls --color=auto'
+$ alias ll                             « só um
+alias ll='ls -lh'
+$ unalias ll                           « remove
+$ ll
+bash: ll: comando não encontrado
+$ unalias nada
+bash: unalias: nada: não encontrado
+$ echo $?
+1</pre>
+
+<p>Um alias criado assim vale <strong>só neste terminal</strong>: some quando você o fecha. Para que dure, ele precisa ir para o <code>~/.bashrc</code> (próxima seção).</p>
+
+<h3>Passar por cima de um alias</h3>
+<p>Um alias com o nome de um comando "ganha" dele. Um exemplo comum é fazer o <code>rm</code> sempre perguntar:</p>
+
+<pre class="term">$ alias rm='rm -i'
+$ type rm
+rm está apelidada para `rm -i'
+$ touch teste.txt
+$ \rm teste.txt                        « a barra invertida ignora o alias: apaga sem perguntar
+$ ls teste.txt
+ls: não foi possível acessar 'teste.txt': Arquivo ou diretório inexistente
+$ unalias rm</pre>
+
+<p>Outra forma de rodar o comando original é <code>command rm teste.txt</code>.</p>
+
+<h3>Ideias de alias úteis</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Alias</th><th>Para quê</th></tr>
+<tr><td><code>alias ll='ls -lh'</code></td><td>Lista detalhada com tamanhos legíveis</td></tr>
+<tr><td><code>alias la='ls -lhA'</code></td><td>O mesmo, incluindo os arquivos ocultos</td></tr>
+<tr><td><code>alias ..='cd ..'</code></td><td>Subir uma pasta digitando só <code>..</code></td></tr>
+<tr><td><code>alias rm='rm -i'</code></td><td>Perguntar antes de apagar (veja <a href="remover.html">rm e rmdir</a>)</td></tr>
+<tr><td><code>alias ip='ip -c'</code></td><td>Saída colorida do <code>ip</code> (veja <a href="ip.html">ip, ping, ss</a>)</td></tr>
+<tr><td><code>alias atualizar='sudo pacman -Syu'</code></td><td>Atualizar o sistema (veja <a href="atualizar.html">Atualizar o Sistema</a>)</td></tr>
+<tr><td><code>alias orfaos='pacman -Qdt'</code></td><td>Listar pacotes órfãos (veja <a href="cache-orfaos.html">Cache e Órfãos</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Tornar permanente: editar o .bashrc e usar source</h2>
+<p>Para o alias sobreviver, acrescente a linha no fim do <code>~/.bashrc</code>. Com o editor (<code>nano ~/.bashrc</code>; veja <a href="editores.html">nano e vim</a>) ou com um comando só: o <code>&gt;&gt;</code> <strong>acrescenta</strong> no fim, sem apagar o que existe (veja <a href="redirecionamento.html">Redirecionamento</a>).</p>
+
+<div class="warning">
+<strong>Dois sinais, nunca um</strong>
+<p><code>echo "…" &gt; ~/.bashrc</code>, com um <code>&gt;</code> só, <strong>apaga</strong> o arquivo inteiro e deixa só a linha nova: some o prompt do Arch. Se acontecer, recupere o original com <code>cp /etc/skel/.bashrc ~/</code>.</p>
+</div>
+
+<pre class="term">$ echo "alias ll='ls -lh'" &gt;&gt; ~/.bashrc
+$ tail -3 ~/.bashrc
+alias grep='grep --color=auto'
+PS1='[\u@\h \W]\$ '
+alias ll='ls -lh'                      « a linha nova, no fim
+$ ll
+bash: ll: comando não encontrado        « ainda não!</pre>
+
+<p>O <code>ll</code> ainda não funciona porque o <code>.bashrc</code> só é lido quando o terminal abre. Você pode abrir outro terminal, ou mandar o terminal atual reler o arquivo com <code>source</code>:</p>
+
+<dl class="anatomy">
+  <dt>source</dt><dd>Executa um arquivo <strong>dentro do shell atual</strong> (não num shell novo), então o que ele cria fica valendo aqui. Também se escreve só com um ponto: <code>.</code></dd>
+  <dt>~/.bashrc</dt><dd>O arquivo a reler.</dd>
+</dl>
+
+<pre class="term">$ source ~/.bashrc
+$ type ll
+ll está apelidada para `ls -lh'
+$ . ~/.bashrc                          « o mesmo, com o ponto
+$ echo $?
+0</pre>
+
+<hr>
+
+<h2>PATH: onde o bash procura programas</h2>
+<p>Quando você digita <code>ls</code>, o bash não sabe de cara onde está o programa. Ele procura numa lista de pastas, na ordem, e roda o primeiro que encontrar. Essa lista é a variável <code>PATH</code> ("caminho"), com as pastas separadas por dois-pontos. O <code>tr</code> troca cada <code>:</code> por uma quebra de linha, para ficar legível (veja <a href="texto.html">sort, uniq, cut, wc, tr</a>):</p>
+
+<pre class="term">$ echo $PATH
+/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl
+$ echo $PATH | tr ":" "\n"
+/usr/local/sbin
+/usr/local/bin
+/usr/bin                       « quase todos os programas do Arch estão aqui
+/usr/bin/site_perl             « estas três: scripts do Perl
+/usr/bin/vendor_perl
+/usr/bin/core_perl</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pasta</th><th>Para quê</th><th>Quem acrescentou</th></tr>
+<tr><td><code>/usr/local/sbin</code>, <code>/usr/local/bin</code></td><td>Programas que <strong>você</strong> instala à mão, fora do pacman (ficam antes, então "ganham" dos do sistema)</td><td><code>/etc/profile</code></td></tr>
+<tr><td><code>/usr/bin</code></td><td>Tudo o que o pacman instala</td><td><code>/etc/profile</code></td></tr>
+<tr><td><code>/usr/bin/*_perl</code></td><td>Scripts do Perl</td><td><code>/etc/profile.d/perlbin.sh</code>, do pacote <code>perl</code></td></tr>
+</table>
+</div>
+
+<p>Repare: não há <code>/bin</code>, <code>/sbin</code> nem <code>/usr/sbin</code>. No Arch, todas são <strong>atalhos</strong> para <code>/usr/bin</code>, então não precisam estar no PATH:</p>
+
+<pre class="term">$ ls -l /bin /sbin /usr/sbin
+lrwxrwxrwx 1 root root 7 12 out  2025 /bin -&gt; usr/bin
+lrwxrwxrwx 1 root root 7 12 out  2025 /sbin -&gt; usr/bin
+lrwxrwxrwx 1 root root 3 12 out  2025 /usr/sbin -&gt; bin</pre>
+
+<p>Por isso, no Arch, o PATH da ana e o do root são iguais, e comandos de administração como <code>useradd</code> e <code>reboot</code> são <strong>encontrados</strong> por qualquer usuário (só que o sistema recusa a ação sem permissão; veja <a href="sudo-usuarios.html">sudo, root e Usuários</a>). É diferente do Debian, onde a usuária comum não tem <code>/sbin</code> no PATH.</p>
+
+<h3>which e type: o que vai rodar?</h3>
+<pre class="term">$ which ls
+/usr/bin/ls
+$ type ls
+ls está apelidada para `ls --color=auto'      « o type conhece os alias
+$ type -a ls
+ls está apelidada para `ls --color=auto'      « -a: todas as possibilidades, na ordem
+ls é /usr/bin/ls
+$ type cd
+cd é um comando interno do shell
+$ which cd
+which: no cd in (/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl)
+$ type -t ls cd pacman
+alias
+builtin
+file</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Procura</th><th>Quando usar</th></tr>
+<tr><td><code>which nome</code></td><td>Só no PATH (programas)</td><td>Saber em que arquivo está um programa. Não enxerga alias nem comandos internos (<code>which: no cd in …</code>). É um pacote à parte (<code>which</code>), que vem com o <code>base-devel</code>.</td></tr>
+<tr><td><code>type nome</code></td><td>Alias, funções, comandos internos e PATH</td><td>Saber o que o bash <strong>realmente</strong> vai rodar. Sempre existe (é interno do bash).</td></tr>
+<tr><td><code>type -a nome</code></td><td>Tudo, na ordem</td><td>Quando há mais de um com o mesmo nome.</td></tr>
+<tr><td><code>type -t nome</code></td><td>Uma palavra: <code>alias</code>, <code>builtin</code>, <code>function</code>, <code>file</code></td><td>Em scripts.</td></tr>
+<tr><td><code>command -v nome</code></td><td>Como o <code>type</code>, saída curta</td><td>Em scripts, para testar se um programa existe.</td></tr>
+</table>
+</div>
+
+<h3>Acrescentar uma pasta: o ~/.local/bin</h3>
+<p>A Ana quer guardar os próprios scripts e rodá-los pelo nome, de qualquer pasta. O lugar convencional é <code>~/.local/bin</code>. No Arch, ao contrário do Debian, essa pasta <strong>não</strong> entra no PATH sozinha. Veja o problema:</p>
+
+<pre class="term">$ mkdir -p ~/.local/bin
+$ printf '#!/bin/bash\necho "Olá, $USER! Hoje é $(date +%%A)."\n' &gt; ~/.local/bin/ola
+$ cat ~/.local/bin/ola
+#!/bin/bash
+echo "Olá, $USER! Hoje é $(date +%A)."
+$ chmod +x ~/.local/bin/ola
+$ ola
+bash: ola: comando não encontrado            « a pasta não está no PATH
+$ ~/.local/bin/ola
+Olá, ana! Hoje é sexta.                      « com o caminho, funciona</pre>
+
+<p>(O <code>chmod +x</code> dá permissão de execução; veja <a href="chmod.html">chmod</a>. Scripts são o assunto de <a href="script-intro.html">Primeiro Script</a>.) Agora, acrescente a pasta no <strong>começo</strong> do PATH, sem apagar o resto:</p>
+
+<dl class="anatomy">
+  <dt>export</dt><dd>Torna a variável visível para os programas que o bash abrir.</dd>
+  <dt>PATH=</dt><dd>Atribui um novo valor ao PATH. Sem espaços em volta do <code>=</code>.</dd>
+  <dt>"$HOME/.local/bin</dt><dd>A pasta nova (o <code>$HOME</code> vira <code>/home/ana</code>)…</dd>
+  <dt>:$PATH"</dt><dd>…seguida de dois-pontos e do PATH antigo. <strong>Nunca esqueça o <code>$PATH</code></strong>.</dd>
+</dl>
+
+<pre class="term">$ export PATH="$HOME/.local/bin:$PATH"
+$ echo $PATH | tr ":" "\n" | head -3
+/home/ana/.local/bin                       « a nova, em primeiro
+/usr/local/sbin
+/usr/local/bin
+$ ola
+Olá, ana! Hoje é sexta.
+$ which ola
+/home/ana/.local/bin/ola
+$ type ola
+ola está na tabela hash (/home/ana/.local/bin/ola)    « o bash já guardou onde ele está</pre>
+
+<p>Esquecer o <code>$PATH</code> no fim deixa o PATH só com a pasta nova, e os comandos do sistema "somem". Testando num bash à parte (<code>bash -c</code>), para não estragar o terminal atual:</p>
+<pre class="term">$ bash -c 'PATH="$HOME/.local/bin"; ls'
+bash: linha 1: ls: comando não encontrado</pre>
+
+<h3>PATH permanente: no ~/.bash_profile</h3>
+<p>O <code>export</code> acima vale só neste terminal. Para ficar permanente, coloque a mesma linha no <code>~/.bash_profile</code>, que é lido no login (a recomendação da Arch Wiki para variáveis de ambiente). Repare nas aspas simples: o <code>$HOME</code> e o <code>$PATH</code> precisam ir <strong>literalmente</strong> para o arquivo, para serem trocados a cada login:</p>
+
+<pre class="term">$ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bash_profile
+$ cat ~/.bash_profile
+#
+# ~/.bash_profile
+#
+
+[[ -f ~/.bashrc ]] &amp;&amp; . ~/.bashrc
+export PATH="$HOME/.local/bin:$PATH"</pre>
+
+<p>Vale a partir do próximo login (sair e entrar de novo na sessão, ou abrir um novo login no TTY ou por SSH). Pôr no <code>~/.bashrc</code> também funciona para os terminais, mas cada <code>source ~/.bashrc</code> acrescentaria a pasta de novo, deixando o PATH repetido.</p>
+
+<hr>
+
+<h2>export: variáveis para os outros programas</h2>
+<p>Uma variável criada sem <code>export</code> existe só dentro do bash atual; os programas que ele abre não a enxergam. Veja a diferença (o <code>bash -c</code> abre um bash "filho" que roda um comando):</p>
+
+<pre class="term">$ CIDADE=Recife
+$ echo $CIDADE
+Recife
+$ bash -c 'echo "o filho vê: [$CIDADE]"'
+o filho vê: []                           « sem export, o filho não enxerga
+$ export CIDADE
+$ bash -c 'echo "o filho vê: [$CIDADE]"'
+o filho vê: [Recife]</pre>
+
+<p>Regra prática: use <code>export</code> para tudo o que um programa precisa ler. O exemplo mais útil no Arch é escolher o editor, já que nenhum vem definido: <code>echo 'export EDITOR=nano' &gt;&gt; ~/.bash_profile</code>. Daí em diante, <code>crontab -e</code>, <code>git commit</code> e <code>sudo systemctl edit</code> abrem o nano. Para um programa só, uma vez, ponha a variável na frente do comando: <code>EDITOR=nano crontab -e</code>.</p>
+
+<hr>
+
+<h2>A configuração do sistema todo</h2>
+<p>Antes dos seus arquivos, o bash lê os do sistema, em <code>/etc</code>. Valem para todos os usuários; só o root edita.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Lido por</th><th>Pacote</th><th>O que faz no Arch</th></tr>
+<tr><td><code>/etc/profile</code></td><td>Shells de login</td><td><code>filesystem</code></td><td>Monta o PATH, roda os scripts de <code>/etc/profile.d/</code> e, se o shell for interativo, lê o <code>/etc/bash.bashrc</code></td></tr>
+<tr><td><code>/etc/profile.d/*.sh</code></td><td>O <code>/etc/profile</code></td><td>Vários</td><td>Pedaços de configuração que cada pacote instala</td></tr>
+<tr><td><code>/etc/bash.bashrc</code></td><td>Shells interativos</td><td><code>bash</code></td><td>PS1 padrão, título da janela, bash-completion</td></tr>
+</table>
+</div>
+
+<p>O coração do <code>/etc/profile</code> (trecho real):</p>
+<pre class="file" data-file="/etc/profile (trecho)"># Append "$1" to $PATH when not already in.
+# This function API is accessible to scripts in /etc/profile.d
+append_path () {
+    case ":$PATH:" in
+        *:"$1":*)
+            ;;
+        *)
+            PATH="${PATH:+$PATH:}$1"
+    esac
+}
+
+# Append our default paths
+append_path '/usr/local/sbin'
+append_path '/usr/local/bin'
+append_path '/usr/bin'
+
+# Force PATH to be environment
+export PATH
+
+# Load profiles from /etc/profile.d
+if test -d /etc/profile.d/; then
+	for profile in /etc/profile.d/*.sh; do
+		test -r "$profile" &amp;&amp; . "$profile"
+	done
+	unset profile
+fi</pre>
+
+<p>A função <code>append_path</code> acrescenta uma pasta no fim do PATH só se ela ainda não estiver lá. Depois, o laço <code>for</code> (veja <a href="script-lacos.html">Laços</a>) lê cada <code>.sh</code> da pasta <code>/etc/profile.d/</code>:</p>
+
+<pre class="term">$ ls /etc/profile.d/
+70-systemd-shell-extra.sh
+80-systemd-osc-context.sh
+debuginfod.csh
+debuginfod.sh
+flatpak-bindir.sh
+flatpak.csh
+flatpak.sh
+freetype2.sh
+gawk.csh
+gawk.sh
+gpm.sh
+locale.sh
+mercurial.sh
+perlbin.csh
+perlbin.sh</pre>
+
+<p>Cada um foi instalado por um pacote: o <code>locale.sh</code> (do <code>filesystem</code>) lê o <code>/etc/locale.conf</code> e define o <code>LANG</code>; o <code>perlbin.sh</code> (do <code>perl</code>) acrescenta as pastas do Perl ao PATH; o <code>flatpak.sh</code> deixa os aplicativos Flatpak aparecerem no menu; os dois do <code>systemd</code> cuidam de detalhes do prompt e do terminal. Os <code>.csh</code> são para outro shell, o csh, e o bash os ignora.</p>
+
+<div class="tip">
+<strong>Quer uma configuração para todos os usuários?</strong>
+<p>Não edite o <code>/etc/profile</code>: ele pertence ao pacote <code>filesystem</code>, e uma atualização pode gerar um <code>.pacnew</code> (veja <a href="pacnew.html">.pacnew e .pacsave</a>). Crie o seu arquivo, por exemplo <code>/etc/profile.d/meu.sh</code> com <code>export EDITOR=nano</code>. Ele é lido no próximo login de qualquer usuário, e nenhum pacote mexe nele.</p>
+</div>
+
+<h3>O /etc/bash.bashrc</h3>
+<pre class="term">$ cat /etc/bash.bashrc
+#
+# /etc/bash.bashrc
+#
+
+# If not running interactively, don't do anything
+[[ $- != *i* ]] &amp;&amp; return
+
+# Prevent doublesourcing
+if [[ -z "${BASHRCSOURCED}" ]] ; then
+  BASHRCSOURCED="Y"
+  # the check is bash's default value
+  [[ "$PS1" = '\s-\v\$ ' ]] &amp;&amp; PS1='[\u@\h \W]\$ '
+  case ${TERM} in
+    Eterm*|alacritty*|aterm*|foot*|gnome*|konsole*|kterm*|putty*|rxvt*|tmux*|xterm*)
+      PROMPT_COMMAND+=('printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/\~}"')
+      ;;
+    screen*)
+      PROMPT_COMMAND+=('printf "\033_%s@%s:%s\033\\" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/\~}"')
+      ;;
+  esac
+fi
+
+if [[ -r /usr/share/bash-completion/bash_completion ]]; then
+  . /usr/share/bash-completion/bash_completion
+fi</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Trecho</th><th>O que faz</th></tr>
+<tr><td><code>BASHRCSOURCED</code></td><td>Uma "marca" para o arquivo não ser lido duas vezes no mesmo shell.</td></tr>
+<tr><td><code>[[ "$PS1" = '\s-\v\$ ' ]] &amp;&amp; PS1=…</code></td><td>Se o prompt ainda é o padrão do bash (<code>bash-5.3$</code>), troca pelo do Arch. Por isso o root, mesmo sem <code>.bashrc</code>, tem o prompt <code>[root@notebook ~]#</code>.</td></tr>
+<tr><td><code>PROMPT_COMMAND+=…</code></td><td>Num terminal gráfico (xterm, gnome, konsole…), escreve <code>ana@notebook:~</code> no <strong>título da janela</strong> a cada comando.</td></tr>
+<tr><td>As três últimas linhas</td><td>Carregam o bash-completion, se ele estiver instalado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>bash-completion: Tab que entende os comandos</h2>
+<p>Sem nada instalado, o <kbd>Tab</kbd> do bash completa nomes de comandos e de arquivos. O pacote <code>bash-completion</code> ensina o <kbd>Tab</kbd> a completar também as <strong>opções</strong> e os <strong>argumentos</strong> de cada programa: pacotes no <code>pacman</code>, serviços no <code>systemctl</code>, ramos no <code>git</code>… Ele <strong>não vem no <code>base</code></strong>; a VM do guia tem porque foi instalado junto com os pacotes das aulas:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> pacman -Syu --noconfirm --needed base-devel git bash-completion pacman-contrib … wget rsync inetutils …</pre>
+
+<p>No seu Arch: <code>sudo pacman -S bash-completion</code> e abra um terminal novo (o <code>/etc/bash.bashrc</code> carrega o pacote sozinho). As regras de cada programa ficam em <code>/usr/share/bash-completion/completions/</code>, e quem as instala é o próprio programa: a do <code>pacman</code> vem no pacote <code>pacman</code>; a do <code>systemctl</code>, no <code>systemd</code>.</p>
+
+<p>Testes reais na VM (a tecla <kbd>Tab</kbd> não aparece na tela; o <code>«</code> indica onde ela foi apertada):</p>
+
+<pre class="term">$ pacman -Q --inf                  « Tab
+$ pacman -Q --info                 « completou a opção
+$ systemctl sta                    « Tab Tab (duas vezes: há mais de uma opção)
+start   status
+$ ls /etc/pacm                     « Tab
+$ ls /etc/pacman.                  « completou até onde pacman.conf e pacman.d são iguais</pre>
+
+<p>As regras são carregadas <strong>sob demanda</strong>: o bash só lê a regra do <code>pacman</code> na primeira vez que você aperta <kbd>Tab</kbd> depois de digitar <code>pacman</code>. Dá para ver isso com o comando interno <code>complete -p</code>, que mostra a regra de um comando:</p>
+
+<pre class="term">$ complete -p pacman
+bash: complete: pacman: nenhuma especificação de completação     « antes de qualquer Tab
+$ pacman -Q --inf                                                « Tab
+$ complete -p pacman
+complete -F _pacman pacman                                       « depois: a função _pacman cuida do Tab</pre>
+
+<hr>
+
+<h2>Experimente</h2>
+<p>O terminal simulado tem o <code>.bashrc</code> e o <code>.bash_profile</code> reais do Arch e entende alias, <code>export</code>, <code>source</code> e o <code>PS1</code>. Teste à vontade: nada que você fizer aqui muda o seu computador.</p>
+
+<div class="try" data-goal="alias:ll,ran:^\s*ll\b" data-solucao="alias ll='ls -lh';;ll">
+<p class="try-task"><strong>Missão 1:</strong> o <code>ll</code> não existe no Arch. Crie o alias <code>ll</code> para <code>ls -lh</code> e rode <code>ll</code>. Depois confira com <code>type ll</code>.</p>
+</div>
+
+<div class="try" data-setup="mkdir -p ~/.local/bin;;printf '#!/bin/bash\necho Olá do script\n' &gt; ~/.local/bin/ola;;chmod +x ~/.local/bin/ola" data-goal="ran:^\s*ola\s*$,out:Olá do script" data-solucao="export PATH=&quot;$HOME/.local/bin:$PATH&quot;;;ola">
+<p class="try-task"><strong>Missão 2:</strong> já existe um script em <code>~/.local/bin/ola</code>, mas <code>ola</code> dá "comando não encontrado". Acrescente a pasta ao <strong>começo</strong> do PATH, sem perder o resto, e rode <code>ola</code> só pelo nome.</p>
+</div>
+
+<div class="try" data-goal="contains:~/.bashrc=alias la=,alias:la" data-solucao="echo &quot;alias la='ls -lhA'&quot; &gt;&gt; ~/.bashrc;;source ~/.bashrc">
+<p class="try-task"><strong>Missão 3:</strong> torne permanente um alias <code>la</code> (para <code>ls -lhA</code>): acrescente-o ao fim do <code>~/.bashrc</code> (cuidado: <code>&gt;&gt;</code>, não <code>&gt;</code>) e faça o terminal atual reler o arquivo.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*PS1=.*\\w" data-solucao="PS1='[\u@\h \w]\$ ';;cd Documentos/projetos">
+<p class="try-task"><strong>Missão 4:</strong> mude o prompt para mostrar o <strong>caminho inteiro</strong> da pasta (troque <code>\W</code> por <code>\w</code>) e entre em <code>Documentos/projetos</code> para ver a diferença. Para voltar ao original, <code>source ~/.bashrc</code>.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"erro de sintaxe: fim inesperado do arquivo" ao abrir o terminal</strong>
+<p>Para reproduzir, a Ana acrescentou um <code>if</code> sem o <code>fi</code> no fim do <code>.bashrc</code> (que já tinha o alias <code>ll</code> na linha 11):</p>
+<pre class="term">$ echo 'if true; then' &gt;&gt; ~/.bashrc
+$ source ~/.bashrc
+bash: /home/ana/.bashrc: linha 13: erro de sintaxe: fim inesperado do arquivo do comando `if' na linha 12
+$ bash -i -c true                     « o mesmo erro aparece em todo terminal novo
+bash: /home/ana/.bashrc: linha 13: erro de sintaxe: fim inesperado do arquivo do comando `if' na linha 12</pre>
+<p><strong>O que aconteceu:</strong> você abriu um <code>if</code>, uma aspa ou um <code>{</code> e não fechou. O bash leu até o fim do arquivo procurando o fechamento. O terminal abre, mas sem a sua configuração.</p>
+<p><strong>Como resolver:</strong> a mensagem diz onde o bloco começou (<code>na linha 12</code>). Abra com <code>nano ~/.bashrc</code>, vá até a linha (<kbd>Ctrl</kbd>+<kbd>_</kbd> no nano) e feche o bloco (<code>fi</code>, aspa ou <code>}</code>). Para testar sem abrir terminal: <code>bash -n ~/.bashrc</code> (só confere a sintaxe). Em último caso, volte ao original: <code>cp /etc/skel/.bashrc ~/.bashrc</code>. Antes de editar, faça uma cópia: <code>cp ~/.bashrc ~/.bashrc.bak</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"alias: x: não encontrado"</strong>
+<pre class="term">$ alias x = 'ls'
+bash: alias: x: não encontrado
+bash: alias: =: não encontrado
+alias ls='ls --color=auto'</pre>
+<p><strong>O que aconteceu:</strong> há espaços em volta do <code>=</code>. O bash entendeu três palavras separadas e tentou <strong>mostrar</strong> três alias: <code>x</code> e <code>=</code> não existem, e <code>ls</code> existe (por isso a terceira linha).</p>
+<p><strong>Como resolver:</strong> escreva tudo junto: <code>alias x='ls'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Criei o script, mas "comando não encontrado" (código 127)</strong>
+<p><strong>O que aconteceu:</strong> a pasta do script não está no PATH (no Arch, <code>~/.local/bin</code> não entra sozinha), ou você pôs o <code>export</code> no <code>~/.bash_profile</code> e ainda não fez login de novo.</p>
+<p><strong>Como confirmar:</strong> <code>echo $PATH | tr ":" "\n"</code>. Se a pasta está lá, confira a permissão de execução: <code>ls -l ~/.local/bin/</code> (precisa do <code>x</code>).</p>
+<p><strong>Como resolver:</strong> <code>export PATH="$HOME/.local/bin:$PATH"</code> no terminal atual e a mesma linha no <code>~/.bash_profile</code>; saia e entre na sessão.</p>
+</div>
+
+<div class="cenario">
+<strong>"which: no ll in (…)"</strong>
+<pre class="term">$ which ll
+which: no ll in (/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl)</pre>
+<p><strong>O que aconteceu:</strong> o <code>which</code> só procura <strong>arquivos</strong> no PATH; ele não enxerga alias, funções nem comandos internos. Mesmo com o alias criado, a resposta seria essa.</p>
+<p><strong>Como resolver:</strong> use <code>type ll</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudei o .bashrc e nada aconteceu</strong>
+<p><strong>O que aconteceu:</strong> o arquivo só é lido quando o terminal abre. Ou você editou o arquivo errado: um <code>~/.profile</code> é ignorado no Arch, porque o <code>~/.bash_profile</code> existe.</p>
+<p><strong>Como resolver:</strong> <code>source ~/.bashrc</code> (ou abra um terminal novo). Variáveis de ambiente vão no <code>~/.bash_profile</code> e valem no próximo login.</p>
+</div>
+
+<div class="cenario">
+<strong>O Tab não completa opções nem nomes de pacotes</strong>
+<p><strong>O que aconteceu:</strong> o <code>bash-completion</code> não vem no <code>base</code>.</p>
+<p><strong>Como confirmar:</strong> <code>pacman -Q bash-completion</code> → <code>erro: o pacote "bash-completion" não foi encontrado</code>.</p>
+<p><strong>Como resolver:</strong> <code>sudo pacman -S bash-completion</code> e abra um terminal novo.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>echo $VAR</code> · <code>printenv VAR</code> · <code>env</code></td><td>Mostra uma variável · todas</td></tr>
+<tr><td><code>export VAR=valor</code></td><td>Cria uma variável visível para os programas</td></tr>
+<tr><td><code>export PATH="$HOME/.local/bin:$PATH"</code></td><td>Acrescenta uma pasta ao PATH</td></tr>
+<tr><td><code>alias</code> · <code>alias nome='comando'</code> · <code>unalias nome</code></td><td>Lista · cria · remove apelidos</td></tr>
+<tr><td><code>\comando</code> · <code>command comando</code></td><td>Roda o comando ignorando o alias</td></tr>
+<tr><td><code>type nome</code> · <code>type -a nome</code> · <code>which nome</code></td><td>O que o bash vai rodar · todas as opções · só no PATH</td></tr>
+<tr><td><code>source ~/.bashrc</code> · <code>. ~/.bashrc</code></td><td>Relê a configuração no terminal atual</td></tr>
+<tr><td><code>bash -n ~/.bashrc</code></td><td>Confere a sintaxe sem executar</td></tr>
+<tr><td><code>PS1='[\u@\h \w]\$ '</code></td><td>Muda o prompt (até fechar o terminal)</td></tr>
+<tr><td><code>cp /etc/skel/.bashrc ~/</code></td><td>Volta o <code>.bashrc</code> ao original do Arch</td></tr>
+<tr><td><code>complete -p comando</code></td><td>Mostra a regra de completação de um comando</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar um alias</h3>
+<p>Complete para criar o atalho <code>ll</code>, mostrando também os ocultos:</p>
+<div class="ex-code">alias ll=<input data-answer="'ls -lhA'|&quot;ls -lhA&quot;|'ls -lAh'|'ls -alh'|'ls -lah'" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Reler a configuração</h3>
+<p>Complete para aplicar as mudanças do <code>.bashrc</code> sem fechar o terminal:</p>
+<div class="ex-code"><input data-answer="source|." aria-label="comando"> ~/.bashrc</div>
+</div>
+
+<div class="exercise">
+<h3>3. A pasta dos seus scripts</h3>
+<p>Complete para pôr <code>~/.local/bin</code> no começo do PATH sem perder o resto:</p>
+<div class="ex-code">export PATH="$HOME/.local/bin:<input data-answer="$PATH|${PATH}" aria-label="resto">"</div>
+</div>
+
+<div class="exercise">
+<h3>4. Pasta inteira no prompt</h3>
+<p>No <code>PS1='[\u@\h \W]\$ '</code>, qual código trocar por <code>\w</code> para ver o caminho completo?</p>
+<div class="ex-code"><input data-answer="\W|W" aria-label="código"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. No Arch, onde a Arch Wiki recomenda pôr <code>export PATH=…</code> e <code>export EDITOR=…</code>?</p>
+<label><input type="radio" name="q5"> No <code>~/.profile</code>.</label>
+<label><input type="radio" name="q5"> No <code>~/.bash_profile</code>.</label>
+<label><input type="radio" name="q5"> No <code>/etc/profile</code>.</label>
+<label><input type="radio" name="q5"> No <code>~/.bash_logout</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana criou <code>alias ll='ls -lh'</code> e rodou <code>which ll</code>. O que aparece?</p>
+<label><input type="radio" name="q6"> <code>/usr/bin/ll</code></label>
+<label><input type="radio" name="q6"> <code>ll está apelidada para `ls -lh'</code></label>
+<label><input type="radio" name="q6"> <code>/usr/bin/ls</code></label>
+<label><input type="radio" name="q6"> <code>which: no ll in (…)</code>, porque o which não enxerga alias</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">7. O que o <code>\W</code> do prompt do Arch mostra quando você está em <code>/home/ana/Documentos/projetos</code>?</p>
+<label><input type="radio" name="q7"> <code>/home/ana/Documentos/projetos</code></label>
+<label><input type="radio" name="q7"> <code>~/Documentos/projetos</code></label>
+<label><input type="radio" name="q7"> <code>projetos</code></label>
+<label><input type="radio" name="q7"> <code>ana</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">8. Por que <code>reboot</code> é <strong>encontrado</strong> pela usuária comum no Arch, ao contrário do Debian?</p>
+<label><input type="radio" name="q8"> Porque no Arch <code>/sbin</code> e <code>/usr/sbin</code> são atalhos para <code>/usr/bin</code>, que está no PATH de todos.</label>
+<label><input type="radio" name="q8"> Porque o <code>.bashrc</code> do Arch tem um alias para ele.</label>
+<label><input type="radio" name="q8"> Porque a ana é root.</label>
+<label><input type="radio" name="q8"> Porque o bash-completion o encontra.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>~/.bashrc</code> do Arch tem 10 linhas: o teste de shell interativo, os alias <code>ls</code> e <code>grep</code> e o <code>PS1='[\u@\h \W]\$ '</code>. Não há <code>ll</code>.</li>
+  <li>O <code>~/.bash_profile</code> (login) só lê o <code>~/.bashrc</code>; é o lugar das variáveis de ambiente. O <code>~/.profile</code> é ignorado.</li>
+  <li><code>alias nome='comando'</code> cria; <code>unalias</code> remove; <code>type</code> confere; para durar, <code>&gt;&gt; ~/.bashrc</code> e <code>source ~/.bashrc</code>.</li>
+  <li>O PATH do Arch é o mesmo para todos (<code>/bin</code> e <code>/sbin</code> são atalhos de <code>/usr/bin</code>); o <code>~/.local/bin</code> não entra sozinho: <code>export PATH="$HOME/.local/bin:$PATH"</code>.</li>
+  <li><code>/etc/profile</code> monta o PATH e lê <code>/etc/profile.d/</code>; o <code>/etc/bash.bashrc</code> define o prompt padrão e carrega o <code>bash-completion</code> (que se instala à parte).</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Bash">Bash</a> (<a href="https://wiki.archlinux.org/title/Bash_(Portugu%C3%AAs)">em português</a>) explica a ordem dos arquivos de configuração, os alias, o <a href="https://wiki.archlinux.org/title/Bash#Tab_completion">Tab completion</a> e o histórico; o prompt tem uma página só para ele, <a href="https://wiki.archlinux.org/title/Bash/Prompt_customization">Bash/Prompt customization</a>, com todas as cores; o PATH, o <code>EDITOR</code> e onde definir cada variável estão em <a href="https://wiki.archlinux.org/title/Environment_variables">Environment variables</a> (<a href="https://wiki.archlinux.org/title/Environment_variables_(Portugu%C3%AAs)">em português</a>); e a visão geral dos shells, em <a href="https://wiki.archlinux.org/title/Command-line_shell">Command-line shell</a>.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

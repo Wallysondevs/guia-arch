@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arch SSH — sshd, conectar, chaves, sshd_config, scp e rsync | Guia Arch</title>
-<meta name="description" content="SSH no Arch Linux: o serviço sshd (OpenSSH), conectar com ssh, a primeira conexão e o known_hosts, chaves ed25519 com ssh-keygen e ssh-copy-id, o sshd_config do Arch e seus drop-ins, PermitRootLogin e PasswordAuthentication, scp, rsync e fail2ban, com saídas reais.">
+<title>Arch SSH — sshd, conectar, chaves e sshd_config | Guia Arch</title>
+<meta name="description" content="SSH no Arch Linux: o serviço sshd (OpenSSH), conectar com ssh, a primeira conexão e o known_hosts, chaves ed25519 com ssh-keygen e ssh-copy-id, o sshd_config do Arch e seus drop-ins, PermitRootLogin e PasswordAuthentication e fail2ban, com saídas reais.">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -27,7 +27,7 @@
   <li>Conectar com <code>ssh usuário@máquina</code> e entender a pergunta da primeira conexão.</li>
   <li>Criar chaves com <code>ssh-keygen</code> e instalá-las com <code>ssh-copy-id</code>.</li>
   <li>Ler o <code>sshd_config</code> do Arch e endurecê-lo com segurança (<code>PasswordAuthentication</code>, <code>PermitRootLogin</code>).</li>
-  <li>Copiar arquivos com <code>scp</code> e <code>rsync</code>.</li>
+  <li>Quais ferramentas copiam arquivos pela conexão SSH (<code>scp</code>, <code>sftp</code>, <code>rsync</code>).</li>
 </ul>
 </div>
 
@@ -298,91 +298,19 @@ $ echo $?
 
 <hr>
 
-<h2>Copiar arquivos: scp e rsync</h2>
+<h2>Copiar arquivos pela conexão SSH</h2>
+<p>O mesmo SSH que abre um terminal também transporta arquivos, com tudo criptografado. O pacote <code>openssh</code> já traz dois programas para isso, e um terceiro se instala à parte:</p>
 
-<h3>scp: uma cópia simples</h3>
-<dl class="anatomy">
-  <dt>scp</dt><dd><em>secure copy</em>: o <code>cp</code> pela rede.</dd>
-  <dt>fotos/foto1.jpg</dt><dd>Origem (local).</dd>
-  <dt>ana@localhost:/tmp/a6/copia.jpg</dt><dd>Destino remoto: <code>usuário@máquina:caminho</code>. Os <code>:</code> marcam "do outro lado". Sem caminho depois dos dois-pontos (<code>ana@servidor:</code>), vai para a pasta pessoal.</dd>
-</dl>
-
-<pre class="term" data-cwd="/tmp/a6">$ scp fotos/foto1.jpg ana@localhost:/tmp/a6/copia.jpg
-ana@localhost's password:
-foto1.jpg                                     100%   20KB  12.4MB/s   00:00</pre>
-
-<p>Ao contrário também funciona (<code>scp ana@servidor:arquivo .</code> traz para cá), e <code>-r</code> copia pastas. Porta diferente: <code>scp -P 2223</code>.</p>
-
-<h3>rsync: sincronizar</h3>
-<p>O <code>rsync</code> copia só o que <strong>mudou</strong>, então é o ideal para backups e pastas grandes. Ele precisa estar instalado nos dois lados (<code>sudo pacman -S rsync</code>; na VM, <code>rsync 3.5.1-3</code>). Real, pela rede (para a própria VM, por SSH):</p>
-
-<pre class="term" data-cwd="/tmp/a6">$ rsync -av fotos/ ana@localhost:/tmp/a6/backup/
-ana@localhost's password:
-sending incremental file list
-created directory /tmp/a6/backup
-./
-foto1.jpg
-foto2.jpg
-foto3.jpg
-
-sent 60.245 bytes  received 113 bytes  17.245,14 bytes/sec
-total size is 60.000  speedup is 0,99</pre>
-
-<dl class="anatomy">
-  <dt>-a</dt><dd><em>archive</em>: recursivo e preserva permissões, datas, links.</dd>
-  <dt>-v</dt><dd><em>verbose</em>: lista o que copiou.</dd>
-  <dt>fotos/</dt><dd>Origem. <strong>A barra no fim importa</strong>: "o conteúdo de fotos". Sem ela, copia a pasta <code>fotos</code> inteira para dentro do destino.</dd>
-  <dt>ana@localhost:/tmp/a6/backup/</dt><dd>Destino; o rsync usa o SSH sozinho. Com porta diferente: <code>-e 'ssh -p 2223'</code>.</dd>
-</dl>
-
-<p>Rodando de novo (aqui, local, sem SSH), ele não copia nada; depois de um arquivo novo, copia só ele:</p>
-
-<pre class="term" data-cwd="/tmp/a6">$ rsync -av fotos/ backup/
-sending incremental file list
-
-sent 109 bytes  received 12 bytes  242,00 bytes/sec
-total size is 60.000  speedup is 495,87          « nada mudou: nada copiado
-$ touch fotos/foto4.jpg
-$ rsync -av fotos/ backup/
-sending incremental file list
-./
-foto4.jpg                                        « só o novo
-
-sent 176 bytes  received 38 bytes  428,00 bytes/sec
-total size is 60.000  speedup is 280,37
-$ rsync -av fotos backup2                        « sem a barra
-sending incremental file list
-created directory backup2
-fotos/
-fotos/foto1.jpg
-fotos/foto2.jpg
-fotos/foto3.jpg
-fotos/foto4.jpg
-
-sent 60.320 bytes  received 126 bytes  120.892,00 bytes/sec
-total size is 60.000  speedup is 0,99
-$ ls backup backup2
-backup:
-foto1.jpg
-foto2.jpg
-foto3.jpg
-foto4.jpg
-
-backup2:
-fotos                                            « a pasta veio junto</pre>
-
-<p>Com <code>--delete</code>, o rsync também apaga do destino o que sumiu da origem (um espelho exato); teste antes com <code>-n</code> (<em>dry run</em>, só mostra). Os números usam ponto de milhar e vírgula decimal por causa do português.</p>
-
-<h3>scp × rsync × sftp: qual usar?</h3>
 <div class="table-wrap">
 <table class="ref">
-<tr><th>Ferramenta</th><th>Quando usar</th></tr>
-<tr><td><code>scp</code></td><td>Um arquivo ou uma pasta pequena, uma vez</td></tr>
-<tr><td><code>rsync -av</code></td><td>Pastas grandes, backups, copiar de novo só o que mudou, retomar cópias interrompidas (<code>--partial</code>)</td></tr>
-<tr><td><code>sftp</code></td><td>Navegar no servidor e escolher arquivos interativamente (<code>ls</code>, <code>get</code>, <code>put</code>)</td></tr>
-<tr><td>Gerenciador de arquivos</td><td>No GNOME/KDE, digite <code>sftp://ana@servidor</code> na barra de endereço</td></tr>
+<tr><th>Ferramenta</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>scp</code></td><td><code>scp relatorio.pdf ana@servidor:</code></td><td>Uma cópia rápida, de um ou poucos arquivos</td></tr>
+<tr><td><code>sftp</code></td><td><code>sftp ana@servidor</code></td><td>Navegar nas pastas de lá e escolher o que copiar</td></tr>
+<tr><td><code>rsync</code> (pacote <code>rsync</code>)</td><td><code>rsync -avz fotos/ ana@servidor:fotos/</code></td><td>Pastas grandes e backups: copia só o que mudou</td></tr>
 </table>
 </div>
+
+<p>Tudo o que você configurou aqui vale para eles: a chave, a porta (no <code>scp</code> é <code>-P</code> maiúsculo) e os apelidos do <code>~/.ssh/config</code>. O caminho remoto <code>usuário@máquina:pasta</code>, a barra no fim da origem do rsync, o <code>--dry-run</code> antes do <code>--delete</code> e os erros reais estão na aula <a href="scp-rsync.html">scp e rsync</a>.</p>
 
 <hr>
 
@@ -460,8 +388,7 @@ ssh: Could not resolve hostname servidor-que-nao-existe: Temporary failure in na
 <tr><td><code>ssh-keygen -lf arquivo.pub</code></td><td>Mostra a impressão digital</td></tr>
 <tr><td><code>ssh-keygen -R máquina</code></td><td>Esquece a chave de host de uma máquina</td></tr>
 <tr><td><code>ssh-copy-id usuário@máquina</code></td><td>Instala a sua chave pública no servidor</td></tr>
-<tr><td><code>scp [-P porta] [-r] origem usuário@máquina:destino</code></td><td>Copia</td></tr>
-<tr><td><code>rsync -av [-n] [--delete] origem/ usuário@máquina:destino/</code></td><td>Sincroniza</td></tr>
+<tr><td><code>scp</code> · <code>sftp</code> · <code>rsync</code></td><td>Copiam arquivos pelo SSH (veja <a href="scp-rsync.html">scp e rsync</a>)</td></tr>
 <tr><td><code>sudo sshd -t</code> · <code>sudo sshd -T</code></td><td>Testa a configuração · mostra os valores efetivos</td></tr>
 <tr><td><code>sudo systemctl reload sshd</code></td><td>Aplica a configuração sem derrubar sessões</td></tr>
 <tr><td><code>journalctl -u sshd</code></td><td>Log de entradas e falhas</td></tr>
@@ -485,9 +412,9 @@ ssh: Could not resolve hostname servidor-que-nao-existe: Temporary failure in na
 </div>
 
 <div class="exercise">
-<h3>3. Só o conteúdo</h3>
-<p>Complete para sincronizar o <strong>conteúdo</strong> da pasta <code>fotos</code> para <code>backup</code> no servidor:</p>
-<div class="ex-code">rsync -av <input data-answer="fotos/" aria-label="origem"> ana@servidor:backup/</div>
+<h3>3. Esquecer uma máquina</h3>
+<p>O servidor foi reinstalado e a impressão digital mudou. Complete para apagar a chave antiga dele do <code>known_hosts</code>:</p>
+<div class="ex-code">ssh-keygen <input data-answer="-R" aria-label="opção"> servidor</div>
 </div>
 
 <div class="mc" data-answer="2">
@@ -523,10 +450,10 @@ ssh: Could not resolve hostname servidor-que-nao-existe: Temporary failure in na
   <li>Chaves Ed25519: <code>ssh-keygen</code> cria, <code>ssh-copy-id</code> instala; a privada fica com você, modo 600.</li>
   <li>O <code>sshd_config</code> do Arch usa drop-ins em <code>sshd_config.d/</code>; no sshd, o primeiro valor vence.</li>
   <li>Para endurecer: <code>PermitRootLogin no</code> e <code>PasswordAuthentication no</code>, com <code>sshd -t</code> e uma sessão aberta.</li>
-  <li><code>scp</code> copia; <code>rsync -av</code> sincroniza (atenção à barra no fim da origem).</li>
+  <li>Para copiar arquivos pelo SSH: <code>scp</code>, <code>sftp</code> e <code>rsync</code> (aula <a href="scp-rsync.html">scp e rsync</a>).</li>
 </ul>
 
-<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/OpenSSH">OpenSSH</a> cobre o servidor, as opções de segurança e a solução de problemas; as chaves estão em <a href="https://wiki.archlinux.org/title/SSH_keys">SSH keys</a>; as cópias, em <a href="https://wiki.archlinux.org/title/SCP_and_SFTP">SCP and SFTP</a> e <a href="https://wiki.archlinux.org/title/Rsync">rsync</a>; e a proteção contra robôs, em <a href="https://wiki.archlinux.org/title/Fail2ban">fail2ban</a>. (Em outubro de 2026, essas páginas não têm versão em português.)</p>
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/OpenSSH">OpenSSH</a> cobre o servidor, as opções de segurança e a solução de problemas; as chaves estão em <a href="https://wiki.archlinux.org/title/SSH_keys">SSH keys</a>; e a proteção contra robôs, em <a href="https://wiki.archlinux.org/title/Fail2ban">fail2ban</a>. (Em outubro de 2026, essas páginas não têm versão em português.)</p>
 
 <div class="pager"></div>
 

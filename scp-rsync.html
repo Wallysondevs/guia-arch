@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch scp e rsync — copiar arquivos pela rede | Guia Arch</title>
+<meta name="description" content="Copie arquivos entre máquinas no Arch Linux com scp, rsync e sftp: o caminho remoto usuário@máquina:pasta, a barra no fim da origem, -a -v -z, --dry-run antes do --delete, --exclude, os códigos 12, 23 e 255 e os erros reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">scp e rsync</span></h1>
+
+<p class="intro">Copiar arquivos entre máquinas é a segunda coisa que todo mundo faz depois de aprender SSH. O <code>scp</code> (de <em>secure copy</em>) é o jeito rápido para uma cópia avulsa. O <code>rsync</code> (de <em>remote sync</em>) é o jeito inteligente: só manda o que mudou, sincroniza pastas inteiras e serve de base para backups. Os dois usam o SSH por baixo, então tudo viaja criptografado. E o <code>sftp</code> deixa você "passear" pelas pastas do outro lado antes de copiar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Escrever um caminho remoto (<code>usuário@máquina:pasta</code>) sem errar.</li>
+  <li>Copiar arquivos e pastas com <code>scp</code>, nos dois sentidos.</li>
+  <li>Sincronizar pastas com <code>rsync -av</code> e entender cada linha da saída.</li>
+  <li>A diferença que mais confunde: a <strong>barra no fim</strong> da origem.</li>
+  <li>Usar <code>--dry-run</code> antes de qualquer <code>--delete</code>, e conhecer o <code>sftp</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula supõe que você já entra na outra máquina por SSH (veja <a href="ssh.html">SSH</a>): se o <code>ssh ana@servidor</code> não funciona, nenhuma cópia vai funcionar. Para os exemplos serem reais, a VM do guia copia arquivos <strong>para ela mesma</strong>, pelo endereço <code>localhost</code>: a conexão passa pelo SSH exatamente como passaria para um servidor do outro lado da casa. Os arquivos de teste ficam em <code>/tmp/b7/rs</code>.</p>
+
+<hr>
+
+<h2>De onde vêm os comandos</h2>
+<pre class="term">$ pacman -Qo /usr/bin/scp /usr/bin/sftp /usr/bin/rsync
+/usr/bin/scp pertence a openssh 10.6p1-2
+/usr/bin/sftp pertence a openssh 10.6p1-2
+/usr/bin/rsync pertence a rsync 3.5.1-3</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pacote</th><th>Precisa estar…</th></tr>
+<tr><td><code>scp</code>, <code>sftp</code></td><td><code>openssh</code> (o mesmo do <code>ssh</code>)</td><td>Do seu lado o cliente; do outro, o <code>sshd</code> ligado. Nada a mais.</td></tr>
+<tr><td><code>rsync</code></td><td><code>rsync</code> (não vem no <code>base</code>)</td><td>Instalado <strong>nas duas máquinas</strong>, porque um rsync conversa com o outro.</td></tr>
+</table>
+</div>
+
+<p>Num Arch novo, instale com <code>sudo pacman -S rsync</code> (veja <a href="pacman.html">pacman: o Básico</a>). A VM do guia já tem a versão 3.5.1.</p>
+
+<hr>
+
+<h2>O caminho remoto</h2>
+<p>Os três comandos usam o mesmo formato para dizer "um arquivo em outra máquina":</p>
+
+<dl class="anatomy">
+  <dt>ana</dt><dd>O usuário <strong>na máquina remota</strong>. Pode ser omitido se for o mesmo nome que você usa aqui.</dd>
+  <dt>@localhost</dt><dd>A máquina: nome (<code>servidor.lan</code>), IP (<code>192.168.0.50</code>) ou um apelido do <code>~/.ssh/config</code>. Aqui, a própria VM.</dd>
+  <dt>:</dt><dd>Os <strong>dois-pontos</strong> marcam que é remoto. Sem eles, vira uma cópia local para um arquivo chamado "ana@localhost".</dd>
+  <dt>/tmp/b7/rs/destino/</dt><dd>O caminho do lado de lá. Caminho relativo (sem <code>/</code> no começo) parte da pasta pessoal remota.</dd>
+</dl>
+
+<p>Então <code>ana@servidor:relatorio.pdf</code> é o arquivo <code>/home/ana/relatorio.pdf</code> no servidor, e <code>ana@servidor:</code> (nada depois dos dois-pontos) é a própria pasta pessoal remota.</p>
+
+<hr>
+
+<h2>scp: cópia rápida</h2>
+<p>A ordem é sempre <strong>origem, depois destino</strong>, como no <code>cp</code> (veja <a href="copiar.html">Copiar (cp)</a>). Um dos dois lados é remoto.</p>
+
+<h3>Daqui para lá</h3>
+<dl class="anatomy">
+  <dt>scp</dt><dd>O programa.</dd>
+  <dt>relatorio.txt</dt><dd>A origem: um arquivo da pasta atual.</dd>
+  <dt>ana@localhost:/tmp/b7/rs/destino/</dt><dd>O destino remoto. A barra no fim diz "para dentro desta pasta", mantendo o nome.</dd>
+</dl>
+
+<p>Na primeira conexão com uma máquina, antes da cópia vem a pergunta de segurança do SSH (explicada em <a href="ssh.html">SSH</a>), e depois a senha da ana <strong>do lado de lá</strong>, que não aparece enquanto você digita:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp relatorio.txt ana@localhost:/tmp/b7/rs/destino/
+The authenticity of host 'localhost (::1)' can't be established.
+ED25519 key fingerprint is: SHA256:3xsqL2Q+A9qsuD59Q1KJcB4pcekUf2F9RzaGx+72BT4
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'localhost' (ED25519) to the list of known hosts.
+ana@localhost's password:                                                       « a senha de lá
+relatorio.txt                                 100%   22    28.1KB/s   00:00    « arquivo, %, tamanho, velocidade, tempo
+$ echo $?
+0</pre>
+
+<p>A última linha se atualiza durante a cópia: o nome, a porcentagem, o tamanho (22 bytes), a velocidade e o tempo gasto. Com chave SSH instalada (<code>ssh-copy-id</code>), não há pergunta de senha, e o <code>scp</code> pode ir para scripts.</p>
+
+<h3>De lá para cá</h3>
+<p>Basta inverter: a origem remota vem primeiro. O <code>.</code> no fim quer dizer "aqui, na pasta atual" (veja <a href="caminhos.html">Caminhos</a>). Da segunda vez, a máquina já é conhecida e só a senha é pedida:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp ana@localhost:/etc/hostname .
+ana@localhost's password:
+hostname                                      100%    9     6.7KB/s   00:00
+$ ls -l hostname
+-rw-r--r-- 1 ana ana 9 16 out 14:57 hostname</pre>
+
+<h3>Pastas: -r</h3>
+<p>Sem opção, o <code>scp</code> só copia arquivos. Uma pasta dá erro:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp fotos ana@localhost:/tmp/b7/rs/destino/
+ana@localhost's password:
+scp: local "fotos" is not a regular file                « "não é um arquivo comum"
+scp: failed to upload file fotos to /tmp/b7/rs/destino/
+$ scp -r fotos ana@localhost:/tmp/b7/rs/destino/
+ana@localhost's password:
+serra.jpg                                     100%   30KB  18.9MB/s   00:00
+praia.jpg                                     100%   20KB  18.0MB/s   00:00
+mapa.png                                      100%   10KB  11.1MB/s   00:00     « o de dentro de viagem/</pre>
+
+<p>O <code>-r</code> (de <em>recursive</em>) entra nas subpastas. Uma linha por arquivo, inclusive o <code>mapa.png</code> da subpasta <code>viagem</code>.</p>
+
+<h3>Opções do scp</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Faz</th><th>Exemplo</th></tr>
+<tr><td><code>-r</code></td><td>Copia pastas inteiras (recursivo)</td><td><code>scp -r fotos ana@servidor:</code></td></tr>
+<tr><td><code>-P 2222</code></td><td>Porta do SSH. <strong>P maiúsculo</strong> (no <code>ssh</code> é <code>-p</code> minúsculo)</td><td><code>scp -P 2222 a.txt ana@servidor:</code></td></tr>
+<tr><td><code>-p</code></td><td>Mantém datas e permissões (p minúsculo)</td><td><code>scp -p script.sh ana@servidor:</code></td></tr>
+<tr><td><code>-i chave</code></td><td>Usa uma chave SSH específica</td><td><code>scp -i ~/.ssh/trabalho a.txt ana@servidor:</code></td></tr>
+<tr><td><code>-C</code></td><td>Comprime durante a transferência</td><td><code>scp -C logs.txt ana@servidor:</code></td></tr>
+<tr><td><code>-q</code></td><td>Silencioso: sem a linha de progresso</td><td><code>scp -q a.txt ana@servidor:</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O scp sobrescreve sem perguntar</strong>
+<p>Se o destino já tiver um arquivo com o mesmo nome, ele é substituído sem aviso. Para pastas grandes ou cópias que se repetem, prefira o <code>rsync</code>, e teste antes com <code>--dry-run</code>.</p>
+</div>
+
+<div class="note">
+<strong>O scp de hoje fala SFTP</strong>
+<p>Desde o OpenSSH 9.0, o <code>scp</code> usa por baixo o protocolo do <code>sftp</code> (o antigo protocolo "SCP" tinha problemas de segurança). Para você nada muda; só servidores muito antigos, sem SFTP, precisam da opção <code>-O</code> (o "O" de <em>original</em>). No Arch, o SFTP vem ligado no <code>sshd_config</code> (a linha <code>Subsystem sftp</code>).</p>
+</div>
+
+<hr>
+
+<h2>rsync: o básico</h2>
+<p>O rsync compara origem e destino e copia <strong>só a diferença</strong>. Ele funciona igual entre duas pastas da mesma máquina, o que é ótimo para treinar sem rede. A pasta de teste:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ ls -R fotos
+fotos:
+praia.jpg
+serra.jpg
+viagem
+
+fotos/viagem:
+mapa.png</pre>
+
+<dl class="anatomy">
+  <dt>rsync</dt><dd>O programa.</dd>
+  <dt>-a</dt><dd>Modo <em>archive</em> ("arquivamento"): recursivo e mantém permissões, datas, links simbólicos e donos. Use quase sempre.</dd>
+  <dt>-v</dt><dd><em>Verbose</em>, "detalhado": lista cada arquivo copiado.</dd>
+  <dt>fotos/</dt><dd>A origem. Repare na <strong>barra no fim</strong>: ela muda tudo (seção seguinte).</dd>
+  <dt>backup/</dt><dd>O destino. Pode ser local ou remoto (<code>ana@servidor:backup/</code>). Se não existir, é criado.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av fotos/ backup/
+sending incremental file list                « "enviando a lista de arquivos aos poucos"
+created directory backup                     « o destino não existia
+./                                           « a própria pasta (as datas e permissões dela)
+praia.jpg
+serra.jpg
+viagem/
+viagem/mapa.png
+
+sent 61.737 bytes  received 117 bytes  123.708,00 bytes/sec       « enviados, recebidos, velocidade
+total size is 61.440  speedup is 0,99                             « tamanho total e "ganho"
+$ echo $?
+0</pre>
+
+<p>As duas últimas linhas são o resumo. <code>total size</code> é o tamanho de tudo na origem (61.440 bytes = 60 KiB). O <code>speedup</code> compara esse tamanho com o que realmente passou: perto de 1 quer dizer "copiei quase tudo". As mensagens são em inglês, mas os números seguem o português: ponto separando milhares e vírgula nos decimais.</p>
+
+<h3>A grande vantagem: só o que mudou</h3>
+<p>Rode o mesmo comando de novo:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av fotos/ backup/
+sending incremental file list
+                                            « nenhum arquivo: nada mudou
+sent 154 bytes  received 13 bytes  334,00 bytes/sec
+total size is 61.440  speedup is 367,90     « 60 KiB "sincronizados" com só 167 bytes</pre>
+
+<p>Agora a Ana apaga a <code>serra.jpg</code> e cria uma <code>nova.jpg</code> na origem:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rm fotos/serra.jpg
+$ echo "nova" &gt; fotos/nova.jpg
+$ rsync -av fotos/ backup/
+sending incremental file list
+./
+nova.jpg                                    « só a nova foi copiada
+
+sent 212 bytes  received 39 bytes  167,33 bytes/sec
+total size is 30.725  speedup is 122,41
+$ ls backup
+nova.jpg
+praia.jpg
+serra.jpg                                   « a apagada continua no destino!
+viagem</pre>
+
+<p>Por padrão, o rsync <strong>só acrescenta e atualiza</strong>: o que você apaga na origem continua no destino. Isso é proposital (um backup que não perde nada); para um espelho exato, existe o <code>--delete</code>, mais abaixo.</p>
+
+<hr>
+
+<h2>A barra no fim da origem</h2>
+<p>Esta é a pegadinha mais famosa do rsync. Com barra (<code>fotos/</code>), ele copia <strong>o conteúdo</strong> da pasta. Sem barra (<code>fotos</code>), ele copia <strong>a pasta em si</strong>, que vira uma subpasta no destino:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av fotos copia/
+sending incremental file list
+created directory copia
+fotos/                                       « a pasta veio junto
+fotos/praia.jpg
+fotos/serra.jpg
+fotos/viagem/
+fotos/viagem/mapa.png
+
+sent 61.754 bytes  received 117 bytes  123.742,00 bytes/sec
+total size is 61.440  speedup is 0,99</pre>
+
+<p>O resultado, lado a lado, visto com o <code>tree</code> (feito numa pasta limpa com os mesmos arquivos):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com barra: <code>rsync -a fotos/ comBarra/</code></th><th>Sem barra: <code>rsync -a fotos semBarra/</code></th></tr>
+<tr><td><pre class="syntax">comBarra
+├── praia.jpg
+├── serra.jpg
+└── viagem
+    └── mapa.png</pre></td><td><pre class="syntax">semBarra
+└── fotos
+    ├── praia.jpg
+    ├── serra.jpg
+    └── viagem
+        └── mapa.png</pre></td></tr>
+<tr><td>"Copie o que está <strong>dentro</strong> de fotos."</td><td>"Copie a pasta <strong>fotos</strong>."</td></tr>
+</table>
+</div>
+
+<p>Uma forma de lembrar: a barra significa "o que está <strong>dentro</strong> de". A barra no <strong>destino</strong> não muda nada; só a da origem importa. E atenção: o <kbd>Tab</kbd> do Bash completa pastas <strong>com</strong> barra (<code>fot</code> + Tab vira <code>fotos/</code>), então o mais comum é você estar no caso "com barra" sem perceber.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Resultado</th><th>Quando usar</th></tr>
+<tr><td><code>rsync -av fotos/ backup/</code></td><td><code>backup/praia.jpg</code></td><td>Manter duas pastas iguais (o caso mais comum).</td></tr>
+<tr><td><code>rsync -av fotos backup/</code></td><td><code>backup/fotos/praia.jpg</code></td><td>Guardar várias pastas dentro de um mesmo destino.</td></tr>
+<tr><td><code>rsync -av fotos/ backup/fotos/</code></td><td><code>backup/fotos/praia.jpg</code></td><td>O mesmo que o anterior, escrito de forma explícita (mais fácil de ler).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Espelhar com --delete (e por que testar antes)</h2>
+<p>O <code>--delete</code> apaga no destino o que não existe mais na origem: o destino vira um <strong>espelho</strong> exato.</p>
+
+<div class="warning">
+<strong>--delete apaga de verdade</strong>
+<p>Uma barra trocada ou uma pasta errada, junto com <code>--delete</code>, pode apagar o destino inteiro (imagine origem e destino invertidos). Rode sempre antes com <code>--dry-run</code> (ou <code>-n</code>), o "ensaio", que só <strong>mostra</strong> o que seria feito.</p>
+</div>
+
+<p>Primeiro, o ensaio:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av --delete --dry-run fotos/ backup/
+sending incremental file list
+deleting serra.jpg                                       « seria apagado no destino
+
+sent 157 bytes  received 33 bytes  380,00 bytes/sec
+total size is 30.725  speedup is 161,71 (DRY RUN)        « foi só um ensaio
+$ ls backup
+nova.jpg
+praia.jpg
+serra.jpg                                                « continua lá
+viagem</pre>
+
+<p>O <code>(DRY RUN)</code> no fim confirma que nada foi feito. Conferido, rode sem o <code>--dry-run</code>:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av --delete fotos/ backup/
+sending incremental file list
+deleting serra.jpg
+
+sent 157 bytes  received 33 bytes  380,00 bytes/sec
+total size is 30.725  speedup is 161,71
+$ ls backup
+nova.jpg
+praia.jpg
+viagem</pre>
+
+<hr>
+
+<h2>rsync pela rede</h2>
+<p>Pela rede, só muda o destino (ou a origem), que passa a ter o formato <code>usuário@máquina:caminho</code>. O rsync abre a conexão SSH sozinho, pede a senha e conversa com o rsync do outro lado. O <code>-z</code> comprime os dados no caminho:</p>
+
+<dl class="anatomy">
+  <dt>-avz</dt><dd><code>-a</code> e <code>-v</code> como antes, mais <code>-z</code> (de <em>zip</em>): comprime durante a transferência. Vale a pena pela internet; numa rede local rápida, quase não faz diferença.</dd>
+  <dt>fotos/</dt><dd>A origem, local, com barra.</dd>
+  <dt>ana@localhost:/tmp/b7/rs/remoto/</dt><dd>O destino remoto.</dd>
+</dl>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -avz fotos/ ana@localhost:/tmp/b7/rs/remoto/
+ana@localhost's password:
+sending incremental file list
+created directory /tmp/b7/rs/remoto
+./
+nova.jpg
+praia.jpg
+viagem/
+viagem/mapa.png
+
+sent 31.031 bytes  received 128 bytes  20.772,67 bytes/sec
+total size is 30.725  speedup is 0,99</pre>
+
+<p>O ensaio funciona igual pela rede. Depois de um <code>touch fotos/praia.jpg</code> (que só muda a data), o <code>-n</code> mostra que só ela seria enviada:</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ touch fotos/praia.jpg
+$ rsync -avzn fotos/ ana@localhost:/tmp/b7/rs/remoto/
+ana@localhost's password:
+sending incremental file list
+praia.jpg
+
+sent 168 bytes  received 20 bytes  125,33 bytes/sec
+total size is 30.725  speedup is 163,43 (DRY RUN)</pre>
+
+<p>Para um SSH em outra porta, diga ao rsync qual comando usar com <code>-e</code>: <code>rsync -avz -e "ssh -p 2222" fotos/ ana@servidor:fotos/</code>. Com um apelido no <code>~/.ssh/config</code> (veja <a href="ssh.html">SSH</a>), nem isso: <code>rsync -avz fotos/ servidor:fotos/</code>.</p>
+
+<hr>
+
+<h2>Mais opções do rsync</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Opção</th><th>Faz</th></tr>
+<tr><td><code>-a</code></td><td>Modo arquivamento: recursivo, mantém permissões, datas, links e donos</td></tr>
+<tr><td><code>-v</code></td><td>Lista cada arquivo transferido</td></tr>
+<tr><td><code>-z</code></td><td>Comprime durante a transferência</td></tr>
+<tr><td><code>-h</code></td><td>Tamanhos legíveis (<code>20,7K</code> em vez de <code>20.700</code>)</td></tr>
+<tr><td><code>-n</code> / <code>--dry-run</code></td><td>Ensaio: mostra o que faria, sem fazer</td></tr>
+<tr><td><code>--delete</code></td><td>Apaga no destino o que sumiu da origem</td></tr>
+<tr><td><code>--progress</code> / <code>-P</code></td><td>Progresso por arquivo (<code>-P</code> também guarda arquivos pela metade para retomar)</td></tr>
+<tr><td><code>--exclude='*.tmp'</code></td><td>Ignora arquivos que combinam com o padrão (veja <a href="curingas.html">Curingas</a>)</td></tr>
+<tr><td><code>-e "ssh -p 2222"</code></td><td>Usa o SSH numa porta diferente</td></tr>
+</table>
+</div>
+
+<h3>Excluir arquivos e tamanhos legíveis</h3>
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -avh --exclude="*.png" fotos/ sempng/
+sending incremental file list
+created directory sempng
+./
+nova.jpg
+praia.jpg
+viagem/                                    « a pasta veio, mas o mapa.png ficou de fora
+
+sent 20,7K bytes  received 94 bytes  41,6K bytes/sec      « com -h: 20,7K
+total size is 20,5K  speedup is 0,98</pre>
+
+<h3>Ver o progresso</h3>
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -avz --progress fotos/ comprimido/
+sending incremental file list
+created directory comprimido
+./
+nova.jpg
+              5B 100%       0B/s    0:00:00 (xfr#1, to-chk=3/5)          « 1º arquivo; faltam conferir 3 de 5
+praia.jpg
+         20.480B 100% 20.480.000B/s    0:00:00 (xfr#2, to-chk=2/5)
+viagem/
+viagem/mapa.png
+         10.240B 100% 5.120.000B/s    0:00:00 (xfr#3, to-chk=0/5)
+
+sent 31.027 bytes  received 117 bytes  62.288,00 bytes/sec
+total size is 30.725  speedup is 0,99</pre>
+
+<p>Embaixo de cada arquivo, a linha de progresso se atualiza enquanto ele é copiado (aqui foi instantâneo). <code>xfr#2</code> é "segunda transferência"; <code>to-chk=2/5</code>, "faltam conferir 2 dos 5 itens".</p>
+
+<hr>
+
+<h2>sftp: navegar antes de copiar</h2>
+<p>O <code>sftp</code> (de <em>SSH File Transfer Protocol</em>) abre uma sessão interativa, parecida com um terminal, só para arquivos. É útil quando você não lembra onde o arquivo está do lado de lá. O prompt muda para <code>sftp&gt;</code>, e os comandos são poucos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando no sftp</th><th>Faz</th></tr>
+<tr><td><code>pwd</code>, <code>ls</code>, <code>cd</code></td><td>Do lado <strong>remoto</strong></td></tr>
+<tr><td><code>lpwd</code>, <code>lls</code>, <code>lcd</code></td><td>Do lado <strong>local</strong> (o "l" é de <em>local</em>)</td></tr>
+<tr><td><code>get arquivo [nome]</code></td><td>Traz um arquivo de lá para cá (<code>get -r</code> para pastas)</td></tr>
+<tr><td><code>put arquivo [pasta]</code></td><td>Manda um arquivo daqui para lá (<code>put -r</code> para pastas)</td></tr>
+<tr><td><code>bye</code> ou <code>exit</code></td><td>Sai</td></tr>
+</table>
+</div>
+
+<p>Uma sessão real (como a VM conversa com ela mesma, as pastas local e remota coincidem):</p>
+
+<pre class="term" data-cwd="/tmp/b7/rs">$ sftp ana@localhost
+ana@localhost's password:
+Connected to localhost.
+sftp&gt; pwd
+Remote working directory: /home/ana                     « começa na pasta pessoal remota
+sftp&gt; cd /tmp/b7/rs
+sftp&gt; ls
+backup          comprimido      copia           destino         fotos
+hostname        relatorio.txt   remoto          sempng
+sftp&gt; lpwd
+Local working directory: /tmp/b7/rs
+sftp&gt; get relatorio.txt baixado.txt                    « de lá para cá, com outro nome
+Fetching /tmp/b7/rs/relatorio.txt to baixado.txt
+relatorio.txt                                 100%   22    24.2KB/s   00:00
+sftp&gt; put hostname destino/                            « daqui para lá
+Uploading hostname to /tmp/b7/rs/destino/hostname
+hostname                                      100%    9    13.9KB/s   00:00
+sftp&gt; ls -l destino
+drwxr-xr-x    ? ana      ana           100 Oct 16 14:57 destino/fotos
+-rw-r--r--    ? ana      ana             9 Oct 16 15:10 destino/hostname
+-rw-r--r--    ? ana      ana            22 Oct 16 14:57 destino/relatorio.txt
+sftp&gt; bye</pre>
+
+<p>Repare que o <code>ls -l</code> do sftp mostra a data em inglês (<code>Oct 16</code>) e um <code>?</code> no número de links: é o servidor SFTP quem monta essa lista, não o <code>ls</code> do Arch. Nos gerenciadores de arquivos do GNOME e do KDE, o endereço <code>sftp://ana@servidor/</code> abre a mesma coisa com o mouse.</p>
+
+<hr>
+
+<h2>Formas diferentes de copiar entre máquinas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td><code>scp</code></td><td><code>scp a.pdf ana@servidor:</code></td><td>Um ou poucos arquivos, uma vez. Não precisa instalar nada além do <code>openssh</code>.</td></tr>
+<tr><td><code>rsync</code></td><td><code>rsync -avz pasta/ ana@servidor:pasta/</code></td><td>Pastas grandes, cópias repetidas, backups, retomar cópias interrompidas.</td></tr>
+<tr><td><code>sftp</code></td><td><code>sftp ana@servidor</code> e depois <code>get</code>/<code>put</code></td><td>Procurar o arquivo nas pastas remotas antes de copiar.</td></tr>
+<tr><td>Gerenciador de arquivos</td><td><code>sftp://ana@servidor/</code></td><td>No desktop, arrastando com o mouse.</td></tr>
+<tr><td><code>cp</code> / <code>rsync</code> local</td><td><code>rsync -av fotos/ /mnt/hd/fotos/</code></td><td>Para um HD externo montado: o rsync local também copia só o que mudou.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+<p>O terminal simulado não tem rede (o <code>scp</code> e o <code>rsync</code> respondem com um aviso do simulador), mas o <code>pacman</code> dele conhece os pacotes reais da VM.</p>
+
+<div class="try" data-goal="ran:^\s*pacman\s+-Qo\b.*scp,out:openssh" data-solucao="pacman -Qo /usr/bin/scp">
+<p class="try-task"><strong>Missão 1:</strong> descubra a qual pacote pertence o arquivo <code>/usr/bin/scp</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*pacman\s+-Q\s+rsync\b,out:rsync 3.5.1-3" data-solucao="pacman -Q rsync">
+<p class="try-task"><strong>Missão 2:</strong> antes de sincronizar, confira se o <code>rsync</code> está instalado nesta máquina e qual é a versão.</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"stat local … No such file or directory"</strong>
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp nada.txt ana@localhost:/tmp/b7/rs/destino/
+scp: stat local "nada.txt": No such file or directory
+$ echo $?
+255</pre>
+<p><strong>O que aconteceu:</strong> o arquivo de origem não existe na pasta atual (repare: o erro veio antes de pedir a senha). Confira com <code>ls</code> ou use o caminho completo.</p>
+</div>
+
+<div class="cenario">
+<strong>"is not a regular file"</strong>
+<p><strong>O que aconteceu:</strong> a origem é uma pasta, e o <code>scp</code> só copia pastas com <code>-r</code>: <code>scp -r fotos ana@servidor:</code> (veja a seção do scp).</p>
+</div>
+
+<div class="cenario">
+<strong>Arquivo remoto inexistente</strong>
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp ana@localhost:nada.txt .
+ana@localhost's password:
+scp: nada.txt: No such file or directory
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> o caminho depois dos dois-pontos não existe do lado de lá. Lembre que caminho relativo parte da pasta pessoal remota; confira com <code>ssh ana@servidor ls</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Connection refused" (código 255)</strong>
+<pre class="term" data-cwd="/tmp/b7/rs">$ scp -P 2299 relatorio.txt ana@localhost:
+ssh: connect to host localhost port 2299: Connection refused
+scp: Connection closed
+$ rsync -av -e "ssh -p 2299" fotos/ ana@localhost:/tmp/b7/rs/remoto/
+ssh: connect to host localhost port 2299: Connection refused
+rsync: connection unexpectedly closed (0 bytes received so far) [sender]
+rsync error: unexplained error (code 255) at io.c(303) [sender=3.5.1-g04355d27]</pre>
+<p><strong>O que aconteceu:</strong> o problema é a conexão SSH, não a cópia: porta errada ou <code>sshd</code> desligado do outro lado. O código 255 vem do próprio <code>ssh</code>.</p>
+<p><strong>Como resolver:</strong> teste antes com <code>ssh ana@servidor</code> e veja os erros em <a href="ssh.html">SSH</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>rsync com código 23</strong>
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av nada/ backup/
+sending incremental file list
+rsync: [sender] change_dir "/tmp/b7/rs/nada" failed: No such file or directory (2)
+
+sent 19 bytes  received 12 bytes  62,00 bytes/sec
+total size is 0  speedup is 0,00
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1412) [sender=3.5.1-g04355d27]
+$ echo $?
+23</pre>
+<p><strong>O que aconteceu:</strong> o código 23 quer dizer "transferência parcial". A causa está na linha <code>rsync: …</code> mais acima: aqui, a origem <code>nada/</code> não existe. Em outros casos são arquivos sem permissão de leitura (veja <a href="permissoes.html">Permissões</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"connection unexpectedly closed" / código 12: falta o rsync do outro lado</strong>
+<p>Para reproduzir de verdade, o rsync foi mandado procurar, do lado de lá, um programa que não existe (<code>--rsync-path</code>). É exatamente o que acontece quando o servidor não tem o pacote <code>rsync</code>:</p>
+<pre class="term" data-cwd="/tmp/b7/rs">$ rsync -av --rsync-path=rsync-que-nao-existe fotos/ ana@localhost:/tmp/b7/rs/remoto/
+ana@localhost's password:
+bash: line 1: rsync-que-nao-existe: command not found                « esta linha vem do servidor
+rsync: connection unexpectedly closed (0 bytes received so far) [sender]
+rsync error: error in rsync protocol data stream (code 12) at io.c(303) [sender=3.5.1-g04355d27]</pre>
+<p><strong>O que aconteceu:</strong> a primeira linha é do Bash <strong>do servidor</strong> (em inglês, porque comandos rodados pelo SSH sem terminal não carregam o idioma). O rsync daqui ficou sem ninguém para conversar.</p>
+<p><strong>Como resolver:</strong> instale do lado de lá: <code>sudo pacman -S rsync</code> (num servidor Debian/Ubuntu, <code>apt install rsync</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Apareceu uma pasta a mais no destino</strong>
+<p><strong>O que aconteceu:</strong> faltou a barra no fim da origem, e o rsync criou <code>backup/fotos/</code>.</p>
+<p><strong>Como resolver:</strong> apague a pasta extra (veja <a href="remover.html">rm e rmdir</a>) e repita com <code>fotos/</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>scp arquivo usuário@máquina:pasta/</code></td><td>Copia daqui para lá</td></tr>
+<tr><td><code>scp usuário@máquina:arquivo .</code></td><td>Copia de lá para cá</td></tr>
+<tr><td><code>scp -r pasta usuário@máquina:</code> · <code>-P porta</code></td><td>Pastas · outra porta</td></tr>
+<tr><td><code>rsync -av origem/ destino/</code></td><td>Sincroniza o conteúdo (local ou remoto)</td></tr>
+<tr><td><code>rsync -avz origem/ usuário@máquina:destino/</code></td><td>Sincroniza pela rede, comprimindo</td></tr>
+<tr><td><code>rsync -av --delete --dry-run origem/ destino/</code></td><td>Ensaio do espelho exato</td></tr>
+<tr><td><code>rsync -av --exclude='*.tmp' origem/ destino/</code></td><td>Ignora arquivos</td></tr>
+<tr><td><code>rsync -av -e "ssh -p 2222" …</code></td><td>SSH em outra porta</td></tr>
+<tr><td><code>sftp usuário@máquina</code> → <code>ls</code>, <code>cd</code>, <code>get</code>, <code>put</code>, <code>bye</code></td><td>Sessão interativa de arquivos</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. De lá para cá</h3>
+<p>Complete para trazer <code>/etc/hostname</code> do servidor para a pasta atual:</p>
+<div class="ex-code">scp ana@servidor:/etc/hostname <input data-answer=".|./" aria-label="destino"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Ensaio antes de espelhar</h3>
+<p>Complete para ver o que seria apagado, sem apagar nada:</p>
+<div class="ex-code">rsync -av --delete <input data-answer="--dry-run|-n" aria-label="opção"> fotos/ backup/</div>
+</div>
+
+<div class="exercise">
+<h3>3. Porta diferente no scp</h3>
+<p>Complete para usar a porta 2222:</p>
+<div class="ex-code">scp <input data-answer="-P 2222|-P2222" aria-label="opção"> a.txt ana@servidor:</div>
+</div>
+
+<div class="exercise">
+<h3>4. Uma pasta inteira</h3>
+<p>Complete para o <code>scp</code> copiar a pasta <code>fotos</code>:</p>
+<div class="ex-code">scp <input data-answer="-r" aria-label="opção"> fotos ana@servidor:</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>rsync -av fotos backup/</code> (sem barra em "fotos") resulta em:</p>
+<label><input type="radio" name="q5"> <code>backup/praia.jpg</code></label>
+<label><input type="radio" name="q5"> <code>backup/fotos/praia.jpg</code></label>
+<label><input type="radio" name="q5"> Erro: falta a barra.</label>
+<label><input type="radio" name="q5"> <code>fotos/backup/praia.jpg</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Você apagou um arquivo da origem e rodou <code>rsync -av origem/ destino/</code>. O que acontece com a cópia dele no destino?</p>
+<label><input type="radio" name="q6"> É apagada também.</label>
+<label><input type="radio" name="q6"> O rsync pergunta o que fazer.</label>
+<label><input type="radio" name="q6"> O rsync dá erro 23.</label>
+<label><input type="radio" name="q6"> Continua lá: sem <code>--delete</code>, o rsync só acrescenta e atualiza.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">7. O rsync para o servidor falha com <code>bash: line 1: rsync: command not found</code> e código 12. O que fazer?</p>
+<label><input type="radio" name="q7"> Usar <code>sudo rsync</code>.</label>
+<label><input type="radio" name="q7"> Trocar a barra da origem.</label>
+<label><input type="radio" name="q7"> Instalar o pacote <code>rsync</code> no servidor.</label>
+<label><input type="radio" name="q7"> Ligar o <code>sshd</code> na sua máquina.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Caminho remoto: <code>usuário@máquina:caminho</code>; os dois-pontos são obrigatórios; caminho relativo parte da pasta pessoal de lá.</li>
+  <li><code>scp origem destino</code> para cópias rápidas; <code>-r</code> para pastas, <code>-P</code> (maiúsculo) para a porta. Vem no <code>openssh</code>.</li>
+  <li><code>rsync -av</code> copia só o que mudou; precisa do pacote <code>rsync</code> nas duas pontas; <code>-z</code> comprime pela rede.</li>
+  <li><code>fotos/</code> copia o conteúdo; <code>fotos</code> copia a pasta.</li>
+  <li>Antes de <code>--delete</code>, sempre <code>--dry-run</code> e confira o <code>(DRY RUN)</code>.</li>
+  <li><code>sftp</code> é uma sessão interativa: <code>ls</code>/<code>cd</code> de lá, <code>lls</code>/<code>lcd</code> daqui, <code>get</code> e <code>put</code>.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Rsync">rsync</a> mostra a barra no fim da origem, o uso como backup (com exemplos de <code>--exclude</code> para copiar o sistema inteiro) e as interfaces gráficas; o <code>scp</code> e o <code>sftp</code>, inclusive como limitar um usuário só a SFTP, estão em <a href="https://wiki.archlinux.org/title/SCP_and_SFTP">SCP and SFTP</a>; e a conexão que está por baixo de tudo, em <a href="https://wiki.archlinux.org/title/OpenSSH">OpenSSH</a>. (Em outubro de 2026, essas páginas não têm versão em português.)</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
