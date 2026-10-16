@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Desempenho — medir antes de ajustar | Guia Arch</title>
+<meta name="description" content="Desempenho no Arch Linux sem mitos: medir com free, top/htop e systemd-analyze (saídas reais), governor de CPU com cpupower, zram, paccache e journald para o disco, ParallelDownloads, e o que vale ou não a pena.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Desempenho</span></h1>
+
+<p class="intro">O Arch já é enxuto: só roda o que você instalou e ligou. Por isso a maior parte das "dicas para deixar o Linux mais rápido" que circulam na internet não muda nada, ou piora. Esta aula ensina o método de quem ajusta sistemas de verdade: <strong>medir antes, mudar uma coisa, medir depois</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ler memória (<code>free</code>), processos (<code>top</code>/<code>htop</code>) e tempo de boot (<code>systemd-analyze</code>) com as saídas reais da VM.</li>
+  <li>O governor da CPU e o <code>cpupower</code>.</li>
+  <li>Recuperar disco com <code>paccache</code> e limitar o journal.</li>
+  <li>Acelerar downloads do pacman (<code>ParallelDownloads</code>, espelhos).</li>
+  <li>Separar o que vale a pena dos mitos (preload, irqbalance, "limpar a RAM").</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>O método: medir, mudar uma coisa, medir de novo</h2>
+<p>Imagine um médico que receita remédio sem examinar. Pode acertar, mas também pode tratar a doença errada. Com computador é igual: se o sistema "está lento", primeiro descubra <strong>o quê</strong> está lento (CPU? memória? disco? rede? o boot?) e só então mexa, <strong>uma coisa por vez</strong>, para saber o que funcionou.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Meça com</th><th>Aula</th></tr>
+<tr><td>Tudo lento, ventoinha alta</td><td><code>top</code> / <code>htop</code> (quem usa CPU)</td><td><a href="processos.html">Processos e kill</a></td></tr>
+<tr><td>Trava ao abrir muitas abas</td><td><code>free -h</code> (memória e swap)</td><td><a href="swap-zram.html">Swap e zram</a></td></tr>
+<tr><td>Boot demorado</td><td><code>systemd-analyze blame</code></td><td>Esta aula</td></tr>
+<tr><td>Disco cheio</td><td><code>df -h</code>, <code>du -sh</code></td><td><a href="discos.html">lsblk, df, du</a></td></tr>
+<tr><td>Atualização demora a baixar</td><td>Velocidade no <code>pacman -Syu</code></td><td><a href="espelhos.html">Espelhos</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Memória: free -h</h2>
+
+<dl class="anatomy">
+  <dt>free</dt><dd>Mostra a memória RAM e a swap.</dd>
+  <dt>-h</dt><dd><em>human</em>: em Gi/Mi em vez de kibibytes.</dd>
+</dl>
+
+<pre class="term">$ free -h
+               total       usada       livre    compart.  buff/cache  disponível
+Mem.:          3,8Gi       1,6Gi       1,5Gi        53Mi       1,1Gi       2,2Gi
+Swap:          4,0Gi          0B       4,0Gi</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que é</th></tr>
+<tr><td><code>total</code></td><td>A RAM da máquina (a VM tem 4 GB; o kernel reserva um pouco)</td></tr>
+<tr><td><code>usada</code></td><td>Usada pelos programas</td></tr>
+<tr><td><code>livre</code></td><td>Sem uso nenhum. <strong>Não</strong> é o número que importa</td></tr>
+<tr><td><code>compart.</code></td><td>Memória compartilhada (tmpfs, gráficos)</td></tr>
+<tr><td><code>buff/cache</code></td><td>Cache de disco: arquivos lidos recentemente, guardados na RAM "de graça"</td></tr>
+<tr><td><code>disponível</code></td><td><strong>O que importa:</strong> quanto os programas ainda podem usar (livre + cache que pode ser descartado)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>"Linux comeu minha RAM!"</strong>
+<p>Memória livre é memória desperdiçada. O kernel usa a sobra como cache de disco e a devolve na hora em que um programa pede. Por isso "livre" pequeno é normal; preocupe-se quando <code>disponível</code> fica perto de zero e a coluna <code>usada</code> da <strong>Swap</strong> cresce. Comandos que "limpam a RAM" (<code>echo 3 &gt; /proc/sys/vm/drop_caches</code>) só jogam o cache fora e deixam o sistema <strong>mais lento</strong> logo depois.</p>
+</div>
+
+<div class="try" data-goal="ran:^\s*free\b" data-solucao="free -h">
+<p class="try-task"><strong>Missão:</strong> descubra quanta memória a máquina ainda tem <strong>disponível</strong> para programas, em unidades fáceis de ler.</p>
+</div>
+
+<hr>
+
+<h2>Processos: top e htop</h2>
+<p>O <code>htop</code> é a versão colorida e interativa do <code>top</code> (instale com <code>sudo pacman -S htop</code>; a VM já tem). A tela dele é explicada, com captura real, em <a href="processos.html">Processos e kill</a>. Aqui usamos o <code>top</code> em modo "foto" (<code>-b</code> = <em>batch</em>, <code>-n1</code> = uma vez, <code>-o %MEM</code> = ordenar por memória), que dá para copiar:</p>
+
+<pre class="term">$ top -bn1 -o %MEM | head -14
+top - 13:33:44 up 27 min,  6 users,  load average: 3,34, 4,34, 2,56          « carga de 1, 5 e 15 min
+Tarefas: 148 total, 2 running, 144 sleep, 2 d-sleep, 0 stopped, 0 zombie
+%CPU(s): 51,7 us, 44,8 sy,  0,0 ni,  0,0 id,  3,4 wa,  0,0 hi,  0,0 si,  0,0 st
+MB mem :   3888,2 total,   2209,6 free,    911,4 used,   1159,9 buff/cache
+MB swap:   4096,0 total,   4096,0 free,      0,0 used.   2976,9 avail mem
+
+    PID USUARIO   PR  NI    VIRT    RES    SHR S  %CPU  %MEM    TEMPO+ COMANDO
+  83119 ana       20   0  243360 199264  14864 R  92,6   5,0   0:00.44 pacman      « no momento, um pacman consultando
+  33126 ana       20   0   41732  36524   9048 S   0,0   0,9   0:00.79 python3
+    196 root      20   0   92952  31772  30672 S   0,0   0,8   0:01.89 systemd+
+    289 root      20   0  422504  28108  24204 S   0,0   0,7   0:00.75 Network+
+  39014 root      20   0  111348  26300   9916 S   0,0   0,7   0:00.10 dirmngr
+  45042 root      20   0  368372  21552  19504 S   0,0   0,5   0:00.07 flatpak+
+      1 root      20   0   21708  15924  10808 S   0,0   0,4   0:17.07 systemd</pre>
+
+<p>Como ler a linha <code>%CPU(s)</code>:</p>
+<dl class="anatomy">
+  <dt>us</dt><dd><em>user</em>: programas comuns.</dd>
+  <dt>sy</dt><dd><em>system</em>: o kernel trabalhando para eles.</dd>
+  <dt>id</dt><dd><em>idle</em>: ocioso. <code>0,0</code> = CPU totalmente ocupada naquele instante.</dd>
+  <dt>wa</dt><dd><em>I/O wait</em>: esperando o disco. Alto = o gargalo é o disco, não a CPU.</dd>
+  <dt>st</dt><dd><em>steal</em>: tempo "roubado" pelo hipervisor (só em VMs).</dd>
+</dl>
+
+<p>A <strong>carga</strong> (<em>load average</em>) é quantos processos, em média, querem rodar ao mesmo tempo. Compare com o número de núcleos: a VM tem <code>nproc</code> = <code>2</code>, então carga 3,34 quer dizer "mais trabalho do que núcleos" naquele momento (vários autores usavam a VM ao mesmo tempo). Num PC de 8 núcleos, 3,34 seria tranquilo.</p>
+
+<hr>
+
+<h2>Boot: systemd-analyze</h2>
+
+<pre class="term">$ systemd-analyze
+Startup finished in 2.172s (kernel) + 2.606s (initrd) + 17.938s (userspace) = 22.717s
+graphical.target reached after 17.936s in userspace.</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Fase</th><th>O que acontece</th><th>Na VM</th></tr>
+<tr><td><code>kernel</code></td><td>O kernel inicia o hardware</td><td>2,2 s</td></tr>
+<tr><td><code>initrd</code></td><td>O <a href="mkinitcpio.html">initramfs</a> acha e monta a raiz</td><td>2,6 s</td></tr>
+<tr><td><code>userspace</code></td><td>O systemd liga os serviços até o alvo final</td><td>17,9 s</td></tr>
+</table>
+</div>
+
+<p>As parcelas <code>firmware</code> e <code>loader</code> (tempo da UEFI e do bootloader) só aparecem quando o bootloader informa esses tempos ao systemd: o systemd-boot informa; o GRUB, usado na VM, não. Agora, <strong>quem</strong> demorou:</p>
+
+<pre class="term">$ systemd-analyze blame | head -4
+15.986s dev-sda1.device
+15.986s dev-disk-by\x2did-ata\x2dVBOX_HARDDISK_VB2b8dff56\x2db1fc8c1b\x2dpart1.device
+15.986s dev-disk-by\x2dpath-pci\x2d0000:00:0d.0\x2data\x2d1.0\x2dpart-by\x2dpartuuid-42528876\x2d2401\x2d45ed\x2daa76\x2d555fea61a03e.device
+15.986s dev-disk-by\x2dpath-pci\x2d0000:00:0d.0\x2data\x2d1.0\x2dpart1.device
+…</pre>
+
+<p>As primeiras linhas assustam, mas enganam: uma <code>.device</code> é o systemd <strong>esperando um disco aparecer</strong>, e cada partição tem dezenas de "apelidos" (por UUID, por caminho, por rótulo). Elas não estão "gastando" 16 segundos; estão esperando junto com tudo o mais. Filtre os dispositivos para ver os serviços:</p>
+
+<pre class="term">$ systemd-analyze blame | grep -v '\.device' | head -12
+10.790s initrd-switch-root.service           « troca do initramfs para a raiz real (disco lento da VM)
+ 1.816s systemd-journal-flush.service
+ 1.647s NetworkManager.service
+ 1.507s systemd-tmpfiles-setup-dev-early.service
+ 1.414s lvm2-monitor.service                 « monitor do LVM… sem LVM nesta máquina
+  701ms flatpak-system-helper.service
+  699ms systemd-udev-trigger.service
+  686ms sshd.service
+  655ms systemd-udevd.service
+  588ms systemd-journald.service
+  529ms systemd-udev-load-credentials.service
+  487ms systemd-random-seed.service</pre>
+
+<p>O <code>blame</code> soma o tempo de cada um, mas muitos rodam <strong>em paralelo</strong>. O que realmente segura o boot é a <strong>cadeia crítica</strong>:</p>
+
+<pre class="term">$ systemd-analyze critical-chain
+The time when unit became active or started is printed after the "@" character.
+The time the unit took to start is printed after the "+" character.
+
+graphical.target @17.936s
+└─multi-user.target @17.935s
+  └─sshd.service @17.247s +686ms
+    └─network.target @17.243s
+      └─NetworkManager.service @15.595s +1.647s
+        └─basic.target @15.592s
+          └─dbus-broker.service @15.290s +301ms
+            └─dbus.socket @15.253s +126us
+              └─sysinit.target @15.226s
+                └─systemd-update-utmp.service @15.161s +63ms
+                  └─systemd-tmpfiles-setup.service @14.763s +388ms
+                    └─local-fs.target @14.705s
+                      └─boot.mount @14.575s +129ms
+                        └─systemd-fsck@dev-disk-by\x2duuid-C509\x2d6CB1.service @14.307s +252ms
+                          └─dev-disk-by\x2duuid-C509\x2d6CB1.device</pre>
+
+<p>Leia de baixo para cima: o boot esperou a partição EFI aparecer (a <code>.device</code>), checou-a (<code>systemd-fsck</code>), montou <code>/boot</code>, e assim por diante até <code>graphical.target</code>. <code>@</code> é "quando ficou pronto" e <code>+</code> é "quanto demorou". Conclusão real para esta VM: o gargalo é o <strong>disco virtual lento</strong> (o <code>initrd-switch-root</code> e a espera pelos dispositivos), não um serviço. Desligar serviços aqui ganharia pouco.</p>
+
+<div class="tip">
+<strong>Vale a pena mexer no boot?</strong>
+<p>Desabilite só o que você <strong>sabe</strong> que não usa (<code>sudo systemctl disable --now SERVIÇO</code>; veja <a href="systemd.html">systemctl e Serviços</a>). Exemplo da VM: <code>lvm2-monitor.service</code> custa 1,4 s e não há LVM; mas se um dia você usar <a href="lvm.html">LVM</a>, ele faz falta. <code>systemd-analyze plot &gt; boot.svg</code> gera um gráfico do boot inteiro para abrir no navegador.</p>
+</div>
+
+<hr>
+
+<h2>CPU: o governor</h2>
+<p>O processador muda de frequência o tempo todo. Quem decide como é o <strong>governor</strong> (o "governador"): <code>powersave</code> (economiza, sobe quando precisa), <code>performance</code> (sempre no máximo), <code>schedutil</code> (segue a carga do agendador)… Nos processadores atuais, o driver (<code>intel_pstate</code>, <code>amd-pstate</code>) já faz um bom trabalho sozinho.</p>
+
+<pre class="term">$ cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+cat: /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor: Arquivo ou diretório inexistente</pre>
+
+<p>Na VM do guia não existe a pasta <code>cpufreq</code>: a frequência de uma CPU virtual é controlada pelo computador de fora. Num notebook ou desktop físico, o arquivo existe e mostra, por exemplo, <code>powersave</code>. O <code>cpupower</code> é a ferramenta do Arch para ver e trocar o governor:</p>
+
+<pre class="term">#> previa -S cpupower
+resolvendo dependências...
+procurando pacotes conflitantes...
+
+Pacotes (1) cpupower-7.2.10-1                     « mesma versão do kernel: vem do código do Linux
+
+Tamanho total download:   0,21 MiB
+Tamanho total instalado:  0,62 MiB
+
+:: Continuar a instalação? [S/n] n</pre>
+
+<pre class="file" data-file="ilustrativo: cpupower num PC físico">cpupower frequency-info                     # driver, governors disponíveis, faixa de frequência
+sudo cpupower frequency-set -g performance  # troca até o próximo boot
+# para fixar: edite /etc/default/cpupower (governor='performance')
+sudo systemctl enable --now cpupower.service</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ferramenta</th><th>Para quem</th></tr>
+<tr><td><code>cpupower</code></td><td>Desktop: fixar um governor</td></tr>
+<tr><td><code>power-profiles-daemon</code></td><td>Desktop GNOME/KDE: os três perfis (economia, equilibrado, desempenho) no menu do sistema</td></tr>
+<tr><td><code>tlp</code></td><td>Notebook: bateria (não use junto com o <code>power-profiles-daemon</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Memória extra: zram</h2>
+<p>O <strong>zram</strong> cria uma swap <strong>comprimida dentro da RAM</strong>: em vez de mandar páginas para o disco (lento), o kernel as comprime na memória. Em máquinas com pouca RAM e disco lento, é o ajuste que mais se sente. A VM usa uma partição de swap comum e nenhum zram:</p>
+
+<pre class="term">$ swapon --show
+NAME      TYPE      SIZE USED PRIO
+/dev/sda2 partition   4G   0B   -1
+$ zramctl
+$ cat /proc/sys/vm/swappiness
+60</pre>
+
+<p>O <code>zramctl</code> sem saída quer dizer "nenhum dispositivo zram". Como configurar (<code>zram-generator</code>) e o que é <code>swappiness</code> estão em <a href="swap-zram.html">Swap e zram</a>.</p>
+
+<hr>
+
+<h2>Disco: cache do pacman e journal</h2>
+
+<h3>O cache do pacman</h3>
+<p>Todo pacote baixado fica em <code>/var/cache/pacman/pkg/</code>, e o pacman <strong>nunca</strong> apaga sozinho. Na VM, depois de uma instalação e das aulas:</p>
+
+<pre class="term">$ sudo du -sh /var/cache/pacman/pkg
+1,3G	/var/cache/pacman/pkg
+$ paccache -d
+==> no candidate packages found for pruning
+$ paccache -dk0 | tail -1
+==> finished dry run: 404 candidates (disk space saved: 1.26 GiB)</pre>
+
+<dl class="anatomy">
+  <dt>paccache</dt><dd>Limpador do cache (pacote <code>pacman-contrib</code>). Mensagens em inglês.</dd>
+  <dt>-d</dt><dd><em>dry run</em>: só mostra o que faria. Pode rodar como usuário comum.</dd>
+  <dt>-k0</dt><dd><em>keep</em> 0: não guardar nenhuma versão. O padrão é <code>-k3</code> (guarda as 3 mais novas de cada pacote).</dd>
+  <dt>-r</dt><dd>(sem <code>-d</code>) remove de verdade: <code>sudo paccache -r</code>.</dd>
+</dl>
+
+<p>O primeiro <code>paccache -d</code> não achou nada porque o sistema é novo: só existe uma versão de cada pacote, e o padrão guarda 3. Com o tempo, a cada atualização, o cache cresce. A solução automática é o timer que já vem no <code>pacman-contrib</code> (desligado):</p>
+
+<pre class="term">$ systemctl list-unit-files | grep -E 'paccache|fstrim'
+fstrim.service                                                            static          -
+paccache.service                                                          static          -
+fstrim.timer                                                              disabled        disabled
+paccache.timer                                                            disabled        disabled</pre>
+
+<p><code>sudo systemctl enable --now paccache.timer</code> roda <code>paccache -r</code> toda semana. Detalhes, <code>pacman -Sc</code> e órfãos: <a href="cache-orfaos.html">Cache e Órfãos</a>. Guardar algumas versões antigas é o que permite <a href="downgrade.html">voltar um pacote</a> sem internet; não use <code>-k0</code> no dia a dia.</p>
+
+<div class="tip">
+<strong>fstrim.timer: para SSD</strong>
+<p>Também desligado de fábrica. Num SSD, <code>sudo systemctl enable --now fstrim.timer</code> avisa o disco, uma vez por semana, quais blocos estão livres. Mantém o SSD rápido e é um dos poucos ajustes que a Arch Wiki recomenda para quase todos.</p>
+</div>
+
+<h3>O journal</h3>
+<pre class="term">$ journalctl --disk-usage
+Archived and active journals take up 56M in the file system.
+$ grep -v '^#' /etc/systemd/journald.conf | grep -v '^$'
+[Journal]                                          « tudo no padrão</pre>
+
+<p>Por padrão o journal pode ocupar até 10% do sistema de arquivos (com teto de 4 GiB). Para limitar, crie um arquivo em <code>/etc/systemd/journald.conf.d/</code> (a pasta não existe de fábrica) com <code>[Journal]</code> e <code>SystemMaxUse=200M</code>, e reinicie o <code>systemd-journald</code>. Para limpar agora: <code>sudo journalctl --vacuum-size=200M</code>. Veja <a href="journal.html">Logs (journalctl)</a>.</p>
+
+<hr>
+
+<h2>Downloads mais rápidos: ParallelDownloads e espelhos</h2>
+<pre class="term">$ grep -E '^#?ParallelDownloads' /etc/pacman.conf
+ParallelDownloads = 5</pre>
+
+<p>O pacman baixa até 5 pacotes ao mesmo tempo (o padrão atual; em pacman antigos a linha vinha comentada). Subir para 10 ajuda pouco numa conexão doméstica; o que mais pesa é usar <strong>espelhos próximos e rápidos</strong>, escolhidos com o <code>reflector</code>. Veja <a href="espelhos.html">Espelhos (reflector)</a>.</p>
+
+<hr>
+
+<h2>Mitos e meias-verdades</h2>
+
+<div class="cenario">
+<strong>"Instale o preload para abrir programas mais rápido"</strong>
+<pre class="term">$ pacman -Si preload
+erro: o pacote "preload" não foi encontrado</pre>
+<p>O <code>preload</code> não está nos repositórios oficiais (só no AUR) e não recebe desenvolvimento há mais de uma década. Com SSD e o cache de disco do kernel, o ganho é nulo; com HD e pouca RAM, ele <strong>ocupa</strong> a memória que faltava. Não vale a pena.</p>
+</div>
+
+<div class="cenario">
+<strong>"irqbalance deixa tudo mais rápido"</strong>
+<pre class="term">#> previa -S irqbalance
+…
+Pacotes (1) irqbalance-1.9.5-3
+
+Tamanho total download:   0,05 MiB
+Tamanho total instalado:  0,12 MiB</pre>
+<p>Ele distribui as interrupções de hardware entre os núcleos. Faz diferença em <strong>servidores</strong> com muitas placas de rede e muitos núcleos; num desktop ou notebook, o kernel já espalha bem. Só instale se medir interrupções concentradas num núcleo (<code>cat /proc/interrupts</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Use swappiness=10 / 1 / 0"</strong>
+<p>Valores baixos fazem o kernel evitar a swap até o último momento; aí, quando a RAM acaba, o sistema trava de uma vez em vez de ir desacelerando. Com zram, a recomendação é até o contrário (valores altos). Mude só depois de entender <a href="swap-zram.html">Swap e zram</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Troque o agendador de disco / o kernel para ficar rápido"</strong>
+<pre class="term">$ cat /sys/block/sda/queue/scheduler
+none [mq-deadline] kyber bfq</pre>
+<p>O kernel escolhe um bom agendador por tipo de disco (entre colchetes, o atual). <code>linux-zen</code> pode melhorar a sensação de resposta em desktops sob carga, mas não faz programas rodarem mais rápido; veja <a href="kernels.html">Kernels</a>.</p>
+</div>
+
+<h2>Vale a pena × não vale</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ajuste</th><th>Veredito</th><th>Por quê</th></tr>
+<tr><td>Medir com <code>free</code>, <code>htop</code>, <code>systemd-analyze</code></td><td>Vale sempre</td><td>Mostra o problema real</td></tr>
+<tr><td>Desligar serviços que você não usa</td><td>Vale (com cuidado)</td><td>Menos memória e boot mais curto</td></tr>
+<tr><td>zram em máquina com pouca RAM</td><td>Vale</td><td>Swap muito mais rápida que disco</td></tr>
+<tr><td><code>fstrim.timer</code> em SSD</td><td>Vale</td><td>Mantém o SSD rápido</td></tr>
+<tr><td><code>paccache.timer</code> e limite do journal</td><td>Vale</td><td>Evita o disco encher</td></tr>
+<tr><td>Espelhos rápidos (reflector)</td><td>Vale</td><td>Atualizações mais rápidas</td></tr>
+<tr><td>Governor <code>performance</code></td><td>Depende</td><td>Útil em desktop para jogos; gasta energia e esquenta notebook</td></tr>
+<tr><td><code>irqbalance</code></td><td>Só em servidor</td><td>Em desktop o kernel já resolve</td></tr>
+<tr><td><code>preload</code></td><td>Não vale</td><td>Abandonado, fora dos repositórios, gasta RAM</td></tr>
+<tr><td>"Limpar a RAM" (<code>drop_caches</code>)</td><td>Não vale</td><td>Joga fora o cache e deixa tudo mais lento</td></tr>
+<tr><td><code>swappiness=0</code> "por padrão"</td><td>Não vale</td><td>Trava súbita quando a RAM acaba</td></tr>
+<tr><td>Compilar tudo com <code>-O3 -march=native</code></td><td>Não vale (para quase todos)</td><td>Horas de compilação para ganho difícil de medir</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Para quê</th></tr>
+<tr><td><code>free -h</code></td><td>Memória (olhe "disponível")</td></tr>
+<tr><td><code>top -bn1 -o %MEM | head</code> / <code>htop</code></td><td>Quem usa CPU e memória</td></tr>
+<tr><td><code>nproc</code>, <code>uptime</code></td><td>Núcleos e carga</td></tr>
+<tr><td><code>systemd-analyze</code></td><td>Tempo total do boot</td></tr>
+<tr><td><code>systemd-analyze blame | grep -v '\.device'</code></td><td>Serviços mais demorados</td></tr>
+<tr><td><code>systemd-analyze critical-chain</code></td><td>O caminho que realmente segura o boot</td></tr>
+<tr><td><code>cpupower frequency-info</code></td><td>Governor e frequências (pacote <code>cpupower</code>)</td></tr>
+<tr><td><code>paccache -d</code> / <code>sudo paccache -r</code></td><td>Cache do pacman: simular / limpar</td></tr>
+<tr><td><code>journalctl --disk-usage</code></td><td>Tamanho do journal</td></tr>
+<tr><td><code>sudo systemctl enable --now fstrim.timer paccache.timer</code></td><td>Manutenção automática de disco</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Só os serviços</h3>
+<p>Complete para ver o <code>blame</code> sem as unidades de dispositivo:</p>
+<div class="ex-code">systemd-analyze blame | grep <input data-answer="-v" aria-label="opção"> '\.device'</div>
+</div>
+
+<div class="exercise">
+<h3>2. Simular a limpeza</h3>
+<p>Qual opção do <code>paccache</code> só mostra o que seria apagado?</p>
+<div class="ex-code">paccache <input data-answer="-d|--dryrun" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. No <code>free -h</code>, qual coluna diz quanto os programas ainda podem usar?</p>
+<label><input type="radio" name="q3"> <code>livre</code></label>
+<label><input type="radio" name="q3"> <code>buff/cache</code></label>
+<label><input type="radio" name="q3"> <code>compart.</code></label>
+<label><input type="radio" name="q3"> <code>disponível</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O <code>blame</code> mostra <code>dev-sda1.device</code> com 16 s. O que isso quer dizer?</p>
+<label><input type="radio" name="q4"> O disco está estragado.</label>
+<label><input type="radio" name="q4"> O tempo até o dispositivo aparecer, em paralelo com o resto; não é trabalho "gasto" por ele.</label>
+<label><input type="radio" name="q4"> É preciso desabilitar o <code>sda1</code>.</label>
+<label><input type="radio" name="q4"> O fsck rodou por 16 s.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual destes ajustes a aula classifica como "não vale"?</p>
+<label><input type="radio" name="q5"> Instalar o <code>preload</code>.</label>
+<label><input type="radio" name="q5"> Ligar o <code>fstrim.timer</code> num SSD.</label>
+<label><input type="radio" name="q5"> Usar zram numa máquina com pouca RAM.</label>
+<label><input type="radio" name="q5"> Ligar o <code>paccache.timer</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Meça antes, mude uma coisa, meça depois.</li>
+  <li>RAM: olhe "disponível"; cache não é desperdício.</li>
+  <li>Boot: <code>systemd-analyze</code>, <code>blame</code> (sem <code>.device</code>) e <code>critical-chain</code>.</li>
+  <li>Disco: <code>paccache.timer</code>, limite do journal, <code>fstrim.timer</code> em SSD.</li>
+  <li>zram e espelhos rápidos ajudam de verdade; preload, "limpar RAM" e swappiness 0 são mitos.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> a página <a href="https://wiki.archlinux.org/title/Improving_performance">Improving performance</a> é a referência deste tema (e começa justamente por "medir"); veja também <a href="https://wiki.archlinux.org/title/Improving_performance/Boot_process">Improving performance/Boot process</a>, <a href="https://wiki.archlinux.org/title/CPU_frequency_scaling">CPU frequency scaling</a> (cpupower), <a href="https://wiki.archlinux.org/title/Zram">zram</a>, <a href="https://wiki.archlinux.org/title/Solid_state_drive">Solid state drive</a> (fstrim) e <a href="https://wiki.archlinux.org/title/Pacman#Cleaning_the_package_cache">pacman: Cleaning the package cache</a>.</p>
+
+<div class="pager"></div>
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
