@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch celular por USB e modem 4G no live — ancoragem, mmcli e APN | Guia Arch</title>
+<meta name="description" content="Sem cabo e sem Wi-Fi no pendrive do Arch: usar a internet do celular pelo cabo USB (ancoragem), conectar um modem 4G/5G com mmcli, descobrir o APN certo e entender qual conexão o live usa quando há várias.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: <span class="hl">celular por USB e modem 4G</span> no live</h1>
+
+<p class="intro">Sem cabo de rede e com o Wi-Fi sem funcionar, ainda dá para instalar o Arch: o <strong>celular</strong>, ligado no cabo USB, empresta a internet dele ao computador, e funciona sozinho no live. Quem tem um notebook com chip (ou um modem 4G USB) conecta direto na operadora com o <code>mmcli</code>. Nesta aula você aprende os dois caminhos, o que é o APN e onde encontrar o seu, e qual conexão o live usa quando há mais de uma.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <strong>ancoragem USB</strong> (<em>tethering</em>) e como ligá-la no Android e no iPhone.</li>
+  <li>Por que o celular no cabo funciona sozinho no live (o arquivo <code>20-ethernet.network</code>).</li>
+  <li>O que é um <strong>modem WWAN</strong> e conectá-lo com o <code>mmcli</code>.</li>
+  <li>O que é o <strong>APN</strong> e onde achar o certo para o seu chip.</li>
+  <li>Qual conexão o live usa quando cabo, Wi-Fi e celular estão ligados juntos (métrica de rota).</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>De onde vêm as saídas desta aula</strong>
+<p>O live fala <strong>inglês</strong>: as mensagens aparecem como você vai vê-las e são traduzidas logo abaixo. Tudo o que foi possível rodar foi rodado no ambiente live real da ISO de 1º de junho de 2026 (kernel <code>7.0.10-arch1-1</code>, <code>mmcli</code> 1.24.2), numa máquina virtual com cabo e placas Wi-Fi virtuais (veja <a href="internet-live.html#laboratorio">Como o laboratório foi feito</a>): os arquivos de configuração, os drivers, as rotas e as respostas do <code>mmcli</code> sem modem são reais. Uma VM não tem porta USB com celular nem modem de verdade: o que depende deles está marcado como <strong>ilustrativo</strong>.</p>
+</div>
+
+<hr>
+
+<h2 id="conceito">Internet do celular no computador: os conceitos</h2>
+
+<p>O celular tem dois "caminhos" para a internet: os <strong>dados móveis</strong> (o chip da operadora, 4G/5G) e o <strong>Wi-Fi</strong> em que ele está conectado. Existem três jeitos de levar essa internet ao computador do live:</p>
+
+<dl class="anatomy">
+  <dt>Ancoragem USB (<em>USB tethering</em>)</dt><dd>"Ancorar" o computador no celular pelo cabo USB. O celular finge ser uma <strong>placa de rede com cabo</strong> e faz o papel de roteador: entrega um endereço IP ao computador e repassa a internet dele (dados móveis ou, no Android, também o Wi-Fi). Para o Linux, é como encaixar um cabo de rede.</dd>
+  <dt>Ponto de acesso (<em>hotspot</em>)</dt><dd>O celular cria uma rede Wi-Fi própria. O computador conecta nela como em qualquer Wi-Fi, com o <code>iwctl</code>. Só serve se o Wi-Fi do computador funciona.</dd>
+  <dt>Modem WWAN</dt><dd>(<em>Wireless Wide Area Network</em>, "rede sem fio de longa distância") Um modem de celular <strong>no próprio computador</strong>: uma peça interna de alguns notebooks (com gaveta para chip) ou um "modem 4G" USB. Não há celular no meio: o computador conversa direto com a torre da operadora, por isso precisa saber o <strong>APN</strong>.</dd>
+</dl>
+
+<h3>O que é o APN</h3>
+
+<p>O <strong>APN</strong> (<em>Access Point Name</em>, "nome do ponto de acesso") é o nome da "porta de entrada" da operadora para a internet. Quando um aparelho com chip quer dados, ele diz à operadora por qual porta quer entrar, e a operadora só deixa passar se o nome bater. É parecido com dizer o nome do condomínio na portaria: sem o nome certo, o porteiro não abre.</p>
+
+<ul>
+  <li>No <strong>celular</strong>, o APN já vem configurado (o chip ou a operadora o enviam sozinhos). Por isso a ancoragem USB <strong>não</strong> pede APN: quem fala com a operadora é o celular.</li>
+  <li>No <strong>modem WWAN</strong>, o computador é quem fala com a operadora, e muitas vezes você precisa informar o APN no comando de conexão. Algumas operadoras pedem também um usuário e uma senha (que não são a sua senha pessoal: são valores fixos da operadora, iguais para todos os clientes do plano).</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Ancoragem USB</th><th>Hotspot do celular</th><th>Modem WWAN</th></tr>
+<tr><td>Precisa de</td><td>Celular com internet e um cabo USB <strong>de dados</strong></td><td>Celular com dados e o Wi-Fi do computador funcionando</td><td>Modem interno ou USB e um chip com plano de dados</td></tr>
+<tr><td>Aparece no <code>ip link</code> como</td><td>Placa de cabo: <code>enp0s20f0u2</code>, <code>usb0</code>…</td><td>A placa Wi-Fi de sempre (<code>wlan0</code>)</td><td><code>wwan0</code>, <code>wwp0s20f0u3i12</code>…</td></tr>
+<tr><td>Como conectar no live</td><td>Sozinho (DHCP)</td><td><code>iwctl</code> (<a href="internet-live.html#iwctl">Wi-Fi com iwctl</a>)</td><td><code>mmcli</code> com o APN</td></tr>
+<tr><td>Precisa de APN?</td><td>Não</td><td>Não</td><td>Quase sempre</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="celular">Internet do celular por USB (ancoragem)</h2>
+
+<p>Sem cabo de rede e com o Wi-Fi sem funcionar? O celular resolve. A <strong>ancoragem USB</strong> (<em>USB tethering</em>) faz o celular emprestar a internet dele para o computador (no Android, os dados móveis <strong>ou</strong> o Wi-Fi em que ele está conectado; no iPhone, os dados móveis), pelo cabo USB. Para o Linux, o celular vira uma <strong>placa de rede com cabo</strong>, e por isso funciona sozinho no live, sem driver nem senha.</p>
+
+<h3>Ligar no celular</h3>
+
+<ol class="passo">
+  <li>Ligue o celular no computador com um cabo USB <strong>de dados</strong> (alguns cabos baratos só carregam).</li>
+  <li><strong>Android:</strong> abra <em>Configurações → Rede e internet → Ponto de acesso e tethering</em> (o nome muda conforme a marca: "Roteador Wi-Fi e ancoragem", "Hotspot móvel e tethering", "Conexões → Ancoragem") e ligue <strong>Tethering USB</strong> / <strong>Ancoragem USB</strong>. A opção só fica disponível com o cabo já conectado.</li>
+  <li><strong>iPhone:</strong> ligue <em>Ajustes → Acesso Pessoal → Permitir Outras Conexões</em>, conecte o cabo e, se o iPhone perguntar "Confiar neste computador?", toque em <strong>Confiar</strong>. A ISO traz o <code>usbmuxd</code> (1.1.1) e o driver <code>ipheth</code>, que o iPhone precisa, e o <code>usbmuxd</code> liga sozinho quando o iPhone é conectado (veja abaixo).</li>
+  <li>No live, espere uns 5 segundos e teste com <code>ping -c 3 archlinux.org</code> (o teste explicado em <a href="internet-live.html#passo-0">Passo 0</a>).</li>
+</ol>
+
+<p>O que aparece no <code>ip link</code> (<strong>ilustrativo</strong>: a ancoragem não foi testada no laboratório, que é uma VM sem USB):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> ip -brief link
+lo               UNKNOWN        00:00:00:00:00:00 &lt;LOOPBACK,UP,LOWER_UP&gt;
+wlan0            DOWN           3c:a9:f4:12:34:56 &lt;NO-CARRIER,BROADCAST,MULTICAST,UP&gt;
+enp0s20f0u2      UP             9a:3f:21:c4:5e:07 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;   « o celular
+</pre>
+
+<p>O nome da placa nova depende da porta USB e do celular: <code>enp0s20f0u2</code> (<code>en</code> = Ethernet, como um cabo; <code>u2</code> = porta USB 2), <code>enp0s26u1u2c4i2</code> (comum com iPhone) ou, às vezes, <code>usb0</code>. Como a placa nova começa com <code>en</code>, o Linux a trata como cabo. (A tabela dos nomes de placa está em <a href="internet-live.html#placa">Que placa você tem</a>.)</p>
+
+<h3>Os drivers que já vêm no live</h3>
+
+<p>O celular em ancoragem fala um "idioma" de placa de rede USB, e o kernel precisa do driver certo para cada idioma. Lista real, no live do laboratório:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> ls /usr/lib/modules/$(uname -r)/kernel/drivers/net/usb/ | grep -E "rndis|cdc_ether|cdc_ncm|ipheth|cdc_mbim|qmi_wwan"
+cdc_ether.ko.zst
+cdc_mbim.ko.zst
+cdc_ncm.ko.zst
+huawei_cdc_ncm.ko.zst
+ipheth.ko.zst
+qmi_wwan.ko.zst
+rndis_host.ko.zst
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Driver</th><th>Para quê</th></tr>
+<tr><td><code>rndis_host</code></td><td>RNDIS, o jeito mais comum do <strong>Android</strong> fazer ancoragem.</td></tr>
+<tr><td><code>cdc_ether</code>, <code>cdc_ncm</code></td><td>Os padrões USB de "placa de rede": Androids mais novos e adaptadores de cabo USB.</td></tr>
+<tr><td><code>ipheth</code></td><td>A ancoragem do <strong>iPhone</strong> (<em>iPhone Ethernet</em>).</td></tr>
+<tr><td><code>qmi_wwan</code>, <code>cdc_mbim</code>, <code>huawei_cdc_ncm</code></td><td>Não são de celular: são de <a href="#modem">modems WWAN</a> (QMI e MBIM são os "idiomas" dos modems).</td></tr>
+</table>
+</div>
+
+<p>Você não precisa carregar nenhum deles: o kernel escolhe sozinho quando o celular é conectado.</p>
+
+<h3>iPhone: o usbmuxd liga sozinho</h3>
+
+<p>O iPhone precisa, além do driver, de um serviço que converse com ele pelo USB e faça o "Confiar neste computador?": o <code>usbmuxd</code> (<em>USB multiplexing daemon</em>). Ele vem na ISO, mas fica desligado até um iPhone aparecer. Saídas reais (sem iPhone conectado):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> systemctl is-active usbmuxd
+inactive                          « desligado agora
+#> systemctl is-enabled usbmuxd
+static                            « não liga no boot: alguém o chama quando precisa
+#> grep -h usbmuxd /usr/lib/udev/rules.d/*.rules | head -5
+# usbmuxd (Apple Mobile Device Muxer listening on /var/run/usbmuxd)
+# Initialize iOS devices into "deactivated" USB configuration state and activate usbmuxd
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="5ac/12[9a][0-9a-f]/*|5ac/8600/*", ACTION=="add", ENV{USBMUX_SUPPORTED}="1", ATTR{bConfigurationValue}="0", OWNER="usbmux", ENV{SYSTEMD_WANTS}="usbmuxd.service"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{PRODUCT}=="5ac/12[9a][0-9a-f]/*|5ac/8600/*", ACTION=="bind", ENV{USBMUX_SUPPORTED}="1", OWNER="usbmux", ENV{SYSTEMD_WANTS}="usbmuxd.service"
+# Exit usbmuxd when the last device is removed
+</pre>
+
+<p><code>static</code> quer dizer que o serviço não tem "ligar no boot": ele é chamado por outro. Quem chama é a regra do <strong>udev</strong> (o programa que reage quando um aparelho é conectado): <code>ENV{PRODUCT}=="5ac/…"</code> reconhece aparelhos da Apple (<code>05ac</code> é o código de fabricante da Apple no USB), e <code>ENV{SYSTEMD_WANTS}="usbmuxd.service"</code> pede ao systemd que ligue o <code>usbmuxd</code>. A última linha, em comentário, diz que ele desliga sozinho quando o último iPhone sai.</p>
+
+<h3>Por que funciona sozinho: o 20-ethernet.network</h3>
+
+<p>O live traz quatro arquivos de configuração do <code>systemd-networkd</code> (o serviço que pede endereço IP para as placas) em <code>/etc/systemd/network/</code>. Este é o que vale para cabo e para o celular (real, da ISO):</p>
+
+<pre class="file" data-file="/etc/systemd/network/20-ethernet.network (no live)">[Match]
+Type=ether
+# Exclude virtual Ethernet interfaces
+Kind=!*
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DHCP=yes
+MulticastDNS=yes
+
+# systemd-networkd does not set per-interface-type default route metrics
+# https://github.com/systemd/systemd/issues/17698
+# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
+# Use values from NetworkManager. From nm_device_get_route_metric_default in
+# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
+[DHCPv4]
+RouteMetric=100
+
+[IPv6AcceptRA]
+RouteMetric=100</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>[Match]</code> <code>Type=ether</code></td><td>"Vale para toda placa do tipo cabo (Ethernet)." O celular em ancoragem se apresenta como Ethernet, então entra aqui.</td></tr>
+<tr><td><code>Kind=!*</code></td><td>"…menos as virtuais" (pontes, VPNs, containers). O <code>#</code> da linha de cima é um comentário.</td></tr>
+<tr><td><code>RequiredForOnline=routable</code></td><td>A placa só conta como "online" quando tem rota para fora.</td></tr>
+<tr><td><code>DHCP=yes</code></td><td><strong>O segredo:</strong> pedir um endereço por DHCP a quem estiver do outro lado (o roteador, ou o celular, que faz papel de roteador).</td></tr>
+<tr><td><code>MulticastDNS=yes</code></td><td>Achar outros aparelhos da rede pelo nome (<code>.local</code>).</td></tr>
+<tr><td><code>RouteMetric=100</code></td><td>A "prioridade" desta conexão (quanto <strong>menor</strong>, mais preferida). Veja <a href="#ordem">qual conexão o live prefere</a>.</td></tr>
+</table>
+</div>
+
+<p>O comentário em inglês diz: "o systemd-networkd não define métricas por tipo de placa; definimos aqui, para que o cabo seja preferido ao Wi-Fi e o Wi-Fi à banda larga móvel, usando os valores do NetworkManager".</p>
+
+<div class="note">
+<strong>E o celular como roteador Wi-Fi?</strong>
+<p>Também funciona: ligue o "Ponto de acesso Wi-Fi" (hotspot) do celular e conecte no live com o <code>iwctl</code>, como em qualquer rede (<a href="internet-live.html#iwctl">Wi-Fi com iwctl</a>). Mas, se o problema é justamente o Wi-Fi do computador (<a href="wifi-problemas-live.html">Wi-Fi que Não Funciona</a>), só o cabo USB resolve. Pelo cabo, o celular ainda carrega a bateria enquanto isso.</p>
+</div>
+
+<hr>
+
+<h2 id="modem">Modem 4G/5G (WWAN): mmcli</h2>
+
+<p>Alguns notebooks (principalmente corporativos) têm um <strong>modem de celular interno</strong>, com lugar para um chip; também existem modems USB ("modem 4G"). Para o Linux, isso é uma placa <code>ww…</code> (<em>wireless WAN</em>), controlada pelo <code>ModemManager</code>, que o live já deixa ligado. A tela de boas-vindas avisa: <em>For mobile broadband (WWAN) modems, connect with the mmcli utility</em> ("para modems de banda larga móvel (WWAN), conecte com o utilitário mmcli").</p>
+
+<h3>O ModemManager já está rodando</h3>
+
+<pre class="term" data-host="archiso" data-user="root">#> systemctl status ModemManager --no-pager | head -12
+● ModemManager.service - Modem Manager
+     Loaded: loaded (/usr/lib/systemd/system/ModemManager.service; enabled; preset: disabled)   « liga no boot do live
+     Active: active (running) since Fri 2026-10-16 18:57:12 UTC; 23min ago                      « rodando
+ Invocation: f3f1d7fe848a4f84b567f23cd3b114f0
+   Main PID: 619 (ModemManager)
+      Tasks: 4 (limit: 2042)
+     Memory: 9.3M (peak: 9.5M)
+        CPU: 341ms
+     CGroup: /system.slice/ModemManager.service
+             └─619 /usr/bin/ModemManager
+
+Oct 16 18:57:11 archiso systemd[1]: Starting Modem Manager...
+</pre>
+
+<p>(Saída real. O <code>status</code> está explicado em <a href="systemd.html">systemctl e Serviços</a>.) Você não precisa ligar nada: só conversar com ele pelo <code>mmcli</code>.</p>
+
+<h3>Listar os modems: mmcli -L</h3>
+
+<p>Saída real (a VM não tem modem):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mmcli -L
+No modems were found
+#> echo $?
+0
+</pre>
+
+<p><code>No modems were found</code> = "nenhum modem foi encontrado" (o código é <code>0</code>: não é erro, só a lista vazia). Com um modem, os passos são estes (<strong>ilustrativos</strong>, sem modem no laboratório; formato da Arch Wiki):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mmcli -L
+    /org/freedesktop/ModemManager1/Modem/0 [Quectel] EM05-G           « o modem número 0
+#> mmcli -m 0                                                         « detalhes: estado, operadora, sinal
+#> mmcli -m 0 --simple-connect="apn=SEU_APN"                          « troque SEU_APN pelo APN do seu chip
+successfully connected the modem
+</pre>
+
+<dl class="anatomy">
+  <dt>mmcli</dt><dd>(<em>ModemManager command line interface</em>) O programa que conversa com o <code>ModemManager</code>.</dd>
+  <dt>-L</dt><dd>(<em>list</em>) Lista os modems, cada um com um número (o último pedaço do caminho: <code>…/Modem/0</code>).</dd>
+  <dt>-m 0</dt><dd>(<em>modem</em>) Escolhe o modem 0. Sozinho, mostra os detalhes dele.</dd>
+  <dt>--simple-connect="…"</dt><dd>"Conexão simples": faz toda a sequência (ligar o modem, registrar na rede, abrir a conexão de dados) de uma vez. Dentro das aspas vão pares <code>chave=valor</code> separados por vírgula, sem espaço.</dd>
+  <dt>apn=SEU_APN</dt><dd>O <strong>APN</strong> da sua operadora (veja <a href="#apn">Onde achar o APN</a>).</dd>
+</dl>
+
+<p>Se a operadora pede usuário e senha, eles entram no mesmo texto:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mmcli -m 0 --simple-connect="apn=SEU_APN,user=SEU_USUARIO,password=SUA_SENHA"
+</pre>
+
+<p><code>successfully connected the modem</code> = "o modem foi conectado com sucesso". Para desconectar: <code>mmcli -m 0 --simple-disconnect</code>. As duas opções aparecem na ajuda real do <code>mmcli</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mmcli --help-simple
+Usage:
+  mmcli [OPTION…] - Control and monitor the ModemManager
+
+Simple options:
+  --simple-connect=["key=value,..."]     Run full connection sequence.
+  --simple-disconnect                    Disconnect all connected bearers.
+</pre>
+
+<h3 id="apn">Onde achar o APN certo</h3>
+
+<p>O APN muda de operadora para operadora, às vezes de plano para plano, e muda com o tempo. Por isso, em vez de decorar uma lista, pegue o valor de uma fonte confiável:</p>
+
+<ol class="passo">
+  <li><strong>No próprio celular, com o chip que vai para o modem.</strong> O celular já está configurado e mostra o APN que usa:
+    <ul>
+      <li><strong>Android:</strong> <em>Configurações → Rede móvel → Nomes dos pontos de acesso</em> (o caminho muda conforme a marca; nos Samsung, por exemplo: <em>Conexões → Redes móveis → Nomes de Ponto de Acesso</em>). Toque no item marcado: a linha <strong>APN</strong> é o valor; <strong>Nome de usuário</strong> e <strong>Senha</strong>, se preenchidos, também vão no comando.</li>
+      <li><strong>iPhone:</strong> <em>Ajustes → Celular → Rede de Dados Celular</em>: o campo <strong>APN</strong> da parte "Dados Celulares", e o <strong>Nome de Usuário</strong>/<strong>Senha</strong> logo abaixo. (Se esse menu não aparece, a operadora configura o iPhone sozinha: use a próxima opção.)</li>
+    </ul>
+  </li>
+  <li><strong>No site ou no atendimento da operadora.</strong> Procure por "APN" na página de ajuda dela, ou pergunte no atendimento qual é o APN de internet do seu plano.</li>
+</ol>
+
+<div class="tip">
+<strong>Copie exatamente</strong>
+<p>O APN tem cara de endereço de site (palavras separadas por pontos). Copie letra por letra; um ponto a mais ou a menos e a operadora não deixa conectar. Se o campo de usuário e senha está vazio no celular, deixe-os de fora do comando: use só <code>apn=SEU_APN</code>.</p>
+</div>
+
+<h3>O chip tem PIN?</h3>
+
+<p>Se o chip pede um PIN (a senha de 4 dígitos que o celular pergunta ao ligar), o modem não conecta antes de recebê-lo. A Arch Wiki manda descobrir o número do SIM no <code>mmcli -m 0</code> (a linha <code>primary sim path</code>, que termina em <code>…/SIM/0</code>) e enviar o PIN com <code>--pin</code>. Sem modem, o laboratório só pôde mostrar o erro real:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> mmcli -i 0 --pin=1234
+error: couldn't find SIM at '/org/freedesktop/ModemManager1/SIM/0': 'no modems found'
+#> echo $?
+1
+</pre>
+
+<p>(<code>-i 0</code> = o SIM número 0. A mensagem diz "não encontrei o SIM 0: nenhum modem encontrado".) O mais simples, segundo a própria Wiki: ponha o chip num celular e desligue o pedido de PIN por lá antes.</p>
+
+<h3>Modem USB que vira pen drive: usb_modeswitch</h3>
+
+<p>Muitos modems 4G USB, ao serem conectados, se apresentam primeiro como um <strong>pen drive</strong> ou um <strong>CD</strong> (com o programa para Windows dentro). Enquanto estão nesse modo, o <code>mmcli -L</code> não os vê. Quem os "vira" para o modo modem é o <code>usb_modeswitch</code>, que vem na ISO junto com uma regra do udev que faz isso sozinha para muitos modelos (real):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> command -v usb_modeswitch
+/usr/bin/usb_modeswitch
+#> ls /usr/lib/udev/rules.d/ | grep -i modeswitch
+40-usb_modeswitch.rules
+</pre>
+
+<p>Na prática: conecte o modem, espere uns 10 segundos e rode <code>mmcli -L</code> de novo. Se ele continuar aparecendo só como pen drive (o <code>lsusb</code> mostra o mesmo ID e o <code>mmcli -L</code> segue vazio), o modelo não está na lista: siga a seção <em>Mode switching</em> da Arch Wiki, ou use o celular por USB.</p>
+
+<h3>Depois de conectar: o 20-wwan.network</h3>
+
+<p>Depois de conectar, quem pede o endereço é de novo o <code>systemd-networkd</code>, com este arquivo real da ISO (parecido com o do cabo; muda o <code>Type</code> e a métrica):</p>
+
+<pre class="file" data-file="/etc/systemd/network/20-wwan.network (no live)">[Match]
+Type=wwan
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DHCP=yes
+
+# systemd-networkd does not set per-interface-type default route metrics
+# https://github.com/systemd/systemd/issues/17698
+# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
+# Use values from NetworkManager. From nm_device_get_route_metric_default in
+# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
+[DHCPv4]
+RouteMetric=700
+
+[IPv6AcceptRA]
+RouteMetric=700</pre>
+
+<p>Alguns modems não entregam o endereço por DHCP: o <code>mmcli -m 0</code> mostra, na parte do <em>bearer</em> (a conexão de dados), o método <code>static</code> e o endereço que deve ser configurado à mão. Nesse caso, siga a seção <em>ModemManager</em> da página <em>Mobile broadband modem</em> da Arch Wiki, ou, mais simples, use o celular por USB.</p>
+
+<hr>
+
+<h2 id="ordem">Cabo, Wi-Fi e celular juntos: qual o live usa?</h2>
+
+<p>Você pode ter mais de uma conexão ao mesmo tempo (o cabo e o celular, ou o Wi-Fi e o modem). O live usa a de <strong>menor métrica</strong>: um número de "custo" que cada caminho recebe; o mais barato ganha. Os três arquivos <code>20-*.network</code> da ISO definem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Arquivo</th><th>Vale para</th><th><code>RouteMetric</code></th><th>Preferência</th></tr>
+<tr><td><code>20-ethernet.network</code></td><td>cabo e celular por USB (<code>Type=ether</code>)</td><td><code>100</code></td><td>1ª</td></tr>
+<tr><td><code>20-wlan.network</code></td><td>Wi-Fi (<code>Type=wlan</code>)</td><td><code>600</code></td><td>2ª</td></tr>
+<tr><td><code>20-wwan.network</code></td><td>modem 4G/5G (<code>Type=wwan</code>)</td><td><code>700</code></td><td>3ª</td></tr>
+</table>
+</div>
+
+<p>O do Wi-Fi, real, é igual ao do cabo, com <code>Type=wlan</code> e <code>RouteMetric=600</code> (e sem o <code>Kind=!*</code>):</p>
+
+<pre class="file" data-file="/etc/systemd/network/20-wlan.network (no live)">[Match]
+Type=wlan
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DHCP=yes
+MulticastDNS=yes
+
+# systemd-networkd does not set per-interface-type default route metrics
+# https://github.com/systemd/systemd/issues/17698
+# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
+# Use values from NetworkManager. From nm_device_get_route_metric_default in
+# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
+[DHCPv4]
+RouteMetric=600
+
+[IPv6AcceptRA]
+RouteMetric=600</pre>
+
+<p>Repare: o celular por USB cai no mesmo arquivo do cabo, com métrica <code>100</code>. Por isso, se o celular estiver no cabo e o Wi-Fi conectado ao mesmo tempo, a internet sai pelo celular.</p>
+
+<h3>Vendo as placas e as rotas</h3>
+
+<p>O <code>networkctl list</code> mostra todas as placas, o tipo que o <code>systemd-networkd</code> enxerga (é esse <code>TYPE</code> que o <code>[Match] Type=</code> compara) e se ele já as configurou. Saída real do laboratório, com o cabo e o Wi-Fi conectados:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> networkctl list
+IDX LINK   TYPE               OPERATIONAL SETUP
+  1 lo     loopback           carrier     unmanaged
+  2 enp0s3 ether              routable    configured   « o cabo (Type=ether)
+  6 hwsim0 ieee80211_radiotap off         unmanaged
+  7 wlan0  wlan               routable    configured   « o Wi-Fi (Type=wlan)
+  8 wlan1  wlan               routable    configured
+  9 wlan2  wlan               degraded    configuring
+
+6 links listed.
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que quer dizer</th></tr>
+<tr><td><code>LINK</code></td><td>O nome da placa (o mesmo do <code>ip link</code>).</td></tr>
+<tr><td><code>TYPE</code></td><td>O tipo: <code>ether</code> (cabo, celular por USB), <code>wlan</code> (Wi-Fi), <code>wwan</code> (modem), <code>loopback</code>.</td></tr>
+<tr><td><code>OPERATIONAL</code></td><td><code>routable</code> = tem endereço e rota para fora (pronta para a internet); <code>degraded</code> = só endereço local; <code>carrier</code> = ligada, sem endereço; <code>off</code> = desligada.</td></tr>
+<tr><td><code>SETUP</code></td><td><code>configured</code> = o <code>systemd-networkd</code> aplicou um arquivo <code>.network</code>; <code>configuring</code> = ainda tentando; <code>unmanaged</code> = nenhum arquivo vale para ela.</td></tr>
+</table>
+</div>
+
+<p>(As <code>wlan1</code>, <code>wlan2</code> e <code>hwsim0</code> são peças do laboratório.) Com o cabo e o Wi-Fi conectados ao mesmo tempo, as rotas reais mostram as duas "saídas" (<code>default</code>), e a do cabo ganha:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> ip -brief address
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+enp0s3           UP             10.0.2.15/24 metric 100 fd17:625c:f037:2:a00:27ff:fe3e:4495/64 …   « cabo: métrica 100
+hwsim0           DOWN
+wlan0            UP             192.168.50.144/24 metric 600 fe80::ff:fe00:0/64                     « Wi-Fi: métrica 600
+wlan1            UP             192.168.50.1/24 fe80::ff:fe00:100/64
+wlan2            UP             fe80::ff:fe00:200/64
+#> ip route
+default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100           « saída pelo cabo (vence)
+default via 192.168.50.1 dev wlan0 proto dhcp src 192.168.50.144 metric 600   « saída pelo Wi-Fi (reserva)
+…
+</pre>
+
+<p><code>default via 10.0.2.2 dev enp0s3</code> = "para qualquer destino, vá pelo roteador 10.0.2.2, pela placa enp0s3". Se o cabo sair, a rota dele some e o Wi-Fi assume sozinho. Para perguntar diretamente "por onde sai um pacote para tal endereço?", use <code>ip route get</code> (real):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> ip route get 1.1.1.1
+1.1.1.1 via 10.0.2.2 dev enp0s3 src 10.0.2.15 uid 0      « sai pelo cabo (enp0s3)
+    cache
+</pre>
+
+<p>Com o celular por USB no lugar do cabo, a resposta mostraria a placa do celular (<code>enp0s20f0u2</code>, por exemplo). Mais sobre <code>ip</code> em <a href="ip.html">ip, ping, ss</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de ter internet sem cabo de rede</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como</th><th>Bom para</th></tr>
+<tr><td>Celular por USB (ancoragem)</td><td>Cabo USB + "Ancoragem USB"/"Acesso Pessoal" no celular</td><td><strong>O plano B de todo mundo.</strong> Funciona sozinho, não depende do Wi-Fi do computador, carrega o celular.</td></tr>
+<tr><td>Hotspot do celular</td><td>"Ponto de acesso Wi-Fi" no celular + <code>iwctl</code> no live</td><td>Quando o Wi-Fi do computador funciona, mas não há rede por perto, ou falta um cabo de dados.</td></tr>
+<tr><td>Modem WWAN</td><td><code>mmcli -m 0 --simple-connect="apn=SEU_APN"</code></td><td>Notebook com chip ou modem USB, sem celular à mão.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> O celular por USB: é o mais simples e o que menos falha no live. O modem só se você já o tem e sabe o APN.</p>
+
+<hr>
+
+<h2 id="depois">E no sistema instalado?</h2>
+
+<p>Como toda a rede do live, o <code>ModemManager</code> e o <code>usbmuxd</code> ficam no pendrive. No Arch instalado com o NetworkManager (<a href="internet-live.html#depois">Depois da instalação</a>), o celular Android pelo USB aparece como mais um cabo. Para o iPhone, a Arch Wiki manda instalar o <code>usbmuxd</code> (que puxa o <code>libimobiledevice</code>); para o modem, o <code>modemmanager</code> (e o <code>usb_modeswitch</code>, se for um modem USB). Confira no sistema da ana:</p>
+
+<div class="try" data-goal="ran:^pacman +-Qi +networkmanager\b,out:modemmanager" data-solucao="pacman -Qi networkmanager">
+<p class="try-task"><strong>Missão 1:</strong> rode <code>pacman -Qi networkmanager</code> e procure, em <code>Depend. opcionais</code>, o pacote que dá ao NetworkManager suporte a "cellular network" (rede de celular). Ele aparece com <code>[instalado]</code> do lado?</p>
+</div>
+
+<div class="try" data-goal="ran:^pacman +-Q +modemmanager,err:modemmanager" data-solucao="pacman -Q modemmanager">
+<p class="try-task"><strong>Missão 2:</strong> confirme com <code>pacman -Q modemmanager</code>. O que a resposta quer dizer para quem quiser usar um modem 4G na máquina da ana?</p>
+</div>
+
+<div class="try" data-goal="ran:^pacman +-Q +usbmuxd,err:usbmuxd" data-solucao="pacman -Q usbmuxd">
+<p class="try-task"><strong>Missão 3:</strong> e o <code>usbmuxd</code>, que o iPhone precisa? Pergunte ao <code>pacman -Q</code>.</p>
+</div>
+
+<div class="try" data-goal="ran:^ip +r(oute)?\b,out:metric 100" data-solucao="ip route">
+<p class="try-task"><strong>Missão 4:</strong> a métrica também existe no sistema instalado. Veja as rotas da ana com <code>ip route</code>: por qual placa sai a internet, e com que métrica?</p>
+</div>
+
+<hr>
+
+<h2 id="problemas">Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O celular está no cabo, mas nada aparece no <code>ip link</code></strong>
+<p><strong>O que aconteceu:</strong> a ancoragem USB não foi ligada no celular, o cabo só carrega (não passa dados), ou, no iPhone, você não tocou em "Confiar".</p>
+<p><strong>Como resolver:</strong> ligue <em>Tethering USB</em> depois de conectar o cabo; teste outro cabo; desbloqueie a tela do celular. O <code>lsusb</code> deve mostrar o celular; o <code>ip link</code>, uma placa nova <code>en…u…</code> ou <code>usb0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>iPhone: "No device found."</strong>
+<pre class="term" data-host="archiso" data-user="root">#> idevicepair pair
+No device found.
+#> echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>idevicepair</code> (do <code>libimobiledevice</code>, na ISO) faz o "pareamento" com o iPhone, a mesma coisa que tocar em "Confiar". "Nenhum aparelho encontrado" (saída real, sem iPhone) quer dizer que o <code>usbmuxd</code> não está vendo o iPhone: cabo sem dados, iPhone bloqueado ou desconectado.</p>
+<p><strong>Como resolver:</strong> desbloqueie o iPhone, reconecte o cabo e toque em <strong>Confiar</strong>. Se o iPhone aparece na lista mas não conecta, rode <code>idevicepair pair</code> com ele conectado e desbloqueado (dica da Arch Wiki, <em>iPhone tethering</em>).</p>
+</div>
+
+<div class="cenario">
+<strong>"No modems were found" com o modem conectado</strong>
+<p><strong>O que aconteceu:</strong> o <code>ModemManager</code> não achou modem nenhum. Num modem USB, ele pode estar no modo pen drive/CD; num modem interno, pode estar desligado (<code>rfkill</code>, tipo <code>wwan</code>) ou sem driver.</p>
+<p><strong>Como confirmar:</strong> <code>lsusb</code> (o modem aparece?); <code>rfkill list</code> (há um rádio <code>wwan</code> bloqueado?); <code>ip link</code> (há placa <code>ww…</code>?).</p>
+<p><strong>Como resolver:</strong> espere uns segundos depois de conectar (o <code>usb_modeswitch</code> troca o modo) e repita o <code>mmcli -L</code>; <code>rfkill unblock wwan</code> se estiver bloqueado (<a href="wifi-problemas-live.html#bloqueio">rfkill</a>); senão, use o celular por USB.</p>
+</div>
+
+<div class="cenario">
+<strong>"error: couldn't find modem"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> mmcli -m 0
+error: couldn't find modem
+#> echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> "não encontrei o modem": não existe modem com esse número (saída real, na VM sem modem). O mesmo erro aparece no <code>--simple-connect</code>.</p>
+<p><strong>Como resolver:</strong> rode <code>mmcli -L</code> e use o número que aparece no fim do caminho (<code>…/Modem/1</code> = <code>-m 1</code>). O número muda se o modem for desconectado e conectado de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>--simple-connect</code> falha</strong>
+<p><strong>O que aconteceu:</strong> o modem não conseguiu abrir a conexão de dados. As causas mais comuns: APN errado ou com erro de digitação, usuário e senha faltando (ou sobrando), chip com PIN, chip sem plano de dados ou sem sinal. (Ilustrativo: sem modem no laboratório, a mensagem exata não pôde ser conferida.)</p>
+<p><strong>Como confirmar:</strong> <code>mmcli -m 0</code> mostra o estado do modem, a operadora, a força do sinal e se o SIM está travado.</p>
+<p><strong>Como resolver:</strong> confira o APN no celular ou com a operadora (<a href="#apn">Onde achar o APN</a>); destrave o PIN; aproxime-se de uma janela.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (no live)</th><th>Para quê</th></tr>
+<tr><td><code>ip -brief link</code></td><td>Ver a placa nova do celular (<code>en…u…</code>, <code>usb0</code>) ou do modem (<code>ww…</code>)</td></tr>
+<tr><td><code>networkctl list</code></td><td>Placas, tipo (<code>ether</code>/<code>wlan</code>/<code>wwan</code>) e se o <code>systemd-networkd</code> configurou</td></tr>
+<tr><td><code>systemctl is-active usbmuxd</code> · <code>idevicepair pair</code></td><td>iPhone: o serviço está rodando? / parear (o "Confiar")</td></tr>
+<tr><td><code>mmcli -L</code></td><td>Listar os modems</td></tr>
+<tr><td><code>mmcli -m 0</code></td><td>Detalhes do modem 0 (estado, operadora, sinal, SIM)</td></tr>
+<tr><td><code>mmcli -m 0 --simple-connect="apn=SEU_APN"</code></td><td>Conectar o modem (com <code>,user=…,password=…</code> se a operadora pedir)</td></tr>
+<tr><td><code>mmcli -m 0 --simple-disconnect</code></td><td>Desconectar</td></tr>
+<tr><td><code>mmcli -i 0 --pin=PIN</code></td><td>Destravar o chip com PIN</td></tr>
+<tr><td><code>ip route</code> · <code>ip route get 1.1.1.1</code></td><td>Por qual placa a internet está saindo (menor <code>metric</code> vence)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Conectar o modem</h3>
+<p>Complete para conectar o modem 0 usando o APN <code>SEU_APN</code>:</p>
+<div class="ex-code">mmcli -m 0 <input data-answer="--simple-connect" aria-label="opção">="<input data-answer="apn" aria-label="chave">=SEU_APN"</div>
+</div>
+
+<div class="exercise">
+<h3>2. Listar os modems</h3>
+<p>Complete o comando que lista os modems e mostra o número de cada um:</p>
+<div class="ex-code">mmcli <input data-answer="-L" aria-label="opção"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Por onde sai a internet</h3>
+<p>Complete o comando que mostra por qual placa sai um pacote para <code>1.1.1.1</code>:</p>
+<div class="ex-code">ip route <input data-answer="get" aria-label="subcomando"> 1.1.1.1</div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que a internet do celular pelo cabo USB funciona sozinha no live, sem <code>iwctl</code> nem senha?</p>
+<label><input type="radio" name="q4"> Porque o <code>iwd</code> detecta celulares.</label>
+<label><input type="radio" name="q4"> Porque o <code>ModemManager</code> usa o chip do celular.</label>
+<label><input type="radio" name="q4"> Porque o celular instala um driver no computador.</label>
+<label><input type="radio" name="q4"> Porque o celular aparece como uma placa do tipo cabo (Ethernet), e o <code>20-ethernet.network</code> do live pede endereço por DHCP para toda placa desse tipo.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Você vai usar um modem 4G e não sabe o APN do seu chip. Qual é o jeito certo de descobrir?</p>
+<label><input type="radio" name="q5"> Usar o APN de qualquer operadora: todos funcionam.</label>
+<label><input type="radio" name="q5"> Ver no celular com o mesmo chip (Android: <em>Rede móvel → Nomes dos pontos de acesso</em>; iPhone: <em>Celular → Rede de Dados Celular</em>) ou perguntar à operadora.</label>
+<label><input type="radio" name="q5"> Rodar <code>mmcli -L</code>: ele mostra o APN.</label>
+<label><input type="radio" name="q5"> Deixar em branco: o APN é opcional sempre.</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Cabo e Wi-Fi estão conectados no live. Por onde a internet sai?</p>
+<label><input type="radio" name="q6"> Pelo cabo: a rota dele tem <code>metric 100</code>, menor que a do Wi-Fi (<code>600</code>), e a menor métrica vence.</label>
+<label><input type="radio" name="q6"> Pelo Wi-Fi, porque foi conectado por último.</label>
+<label><input type="radio" name="q6"> Pelos dois ao mesmo tempo, somando a velocidade.</label>
+<label><input type="radio" name="q6"> Por nenhum: duas conexões dão conflito.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">7. O Wi-Fi do live está conectado e você liga também o modem 4G. Por onde a internet passa a sair?</p>
+<label><input type="radio" name="q7"> Pelo modem, porque é o mais novo.</label>
+<label><input type="radio" name="q7"> Pelo modem, porque 4G é mais rápido.</label>
+<label><input type="radio" name="q7"> Continua pelo Wi-Fi: métrica 600 contra 700 do modem; o modem fica de reserva.</label>
+<label><input type="radio" name="q7"> A conexão cai até você desligar um dos dois.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">8. Depois de ligar a ancoragem, aparece no <code>ip link</code> uma placa chamada <code>enp0s20f0u2</code>. O que o nome diz?</p>
+<label><input type="radio" name="q8"> Que é um modem 4G (<code>ww…</code>).</label>
+<label><input type="radio" name="q8"> Que é uma placa do tipo cabo (<code>en</code>) ligada numa porta USB (<code>u2</code>): o celular.</label>
+<label><input type="radio" name="q8"> Que é uma placa Wi-Fi.</label>
+<label><input type="radio" name="q8"> Que o celular está sem driver.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Ancoragem USB</strong>: o celular vira uma placa de cabo (<code>en…u…</code>, <code>usb0</code>) e funciona sozinho no live, pelo <code>20-ethernet.network</code> (DHCP). No Android, "Tethering/Ancoragem USB"; no iPhone, "Acesso Pessoal" e "Confiar" (o <code>usbmuxd</code> liga sozinho).</li>
+  <li><strong>Modem WWAN</strong>: <code>mmcli -L</code> para listar, <code>mmcli -m 0 --simple-connect="apn=SEU_APN"</code> para conectar.</li>
+  <li><strong>APN</strong>: o nome da "porta de entrada" da operadora. Pegue no celular com o mesmo chip ou com a operadora; nunca chute.</li>
+  <li>Com várias conexões, vence a <strong>menor métrica</strong>: cabo e celular USB <code>100</code>, Wi-Fi <code>600</code>, modem <code>700</code>. Confira com <code>ip route</code> ou <code>ip route get</code>.</li>
+  <li>No sistema instalado, o celular Android funciona com o NetworkManager; iPhone e modem pedem <code>usbmuxd</code> e <code>modemmanager</code>.</li>
+</ul>
+
+<p>Internet funcionando: hora de preparar o disco em <a href="particionar.html">Particionar o Disco</a> (ou, se preferir o instalador guiado, <a href="archinstall.html">archinstall</a>).</p>
+
+<p><strong>Na Arch Wiki:</strong> a Wiki não tem uma página "USB tethering": a ancoragem pelo cabo está em <a href="https://wiki.archlinux.org/title/Android_tethering#USB_tethering">Android tethering — USB tethering</a> e em <a href="https://wiki.archlinux.org/title/IPhone_tethering#Tethering_over_USB">iPhone tethering — Tethering over USB</a> (que explica o <code>usbmuxd</code> e o <code>idevicepair</code>). Modems, APN, PIN e o modo pen drive estão em <a href="https://wiki.archlinux.org/title/Mobile_broadband_modem">Mobile broadband modem</a> (seções <a href="https://wiki.archlinux.org/title/Mobile_broadband_modem#Mode_switching">Mode switching</a> e <a href="https://wiki.archlinux.org/title/Mobile_broadband_modem#Remove_the_PIN">Remove the PIN</a>); o endereço <a href="https://wiki.archlinux.org/title/ModemManager">ModemManager</a> leva à seção <a href="https://wiki.archlinux.org/title/Mobile_broadband_modem#ModemManager">ModemManager</a> dessa mesma página. Os arquivos <code>.network</code> e as métricas estão em <a href="https://wiki.archlinux.org/title/Systemd-networkd">systemd-networkd</a> (inclusive <a href="https://wiki.archlinux.org/title/Systemd-networkd#WWAN_connection_using_DHCP">WWAN connection using DHCP</a>). Essas páginas ainda não têm versão em português.</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

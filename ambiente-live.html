@@ -53,7 +53,7 @@
 <tr><td><code>archiso login: root (automatic login)</code></td><td>login em archiso: root (login automático)</td><td><code>archiso</code> é o nome da máquina no live. Você já entrou como <strong>root</strong>, o administrador, sem senha.</td></tr>
 <tr><td><code>To install Arch Linux follow the installation guide: https://wiki.archlinux.org/title/Installation_guide</code></td><td>Para instalar o Arch Linux, siga o guia de instalação: …</td><td>O roteiro oficial, que este guia acompanha passo a passo.</td></tr>
 <tr><td><code>For Wi-Fi, authenticate to the wireless network using the iwctl utility.</code></td><td>Para Wi-Fi, autentique-se na rede sem fio com o utilitário iwctl.</td><td>Veja o <a href="#wifi">resumo</a> abaixo e o passo a passo em <a href="internet-live.html">Internet no Live</a>.</td></tr>
-<tr><td><code>For mobile broadband (WWAN) modems, connect with the mmcli utility.</code></td><td>Para modems de banda larga móvel (WWAN), conecte com o mmcli.</td><td>Para notebooks com chip 4G/5G. Raro (veja <a href="internet-live.html#modem">Internet no Live</a>).</td></tr>
+<tr><td><code>For mobile broadband (WWAN) modems, connect with the mmcli utility.</code></td><td>Para modems de banda larga móvel (WWAN), conecte com o mmcli.</td><td>Para notebooks com chip 4G/5G. Raro (veja <a href="celular-modem-live.html#modem">Celular por USB e Modem 4G</a>).</td></tr>
 <tr><td><code>Ethernet, WLAN and WWAN interfaces using DHCP should work automatically.</code></td><td>Interfaces cabeadas, sem fio e móveis com DHCP devem funcionar sozinhas.</td><td>Com <strong>cabo</strong>, a internet já deve estar funcionando. (DHCP é o serviço do roteador que entrega um endereço para a máquina.)</td></tr>
 <tr><td><code>After connecting to the internet, the installation guide can be accessed via the convenience script Installation_guide.</code></td><td>Depois de conectar, o guia de instalação pode ser lido pelo script <code>Installation_guide</code>.</td><td>Digitar <code>Installation_guide</code> abre a página da Wiki num navegador de texto, no próprio terminal.</td></tr>
 <tr><td>a faixa de blocos coloridos</td><td>—</td><td>Só decoração: mostra as cores que o console consegue exibir.</td></tr>
@@ -154,7 +154,7 @@ us-acentos
 
 <h2>Internet</h2>
 
-<p>A ISO não traz os pacotes do sistema: eles são baixados durante a instalação. Sem internet, não há instalação. Aqui vai o essencial; Wi-Fi, celular por USB e modem têm uma aula só para eles: <a href="internet-live.html">Internet no Live</a>.</p>
+<p>A ISO não traz os pacotes do sistema: eles são baixados durante a instalação. Sem internet, não há instalação. Aqui vai o essencial; o Wi-Fi passo a passo, o Wi-Fi que não funciona e o celular por USB e o modem têm aulas só para eles: <a href="internet-live.html">Internet no Live</a>, <a href="wifi-problemas-live.html">Wi-Fi que Não Funciona</a> e <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>.</p>
 
 <h3>Ver as placas de rede: ip link</h3>
 
@@ -183,7 +183,7 @@ us-acentos
 </table>
 </div>
 
-<p><strong>Com cabo</strong>, é só isso: o live pede um endereço ao roteador sozinho (DHCP). Pule para <a href="#ping">testar com ping</a>. Sem cabo, mas com um celular? Ligue a "ancoragem USB" dele: também funciona sozinho (veja <a href="internet-live.html#celular">celular por USB</a>).</p>
+<p><strong>Com cabo</strong>, é só isso: o live pede um endereço ao roteador sozinho (DHCP). Pule para <a href="#ping">testar com ping</a>. Sem cabo, mas com um celular? Ligue a "ancoragem USB" dele: também funciona sozinho (veja <a href="celular-modem-live.html#celular">celular por USB</a>).</p>
 
 <h3 id="wifi">Wi-Fi com iwctl (resumo)</h3>
 
@@ -198,7 +198,7 @@ us-acentos
 
 <figure><img src="img/iwctl-1-redes.png" alt="Console do live: iwctl aberto, device list com a placa wlan0 em modo station, station wlan0 scan e station wlan0 get-networks listando as redes CasaDaAna e Vizinho_2G" loading="lazy"><figcaption>Tela real do <code>iwctl</code> no live do laboratório: a placa <code>wlan0</code> e as redes encontradas.</figcaption></figure>
 
-<p>Cada passo explicado com as telas reais (a senha certa, a senha errada, o <code>show</code> linha por linha), o Wi-Fi bloqueado pelo modo avião, o adaptador USB que não aparece, a internet do celular pelo cabo USB e o modem 4G estão na próxima aula: <a href="internet-live.html">Internet no Live (Wi-Fi, cabo, celular)</a>. Lembre que o <code>iwctl</code> só existe no live: no sistema instalado, o Wi-Fi fica por conta do NetworkManager (veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a>).</p>
+<p>Cada passo explicado com as telas reais (a senha certa, a senha errada, o <code>show</code> linha por linha) está na próxima aula: <a href="internet-live.html">Internet no Live (cabo e Wi-Fi)</a>. O Wi-Fi bloqueado pelo modo avião e o adaptador USB que não aparece estão em <a href="wifi-problemas-live.html">Wi-Fi que Não Funciona</a>; a internet do celular pelo cabo USB e o modem 4G, em <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>. Lembre que o <code>iwctl</code> só existe no live: no sistema instalado, o Wi-Fi fica por conta do NetworkManager (veja <a href="primeiro-boot.html">Primeiro Boot e Rede</a>).</p>
 
 <h3 id="ping">Testar a conexão: ping</h3>
 
@@ -332,7 +332,7 @@ loadkeys: Unable to open file: br-abnt3: No such file or directory
 <div class="cenario">
 <strong>O <code>iwctl</code> não mostra nenhuma placa, ou ela não liga</strong>
 <p><strong>O que aconteceu:</strong> a placa Wi-Fi está bloqueada (pela tecla de "modo avião" do notebook, por exemplo) ou o live não tem o driver dela.</p>
-<p><strong>Como confirmar e resolver:</strong> <code>rfkill list</code> mostra <code>Soft blocked: yes</code> ou <code>Hard blocked: yes</code>? O bloqueio por software sai com <code>rfkill unblock wifi</code>; o por hardware, só com a tecla ou chave do notebook. Se a placa nem aparece em <code>ip link</code>, use um cabo (ou o celular conectado por USB, com "ancoragem USB"), que funciona como placa com cabo. Passo a passo em <a href="internet-live.html#naoaparece">O Wi-Fi não aparece</a>.</p>
+<p><strong>Como confirmar e resolver:</strong> <code>rfkill list</code> mostra <code>Soft blocked: yes</code> ou <code>Hard blocked: yes</code>? O bloqueio por software sai com <code>rfkill unblock wifi</code>; o por hardware, só com a tecla ou chave do notebook. Se a placa nem aparece em <code>ip link</code>, use um cabo (ou o celular conectado por USB, com "ancoragem USB"), que funciona como placa com cabo. Passo a passo em <a href="wifi-problemas-live.html#naoaparece">O Wi-Fi não aparece</a>.</p>
 </div>
 
 <div class="cenario">

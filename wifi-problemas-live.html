@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Wi-Fi que não funciona no live — rfkill, drivers e firmware | Guia Arch</title>
+<meta name="description" content="O Wi-Fi do pendrive do Arch não liga ou nem aparece: o que é bloqueio soft e hard (rfkill), o que são driver e firmware, como investigar com lsusb, lspci -k, dmesg e modules.alias, e o que fazer quando o adaptador precisa de driver do AUR.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch: <span class="hl">Wi-Fi que não funciona</span> no live (rfkill, drivers)</h1>
+
+<p class="intro">Às vezes o <code>iwctl</code> da aula <a href="internet-live.html">Internet no Live</a> não consegue nem começar: a placa aparece desligada (<code>Powered off</code>), responde <code>No station on device</code>, ou simplesmente não existe nenhuma placa <code>wl…</code> no <code>ip link</code>. Nesta aula você aprende as duas causas por trás disso, o <strong>bloqueio do rádio</strong> (modo avião) e a <strong>falta de driver ou de firmware</strong>, como descobrir qual das duas é a sua e o que fazer em cada caso.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o bloqueio de rádio (<code>rfkill</code>) e a diferença entre bloqueio <strong>soft</strong> (por software) e <strong>hard</strong> (por hardware).</li>
+  <li>Ver e tirar o bloqueio com <code>rfkill list</code> e <code>rfkill unblock wifi</code>, e religar a placa pelo <code>iwctl</code>.</li>
+  <li>O que são <strong>driver</strong> e <strong>firmware</strong>, e por que o live pode não ter o da sua placa.</li>
+  <li>Investigar uma placa que não aparece: <code>lsusb</code>, <code>lspci -k</code>, <code>dmesg</code> e a lista de chips do kernel (<code>modules.alias</code>).</li>
+  <li>O que fazer quando o adaptador precisa de um driver de fora do kernel (AUR, DKMS).</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>De onde vêm as saídas desta aula</strong>
+<p>O live fala <strong>inglês</strong>: as mensagens aparecem como você vai vê-las e são traduzidas logo abaixo. Tudo foi rodado no ambiente live real da ISO de 1º de junho de 2026 (kernel <code>7.0.10-arch1-1</code>, <code>iwd</code> 3.12, <code>rfkill</code> do util-linux 2.42.1), numa máquina virtual com três placas Wi-Fi virtuais: a <code>wlan0</code> faz o papel da placa do seu notebook; a <code>wlan1</code> e a <code>wlan2</code>, do roteador e do vizinho (veja <a href="internet-live.html#laboratorio">Como o laboratório foi feito</a>). O que uma VM não tem (adaptador USB de verdade, chave física de Wi-Fi, firmware faltando) está marcado como <strong>ilustrativo</strong>.</p>
+</div>
+
+<hr>
+
+<h2 id="conceito">Por que o Wi-Fi não funciona: três peças</h2>
+
+<p>Para o Wi-Fi funcionar, três coisas precisam estar certas ao mesmo tempo. Pense num rádio de pilha: ele precisa estar <strong>ligado</strong>, alguém precisa <strong>saber operá-lo</strong>, e ele precisa ter <strong>as próprias peças internas</strong> funcionando.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>O que é</th><th>No dia a dia</th><th>Quando falta, você vê</th></tr>
+<tr><td><strong>Rádio liberado</strong></td><td>A antena não está bloqueada pelo "modo avião". O Linux chama esse bloqueio de <strong>rfkill</strong>.</td><td>O interruptor do rádio.</td><td>A placa aparece no <code>ip link</code>, mas o <code>iwctl</code> diz <code>Powered off</code> ou <code>No station on device</code>. Veja <a href="#bloqueio">Wi-Fi bloqueado</a>.</td></tr>
+<tr><td><strong>Driver</strong></td><td>O código, dentro do kernel, que sabe conversar com aquele modelo de chip.</td><td>O "manual de instruções" que o Linux usa para operar a placa.</td><td>Nenhuma placa <code>wl…</code> no <code>ip link</code>. Veja <a href="#naoaparece">O Wi-Fi não aparece</a>.</td></tr>
+<tr><td><strong>Firmware</strong></td><td>Um programinha que roda <strong>dentro da própria placa</strong>. O driver o envia para a placa toda vez que ela liga.</td><td>As peças internas do rádio: sem elas, o manual não adianta.</td><td>Também nenhuma placa <code>wl…</code>, e o <code>dmesg</code> reclama: <code>Direct firmware load … failed</code>.</td></tr>
+</table>
+</div>
+
+<h3>Bloqueio soft × hard</h3>
+
+<p>O bloqueio do rádio tem dois tipos, e a diferença decide se um comando resolve ou não:</p>
+
+<ul>
+  <li><strong>Soft</strong> (<em>soft blocked</em>, "bloqueado por software"): o rádio foi desligado <strong>a pedido</strong> de um programa, ou de uma tecla de modo avião que <em>avisa</em> o sistema. É como apagar a luz no interruptor: quem apagou pode acender. <strong>O comando <code>rfkill unblock</code> resolve.</strong></li>
+  <li><strong>Hard</strong> (<em>hard blocked</em>, "bloqueado por hardware"): o rádio foi cortado <strong>fisicamente</strong>, por uma chavinha na lateral do notebook, por algumas teclas de Wi-Fi ou por uma opção do setup da BIOS/UEFI. É como o disjuntor desligado: apertar o interruptor não acende nada. O Linux só consegue <strong>ler</strong> esse estado, nunca mudar. <strong>Só a chave, a tecla ou a BIOS resolvem.</strong></li>
+</ul>
+
+<h3>Por que o live pode não ter o driver</h3>
+
+<p>O live é uma "fotografia" do Arch do mês em que a ISO foi feita. Ele traz:</p>
+
+<ul>
+  <li>Os drivers que <strong>fazem parte do kernel</strong> daquela data (os <em>in-tree</em>, "dentro da árvore" do código do Linux). A maioria das placas internas de notebook e muitos adaptadores USB estão aí.</li>
+  <li>Os arquivos de firmware dos pacotes <code>linux-firmware-*</code> daquela data (no live de junho de 2026: <code>linux-firmware-intel</code>, <code>-realtek</code>, <code>-atheros</code>, <code>-mediatek</code>, <code>-broadcom</code> e outros).</li>
+</ul>
+
+<p>E não traz:</p>
+
+<ul>
+  <li>Drivers <strong>de fora do kernel</strong> (<em>out-of-tree</em>): alguns adaptadores, principalmente Realtek USB baratos, só funcionam (ou só funcionam bem) com o driver do fabricante, que no Arch vem do <a href="aur.html">AUR</a>. Nada do AUR está na ISO.</li>
+  <li>Suporte a chips <strong>mais novos que a ISO</strong>: uma placa lançada depois daquele kernel pode precisar de um kernel ou de um firmware mais recente.</li>
+</ul>
+
+<p>A consequência prática: se o Wi-Fi não aparece, ou você usa uma <strong>ISO mais nova</strong> (sai uma por mês), ou instala o Arch por <strong>outra conexão</strong> (cabo ou <a href="celular-modem-live.html#celular">celular por USB</a>) e resolve o Wi-Fi no sistema instalado.</p>
+
+<hr>
+
+<h2 id="bloqueio">Wi-Fi bloqueado: rfkill</h2>
+
+<p>Notebooks têm um "modo avião": uma tecla (<kbd>Fn</kbd>+<kbd>F2</kbd>, <kbd>Fn</kbd>+<kbd>F12</kbd>, uma com desenho de antena ou avião) ou, nos mais antigos, uma chavinha na lateral. Ela desliga o rádio. O Linux chama isso de <strong>rfkill</strong> (<em>radio frequency kill</em>, "desligar o rádio"), e o comando que mostra e muda esse estado tem o mesmo nome (pacote <code>util-linux</code>, já na ISO).</p>
+
+<h3>Ver o estado: rfkill list e rfkill</h3>
+
+<dl class="anatomy">
+  <dt>rfkill list</dt><dd>Lista os rádios do computador (Wi-Fi, Bluetooth, modem), um bloco por rádio, com os dois tipos de bloqueio.</dd>
+  <dt>rfkill</dt><dd>Sozinho, mostra a mesma coisa em forma de tabela, uma linha por rádio.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> rfkill list
+0: phy0: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+1: phy1: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+2: phy2: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+#> rfkill
+ID TYPE DEVICE      SOFT      HARD
+ 0 wlan phy0   unblocked unblocked
+ 1 wlan phy1   unblocked unblocked
+ 2 wlan phy2   unblocked unblocked
+</pre>
+
+<p>(No seu notebook aparece um rádio só para o Wi-Fi, e talvez um de <code>Bluetooth</code>. Os três <code>phy</code> são as placas do laboratório.)</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>Tradução</th><th>Se for <code>yes</code> / <code>blocked</code></th></tr>
+<tr><td><code>phy0: Wireless LAN</code></td><td>rádio phy0: rede sem fio</td><td>— (é o <code>Adapter</code> do <code>iwctl device list</code>)</td></tr>
+<tr><td><code>Soft blocked</code></td><td>bloqueado por software</td><td>Desligado por um programa ou por uma tecla que avisa o sistema. <strong>Destrava com <code>rfkill unblock wifi</code>.</strong></td></tr>
+<tr><td><code>Hard blocked</code></td><td>bloqueado por hardware</td><td>Desligado por uma chave física ou pelo firmware. <strong>Nenhum comando destrava</strong>: use a chave, a tecla de modo avião, ou ligue o Wi-Fi no setup da BIOS/UEFI.</td></tr>
+</table>
+</div>
+
+<p>Na tabela do <code>rfkill</code> sozinho, as colunas são: <code>ID</code> (o número do rádio, o mesmo do <code>0:</code> do <code>list</code>), <code>TYPE</code> (<code>wlan</code> = Wi-Fi, <code>bluetooth</code>, <code>wwan</code> = modem), <code>DEVICE</code> (o rádio) e os dois bloqueios, escritos como <code>unblocked</code> ("desbloqueado") ou <code>blocked</code> ("bloqueado").</p>
+
+<h3>Como fica um rádio bloqueado</h3>
+
+<p>Para ver um bloqueio de verdade, o laboratório bloqueou só o rádio da <code>wlan0</code> (o <code>phy0</code>, de ID <code>0</code>), como faria a tecla de modo avião. Sequência real:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> rfkill block 0                        « bloqueia só o rádio de ID 0
+#> echo $?
+0
+#> rfkill list 0
+0: phy0: Wireless LAN
+	Soft blocked: yes                       « bloqueado por software
+	Hard blocked: no
+#> rfkill
+ID TYPE DEVICE      SOFT      HARD
+ 0 wlan phy0     blocked unblocked          « o phy0 bloqueado; os outros, não
+ 1 wlan phy1   unblocked unblocked
+ 2 wlan phy2   unblocked unblocked
+#> ip -br link show wlan0
+wlan0            DOWN           02:00:00:00:00:00 &lt;BROADCAST,MULTICAST&gt;   « sem UP: a placa foi desligada
+</pre>
+
+<p>Repare no <code>ip -br link</code> (a forma curta do <code>ip link</code>, uma linha por placa): a <code>wlan0</code> continua existindo, mas sem <code>UP</code>. É o sinal de bloqueio: <strong>a placa aparece, mas não liga</strong>. (Quando a placa nem aparece, o problema é outro: <a href="#naoaparece">driver ou firmware</a>.)</p>
+
+<h3>O que o iwctl mostra com o rádio bloqueado</h3>
+
+<p>Sequência real do laboratório, agora com <strong>todos</strong> os rádios Wi-Fi bloqueados de uma vez (<code>rfkill block wifi</code>):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> rfkill block wifi                    « simulando o modo avião
+#> iwctl device list
+                                    Devices
+--------------------------------------------------------------------------------
+  Name                  Address               Powered     Adapter     Mode
+--------------------------------------------------------------------------------
+  wlan2                 02:00:00:00:02:00     off         phy2        ap
+  wlan1                 02:00:00:00:01:00     off         phy1        ap
+  wlan0                 02:00:00:00:00:00     off         phy0        station   « Powered off
+
+#> iwctl station wlan0 scan
+No station on device: 'wlan0'
+#> echo $?
+1
+#> rfkill unblock wifi                  « destrava (não mostra nada)
+#> rfkill list | head -3
+0: phy0: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+</pre>
+
+<p><code>No station on device: 'wlan0'</code> = "não há estação no dispositivo wlan0": a placa existe, mas está desligada (<code>Powered off</code>), então não há "modo cliente" (<em>station</em>) para procurar redes. A mesma mensagem aparece se você usar uma placa que está em outro modo (no laboratório, <code>iwctl station wlan1 scan</code> responde <code>No station on device: 'wlan1'</code>, porque a <code>wlan1</code> é o roteador).</p>
+
+<h3>Destravar: rfkill unblock</h3>
+
+<dl class="anatomy">
+  <dt>rfkill</dt><dd>O programa.</dd>
+  <dt>unblock</dt><dd>"Desbloquear". O contrário é <code>block</code>.</dd>
+  <dt>wifi</dt><dd><strong>Qual</strong> rádio. Pode ser um tipo (<code>wifi</code> ou <code>wlan</code>, <code>bluetooth</code>, <code>wwan</code>), <code>all</code> (todos) ou o número do <code>ID</code> (<code>0</code>, <code>1</code>…).</dd>
+</dl>
+
+<p>Como quase todo comando do Linux, o <code>rfkill unblock</code> não diz nada quando dá certo (código <code>0</code>). Confira com <code>rfkill list</code>. Uns segundos depois de destravar o rádio da <code>wlan0</code>, o laboratório mostrou isto (real):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> rfkill unblock 0
+#> rfkill list 0
+0: phy0: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+#> ip -br link show wlan0
+wlan0            UP             02:00:00:00:00:00 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;
+#> iwctl station wlan0 show | head -9
+                                 Station: wlan0
+--------------------------------------------------------------------------------
+  Settable  Property              Value
+--------------------------------------------------------------------------------
+            Scanning              no
+            State                 connected                « reconectou sozinho
+            Connected network     CasaDaAna
+            IPv4 address          192.168.50.144
+            ConnectedBss          02:00:00:00:01:00
+</pre>
+
+<p>A placa voltou (<code>UP,LOWER_UP</code>) e o <code>iwd</code> <strong>reconectou sozinho</strong>, sem pedir senha, porque a <code>CasaDaAna</code> já era uma rede salva (veja <a href="internet-live.html#salvas">Redes salvas</a>). Se a rede ainda não estava salva, conecte como em <a href="internet-live.html#iwctl">Wi-Fi com iwctl</a>.</p>
+
+<h3>A placa continua off: ligar pelo iwctl</h3>
+
+<p>Se depois do <code>rfkill unblock wifi</code> a placa continuar <code>off</code> no <code>device list</code>, ligue-a pelo <code>iwctl</code>:</p>
+
+<dl class="anatomy">
+  <dt>iwctl device wlan0</dt><dd>A placa <code>wlan0</code>.</dd>
+  <dt>set-property</dt><dd>"Mudar propriedade" (as marcadas com <code>*</code> no <code>show</code>).</dd>
+  <dt>Powered on</dt><dd>Ligada: sim.</dd>
+</dl>
+
+<pre class="term" data-host="archiso" data-user="root">#> iwctl device wlan0 set-property Powered on
+#> echo $?
+0
+#> iwctl device wlan0 show
+                                 Device: wlan0
+--------------------------------------------------------------------------------
+  Settable  Property              Value
+--------------------------------------------------------------------------------
+            Name                  wlan0
+         *  Mode                  station
+         *  Powered               on
+            Address               02:00:00:00:00:00
+            Adapter               phy0
+
+</pre>
+
+<p>Se nem assim ligar, o rádio inteiro (o <code>phy0</code>) pode estar desligado: <code>iwctl adapter phy0 set-property Powered on</code>. Com <code>Hard blocked: yes</code>, nenhum dos dois funciona: só a chave ou a tecla.</p>
+
+<div class="warning">
+<strong>Hard blocked: yes não se resolve no terminal</strong>
+<p>Se o <code>rfkill list</code> mostra <code>Hard blocked: yes</code>, não adianta repetir o <code>unblock</code>: o comando roda sem erro, e o rádio continua bloqueado. Procure, nesta ordem: uma chavinha na lateral ou na frente do notebook; a tecla de Wi-Fi/modo avião (às vezes com <kbd>Fn</kbd>, às vezes com uma luz que muda de cor); no setup da BIOS/UEFI, uma opção como <em>Wireless</em>, <em>WLAN</em> ou <em>Wireless Device Enable</em>. (O laboratório não tem chave física: esse caso é <strong>ilustrativo</strong>.)</p>
+</div>
+
+<hr>
+
+<h2 id="naoaparece">O Wi-Fi não aparece no ip link</h2>
+
+<p>Se o <code>ip link</code> não mostra nenhuma placa <code>wl…</code> (e o <code>iwctl device list</code> vem vazio), o Linux do live <strong>não reconheceu</strong> a sua placa Wi-Fi: faltou o driver ou o firmware. Isso acontece principalmente com <strong>adaptadores Wi-Fi USB</strong> baratos (os "pen drives de antena") e com placas muito novas. Investigue em três passos: o computador vê o aparelho? que chip é? o kernel reclamou de algo?</p>
+
+<h3>1. O computador vê o aparelho? lsusb</h3>
+
+<p>O <code>lsusb</code> (<em>list USB</em>, pacote <code>usbutils</code> 019, que vem na ISO) lista tudo o que está ligado nas portas USB, com o fabricante e o modelo do chip.</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 003: ID 0bda:b812 Realtek Semiconductor Corp. RTL88x2bu [AC1200 Techkey]   « o adaptador Wi-Fi
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+</pre>
+
+<p>Saída <strong>ilustrativa</strong>: a VM do laboratório não tem nenhum aparelho USB. Nela, o <code>lsusb</code> real não mostra nada e devolve o código <code>1</code>:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lsusb
+#> echo $?
+1
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte da linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>Bus 001 Device 003</code></td><td>Em qual "barramento" (controlador USB) e com que número o aparelho foi registrado. Muda a cada vez que você conecta.</td></tr>
+<tr><td><code>ID 0bda:b812</code></td><td><strong>A parte que importa.</strong> <code>0bda</code> é o código do <strong>fabricante</strong> do chip (<code>0bda</code> = Realtek) e <code>b812</code> o do <strong>produto</strong>. Esse par identifica o chip, seja qual for a marca escrita na caixa.</td></tr>
+<tr><td><code>Realtek … RTL88x2bu</code></td><td>O nome que o <code>lsusb</code> achou na lista dele para esse ID.</td></tr>
+<tr><td><code>Linux Foundation … root hub</code></td><td>As próprias portas USB do computador. Sempre aparecem; ignore.</td></tr>
+</table>
+</div>
+
+<p>Se o adaptador nem aparece no <code>lsusb</code>, o problema é físico: troque de porta USB (de preferência direto no computador, sem hub nem extensão) ou teste o adaptador em outro computador.</p>
+
+<h3>Placa interna: lspci -k</h3>
+
+<p>Placas Wi-Fi internas ficam no barramento PCI (dentro do notebook), não no USB. Para elas, o equivalente é o <code>lspci</code> (pacote <code>pciutils</code>, também na ISO). Com <code>-k</code>, ele mostra também <strong>qual driver</strong> o kernel está usando para cada peça.</p>
+
+<dl class="anatomy">
+  <dt>lspci</dt><dd>(<em>list PCI</em>) Lista as peças ligadas na placa-mãe.</dd>
+  <dt>-k</dt><dd>(<em>kernel</em>) Acrescenta o driver em uso e os drivers que serviriam.</dd>
+  <dt>| grep -A3 -i -E 'network|ethernet'</dt><dd>Mostra só as placas de rede (<code>Network controller</code> é o nome que o <code>lspci</code> dá ao Wi-Fi; <code>Ethernet controller</code>, à de cabo) e as 3 linhas seguintes (<code>-A3</code>, <em>after</em>). Veja <a href="grep.html">grep</a>.</dd>
+</dl>
+
+<p>Saída real, no live do laboratório:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lspci -k | grep -A3 -i -E 'network|ethernet'
+00:03.0 Ethernet controller: Intel Corporation 82540EM Gigabit Ethernet Controller (rev 02)   « a placa de cabo
+	Subsystem: Intel Corporation PRO/1000 MT Desktop Adapter
+	Kernel driver in use: e1000              « o driver que está funcionando
+	Kernel modules: e1000                    « os drivers que servem para ela
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>00:03.0 Ethernet controller: Intel … 82540EM</code></td><td>O endereço da peça, o tipo (<code>Ethernet controller</code> = placa de cabo) e o chip.</td></tr>
+<tr><td><code>Kernel driver in use: e1000</code></td><td>"Driver do kernel em uso": o kernel achou e carregou o driver <code>e1000</code>. <strong>Se esta linha não aparece, a peça está sem driver.</strong></td></tr>
+<tr><td><code>Kernel modules: e1000</code></td><td>Os drivers (módulos) do kernel que dizem servir para esse chip.</td></tr>
+</table>
+</div>
+
+<p>A VM só tem a placa de cabo: o Wi-Fi do laboratório é virtual (criado pelo módulo <code>mac80211_hwsim</code>) e não está em nenhum barramento. Por isso, procurar uma placa Wi-Fi no <code>lspci</code> não acha nada (real):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> lspci | grep -i -E 'network|wireless'
+#> echo $?
+1
+</pre>
+
+<p>Num notebook com Wi-Fi interno, apareceria algo como <code>Network controller: Intel Corporation Wi-Fi 6 AX201</code> com <code>Kernel driver in use: iwlwifi</code> (<strong>ilustrativo</strong>). Se a linha <code>Network controller</code> aparece, mas <strong>sem</strong> <code>Kernel driver in use</code>, a placa está sem driver funcionando: siga para o <code>dmesg</code>.</p>
+
+<h3>2. Que chip é, e o live tem driver para ele?</h3>
+
+<p>Com o ID do <code>lsusb</code> em mãos (<code>0bda:b812</code>), dá para perguntar ao próprio live se algum driver dele "conhece" esse chip. Cada driver do kernel declara a lista de IDs que atende, e essa lista inteira fica num arquivo, o <code>modules.alias</code>:</p>
+
+<dl class="anatomy">
+  <dt>grep -i</dt><dd>Procura um texto no arquivo, sem diferenciar maiúsculas de minúsculas.</dd>
+  <dt>'v0BDApB812'</dt><dd>O ID escrito do jeito do arquivo: <code>v</code> + fabricante (<em>vendor</em>) + <code>p</code> + produto. Para o ID <code>0bda:b812</code>, fica <code>v0BDApB812</code>.</dd>
+  <dt>/usr/lib/modules/$(uname -r)/modules.alias</dt><dd>A lista de IDs de todos os drivers do kernel em uso. O <code>$(uname -r)</code> é trocado pela versão do kernel (<code>7.0.10-arch1-1</code>).</dd>
+</dl>
+
+<p>Saída real no live (a pergunta funciona mesmo sem o adaptador conectado):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> grep -i 'v0BDApB812' /usr/lib/modules/$(uname -r)/modules.alias
+alias usb:v0BDApB812d*dc*dsc*dp*icFFiscFFipFFin* rtw88_8822bu   « o driver que atende esse ID
+#> echo $?
+0
+#> grep -i 'v0BDApB813' /usr/lib/modules/$(uname -r)/modules.alias   « um ID que nenhum driver conhece
+#> echo $?
+1
+</pre>
+
+<p>Uma linha com um nome no fim (<code>rtw88_8822bu</code>) = o live <strong>tem</strong> driver para esse chip. Nada e código <code>1</code> = o kernel da ISO não conhece esse ID (o <code>b813</code> foi inventado para o teste). Então pesquise na internet (de outro aparelho) "<code>0bda:b813 linux</code>" para descobrir qual driver ele precisa.</p>
+
+<p>O kernel da ISO de junho de 2026 (7.0.10) já traz drivers para muitos chips Realtek USB; esta é a lista real dos módulos com <code>u</code> (de USB) no fim:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> ls /usr/lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtw88/ | grep 'u\.ko'
+rtw88_8723du.ko.zst
+rtw88_8812au.ko.zst
+rtw88_8814au.ko.zst
+rtw88_8821au.ko.zst
+rtw88_8821cu.ko.zst
+rtw88_8822bu.ko.zst
+rtw88_8822cu.ko.zst
+#> ls /usr/lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtw89/ | grep 'u\.ko'
+rtw89_8851bu.ko.zst
+rtw89_8852au.ko.zst
+rtw89_8852bu.ko.zst
+rtw89_8852cu.ko.zst
+</pre>
+
+<p>(O <code>grep 'u\.ko'</code> deixa só os nomes terminados em <code>u.ko</code>. Há também o <code>rtl8xxxu</code>, que cobre vários chips Realtek USB antigos.) Se o chip do seu adaptador está nessa lista (<code>8822bu</code> = RTL8822BU, por exemplo), ele deve funcionar no live.</p>
+
+<h3>3. O kernel reclamou de algo? dmesg</h3>
+
+<dl class="anatomy">
+  <dt>dmesg</dt><dd>Mostra as mensagens do kernel desde o boot (o que ele detectou e o que falhou).</dd>
+  <dt>| grep -i -E</dt><dd>Filtra só as linhas que interessam, sem diferenciar maiúsculas (<code>-i</code>), aceitando "ou" com <code>|</code> (<code>-E</code>). Veja <a href="grep.html">grep</a>.</dd>
+  <dt>'firmware|wlan|rtl'</dt><dd>Linhas que falam de firmware, de placas Wi-Fi (<code>wlan</code>) ou de chips Realtek (<code>rtl</code>).</dd>
+</dl>
+
+<p>Num computador com o problema, o sinal típico é uma linha de firmware que faltou (<strong>ilustrativa</strong>):</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> dmesg | grep -i -E 'firmware|wlan|rtl'
+[    6.112233] usb 1-3: Direct firmware load for rtw88/rtw8822b_fw.bin failed with error -2   « faltou o firmware
+</pre>
+
+<p>(<code>Direct firmware load … failed with error -2</code> = "a carga do firmware … falhou, erro −2", isto é, arquivo não encontrado.) Se não aparece nenhuma linha sobre o adaptador, o kernel não tem driver para ele. No laboratório, o mesmo comando mostrou só as conexões da placa virtual (<code>wlan0: authenticated</code>, <code>wlan0: associated</code>), sinal de que ali estava tudo bem.</p>
+
+<h3>Driver e firmware: quem pede o quê</h3>
+
+<p>De onde vem o nome <code>rtw88/rtw8822b_fw.bin</code> da mensagem acima? O próprio driver diz qual arquivo de firmware precisa, e o <code>modinfo</code> (<em>module info</em>, "informações do módulo") mostra:</p>
+
+<pre class="term" data-host="archiso" data-user="root">#> modinfo -F firmware rtw88_8822b
+rtw88/rtw8822b_fw.bin                     « o firmware que o driver pede
+#> ls /usr/lib/firmware/rtw88/
+README.zst
+rtw8703b_fw.bin.zst
+rtw8703b_wow_fw.bin.zst
+rtw8723d_fw.bin.zst
+rtw8812a_fw.bin.zst
+rtw8814a_fw.bin.zst
+rtw8821a_fw.bin.zst
+rtw8821c_fw.bin.zst
+rtw8822b_fw.bin.zst                       « e ele está no live (compactado, .zst)
+rtw8822c_fw.bin.zst
+rtw8822c_wow_fw.bin.zst
+</pre>
+
+<p>(Saídas reais. O <code>-F firmware</code> mostra só o campo <em>firmware</em>. O driver do adaptador USB, <code>rtw88_8822bu</code>, usa o <code>rtw88_8822b</code> por baixo, e é este que pede o arquivo.) Os arquivos de firmware moram em <code>/usr/lib/firmware/</code> e vêm dos pacotes <code>linux-firmware-*</code>. Se o arquivo pedido não existe lá, aparece o <code>Direct firmware load … failed</code>: a solução é uma ISO mais nova, que traga um <code>linux-firmware</code> mais novo.</p>
+
+<h3>O driver não está no kernel: AUR e DKMS</h3>
+
+<p>Os chips que ficam de fora do kernel (mais raros, ou modelos que só funcionam bem com o driver do fabricante) dependem de drivers <strong>de fora do kernel</strong>: no Arch, são pacotes do <a href="aur.html">AUR</a> com <code>-dkms</code> no nome. <strong>DKMS</strong> (<em>Dynamic Kernel Module Support</em>, "suporte dinâmico a módulos do kernel") é o sistema que recompila o driver a cada kernel novo. Esses drivers <strong>não estão na ISO</strong>, e instalá-los exige… internet. Por isso, a saída é:</p>
+
+<ol class="passo">
+  <li>Instale o Arch usando outra conexão: <strong>cabo</strong> ou o <a href="celular-modem-live.html#celular">celular por USB</a>.</li>
+  <li>No sistema instalado, ainda com essa conexão, instale o driver do AUR (o nome do pacote depende do chip: procure pelo número do chip no <a href="https://aur.archlinux.org/">AUR</a>; veja <a href="yay-paru.html">yay e paru</a>) e o pacote <code>linux-headers</code>, que o DKMS precisa.</li>
+  <li>Reinicie e conecte no Wi-Fi com o NetworkManager (<a href="primeiro-boot.html">Primeiro Boot e Rede</a>).</li>
+</ol>
+
+<h3>Meu Wi-Fi não aparece: o que fazer</h3>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que você vê</th><th>Provável causa</th><th>O que fazer</th></tr>
+<tr><td><code>wlan0</code> no <code>ip link</code>, mas <code>Powered off</code> no <code>device list</code></td><td>Modo avião (rfkill)</td><td><code>rfkill list</code>; <code>rfkill unblock wifi</code>; <code>device wlan0 set-property Powered on</code> (<a href="#bloqueio">acima</a>)</td></tr>
+<tr><td><code>Hard blocked: yes</code></td><td>Chave física, tecla de Wi-Fi ou opção da BIOS</td><td>Ligue na chave, na tecla (<kbd>Fn</kbd>+…) ou no setup da BIOS/UEFI</td></tr>
+<tr><td>Nada <code>wl…</code>; o adaptador aparece no <code>lsusb</code>/<code>lspci</code>; <code>dmesg</code> fala de <code>firmware … failed</code></td><td>Falta o arquivo de firmware</td><td>Use uma ISO mais nova (o <code>linux-firmware</code> é atualizado todo mês); senão, instale por cabo ou celular e resolva depois</td></tr>
+<tr><td>Nada <code>wl…</code>; o adaptador aparece no <code>lsusb</code>; o <code>dmesg</code> não fala nada dele; o ID não está no <code>modules.alias</code></td><td>Sem driver no kernel (chip fora da lista)</td><td>Instale por cabo ou celular; depois, o driver <code>-dkms</code> do AUR</td></tr>
+<tr><td>O adaptador nem aparece no <code>lsusb</code></td><td>Porta, cabo extensor ou o próprio adaptador</td><td>Outra porta USB (de preferência direto no computador, sem hub); teste em outro computador</td></tr>
+<tr><td>A placa aparece, mas a sua rede não está no <code>get-networks</code></td><td>Longe do roteador, rede só em 5 GHz numa placa de 2,4 GHz, ou rede oculta</td><td><code>scan</code> de novo; chegue perto; <code>connect-hidden</code> (veja <a href="internet-live.html#oculta">Rede oculta</a>)</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Vai comprar um adaptador Wi-Fi USB?</strong>
+<p>Antes de comprar, pesquise o <strong>chip</strong> (não a marca da caixa) e se ele funciona no Linux "sem driver extra" (<em>in-kernel</em>). E tenha sempre um plano B para o dia da instalação: um cabo de rede ou o celular por USB. Veja também a dica em <a href="preparar.html">Baixar e Verificar a ISO</a>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de investigar</h2>
+
+<p>Cada comando desta aula responde a uma pergunta diferente. Use-os nesta ordem, do mais simples ao mais detalhado:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pergunta que responde</th><th>Quando usar</th></tr>
+<tr><td><code>ip link</code> / <code>ip -br link</code></td><td>O Linux criou uma placa <code>wl…</code>?</td><td>Sempre primeiro. Tem placa: o problema é bloqueio ou rede. Não tem: driver/firmware.</td></tr>
+<tr><td><code>rfkill list</code></td><td>O rádio está bloqueado? Soft ou hard?</td><td>A placa existe, mas está <code>Powered off</code> ou sem <code>UP</code>.</td></tr>
+<tr><td><code>iwctl device list</code></td><td>O <code>iwd</code> vê a placa? Ela está ligada, em modo <code>station</code>?</td><td>Depois de destravar o rádio.</td></tr>
+<tr><td><code>lsusb</code></td><td>O adaptador USB está conectado? Qual é o ID do chip?</td><td>Adaptador USB que não vira placa <code>wl…</code>.</td></tr>
+<tr><td><code>lspci -k</code></td><td>Qual é a placa interna e qual driver ela usa?</td><td>Placa Wi-Fi interna do notebook.</td></tr>
+<tr><td><code>grep -i 'vXXXXpYYYY' …/modules.alias</code></td><td>O kernel do live tem driver para esse ID?</td><td>Depois do <code>lsusb</code>, para saber se vale insistir.</td></tr>
+<tr><td><code>dmesg | grep -i -E 'firmware|wlan|rtl'</code></td><td>O kernel tentou e falhou? Faltou firmware?</td><td>Quando o driver existe, mas a placa não aparece.</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Comece sempre pelo <code>ip link</code>: ele divide o problema em dois. Com placa <code>wl…</code>, vá de <code>rfkill list</code>. Sem placa, vá de <code>lsusb</code> (ou <code>lspci -k</code>) e depois <code>dmesg</code>.</p>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<p>O simulador é o Arch <strong>já instalado</strong> da VM do guia, não o live (ele não tem <code>iwctl</code>, <code>rfkill</code> nem placa Wi-Fi). Use-o para ver de onde vêm os firmwares e o que o DKMS precisaria no sistema instalado.</p>
+
+<div class="try" data-goal="ran:^pacman +-Qi +linux-firmware\b,out:linux-firmware-realtek" data-solucao="pacman -Qi linux-firmware">
+<p class="try-task"><strong>Missão 1:</strong> o firmware das placas vem do pacote <code>linux-firmware</code>. Veja com <code>pacman -Qi linux-firmware</code> de quais pacotes ele depende (linha <code>Depende de</code>). Qual deles traria o firmware de um adaptador Realtek? E o de uma placa Intel?</p>
+</div>
+
+<div class="try" data-goal="ran:^pacman +-Q +linux-firmware-realtek,out:linux-firmware-realtek" data-solucao="pacman -Q linux-firmware-realtek">
+<p class="try-task"><strong>Missão 2:</strong> confira com <code>pacman -Q</code> que o firmware Realtek (<code>linux-firmware-realtek</code>) foi instalado no sistema da ana.</p>
+</div>
+
+<div class="try" data-goal="ran:^pacman +-Q +linux-headers,err:linux-headers" data-solucao="pacman -Q linux-headers">
+<p class="try-task"><strong>Missão 3:</strong> um driver <code>-dkms</code> do AUR precisa do pacote <code>linux-headers</code>. Pergunte ao <code>pacman -Q</code> se ele está no sistema da ana. O que a resposta quer dizer para quem precisar de um driver do AUR?</p>
+</div>
+
+<div class="try" data-goal="ran:^ip +(-br\S* +)?l(ink)?\b,out:enp0s3" data-solucao="ip -br link">
+<p class="try-task"><strong>Missão 4:</strong> com <code>ip -br link</code>, veja as placas da máquina da ana. Existe alguma <code>wl…</code>? Pela regra desta aula, para ter Wi-Fi nessa máquina, o que faltaria?</p>
+</div>
+
+<hr>
+
+<h2 id="problemas">Quando não funciona</h2>
+
+<div class="cenario">
+<strong>"No station on device: 'wlan0'"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> iwctl station wlan0 scan
+No station on device: 'wlan0'
+#> echo $?
+1
+</pre>
+<p><strong>O que aconteceu:</strong> a placa está desligada (<code>Powered off</code>), em geral por bloqueio de rádio (modo avião), ou não está em modo <code>station</code>. Saída real no laboratório depois de um <code>rfkill block wifi</code>.</p>
+<p><strong>Como confirmar:</strong> <code>iwctl device list</code> (coluna <code>Powered</code>) e <code>rfkill list</code> (<code>Soft blocked</code>/<code>Hard blocked</code>).</p>
+<p><strong>Como resolver:</strong> <code>rfkill unblock wifi</code>; se continuar <code>off</code>, <code>iwctl device wlan0 set-property Powered on</code>. Com <code>Hard blocked: yes</code>, só a chave ou a tecla do notebook (<a href="#bloqueio">Wi-Fi bloqueado</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"rfkill: invalid identifier"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> rfkill unblock wi-fi
+rfkill: invalid identifier: wi-fi
+#> echo $?
+1
+#> rfkill list 9
+rfkill: invalid identifier: 9
+</pre>
+<p><strong>O que aconteceu:</strong> "identificador inválido": o <code>rfkill</code> não entendeu <strong>qual</strong> rádio você quis. <code>wi-fi</code>, com hífen, não é um nome que ele conheça; <code>9</code> é um ID que não existe (saídas reais).</p>
+<p><strong>Como resolver:</strong> use <code>wifi</code> (ou <code>wlan</code>), <code>bluetooth</code>, <code>all</code>, ou um número da coluna <code>ID</code> do <code>rfkill</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>unblock</code> rodou, mas continua <code>Hard blocked: yes</code></strong>
+<p><strong>O que aconteceu:</strong> o bloqueio é físico. O <code>rfkill unblock</code> só mexe no bloqueio por software; ele não dá erro, mas também não muda o "hard". (Ilustrativo: a VM não tem chave física.)</p>
+<p><strong>Como resolver:</strong> a chave lateral, a tecla de Wi-Fi/modo avião ou a opção <em>Wireless</em>/<em>WLAN</em> no setup da BIOS/UEFI. Depois, <code>rfkill list</code> de novo.</p>
+</div>
+
+<div class="cenario">
+<strong><code>iwctl device list</code> vazio, nenhuma placa <code>wl…</code></strong>
+<p><strong>O que aconteceu:</strong> o Linux não criou placa Wi-Fi: o adaptador não está conectado direito, o kernel da ISO não tem driver para o chip, ou faltou o firmware.</p>
+<p><strong>Como confirmar:</strong> <code>lsusb</code> (ou <code>lspci -k</code>) para achar o aparelho e o ID; <code>grep -i 'vXXXXpYYYY' /usr/lib/modules/$(uname -r)/modules.alias</code> para ver se há driver; <code>dmesg | grep -i firmware</code> para ver se faltou firmware.</p>
+<p><strong>Como resolver:</strong> firmware faltando: ISO mais nova. Sem driver: instale o Arch por cabo ou <a href="celular-modem-live.html#celular">celular por USB</a> e instale o driver do AUR depois (<a href="#naoaparece">O Wi-Fi não aparece</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Direct firmware load for … failed with error -2"</strong>
+<pre class="term" data-host="archiso" data-user="root">#> dmesg | grep -i firmware
+[    6.112233] usb 1-3: Direct firmware load for rtw88/rtw8822b_fw.bin failed with error -2
+</pre>
+<p><strong>O que aconteceu:</strong> o driver existe e tentou carregar o firmware, mas o arquivo não está em <code>/usr/lib/firmware/</code> (erro −2 = "arquivo não encontrado"). Mensagem ilustrativa: no live do laboratório esse arquivo existe.</p>
+<p><strong>Como resolver:</strong> baixe a ISO mais recente (o <code>linux-firmware</code> dela é mais novo) e tente de novo. Se nem a mais nova tiver, instale por cabo ou celular; no sistema instalado, o <code>pacman -Syu</code> traz o firmware mais recente.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando (no live)</th><th>Para quê</th></tr>
+<tr><td><code>rfkill list</code> · <code>rfkill</code></td><td>Ver os rádios e os bloqueios (soft/hard)</td></tr>
+<tr><td><code>rfkill unblock wifi</code> · <code>rfkill unblock all</code> · <code>rfkill unblock 0</code></td><td>Tirar o bloqueio "soft" (do Wi-Fi, de todos, do ID 0)</td></tr>
+<tr><td><code>rfkill block wifi</code></td><td>Bloquear (o "modo avião" pelo terminal)</td></tr>
+<tr><td><code>iwctl device list</code></td><td>Placas Wi-Fi: <code>Powered on</code>/<code>off</code>, modo</td></tr>
+<tr><td><code>iwctl device wlan0 set-property Powered on</code></td><td>Ligar a placa</td></tr>
+<tr><td><code>iwctl adapter phy0 set-property Powered on</code></td><td>Ligar o rádio inteiro</td></tr>
+<tr><td><code>ip -br link</code></td><td>Existe placa <code>wl…</code>? Está <code>UP</code>?</td></tr>
+<tr><td><code>lsusb</code></td><td>Aparelhos USB e o ID do chip (<code>fabricante:produto</code>)</td></tr>
+<tr><td><code>lspci -k</code></td><td>Placas internas e o driver em uso</td></tr>
+<tr><td><code>grep -i 'vXXXXpYYYY' /usr/lib/modules/$(uname -r)/modules.alias</code></td><td>O kernel tem driver para esse ID?</td></tr>
+<tr><td><code>dmesg | grep -i -E 'firmware|wlan|rtl'</code></td><td>Mensagens do kernel sobre a placa e o firmware</td></tr>
+<tr><td><code>modinfo -F firmware DRIVER</code></td><td>Qual arquivo de firmware o driver pede</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Destravar o rádio</h3>
+<p>O <code>rfkill list</code> mostrou <code>Soft blocked: yes</code>. Complete o comando que destrava o Wi-Fi:</p>
+<div class="ex-code">rfkill <input data-answer="unblock" aria-label="ação"> <input data-answer="wifi|wlan|all" aria-label="tipo"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Ligar a placa pelo iwctl</h3>
+<p>O rádio já foi destravado, mas o <code>device list</code> ainda mostra <code>wlan0</code> com <code>Powered off</code>. Complete:</p>
+<div class="ex-code">iwctl device wlan0 <input data-answer="set-property" aria-label="subcomando"> Powered <input data-answer="on" aria-label="valor"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Qual driver a placa usa</h3>
+<p>Complete a opção do <code>lspci</code> que acrescenta a linha <code>Kernel driver in use</code>:</p>
+<div class="ex-code">lspci <input data-answer="-k" aria-label="opção"></div>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O <code>rfkill list</code> mostra <code>Hard blocked: yes</code>. O que resolve?</p>
+<label><input type="radio" name="q4"> A chave física, a tecla de Wi-Fi/modo avião do notebook ou a opção na BIOS: nenhum comando destrava um bloqueio "hard".</label>
+<label><input type="radio" name="q4"> <code>rfkill unblock wifi</code>.</label>
+<label><input type="radio" name="q4"> <code>iwctl device wlan0 set-property Powered on</code>.</label>
+<label><input type="radio" name="q4"> Reinstalar o <code>iwd</code>.</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O <code>ip -br link</code> mostra a <code>wlan0</code>, mas sem <code>UP</code>, e o <code>iwctl</code> diz <code>Powered off</code>. O que é mais provável?</p>
+<label><input type="radio" name="q5"> Falta o driver da placa.</label>
+<label><input type="radio" name="q5"> A senha do Wi-Fi está errada.</label>
+<label><input type="radio" name="q5"> O rádio está bloqueado (modo avião): a placa existe, só está desligada. Comece pelo <code>rfkill list</code>.</label>
+<label><input type="radio" name="q5"> O roteador está desligado.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. No <code>lsusb</code>, o adaptador aparece como <code>ID 0bda:b812</code>. O que é o <code>0bda</code>?</p>
+<label><input type="radio" name="q6"> O número da porta USB.</label>
+<label><input type="radio" name="q6"> O código do fabricante do chip (Realtek); o <code>b812</code> é o do produto.</label>
+<label><input type="radio" name="q6"> A velocidade do adaptador.</label>
+<label><input type="radio" name="q6"> O nome que a placa vai ter no <code>ip link</code>.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">7. O <code>dmesg</code> mostra <code>Direct firmware load for rtw88/rtw8822b_fw.bin failed with error -2</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q7"> Que o adaptador está queimado.</label>
+<label><input type="radio" name="q7"> Que o rádio está bloqueado por software.</label>
+<label><input type="radio" name="q7"> Que o kernel não tem driver para o chip.</label>
+<label><input type="radio" name="q7"> Que o driver existe, mas o arquivo de firmware que ele pede não foi encontrado; uma ISO mais nova costuma resolver.</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">8. O seu adaptador Wi-Fi USB aparece no <code>lsusb</code>, mas não no <code>ip link</code>, e o chip dele precisa de um driver <code>-dkms</code> do AUR. Qual é o caminho?</p>
+<label><input type="radio" name="q8"> Instalar o driver do AUR no live antes do <code>pacstrap</code>, sem internet.</label>
+<label><input type="radio" name="q8"> Instalar o Arch pelo cabo ou pelo celular por USB e, no sistema instalado, instalar o driver do AUR (com o <code>linux-headers</code>).</label>
+<label><input type="radio" name="q8"> Desistir: o Arch não funciona com adaptadores USB.</label>
+<label><input type="radio" name="q8"> Rodar <code>rfkill unblock wifi</code>.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Wi-Fi precisa de três peças: rádio liberado, driver e firmware.</li>
+  <li><code>ip link</code> divide o problema: <strong>tem</strong> placa <code>wl…</code> = bloqueio ou rede; <strong>não tem</strong> = driver ou firmware.</li>
+  <li>Bloqueio: <code>rfkill list</code>. <code>Soft blocked: yes</code> sai com <code>rfkill unblock wifi</code> (e, se preciso, <code>iwctl device wlan0 set-property Powered on</code>); <code>Hard blocked: yes</code>, só na chave, na tecla ou na BIOS.</li>
+  <li>Placa que não aparece: <code>lsusb</code>/<code>lspci -k</code> (o aparelho e o ID), <code>modules.alias</code> (o live tem driver?), <code>dmesg</code> (faltou firmware?).</li>
+  <li>Firmware faltando: ISO mais nova. Driver de fora do kernel (<code>-dkms</code> do AUR): instale por cabo ou celular e resolva no sistema instalado, com <code>linux-headers</code>.</li>
+</ul>
+
+<p>Rádio liberado e placa aparecendo? Volte para <a href="internet-live.html#iwctl">Wi-Fi com iwctl</a> e conecte. Se o Wi-Fi não tem jeito, use o celular: <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>.</p>
+
+<p><strong>Na Arch Wiki:</strong> placas, drivers e firmware estão em <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless">Network configuration/Wireless</a>, nas seções <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless#Device_driver">Device driver</a> (com <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless#Check_the_driver_status">Check the driver status</a> e <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless#Installing_driver/firmware">Installing driver/firmware</a>) e <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless#Troubleshooting">Troubleshooting</a>. O <code>rfkill</code> não tem página própria: o endereço <a href="https://wiki.archlinux.org/title/Rfkill">Rfkill</a> leva à seção <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless#Rfkill_caveat">Rfkill caveat</a> dessa mesma página. O lado do <code>iwctl</code> (placa <code>off</code>, <code>device … set-property</code>) está em <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>); o básico de placas e nomes em <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a> (<a href="https://wiki.archlinux.org/title/Network_configuration_(Portugu%C3%AAs)">em português</a>); módulos do kernel em <a href="https://wiki.archlinux.org/title/Kernel_module">Kernel module</a> (<a href="https://wiki.archlinux.org/title/Kernel_module_(Portugu%C3%AAs)">em português</a>); e os drivers de fora do kernel em <a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support">DKMS</a> (<a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

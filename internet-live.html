@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arch internet no live — Wi-Fi com iwctl, cabo, celular e modem | Guia Arch</title>
-<meta name="description" content="Como conectar o pendrive do Arch à internet antes do pacstrap ou do archinstall: descobrir a placa com ip link, Wi-Fi passo a passo com iwctl (capturas reais), senha errada, redes salvas, rfkill, adaptador USB que não aparece, celular por USB (ancoragem), modem 4G com mmcli e o que levar para o sistema instalado.">
+<title>Arch internet no live — cabo e Wi-Fi com iwctl | Guia Arch</title>
+<meta name="description" content="Como conectar o pendrive do Arch à internet antes do pacstrap ou do archinstall: testar com ping, descobrir a placa com ip link, cabo, Wi-Fi passo a passo com iwctl (capturas reais), senha errada, rede oculta, redes salvas e o que levar para o sistema instalado.">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -16,24 +16,23 @@
 
 <div class="pager"></div>
 
-<h1>Arch: <span class="hl">internet no live</span> (Wi-Fi, cabo, celular)</h1>
+<h1>Arch: <span class="hl">internet no live</span> (cabo e Wi-Fi)</h1>
 
-<p class="intro">O pendrive do Arch não traz o sistema pronto: ele <strong>baixa tudo da internet</strong> na hora de instalar. Com cabo, a internet costuma funcionar sozinha. Com Wi-Fi, não: você precisa escolher a rede e digitar a senha no terminal, com o <code>iwctl</code>, antes de rodar o <code>pacstrap</code> ou o <code>archinstall</code>. Nesta aula você aprende a fazer isso passo a passo, e também a usar a internet do celular pelo cabo USB e um modem 4G, para quem não tem cabo de rede.</p>
+<p class="intro">O pendrive do Arch não traz o sistema pronto: ele <strong>baixa tudo da internet</strong> na hora de instalar. Com cabo, a internet costuma funcionar sozinha. Com Wi-Fi, não: você precisa escolher a rede e digitar a senha no terminal, com o <code>iwctl</code>, antes de rodar o <code>pacstrap</code> ou o <code>archinstall</code>. Nesta aula você aprende a testar a internet, a descobrir que placa de rede o computador tem e a conectar no Wi-Fi passo a passo.</p>
 
 <div class="note">
 <strong>Você vai aprender</strong>
 <ul>
   <li>Descobrir se o live já tem internet (<code>ping</code>) e qual placa de rede o computador tem (<code>ip link</code>).</li>
   <li>Conectar no Wi-Fi com o <code>iwctl</code>, passo a passo, e entender cada linha que ele mostra (inclusive a senha errada).</li>
-  <li>Destravar o Wi-Fi bloqueado (<code>rfkill</code>) e o que fazer quando o adaptador Wi-Fi USB nem aparece.</li>
-  <li>Usar a internet do celular pelo cabo USB (ancoragem) e um modem 4G/5G (<code>mmcli</code>).</li>
+  <li>Conectar numa linha só, em rede com espaço no nome, em rede oculta, e ver ou esquecer as redes salvas.</li>
   <li>Garantir que o Arch instalado também tenha rede e Wi-Fi (o erro clássico de quem esquece).</li>
 </ul>
 </div>
 
 <div class="note">
 <strong>De onde vêm as saídas desta aula</strong>
-<p>O live fala <strong>inglês</strong>: as mensagens aparecem como você vai vê-las e são traduzidas logo abaixo. Tudo foi rodado no ambiente live real da ISO de 1º de junho de 2026 (kernel <code>7.0.10-arch1-1</code>, <code>iwd</code> 3.12), numa máquina virtual com placas Wi-Fi virtuais. As quatro telas do <code>iwctl</code> são capturas do console dessa VM. O que não deu para testar (celular, modem de verdade, adaptador USB) está marcado como <strong>ilustrativo</strong>. Como o laboratório foi montado, e o que muda no seu computador, está explicado em <a href="#laboratorio">Como o laboratório foi feito</a>.</p>
+<p>O live fala <strong>inglês</strong>: as mensagens aparecem como você vai vê-las e são traduzidas logo abaixo. Tudo foi rodado no ambiente live real da ISO de 1º de junho de 2026 (kernel <code>7.0.10-arch1-1</code>, <code>iwd</code> 3.12), numa máquina virtual com placas Wi-Fi virtuais. As quatro telas do <code>iwctl</code> são capturas do console dessa VM. O pouco que não deu para testar (uma mensagem de erro sem rede) está marcado como <strong>ilustrativo</strong>. Como o laboratório foi montado, e o que muda no seu computador, está explicado em <a href="#laboratorio">Como o laboratório foi feito</a>.</p>
 </div>
 
 <hr>
@@ -45,7 +44,7 @@
 <ul>
   <li><strong>Sem internet, não há instalação.</strong> O <code>pacstrap</code> para logo no começo com <code>failed to synchronize all databases</code>.</li>
   <li>A internet só precisa existir <strong>durante</strong> a instalação. O sistema instalado vai ter o próprio programa de rede (veja <a href="#depois">Depois da instalação</a>).</li>
-  <li>Qualquer forma de internet serve: cabo, Wi-Fi, o celular pelo cabo USB, um modem 4G. Esta aula ensina as quatro.</li>
+  <li>Qualquer forma de internet serve: cabo, Wi-Fi, o celular pelo cabo USB, um modem 4G. Esta aula ensina o cabo e o Wi-Fi; o celular e o modem têm uma aula própria, <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>.</li>
 </ul>
 
 <h3>Quem cuida da rede no live</h3>
@@ -64,7 +63,7 @@ active
 <tr><th>Serviço</th><th>O que faz no live</th><th>Você conversa com ele por</th></tr>
 <tr><td><code>systemd-networkd</code></td><td>Pede um endereço IP ao roteador (DHCP) para <strong>toda</strong> placa que se conectar: cabo, Wi-Fi, celular, modem.</td><td>nada (é automático); <code>networkctl</code> mostra o estado</td></tr>
 <tr><td><code>iwd</code></td><td>Cuida só do Wi-Fi: procura redes, manda a senha, conecta. (<em>iNet wireless daemon</em>, um programa da Intel para Wi-Fi.)</td><td><code>iwctl</code></td></tr>
-<tr><td><code>ModemManager</code></td><td>Conversa com modems 4G/5G (WWAN) e com o chip de dados.</td><td><code>mmcli</code></td></tr>
+<tr><td><code>ModemManager</code></td><td>Conversa com modems 4G/5G (WWAN) e com o chip de dados (veja <a href="celular-modem-live.html#modem">Modem 4G/5G</a>).</td><td><code>mmcli</code></td></tr>
 <tr><td><code>systemd-resolved</code></td><td>Traduz nomes (<code>archlinux.org</code>) em números IP: o <strong>DNS</strong>.</td><td>nada (é automático)</td></tr>
 </table>
 </div>
@@ -160,8 +159,8 @@ rtt min/avg/max/mdev = 42.522/47.247/55.200/5.656 ms
 <tr><td><code>lo</code></td><td>"Loopback": a máquina falando com ela mesma. Sempre existe.</td><td><code>lo</code></td><td>ignore</td></tr>
 <tr><td><code>en</code> (<em>ethernet</em>)</td><td>Cabo de rede</td><td><code>enp0s3</code>, <code>enp3s0</code>, <code>eno1</code></td><td>sozinho (encaixe o cabo)</td></tr>
 <tr><td><code>wl</code> (<em>wireless LAN</em>)</td><td>Wi-Fi</td><td><code>wlan0</code> no live; <code>wlp2s0</code> no sistema instalado</td><td><a href="#iwctl">iwctl</a></td></tr>
-<tr><td><code>ww</code> (<em>wireless WAN</em>)</td><td>Modem 4G/5G interno ou USB</td><td><code>wwan0</code>, <code>wwp0s20f0u3i12</code></td><td><a href="#modem">mmcli</a></td></tr>
-<tr><td><code>usb0</code> ou <code>en…u…</code></td><td>Celular ligado no USB com ancoragem, ou adaptador de cabo USB</td><td><code>usb0</code>, <code>enp0s20f0u2</code> (o <code>u2</code> = porta USB 2)</td><td>sozinho (<a href="#celular">celular por USB</a>)</td></tr>
+<tr><td><code>ww</code> (<em>wireless WAN</em>)</td><td>Modem 4G/5G interno ou USB</td><td><code>wwan0</code>, <code>wwp0s20f0u3i12</code></td><td><a href="celular-modem-live.html#modem">mmcli</a></td></tr>
+<tr><td><code>usb0</code> ou <code>en…u…</code></td><td>Celular ligado no USB com ancoragem, ou adaptador de cabo USB</td><td><code>usb0</code>, <code>enp0s20f0u2</code> (o <code>u2</code> = porta USB 2)</td><td>sozinho (<a href="celular-modem-live.html#celular">celular por USB</a>)</td></tr>
 </table>
 </div>
 
@@ -182,17 +181,56 @@ NamePolicy=keep kernel</pre>
 <tr><th>O que o <code>ip link</code> mostrou</th><th>Vá para</th></tr>
 <tr><td>Uma placa <code>en…</code> com <code>LOWER_UP</code> e o <code>ping</code> funcionou</td><td>Nada a fazer: siga para <a href="particionar.html">Particionar o Disco</a>.</td></tr>
 <tr><td>Uma placa <code>wl…</code> (ou <code>wlan0</code>)</td><td><a href="#iwctl">Wi-Fi com iwctl</a></td></tr>
-<tr><td>Nenhuma <code>wl…</code>, mas você tem Wi-Fi (placa interna ou adaptador USB)</td><td><a href="#naoaparece">O Wi-Fi não aparece</a></td></tr>
-<tr><td>Sem cabo e sem Wi-Fi funcionando, mas tem um celular com dados ou Wi-Fi</td><td><a href="#celular">Internet do celular por USB</a></td></tr>
-<tr><td>Uma placa <code>ww…</code> (notebook com chip)</td><td><a href="#modem">Modem 4G/5G</a></td></tr>
+<tr><td>Uma placa <code>wl…</code>, mas sem <code>UP</code>, ou o <code>iwctl</code> diz <code>Powered off</code></td><td><a href="wifi-problemas-live.html#bloqueio">Wi-Fi bloqueado (rfkill)</a>, na aula Wi-Fi que Não Funciona</td></tr>
+<tr><td>Nenhuma <code>wl…</code>, mas você tem Wi-Fi (placa interna ou adaptador USB)</td><td><a href="wifi-problemas-live.html#naoaparece">O Wi-Fi não aparece</a>, na aula Wi-Fi que Não Funciona</td></tr>
+<tr><td>Sem cabo e sem Wi-Fi funcionando, mas tem um celular com dados ou Wi-Fi</td><td><a href="celular-modem-live.html#celular">Internet do celular por USB</a>, na aula Celular por USB e Modem 4G</td></tr>
+<tr><td>Uma placa <code>ww…</code> (notebook com chip)</td><td><a href="celular-modem-live.html#modem">Modem 4G/5G</a>, na mesma aula</td></tr>
 </table>
 </div>
 
 <hr>
 
-<h2>Com cabo: não faça nada</h2>
+<h2 id="cabo">Com cabo: não faça nada</h2>
 
-<p>Encaixe o cabo no roteador e no computador. Em poucos segundos o <code>systemd-networkd</code> pede um endereço ao roteador (DHCP: o roteador "empresta" um número IP para cada aparelho) e a internet funciona. Teste com <code>ping -c 3 archlinux.org</code>. O "porquê" desse automático está no arquivo <code>20-ethernet.network</code>, explicado em <a href="#celular">Internet do celular por USB</a>, porque é ele que também faz o celular funcionar sozinho.</p>
+<p>Encaixe o cabo no roteador e no computador. Em poucos segundos o <code>systemd-networkd</code> pede um endereço ao roteador (DHCP: o roteador "empresta" um número IP para cada aparelho) e a internet funciona. Teste com <code>ping -c 3 archlinux.org</code>.</p>
+
+<h3>Por que funciona sozinho: o 20-ethernet.network</h3>
+
+<p>O live traz, em <code>/etc/systemd/network/</code>, um arquivo de configuração do <code>systemd-networkd</code> para cada tipo de placa. Este é o do cabo (real, da ISO):</p>
+
+<pre class="file" data-file="/etc/systemd/network/20-ethernet.network (no live)">[Match]
+Type=ether
+# Exclude virtual Ethernet interfaces
+Kind=!*
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DHCP=yes
+MulticastDNS=yes
+
+# systemd-networkd does not set per-interface-type default route metrics
+# https://github.com/systemd/systemd/issues/17698
+# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
+# Use values from NetworkManager. From nm_device_get_route_metric_default in
+# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
+[DHCPv4]
+RouteMetric=100
+
+[IPv6AcceptRA]
+RouteMetric=100</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O que quer dizer</th></tr>
+<tr><td><code>[Match]</code> <code>Type=ether</code></td><td>"Vale para toda placa do tipo cabo (Ethernet)." Linhas com <code>#</code> são comentários.</td></tr>
+<tr><td><code>DHCP=yes</code></td><td><strong>O segredo:</strong> pedir um endereço por DHCP ao roteador, sem você digitar nada.</td></tr>
+<tr><td><code>RouteMetric=100</code></td><td>A "prioridade" desta conexão: quanto <strong>menor</strong>, mais preferida. O Wi-Fi tem <code>600</code>; por isso, com cabo e Wi-Fi ligados juntos, a internet sai pelo cabo.</td></tr>
+</table>
+</div>
+
+<p>O mesmo arquivo faz o celular ligado no USB funcionar sozinho (ele se apresenta como uma placa de cabo). A explicação linha por linha, o arquivo do Wi-Fi e do modem e como ver qual conexão está em uso estão em <a href="celular-modem-live.html#ordem">Cabo, Wi-Fi e celular juntos</a>.</p>
 
 <hr>
 
@@ -248,7 +286,7 @@ NamePolicy=keep kernel</pre>
 <tr><th>Coluna</th><th>Valor do <code>wlan0</code></th><th>O que quer dizer</th></tr>
 <tr><td><code>Name</code></td><td><code>wlan0</code></td><td>O nome da placa. <strong>Anote:</strong> vai em todos os comandos seguintes.</td></tr>
 <tr><td><code>Address</code></td><td><code>02:00:00:00:00:00</code></td><td>O MAC da placa (este é de placa virtual; o seu será diferente).</td></tr>
-<tr><td><code>Powered</code></td><td><code>on</code></td><td>Ligada. Se estiver <code>off</code>, veja <a href="#bloqueio">Wi-Fi bloqueado</a>.</td></tr>
+<tr><td><code>Powered</code></td><td><code>on</code></td><td>Ligada. Se estiver <code>off</code>, veja <a href="wifi-problemas-live.html#bloqueio">Wi-Fi bloqueado</a>.</td></tr>
 <tr><td><code>Adapter</code></td><td><code>phy0</code></td><td>O "rádio" físico por trás da placa. Você raramente usa.</td></tr>
 <tr><td><code>Mode</code></td><td><code>station</code></td><td>"Estação": o modo <strong>cliente</strong>, o que se conecta a um roteador. É o que você quer. <code>ap</code> (<em>access point</em>) é o modo roteador.</td></tr>
 </table>
@@ -516,340 +554,10 @@ SAE-PT-Group20=ce94bea4b09e4c695a85e1b2dc17286d…
 
 <p><strong>Qual usar?</strong> A interativa. Use a de uma linha quando estiver colando comandos e ninguém estiver olhando a tela.</p>
 
-<hr>
-
-<h2 id="bloqueio">Wi-Fi bloqueado: rfkill</h2>
-
-<p>Notebooks têm um "modo avião": uma tecla (<kbd>Fn</kbd>+<kbd>F2</kbd>, <kbd>Fn</kbd>+<kbd>F12</kbd>, uma com desenho de antena ou avião) ou, nos mais antigos, uma chavinha na lateral. Ela desliga o rádio. O Linux chama isso de <strong>rfkill</strong> (<em>radio frequency kill</em>, "desligar o rádio").</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> rfkill list
-0: phy0: Wireless LAN
-	Soft blocked: no
-	Hard blocked: no
-1: phy1: Wireless LAN
-	Soft blocked: no
-	Hard blocked: no
-2: phy2: Wireless LAN
-	Soft blocked: no
-	Hard blocked: no
-#> rfkill
-ID TYPE DEVICE      SOFT      HARD
- 0 wlan phy0   unblocked unblocked
- 1 wlan phy1   unblocked unblocked
- 2 wlan phy2   unblocked unblocked
-</pre>
-
-<p>(No seu notebook aparece um rádio só para o Wi-Fi, e talvez um de <code>Bluetooth</code>. Os três <code>phy</code> são as placas do laboratório.)</p>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Linha</th><th>Tradução</th><th>Se for <code>yes</code> / <code>blocked</code></th></tr>
-<tr><td><code>phy0: Wireless LAN</code></td><td>rádio phy0: rede sem fio</td><td>— (é o <code>Adapter</code> do <code>device list</code>)</td></tr>
-<tr><td><code>Soft blocked</code></td><td>bloqueado por software</td><td>Desligado por um programa ou por uma tecla que avisa o sistema. <strong>Destrava com <code>rfkill unblock wifi</code>.</strong></td></tr>
-<tr><td><code>Hard blocked</code></td><td>bloqueado por hardware</td><td>Desligado por uma chave física ou pelo firmware. <strong>Nenhum comando destrava</strong>: use a chave, a tecla de modo avião, ou ligue o Wi-Fi no setup da BIOS/UEFI.</td></tr>
-</table>
-</div>
-
-<p>Veja o que acontece com o Wi-Fi bloqueado. Sequência real do laboratório (o bloqueio foi feito de propósito com <code>rfkill block wifi</code>):</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> rfkill block wifi                    « simulando o modo avião
-#> iwctl device list
-                                    Devices
---------------------------------------------------------------------------------
-  Name                  Address               Powered     Adapter     Mode
---------------------------------------------------------------------------------
-  wlan2                 02:00:00:00:02:00     off         phy2        ap
-  wlan1                 02:00:00:00:01:00     off         phy1        ap
-  wlan0                 02:00:00:00:00:00     off         phy0        station   « Powered off
-
-#> iwctl station wlan0 scan
-No station on device: 'wlan0'
-#> echo $?
-1
-#> rfkill unblock wifi                  « destrava (não mostra nada)
-#> rfkill list | head -3
-0: phy0: Wireless LAN
-	Soft blocked: no
-	Hard blocked: no
-</pre>
-
-<p><code>No station on device: 'wlan0'</code> = "não há estação no dispositivo wlan0": a placa existe, mas está desligada (<code>Powered off</code>), então não há "modo cliente" para procurar redes. A mesma mensagem aparece se você usar uma placa que está em outro modo (no laboratório, <code>iwctl station wlan1 scan</code> responde <code>No station on device: 'wlan1'</code>, porque a <code>wlan1</code> é o roteador).</p>
-
-<p>Se depois do <code>rfkill unblock wifi</code> a placa continuar <code>off</code> no <code>device list</code>, ligue-a pelo <code>iwctl</code>:</p>
-
-<dl class="anatomy">
-  <dt>iwctl device wlan0</dt><dd>A placa <code>wlan0</code>.</dd>
-  <dt>set-property</dt><dd>"Mudar propriedade" (as marcadas com <code>*</code> no <code>show</code>).</dd>
-  <dt>Powered on</dt><dd>Ligada: sim.</dd>
-</dl>
-
-<pre class="term" data-host="archiso" data-user="root">#> iwctl device wlan0 set-property Powered on
-#> echo $?
-0
-#> iwctl device wlan0 show
-                                 Device: wlan0
---------------------------------------------------------------------------------
-  Settable  Property              Value
---------------------------------------------------------------------------------
-            Name                  wlan0
-         *  Mode                  station
-         *  Powered               on
-            Address               02:00:00:00:00:00
-            Adapter               phy0
-
-</pre>
-
-<p>Se nem assim ligar, o rádio inteiro (o <code>phy0</code>) pode estar desligado: <code>iwctl adapter phy0 set-property Powered on</code>. Com <code>Hard blocked: yes</code>, nenhum dos dois funciona: só a chave ou a tecla.</p>
-
-<hr>
-
-<h2 id="naoaparece">O Wi-Fi não aparece no ip link</h2>
-
-<p>Se o <code>ip link</code> não mostra nenhuma placa <code>wl…</code> (e o <code>iwctl device list</code> vem vazio), o Linux do live <strong>não reconheceu</strong> a sua placa Wi-Fi. Isso acontece principalmente com <strong>adaptadores Wi-Fi USB</strong> baratos (os "pen drives de antena") e com placas muito novas. Investigue em dois passos.</p>
-
-<h3>1. O computador vê o aparelho? lsusb</h3>
-
-<p>O <code>lsusb</code> (<em>list USB</em>, pacote <code>usbutils</code> 019, que vem na ISO) lista tudo o que está ligado nas portas USB, com o fabricante e o modelo do chip. Para placas internas, o equivalente é <code>lspci</code> (pacote <code>pciutils</code>, também na ISO).</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> lsusb
-Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-Bus 001 Device 003: ID 0bda:b812 Realtek Semiconductor Corp. RTL88x2bu [AC1200 Techkey]   « o adaptador Wi-Fi
-Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
-</pre>
-
-<p>Saída <strong>ilustrativa</strong>: a VM do laboratório não tem nenhum aparelho USB, e o <code>lsusb</code> real nela não mostrou nada (código <code>1</code>). Na linha do adaptador, o que interessa é o <code>ID 0bda:b812</code>: <code>0bda</code> é o código do fabricante (<code>0bda</code> = Realtek) e <code>b812</code> o do produto. Com esse ID você pesquisa "<code>0bda:b812 linux</code>" e descobre qual é o chip e qual driver ele usa. Se o adaptador nem aparece no <code>lsusb</code>, troque de porta USB ou teste o adaptador em outro computador.</p>
-
-<h3>2. O kernel reclamou de algo? dmesg</h3>
-
-<dl class="anatomy">
-  <dt>dmesg</dt><dd>Mostra as mensagens do kernel desde o boot (o que ele detectou e o que falhou).</dd>
-  <dt>| grep -i -E</dt><dd>Filtra só as linhas que interessam, sem diferenciar maiúsculas (<code>-i</code>), aceitando "ou" com <code>|</code> (<code>-E</code>). Veja <a href="grep.html">grep</a>.</dd>
-  <dt>'firmware|wlan|rtl'</dt><dd>Linhas que falam de firmware, de placas Wi-Fi (<code>wlan</code>) ou de chips Realtek (<code>rtl</code>).</dd>
-</dl>
-
-<p>Num computador com o problema, o sinal típico é uma linha de firmware que faltou (<strong>ilustrativa</strong>):</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> dmesg | grep -i -E 'firmware|wlan|rtl'
-[    6.112233] usb 1-3: Direct firmware load for rtw88/rtw8822b_fw.bin failed with error -2   « faltou o firmware
-</pre>
-
-<p>(<code>Direct firmware load … failed with error -2</code> = "a carga do firmware … falhou, erro −2", isto é, arquivo não encontrado.) Se não aparece nenhuma linha sobre o adaptador, o kernel não tem driver para ele. No laboratório, o mesmo comando mostrou só as conexões da placa virtual (<code>wlan0: authenticated</code>, <code>wlan0: associated</code>), sinal de que ali estava tudo bem.</p>
-
-<h3>Por que alguns adaptadores não funcionam no live</h3>
-
-<p>Uma placa precisa de duas coisas: um <strong>driver</strong> (o código que o kernel usa para falar com ela) e, quase sempre, um <strong>firmware</strong> (um programinha que roda dentro da própria placa). A ISO traz o pacote <code>linux-firmware</code> inteiro e os drivers que fazem parte do kernel. O kernel da ISO de junho de 2026 (7.0.10) já traz drivers para muitos chips Realtek USB; esta é a lista real dos módulos com <code>u</code> (de USB) no fim:</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> ls /usr/lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtw88/ | grep 'u\.ko'
-rtw88_8723du.ko.zst
-rtw88_8812au.ko.zst
-rtw88_8814au.ko.zst
-rtw88_8821au.ko.zst
-rtw88_8821cu.ko.zst
-rtw88_8822bu.ko.zst
-rtw88_8822cu.ko.zst
-#> ls /usr/lib/modules/$(uname -r)/kernel/drivers/net/wireless/realtek/rtw89/ | grep 'u\.ko'
-rtw89_8851bu.ko.zst
-rtw89_8852au.ko.zst
-rtw89_8852bu.ko.zst
-rtw89_8852cu.ko.zst
-</pre>
-
-<p>(O <code>grep 'u\.ko'</code> deixa só os nomes terminados em <code>u.ko</code>; o <code>$(uname -r)</code> é trocado pela versão do kernel em uso. Há também o <code>rtl8xxxu</code>, que cobre vários chips Realtek USB antigos.) Se o chip do seu adaptador está nessa lista (<code>8822bu</code> = RTL8822BU, por exemplo), ele deve funcionar no live. Os que ficam de fora (chips mais raros, ou modelos que só funcionam bem com o driver do fabricante) dependem de drivers <strong>de fora do kernel</strong>: no Arch, são pacotes do <a href="aur.html">AUR</a> com <code>-dkms</code> no nome (DKMS recompila o driver a cada kernel novo). Esses drivers <strong>não estão na ISO</strong>, e instalá-los exige… internet. Por isso, a saída é:</p>
-
-<ol class="passo">
-  <li>Instale o Arch usando outra conexão: <strong>cabo</strong> ou o <a href="#celular">celular por USB</a>.</li>
-  <li>No sistema instalado, ainda com essa conexão, instale o driver do AUR (o nome do pacote depende do chip: procure pelo número do chip no <a href="https://aur.archlinux.org/">AUR</a>; veja <a href="yay-paru.html">yay e paru</a>) e o pacote <code>linux-headers</code>, que o DKMS precisa.</li>
-  <li>Reinicie e conecte no Wi-Fi com o NetworkManager (<a href="primeiro-boot.html">Primeiro Boot e Rede</a>).</li>
-</ol>
-
-<h3>Meu Wi-Fi não aparece: o que fazer</h3>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>O que você vê</th><th>Provável causa</th><th>O que fazer</th></tr>
-<tr><td><code>wlan0</code> no <code>ip link</code>, mas <code>Powered off</code> no <code>device list</code></td><td>Modo avião (rfkill)</td><td><code>rfkill list</code>; <code>rfkill unblock wifi</code>; <code>device wlan0 set-property Powered on</code> (<a href="#bloqueio">acima</a>)</td></tr>
-<tr><td><code>Hard blocked: yes</code></td><td>Chave física, tecla de Wi-Fi ou opção da BIOS</td><td>Ligue na chave, na tecla (<kbd>Fn</kbd>+…) ou no setup da BIOS/UEFI</td></tr>
-<tr><td>Nada <code>wl…</code>; o adaptador aparece no <code>lsusb</code>/<code>lspci</code>; <code>dmesg</code> fala de <code>firmware … failed</code></td><td>Falta o arquivo de firmware</td><td>Use uma ISO mais nova (o <code>linux-firmware</code> é atualizado todo mês); senão, instale por cabo ou celular e resolva depois</td></tr>
-<tr><td>Nada <code>wl…</code>; o adaptador aparece no <code>lsusb</code>; o <code>dmesg</code> não fala nada dele</td><td>Sem driver no kernel (chip fora da lista)</td><td>Instale por cabo ou celular; depois, o driver <code>-dkms</code> do AUR</td></tr>
-<tr><td>O adaptador nem aparece no <code>lsusb</code></td><td>Porta, cabo extensor ou o próprio adaptador</td><td>Outra porta USB (de preferência direto no computador, sem hub); teste em outro computador</td></tr>
-<tr><td>A placa aparece, mas a sua rede não está no <code>get-networks</code></td><td>Longe do roteador, rede só em 5 GHz numa placa de 2,4 GHz, ou rede oculta</td><td><code>scan</code> de novo; chegue perto; <code>connect-hidden</code></td></tr>
-</table>
-</div>
-
-<div class="tip">
-<strong>Vai comprar um adaptador Wi-Fi USB?</strong>
-<p>Antes de comprar, pesquise o <strong>chip</strong> (não a marca da caixa) e se ele funciona no Linux "sem driver extra" (<em>in-kernel</em>). E tenha sempre um plano B para o dia da instalação: um cabo de rede ou o celular por USB. Veja também a dica em <a href="preparar.html">Baixar e Verificar a ISO</a>.</p>
-</div>
-
-<hr>
-
-<h2 id="celular">Internet do celular por USB (ancoragem)</h2>
-
-<p>Sem cabo de rede e com o Wi-Fi sem funcionar? O celular resolve. A <strong>ancoragem USB</strong> (<em>USB tethering</em>) faz o celular emprestar a internet dele para o computador (no Android, os dados móveis <strong>ou</strong> o Wi-Fi em que ele está conectado; no iPhone, os dados móveis), pelo cabo USB. Para o Linux, o celular vira uma <strong>placa de rede com cabo</strong>, e por isso funciona sozinho no live, sem driver nem senha.</p>
-
-<h3>Ligar no celular</h3>
-
-<ol class="passo">
-  <li>Ligue o celular no computador com um cabo USB <strong>de dados</strong> (alguns cabos baratos só carregam).</li>
-  <li><strong>Android:</strong> abra <em>Configurações → Rede e internet → Ponto de acesso e tethering</em> (o nome muda conforme a marca: "Roteador Wi-Fi e ancoragem", "Hotspot móvel e tethering", "Conexões → Ancoragem") e ligue <strong>Tethering USB</strong> / <strong>Ancoragem USB</strong>. A opção só fica disponível com o cabo já conectado.</li>
-  <li><strong>iPhone:</strong> ligue <em>Ajustes → Acesso Pessoal → Permitir Outras Conexões</em>, conecte o cabo e, se o iPhone perguntar "Confiar neste computador?", toque em <strong>Confiar</strong>. A ISO traz o <code>usbmuxd</code> (1.1.1) e o driver <code>ipheth</code>, que o iPhone precisa, e o <code>usbmuxd</code> liga sozinho quando o iPhone é conectado.</li>
-  <li>No live, espere uns 5 segundos e teste com <code>ping -c 3 archlinux.org</code>.</li>
-</ol>
-
-<p>O que aparece no <code>ip link</code> (<strong>ilustrativo</strong>: a ancoragem não foi testada no laboratório, que é uma VM sem USB):</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> ip -brief link
-lo               UNKNOWN        00:00:00:00:00:00 &lt;LOOPBACK,UP,LOWER_UP&gt;
-wlan0            DOWN           3c:a9:f4:12:34:56 &lt;NO-CARRIER,BROADCAST,MULTICAST,UP&gt;
-enp0s20f0u2      UP             9a:3f:21:c4:5e:07 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;   « o celular
-</pre>
-
-<p>O nome da placa nova depende da porta USB e do celular: <code>enp0s20f0u2</code> (<code>u2</code> = porta USB 2), <code>enp0s26u1u2c4i2</code> (comum com iPhone) ou, às vezes, <code>usb0</code>. Os drivers que transformam o celular em placa de rede vêm no kernel da ISO (conferido no live do laboratório: <code>rndis_host</code>, <code>cdc_ether</code> e <code>cdc_ncm</code> para Android, <code>ipheth</code> para iPhone, na pasta <code>drivers/net/usb/</code>).</p>
-
-<h3>Por que funciona sozinho: o 20-ethernet.network</h3>
-
-<p>O live traz quatro arquivos de configuração do <code>systemd-networkd</code> em <code>/etc/systemd/network/</code>. Este é o que vale para cabo e para o celular (real, da ISO):</p>
-
-<pre class="file" data-file="/etc/systemd/network/20-ethernet.network (no live)">[Match]
-Type=ether
-# Exclude virtual Ethernet interfaces
-Kind=!*
-
-[Link]
-RequiredForOnline=routable
-
-[Network]
-DHCP=yes
-MulticastDNS=yes
-
-# systemd-networkd does not set per-interface-type default route metrics
-# https://github.com/systemd/systemd/issues/17698
-# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
-# Use values from NetworkManager. From nm_device_get_route_metric_default in
-# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
-[DHCPv4]
-RouteMetric=100
-
-[IPv6AcceptRA]
-RouteMetric=100</pre>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Linha</th><th>O que quer dizer</th></tr>
-<tr><td><code>[Match]</code> <code>Type=ether</code></td><td>"Vale para toda placa do tipo cabo (Ethernet)." O celular em ancoragem se apresenta como Ethernet, então entra aqui.</td></tr>
-<tr><td><code>Kind=!*</code></td><td>"…menos as virtuais" (pontes, VPNs, containers). O <code>#</code> da linha de cima é um comentário.</td></tr>
-<tr><td><code>RequiredForOnline=routable</code></td><td>A placa só conta como "online" quando tem rota para fora.</td></tr>
-<tr><td><code>DHCP=yes</code></td><td><strong>O segredo:</strong> pedir um endereço por DHCP a quem estiver do outro lado (o roteador, ou o celular, que faz papel de roteador).</td></tr>
-<tr><td><code>MulticastDNS=yes</code></td><td>Achar outros aparelhos da rede pelo nome (<code>.local</code>).</td></tr>
-<tr><td><code>RouteMetric=100</code></td><td>A "prioridade" desta conexão (quanto <strong>menor</strong>, mais preferida). Veja <a href="#ordem">qual conexão o live prefere</a>.</td></tr>
-</table>
-</div>
-
-<p>O comentário em inglês diz: "o systemd-networkd não define métricas por tipo de placa; definimos aqui, para que o cabo seja preferido ao Wi-Fi e o Wi-Fi à banda larga móvel, usando os valores do NetworkManager".</p>
-
 <div class="note">
-<strong>E o celular como roteador Wi-Fi?</strong>
-<p>Também funciona: ligue o "Ponto de acesso Wi-Fi" (hotspot) do celular e conecte no live com o <code>iwctl</code>, como em qualquer rede. Mas, se o problema é justamente o Wi-Fi do computador, só o cabo USB resolve. Pelo cabo, o celular ainda carrega a bateria enquanto isso.</p>
+<strong>O Wi-Fi não colabora?</strong>
+<p>Se a placa aparece <code>Powered off</code>, o <code>iwctl</code> responde <code>No station on device</code> ou nem existe placa <code>wl…</code>, o problema não é o <code>iwctl</code>: é o rádio bloqueado (modo avião) ou falta de driver. Isso tem uma aula própria: <a href="wifi-problemas-live.html">Wi-Fi que Não Funciona (rfkill, drivers)</a>. E, enquanto o Wi-Fi não funciona, o plano B é o celular no cabo USB: <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>.</p>
 </div>
-
-<hr>
-
-<h2 id="modem">Modem 4G/5G (WWAN): mmcli</h2>
-
-<p>Alguns notebooks (principalmente corporativos) têm um <strong>modem de celular interno</strong>, com lugar para um chip; também existem modems USB ("modem 4G"). Para o Linux, isso é uma placa <code>ww…</code> (<em>wireless WAN</em>), controlada pelo <code>ModemManager</code>, que o live já deixa ligado. A tela de boas-vindas avisa: <em>For mobile broadband (WWAN) modems, connect with the mmcli utility</em>.</p>
-
-<p>Primeiro, liste os modems. Saída real (a VM não tem modem):</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> mmcli -L
-No modems were found
-#> echo $?
-0
-#> systemctl is-active ModemManager
-active
-</pre>
-
-<p><code>No modems were found</code> = "nenhum modem foi encontrado" (o código é <code>0</code>: não é erro, só a lista vazia). Com um modem, os passos são estes (<strong>ilustrativos</strong>, sem modem no laboratório; formato da Arch Wiki):</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> mmcli -L
-    /org/freedesktop/ModemManager1/Modem/0 [Quectel] EM05-G           « o modem número 0
-#> mmcli -m 0                                                         « detalhes: estado, operadora, sinal
-#> mmcli -m 0 --simple-connect="apn=zap.vivo.com.br,user=vivo,password=vivo"
-successfully connected the modem
-</pre>
-
-<dl class="anatomy">
-  <dt>mmcli</dt><dd>(<em>ModemManager command line interface</em>) O programa que conversa com o <code>ModemManager</code>.</dd>
-  <dt>-L</dt><dd>(<em>list</em>) Lista os modems, cada um com um número.</dd>
-  <dt>-m 0</dt><dd>(<em>modem</em>) Escolhe o modem 0.</dd>
-  <dt>--simple-connect="apn=…"</dt><dd>Conecta usando o <strong>APN</strong> (<em>Access Point Name</em>), o "endereço de internet" da operadora. Algumas pedem também usuário e senha (<code>user=…,password=…</code>).</dd>
-</dl>
-
-<p>Exemplos de APN das operadoras brasileiras (outubro de 2026; <strong>confira no site da sua operadora</strong>, eles mudam e variam entre planos):</p>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Operadora</th><th>APN</th><th>Usuário / senha</th></tr>
-<tr><td>Vivo</td><td><code>zap.vivo.com.br</code></td><td><code>vivo</code> / <code>vivo</code></td></tr>
-<tr><td>Claro</td><td><code>claro.com.br</code></td><td><code>claro</code> / <code>claro</code></td></tr>
-<tr><td>TIM</td><td><code>timbrasil.br</code></td><td><code>tim</code> / <code>tim</code></td></tr>
-</table>
-</div>
-
-<p>Depois de conectar, quem pede o endereço é de novo o <code>systemd-networkd</code>, com este arquivo real da ISO (parecido com o do cabo; muda o <code>Type</code> e a métrica):</p>
-
-<pre class="file" data-file="/etc/systemd/network/20-wwan.network (no live)">[Match]
-Type=wwan
-
-[Link]
-RequiredForOnline=routable
-
-[Network]
-DHCP=yes
-
-# systemd-networkd does not set per-interface-type default route metrics
-# https://github.com/systemd/systemd/issues/17698
-# Explicitly set route metric, so that Ethernet is preferred over Wi-Fi and Wi-Fi is preferred over mobile broadband.
-# Use values from NetworkManager. From nm_device_get_route_metric_default in
-# https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/blob/main/src/core/devices/nm-device.c
-[DHCPv4]
-RouteMetric=700
-
-[IPv6AcceptRA]
-RouteMetric=700</pre>
-
-<p>Alguns modems não entregam o endereço por DHCP: o <code>mmcli -m 0</code> mostra, na parte do <em>bearer</em> (a conexão de dados), o método <code>static</code> e o endereço que deve ser configurado à mão. Nesse caso, siga a seção <em>Mobile broadband modem</em> da Arch Wiki, ou, mais simples, use o celular por USB.</p>
-
-<hr>
-
-<h2 id="ordem">Cabo, Wi-Fi e celular juntos: qual o live usa?</h2>
-
-<p>Você pode ter mais de uma conexão ao mesmo tempo (cabo e Wi-Fi, por exemplo). O live usa a de <strong>menor métrica</strong>. Os três arquivos <code>20-*.network</code> da ISO definem:</p>
-
-<div class="table-wrap">
-<table class="ref">
-<tr><th>Arquivo</th><th>Vale para</th><th><code>RouteMetric</code></th><th>Preferência</th></tr>
-<tr><td><code>20-ethernet.network</code></td><td>cabo e celular por USB (<code>Type=ether</code>)</td><td><code>100</code></td><td>1ª</td></tr>
-<tr><td><code>20-wlan.network</code></td><td>Wi-Fi (<code>Type=wlan</code>)</td><td><code>600</code></td><td>2ª</td></tr>
-<tr><td><code>20-wwan.network</code></td><td>modem 4G/5G (<code>Type=wwan</code>)</td><td><code>700</code></td><td>3ª</td></tr>
-</table>
-</div>
-
-<p>O <code>20-wlan.network</code> é igual ao do cabo, com <code>Type=wlan</code> e <code>RouteMetric=600</code>. No laboratório, com o cabo e o Wi-Fi conectados ao mesmo tempo, as rotas reais mostram as duas "saídas" (<code>default</code>), e a do cabo ganha:</p>
-
-<pre class="term" data-host="archiso" data-user="root">#> ip -brief address
-lo               UNKNOWN        127.0.0.1/8 ::1/128
-enp0s3           UP             10.0.2.15/24 metric 100 fd17:625c:f037:2:a00:27ff:fe3e:4495/64 …   « cabo: métrica 100
-hwsim0           DOWN
-wlan0            UP             192.168.50.144/24 metric 600 fe80::ff:fe00:0/64                     « Wi-Fi: métrica 600
-wlan1            UP             192.168.50.1/24 fe80::ff:fe00:100/64
-wlan2            UP             fe80::ff:fe00:200/64
-#> ip route
-default via 10.0.2.2 dev enp0s3 proto dhcp src 10.0.2.15 metric 100           « saída pelo cabo (vence)
-default via 192.168.50.1 dev wlan0 proto dhcp src 192.168.50.144 metric 600   « saída pelo Wi-Fi (reserva)
-…
-</pre>
-
-<p><code>default via 10.0.2.2 dev enp0s3</code> = "para qualquer destino, vá pelo roteador 10.0.2.2, pela placa enp0s3". Se o cabo sair, a rota dele some e o Wi-Fi assume sozinho. Mais sobre <code>ip</code> em <a href="ip.html">ip, ping, ss</a>.</p>
 
 <hr>
 
@@ -935,7 +643,7 @@ pipe 3
 
 <ol class="passo">
   <li>Ligue o computador pelo pendrive do Arch.</li>
-  <li>Conecte o live à internet (esta aula: cabo, <code>iwctl</code> ou celular).</li>
+  <li>Conecte o live à internet (cabo ou <code>iwctl</code>, desta aula, ou o <a href="celular-modem-live.html#celular">celular por USB</a>).</li>
   <li>Monte a partição raiz do sistema instalado (e a EFI, se for mexer no boot): <code>mount /dev/sda3 /mnt</code> (use a sua; veja <a href="formatar-montar.html">Formatar e Montar</a>).</li>
   <li>Entre nele: <code>arch-chroot /mnt</code>. A partir daqui, os comandos valem para o sistema do disco, mas usando a internet do live.</li>
   <li>Instale e habilite: <code>pacman -S networkmanager</code> e <code>systemctl enable NetworkManager</code>.</li>
@@ -988,8 +696,8 @@ Invalid network name 'casadaana'
 
 <div class="cenario">
 <strong>"No station on device: 'wlan0'"</strong>
-<p><strong>O que aconteceu:</strong> a placa está desligada (<code>Powered off</code>), em geral por bloqueio de rádio (modo avião), ou não está em modo <code>station</code>. Saída real no laboratório depois de um <code>rfkill block wifi</code>.</p>
-<p><strong>Como resolver:</strong> <code>rfkill list</code>; <code>rfkill unblock wifi</code>; <code>iwctl device wlan0 set-property Powered on</code>. Com <code>Hard blocked: yes</code>, só a chave ou a tecla do notebook (<a href="#bloqueio">Wi-Fi bloqueado</a>).</p>
+<p><strong>O que aconteceu:</strong> a placa está desligada (<code>Powered off</code>), em geral pelo modo avião (bloqueio de rádio). Não é erro do comando.</p>
+<p><strong>Como resolver:</strong> <code>rfkill unblock wifi</code> e, se continuar <code>off</code>, <code>iwctl device wlan0 set-property Powered on</code>. Saídas reais, o bloqueio "hard" e o resto em <a href="wifi-problemas-live.html#bloqueio">Wi-Fi bloqueado: rfkill</a>.</p>
 </div>
 
 <div class="cenario">
@@ -1000,26 +708,20 @@ Invalid command. Use the following pattern:
   device &lt;wlan&gt; show                                  Show device info
 </pre>
 <p><strong>O que aconteceu:</strong> "dispositivo wlan9 não encontrado": o nome da placa está errado. A segunda parte só lembra o formato do comando (<code>device &lt;wlan&gt; show</code>, "mostrar informações do dispositivo").</p>
-<p><strong>Como resolver:</strong> veja o nome certo no <code>device list</code>. Se a lista está vazia, o Linux não reconheceu a placa: <a href="#naoaparece">O Wi-Fi não aparece</a>.</p>
+<p><strong>Como resolver:</strong> veja o nome certo no <code>device list</code>. Se a lista está vazia, o Linux não reconheceu a placa: <a href="wifi-problemas-live.html#naoaparece">O Wi-Fi não aparece</a>.</p>
 </div>
 
 <div class="cenario">
 <strong><code>State connected</code>, mas o <code>ping</code> não responde</strong>
 <p><strong>O que aconteceu:</strong> você entrou no Wi-Fi, mas a internet não passa. Causas comuns: o roteador ainda não entregou o endereço (falta a linha <code>IPv4 address</code> no <code>show</code>); o roteador está sem internet; ou é uma rede de hotel, aeroporto ou shopping que exige <strong>login numa página</strong> (portal cativo), coisa que o live, sem navegador gráfico, não consegue fazer.</p>
 <p><strong>Como confirmar:</strong> <code>iwctl station wlan0 show</code> (tem <code>IPv4 address</code>?); <code>ip -brief address</code>; <code>ping -c 3 1.1.1.1</code> (se um número responde e o nome não, o problema é DNS).</p>
-<p><strong>Como resolver:</strong> espere uns segundos e repita; reconecte (<code>station wlan0 disconnect</code> e <code>connect</code>); para rede com página de login, use outra rede ou o celular por USB.</p>
+<p><strong>Como resolver:</strong> espere uns segundos e repita; reconecte (<code>station wlan0 disconnect</code> e <code>connect</code>); para rede com página de login, use outra rede ou o <a href="celular-modem-live.html#celular">celular por USB</a>.</p>
 </div>
 
 <div class="cenario">
 <strong>Rede da universidade ou da empresa (eduroam, "8021x")</strong>
 <p><strong>O que aconteceu:</strong> redes <code>8021x</code> (WPA-Enterprise) pedem usuário, senha e às vezes um certificado; o <code>connect</code> simples não basta.</p>
-<p><strong>Como resolver:</strong> é preciso criar um arquivo <code>/var/lib/iwd/REDE.8021x</code> com as configurações (a seção <em>Enterprise</em> da página <em>iwd</em> da Arch Wiki traz exemplos, inclusive da eduroam). Para a instalação, é bem mais fácil usar o celular por USB.</p>
-</div>
-
-<div class="cenario">
-<strong>O celular está no cabo, mas nada aparece no <code>ip link</code></strong>
-<p><strong>O que aconteceu:</strong> a ancoragem USB não foi ligada no celular, o cabo só carrega (não passa dados), ou, no iPhone, você não tocou em "Confiar".</p>
-<p><strong>Como resolver:</strong> ligue <em>Tethering USB</em> depois de conectar o cabo; teste outro cabo; desbloqueie a tela do celular. O <code>lsusb</code> deve mostrar o celular; o <code>ip link</code>, uma placa nova <code>en…u…</code> ou <code>usb0</code>.</p>
+<p><strong>Como resolver:</strong> é preciso criar um arquivo <code>/var/lib/iwd/REDE.8021x</code> com as configurações (a seção <em>Enterprise</em> da página <em>iwd</em> da Arch Wiki traz exemplos, inclusive da eduroam). Para a instalação, é bem mais fácil usar o <a href="celular-modem-live.html#celular">celular por USB</a>.</p>
 </div>
 
 <hr>
@@ -1040,11 +742,7 @@ Invalid command. Use the following pattern:
 <tr><td><code>station wlan0 disconnect</code></td><td>Desconectar</td></tr>
 <tr><td><code>iwctl --passphrase 'senha' station wlan0 connect REDE</code></td><td>Conectar numa linha só</td></tr>
 <tr><td><code>known-networks list</code> · <code>known-networks REDE forget</code></td><td>Redes salvas / esquecer uma</td></tr>
-<tr><td><code>device wlan0 set-property Powered on</code></td><td>Ligar a placa</td></tr>
-<tr><td><code>rfkill list</code> · <code>rfkill unblock wifi</code></td><td>Ver / tirar o bloqueio de rádio (só o "soft")</td></tr>
-<tr><td><code>lsusb</code> · <code>lspci</code> · <code>dmesg | grep -i -E 'firmware|wlan|rtl'</code></td><td>Investigar placa que não aparece</td></tr>
-<tr><td><code>mmcli -L</code> · <code>mmcli -m 0 --simple-connect="apn=…"</code></td><td>Modem 4G/5G: listar / conectar</td></tr>
-<tr><td><code>ip route</code></td><td>Por qual placa a internet está saindo (menor <code>metric</code> vence)</td></tr>
+<tr><td><code>device wlan0 set-property Powered on</code></td><td>Ligar a placa (se continuar <code>off</code>: <a href="wifi-problemas-live.html#bloqueio">rfkill</a>)</td></tr>
 </table>
 </div>
 
@@ -1065,9 +763,9 @@ Invalid command. Use the following pattern:
 </div>
 
 <div class="exercise">
-<h3>3. Destravar o rádio</h3>
-<p>O <code>rfkill list</code> mostrou <code>Soft blocked: yes</code>. Complete o comando que destrava o Wi-Fi:</p>
-<div class="ex-code">rfkill <input data-answer="unblock" aria-label="ação"> <input data-answer="wifi|wlan|all" aria-label="tipo"></div>
+<h3>3. Rede oculta</h3>
+<p>A rede <code>RedeEscondida</code> não aparece no <code>get-networks</code> porque o roteador não anuncia o nome. Complete:</p>
+<div class="ex-code">iwctl station wlan0 <input data-answer="connect-hidden" aria-label="subcomando"> RedeEscondida</div>
 </div>
 
 <div class="mc" data-answer="2">
@@ -1086,44 +784,12 @@ Invalid command. Use the following pattern:
 <label><input type="radio" name="q5"> Falta o firmware da placa.</label>
 </div>
 
-<div class="mc" data-answer="1">
-<p class="mc-q">6. O <code>rfkill list</code> mostra <code>Hard blocked: yes</code>. O que resolve?</p>
-<label><input type="radio" name="q6"> A chave física, a tecla de Wi-Fi/modo avião do notebook ou a opção na BIOS: nenhum comando destrava um bloqueio "hard".</label>
-<label><input type="radio" name="q6"> <code>rfkill unblock wifi</code>.</label>
-<label><input type="radio" name="q6"> <code>iwctl device wlan0 set-property Powered on</code>.</label>
-<label><input type="radio" name="q6"> Reinstalar o <code>iwd</code>.</label>
-</div>
-
-<div class="mc" data-answer="4">
-<p class="mc-q">7. Por que a internet do celular pelo cabo USB funciona sozinha no live, sem <code>iwctl</code> nem senha?</p>
-<label><input type="radio" name="q7"> Porque o <code>iwd</code> detecta celulares.</label>
-<label><input type="radio" name="q7"> Porque o <code>ModemManager</code> usa o chip do celular.</label>
-<label><input type="radio" name="q7"> Porque o celular instala um driver no computador.</label>
-<label><input type="radio" name="q7"> Porque o celular aparece como uma placa do tipo cabo (Ethernet), e o <code>20-ethernet.network</code> do live pede endereço por DHCP para toda placa desse tipo.</label>
-</div>
-
-<div class="mc" data-answer="2">
-<p class="mc-q">8. O seu adaptador Wi-Fi USB aparece no <code>lsusb</code>, mas não no <code>ip link</code>, e o chip dele precisa de um driver <code>-dkms</code> do AUR. Qual é o caminho?</p>
-<label><input type="radio" name="q8"> Instalar o driver do AUR no live antes do <code>pacstrap</code>, sem internet.</label>
-<label><input type="radio" name="q8"> Instalar o Arch pelo cabo ou pelo celular por USB e, no sistema instalado, instalar o driver do AUR.</label>
-<label><input type="radio" name="q8"> Desistir: o Arch não funciona com adaptadores USB.</label>
-<label><input type="radio" name="q8"> Rodar <code>rfkill unblock wifi</code>.</label>
-</div>
-
 <div class="mc" data-answer="3">
-<p class="mc-q">9. Você conectou o live no Wi-Fi com o <code>iwctl</code> e fez o <code>pacstrap</code> só com <code>base linux linux-firmware</code>. O que acontece no primeiro boot?</p>
-<label><input type="radio" name="q9"> O Wi-Fi conecta sozinho, porque a senha ficou salva.</label>
-<label><input type="radio" name="q9"> O sistema usa o <code>iwctl</code> do pendrive.</label>
-<label><input type="radio" name="q9"> O sistema liga sem programa de Wi-Fi: o <code>iwd</code> e a senha ficaram no live. É preciso voltar ao pendrive, entrar com <code>arch-chroot</code> e instalar o <code>networkmanager</code>.</label>
-<label><input type="radio" name="q9"> O <code>pacstrap</code> recusa a instalação.</label>
-</div>
-
-<div class="mc" data-answer="1">
-<p class="mc-q">10. Cabo e Wi-Fi estão conectados no live. Por onde a internet sai?</p>
-<label><input type="radio" name="q10"> Pelo cabo: a rota dele tem <code>metric 100</code>, menor que a do Wi-Fi (<code>600</code>), e a menor métrica vence.</label>
-<label><input type="radio" name="q10"> Pelo Wi-Fi, porque foi conectado por último.</label>
-<label><input type="radio" name="q10"> Pelos dois ao mesmo tempo, somando a velocidade.</label>
-<label><input type="radio" name="q10"> Por nenhum: duas conexões dão conflito.</label>
+<p class="mc-q">6. Você conectou o live no Wi-Fi com o <code>iwctl</code> e fez o <code>pacstrap</code> só com <code>base linux linux-firmware</code>. O que acontece no primeiro boot?</p>
+<label><input type="radio" name="q6"> O Wi-Fi conecta sozinho, porque a senha ficou salva.</label>
+<label><input type="radio" name="q6"> O sistema usa o <code>iwctl</code> do pendrive.</label>
+<label><input type="radio" name="q6"> O sistema liga sem programa de Wi-Fi: o <code>iwd</code> e a senha ficaram no live. É preciso voltar ao pendrive, entrar com <code>arch-chroot</code> e instalar o <code>networkmanager</code>.</label>
+<label><input type="radio" name="q6"> O <code>pacstrap</code> recusa a instalação.</label>
 </div>
 
 <hr>
@@ -1132,16 +798,16 @@ Invalid command. Use the following pattern:
 <ul>
   <li>O live precisa de internet porque o <code>pacstrap</code>/<code>archinstall</code> baixam tudo. Teste com <code>ping -c 3 archlinux.org</code>.</li>
   <li><code>ip link</code> mostra as placas: <code>en…</code> cabo, <code>wl…</code> Wi-Fi (<code>wlan0</code> no live), <code>ww…</code> modem, <code>usb0</code>/<code>en…u…</code> celular.</li>
-  <li>Cabo e celular por USB funcionam sozinhos (<code>20-ethernet.network</code>, DHCP).</li>
+  <li>Cabo funciona sozinho (<code>20-ethernet.network</code>, DHCP).</li>
   <li>Wi-Fi: <code>iwctl</code> → <code>device list</code> → <code>station wlan0 scan</code> → <code>get-networks</code> → <code>connect REDE</code> (senha) → <code>show</code> (<code>State connected</code>) → <code>exit</code>. Senha certa = silêncio; errada = <code>Operation failed</code>.</li>
-  <li>Bloqueado: <code>rfkill unblock wifi</code> (o "hard" só pela chave/tecla). Adaptador que não aparece: <code>lsusb</code>, <code>dmesg</code>; se precisar de driver do AUR, instale pelo cabo ou celular.</li>
-  <li>Modem 4G/5G: <code>mmcli -L</code> e <code>mmcli -m 0 --simple-connect="apn=…"</code>.</li>
+  <li>Rede com espaço: aspas (<code>"Rede da Ana"</code>); rede oculta: <code>connect-hidden</code>; redes salvas: <code>known-networks list</code> / <code>forget</code>.</li>
+  <li>Placa <code>Powered off</code> ou inexistente: <a href="wifi-problemas-live.html">Wi-Fi que Não Funciona</a>. Sem Wi-Fi nenhum: <a href="celular-modem-live.html">Celular por USB e Modem 4G</a>.</li>
   <li>O Wi-Fi do live não vai para o disco: ponha <code>networkmanager</code> no <code>pacstrap</code> e <code>systemctl enable NetworkManager</code> no chroot.</li>
 </ul>
 
-<p>Internet funcionando: hora de preparar o disco em <a href="particionar.html">Particionar o Disco</a> (ou, se preferir o instalador guiado, <a href="archinstall.html">archinstall</a>).</p>
+<p>Wi-Fi bloqueado ou sem driver? A próxima aula é <a href="wifi-problemas-live.html">Wi-Fi que Não Funciona</a>. Internet funcionando: hora de preparar o disco em <a href="particionar.html">Particionar o Disco</a> (ou, se preferir o instalador guiado, <a href="archinstall.html">archinstall</a>).</p>
 
-<p><strong>Na Arch Wiki:</strong> esta aula aprofunda a seção <a href="https://wiki.archlinux.org/title/Installation_guide#Connect_to_the_internet">Installation guide — Connect to the internet</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). O <code>iwctl</code> completo, redes ocultas, redes corporativas (eduroam) e o formato dos arquivos <code>.psk</code> estão em <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>); placas, drivers, firmware e o <code>rfkill</code> em <a href="https://wiki.archlinux.org/title/Network_configuration/Wireless">Network configuration/Wireless</a> e <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a>; a internet do celular em <a href="https://wiki.archlinux.org/title/Android_tethering#USB_tethering">Android tethering — USB tethering</a> e <a href="https://wiki.archlinux.org/title/IPhone_tethering">iPhone tethering</a>; modems em <a href="https://wiki.archlinux.org/title/Mobile_broadband_modem">Mobile broadband modem</a> e <a href="https://wiki.archlinux.org/title/ModemManager">ModemManager</a>; drivers de fora do kernel em <a href="https://wiki.archlinux.org/title/Dynamic_Kernel_Module_Support">DKMS</a>.</p>
+<p><strong>Na Arch Wiki:</strong> esta aula aprofunda a seção <a href="https://wiki.archlinux.org/title/Installation_guide#Connect_to_the_internet">Installation guide — Connect to the internet</a> (<a href="https://wiki.archlinux.org/title/Installation_guide_(Portugu%C3%AAs)">em português</a>). O <code>iwctl</code> completo, redes ocultas, redes corporativas (eduroam) e o formato dos arquivos <code>.psk</code> estão em <a href="https://wiki.archlinux.org/title/Iwd">iwd</a> (<a href="https://wiki.archlinux.org/title/Iwd_(Portugu%C3%AAs)">em português</a>), seções <a href="https://wiki.archlinux.org/title/Iwd#iwctl">iwctl</a> e <a href="https://wiki.archlinux.org/title/Iwd#Network_configuration">Network configuration</a>; os nomes das placas, o DHCP e o que instalar para ter rede no sistema novo em <a href="https://wiki.archlinux.org/title/Network_configuration">Network configuration</a> (<a href="https://wiki.archlinux.org/title/Network_configuration_(Portugu%C3%AAs)">em português</a>); os arquivos <code>.network</code> do live em <a href="https://wiki.archlinux.org/title/Systemd-networkd">systemd-networkd</a>.</p>
 
 <div class="pager"></div>
 
