@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arch Redirecionamento — &gt;, &gt;&gt;, 2&gt;, /dev/null e tee | Guia Arch</title>
+<meta name="description" content="Redirecionamento no Arch Linux: entrada, saída e erro (stdin, stdout, stderr), &gt;, &gt;&gt;, &lt;, 2&gt;, 2&gt;&amp;1, &amp;&gt;, /dev/null, here-doc, noclobber e como gravar em arquivos do root com sudo tee, com saídas reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Arch <span class="hl">Redirecionamento</span></h1>
+
+<p class="intro">Normalmente, o que um comando responde aparece na tela. <strong>Redirecionar</strong> é mandar essa resposta para outro lugar, como um arquivo, ou pegar a entrada de um arquivo em vez do teclado. Com três ou quatro símbolos você salva a lista dos seus pacotes, separa erros de resultados e cria arquivos de configuração.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são os três canais de todo comando: entrada, saída e erro.</li>
+  <li>A diferença entre <code>&gt;</code> (substitui) e <code>&gt;&gt;</code> (acrescenta), e a proteção <code>noclobber</code>.</li>
+  <li>Como separar ou juntar erros com <code>2&gt;</code>, <code>2&gt;&amp;1</code>, <code>&amp;&gt;</code> e <code>/dev/null</code>.</li>
+  <li>A usar <code>&lt;</code>, here-doc e here-string para dar entrada a um comando.</li>
+  <li>Por que <code>sudo echo … &gt; /etc/arquivo</code> dá "Permissão negada", e como gravar como root com <code>sudo tee</code>.</li>
+</ul>
+</div>
+
+<p>Quem faz o redirecionamento é o <strong>shell</strong> (o Bash), não o comando. Por isso tudo aqui vale para qualquer programa: <code>ls</code>, <code>pacman</code>, <code>grep</code>… O shell do Arch é o Bash 5.3 (veja <a href="terminal.html">O Terminal no Arch</a>).</p>
+
+<hr>
+
+<h2>Os três canais de um comando</h2>
+<p>Todo programa que roda no terminal nasce com três "canos" ligados. Cada um tem um número (o <strong>descritor de arquivo</strong>), e é por esse número que você o redireciona.</p>
+
+<pre class="syntax">               ┌───────────┐ ── 1 · saída (stdout) ──►  tela
+  teclado ──►  │  comando  │
+  0 · entrada  └───────────┘ ── 2 · erro (stderr)  ──►  tela</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Número</th><th>Nome</th><th>Em inglês</th><th>Para onde vai, sem redirecionar</th></tr>
+<tr><td><code>0</code></td><td>Entrada padrão</td><td><em>standard input</em>, stdin</td><td>Vem do teclado</td></tr>
+<tr><td><code>1</code></td><td>Saída padrão</td><td><em>standard output</em>, stdout</td><td>Vai para a tela: a resposta "normal"</td></tr>
+<tr><td><code>2</code></td><td>Saída de erro</td><td><em>standard error</em>, stderr</td><td>Vai para a tela também: as mensagens de erro</td></tr>
+</table>
+</div>
+
+<p>Dá para ver os três canais de verdade. No Linux, a pasta <code>/proc/self/fd</code> mostra os descritores do próprio comando que está rodando:</p>
+
+<pre class="term">$ ls -l /proc/self/fd
+total 0
+lrwx------ 1 ana ana 64 16 out 15:01 0 -&gt; /dev/pts/0     « entrada: o terminal
+lrwx------ 1 ana ana 64 16 out 15:01 1 -&gt; /dev/pts/0     « saída: o terminal
+lrwx------ 1 ana ana 64 16 out 15:01 2 -&gt; /dev/pts/0     « erro: o terminal
+lr-x------ 1 ana ana 64 16 out 15:01 3 -&gt; /proc/13267/fd « (a pasta que o ls abriu para ler)</pre>
+
+<p>Os três apontam para <code>/dev/pts/0</code>, o seu terminal. Como a saída e o erro aparecem na mesma tela, parecem uma coisa só. Mas são canais separados, e isso vai fazer diferença daqui a pouco. Redirecionar é justamente trocar para onde um desses números aponta.</p>
+
+<hr>
+
+<h2>Gravar a saída num arquivo: <code>&gt;</code></h2>
+<p>O sinal <code>&gt;</code> (maior que) pega a saída do comando e grava num arquivo, em vez de mostrar na tela.</p>
+
+<dl class="anatomy">
+  <dt>ls Documentos</dt><dd>O comando, que normalmente mostraria a lista na tela.</dd>
+  <dt>&gt;</dt><dd>"Mande a saída (canal 1) para…" (é o mesmo que <code>1&gt;</code>).</dd>
+  <dt>lista.txt</dt><dd>…este arquivo. Se não existir, é criado.</dd>
+</dl>
+
+<pre class="term">$ ls Documentos &gt; lista.txt
+$ cat lista.txt
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt</pre>
+
+<p>Repare em duas coisas:</p>
+<ul>
+  <li>O primeiro comando não mostrou nada: a lista foi para o arquivo, não para a tela.</li>
+  <li>No arquivo, cada nome está numa linha. Quando a saída não é a tela, o <code>ls</code> não organiza em colunas nem colore.</li>
+</ul>
+
+<h3>Um uso muito do Arch: a lista dos seus pacotes</h3>
+<p>Antes de reinstalar o sistema, todo usuário de Arch salva a lista de pacotes que instalou de propósito. O <code>pacman -Qqe</code> lista só os nomes (<code>q</code> = <em>quiet</em>) dos pacotes explícitos (<code>e</code>); com <code>&gt;</code>, vira um arquivo:</p>
+
+<pre class="term">$ pacman -Qqe &gt; pacotes.txt
+$ wc -l pacotes.txt
+45 pacotes.txt                      « 45 pacotes instalados de propósito
+$ head -n 3 pacotes.txt
+arch-install-scripts
+base
+base-devel</pre>
+
+<p>Mais adiante você vai ver como usar esse arquivo de volta, com <code>&lt;</code>. As opções do <code>-Q</code> estão em <a href="pacman.html">pacman: o Básico</a>.</p>
+
+<h3>Atenção: <code>&gt;</code> substitui o conteúdo</h3>
+<p>Se o arquivo já existe, o <code>&gt;</code> apaga tudo o que havia nele antes de gravar. Ele não pergunta.</p>
+
+<pre class="term">$ echo "primeira linha" &gt; teste.txt
+$ echo "segunda linha" &gt; teste.txt
+$ cat teste.txt
+segunda linha                       « a primeira sumiu</pre>
+
+<div class="warning">
+<strong>O arquivo é esvaziado antes de o comando rodar</strong>
+<p>O shell prepara o redirecionamento <strong>antes</strong> de executar o comando. Por isso, <code>sort frutas.txt &gt; frutas.txt</code> apaga o arquivo: quando o <code>sort</code> vai ler, ele já está vazio. Grave sempre num arquivo diferente (ou use <code>sed -i</code>, veja <a href="sed.html">sed</a>).</p>
+</div>
+
+<h2>Acrescentar ao final: <code>&gt;&gt;</code></h2>
+<p>Dois sinais, <code>&gt;&gt;</code>, gravam no <strong>fim</strong> do arquivo, sem apagar o que já estava lá. É o que você quer para diários, logs e listas.</p>
+
+<dl class="anatomy">
+  <dt>echo "kiwi"</dt><dd>Produz uma linha de texto.</dd>
+  <dt>&gt;&gt;</dt><dd>"Acrescente ao final de…" (em inglês, <em>append</em>).</dd>
+  <dt>frutas.txt</dt><dd>O arquivo. Também é criado se não existir.</dd>
+</dl>
+
+<pre class="term">$ echo "kiwi" &gt;&gt; frutas.txt
+$ tail -n 3 frutas.txt
+maçã
+banana
+kiwi                                « a linha nova entrou no fim</pre>
+
+<p>Um uso clássico é registrar quando algo aconteceu:</p>
+
+<pre class="term">$ echo "$(date +%F) backup feito" &gt;&gt; diario.txt
+$ cat diario.txt
+2026-10-16 backup feito</pre>
+
+<div class="try" data-goal="contains:~/downloads.txt=archlinux-x86_64.iso,contains:~/downloads.txt=fim da lista" data-solucao="ls Downloads &gt; downloads.txt;;echo &quot;fim da lista&quot; &gt;&gt; downloads.txt">
+<p class="try-task"><strong>Missão:</strong> grave a lista de arquivos da pasta <code>Downloads</code> num arquivo chamado <code>downloads.txt</code>. Depois acrescente, no fim dele, a linha <code>fim da lista</code>. Confira com <code>cat downloads.txt</code>.</p>
+</div>
+
+<h3>A proteção <code>noclobber</code></h3>
+<p>Como o <code>&gt;</code> apaga sem perguntar, o Bash tem uma trava opcional: <code>set -o noclobber</code> (<em>clobber</em> = "atropelar"). Com ela ligada, o <code>&gt;</code> se recusa a sobrescrever um arquivo que já existe. O <code>&gt;&gt;</code> continua funcionando, e o <code>&gt;|</code> força a sobrescrita quando você tem certeza:</p>
+
+<pre class="term">$ set -o noclobber
+$ echo "teste" &gt; tudo.txt
+bash: tudo.txt: impossível sobrescrever arquivo existente
+$ echo $?
+1
+$ echo "teste" &gt;| tudo.txt          « &gt;| = "sim, eu quero sobrescrever"
+$ cat tudo.txt
+teste
+$ set +o noclobber                  « desliga a trava</pre>
+
+<p>O <code>.bashrc</code> que o Arch cria para cada usuário <strong>não</strong> liga essa trava. Se quiser ela sempre, acrescente <code>set -o noclobber</code> ao seu <code>~/.bashrc</code> (veja <a href="bashrc.html">.bashrc, alias, PATH</a>).</p>
+
+<hr>
+
+<h2>Prova: o erro "vaza" para a tela</h2>
+<p>Agora vamos pedir dois itens ao <code>ls</code>: a pasta <code>Documentos</code>, que existe, e <code>nada</code>, que não existe. A saída vai para um arquivo. Veja o que acontece:</p>
+
+<pre class="term">$ ls Documentos nada &gt; saida.txt
+ls: não foi possível acessar 'nada': Arquivo ou diretório inexistente    « apareceu mesmo assim!
+$ echo $?
+2                                   « o ls avisa que houve problema
+$ cat saida.txt
+Documentos:
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt                       « o arquivo só tem a parte boa</pre>
+
+<p>O <code>&gt;</code> redireciona só o canal 1 (saída). A mensagem de erro sai pelo canal 2, que continua apontando para a tela. Para mexer no erro, você precisa dizer o número dele.</p>
+
+<h2>Redirecionar erros: <code>2&gt;</code></h2>
+
+<dl class="anatomy">
+  <dt>ls Documentos nada</dt><dd>Um comando que vai produzir saída <strong>e</strong> erro.</dd>
+  <dt>2&gt;</dt><dd>"Mande o canal 2 (erros) para…". <strong>Sem espaço</strong> entre o <code>2</code> e o <code>&gt;</code>.</dd>
+  <dt>erros.txt</dt><dd>…este arquivo.</dd>
+</dl>
+
+<pre class="term">$ ls Documentos nada 2&gt; erros.txt
+Documentos:
+acesso.log  alunos.csv  notas.txt  projetos  relatorio.odt     « a saída boa veio para a tela
+$ cat erros.txt
+ls: não foi possível acessar 'nada': Arquivo ou diretório inexistente   « o erro foi para o arquivo</pre>
+
+<p>Para não apagar erros antigos, use <code>2&gt;&gt;</code>, que acrescenta.</p>
+
+<div class="try" data-goal="contains:~/erros.txt=nada,out:ferias.jpg" data-solucao="ls Imagens nada 2&gt; erros.txt">
+<p class="try-task"><strong>Missão:</strong> rode <code>ls Imagens nada</code> mandando <strong>só os erros</strong> para o arquivo <code>erros.txt</code>. A lista de imagens deve continuar aparecendo na tela.</p>
+</div>
+
+<h2>Jogar fora: <code>/dev/null</code></h2>
+<p><code>/dev/null</code> é um arquivo especial que descarta tudo o que recebe. É o "buraco negro" do Linux: qualquer um pode escrever nele, e ler dele não devolve nada.</p>
+
+<pre class="term">$ ls -l /dev/null
+crw-rw-rw- 1 root root 1, 3 16 out 14:51 /dev/null    « c = dispositivo; todos podem ler e escrever
+$ echo "some" &gt; /dev/null
+$ cat /dev/null                     « não mostra nada: o texto sumiu
+$ </pre>
+
+<p>Ele é útil quando você só quer o resultado e não se importa com os avisos. Exemplo: ler a primeira linha de três arquivos do <code>/etc</code>, sendo que um deles (<code>/etc/shadow</code>, as senhas) só o root pode ler:</p>
+
+<pre class="term">$ head -n 1 /etc/hostname /etc/shadow /etc/locale.conf
+==&gt; /etc/hostname &lt;==
+notebook
+head: não foi possível abrir '/etc/shadow' para leitura: Permissão negada    « ruído
+
+==&gt; /etc/locale.conf &lt;==
+LANG=pt_BR.UTF-8
+$ head -n 1 /etc/hostname /etc/shadow /etc/locale.conf 2&gt;/dev/null
+==&gt; /etc/hostname &lt;==
+notebook
+
+==&gt; /etc/locale.conf &lt;==
+LANG=pt_BR.UTF-8                    « só o que interessa</pre>
+
+<h3>"Está instalado?" — só o código de saída</h3>
+<p>Às vezes você não quer ver nada, só saber se deu certo. O <code>pacman -Q</code> responde com o código: <code>0</code> se o pacote está instalado, <code>1</code> se não. A mensagem de erro do pacman sai pelo canal 2:</p>
+
+<pre class="term">$ pacman -Q tmux
+erro: o pacote "tmux" não foi encontrado     « canal 2
+$ echo $?
+1
+$ pacman -Q tmux 2&gt;/dev/null
+$ echo $?
+1                                   « o erro sumiu, mas o código continua
+$ pacman -Q bash &gt; /dev/null
+$ echo $?
+0                                   « bash está instalado
+$ pacman -Q firefox &amp;&gt; /dev/null &amp;&amp; echo "firefox instalado" || echo "firefox não instalado"
+firefox não instalado</pre>
+
+<p>No último, <code>&amp;&gt; /dev/null</code> joga fora saída <strong>e</strong> erro (explicado logo abaixo), e o <code>&amp;&amp;</code>/<code>||</code> escolhe a frase pelo código. É um padrão muito comum em scripts (veja <a href="script-condicionais.html">Condicionais</a>).</p>
+
+<hr>
+
+<h2>Saída e erro no mesmo arquivo: <code>2&gt;&amp;1</code></h2>
+<p>Às vezes você quer tudo junto, por exemplo num log. Para isso, primeiro mande a saída para o arquivo e, depois, diga que o erro (2) vai para o mesmo lugar da saída (1).</p>
+
+<dl class="anatomy">
+  <dt>ls Documentos nada</dt><dd>O comando.</dd>
+  <dt>&gt; tudo.txt</dt><dd>Primeiro: a saída (1) vai para <code>tudo.txt</code>.</dd>
+  <dt>2&gt;&amp;1</dt><dd>Depois: o erro (2) vai para onde o 1 aponta <strong>agora</strong>. O <code>&amp;</code> indica que <code>1</code> é um canal, não um arquivo chamado "1".</dd>
+</dl>
+
+<pre class="term">$ ls Documentos nada &gt; tudo.txt 2&gt;&amp;1
+$ cat tudo.txt
+ls: não foi possível acessar 'nada': Arquivo ou diretório inexistente    « o erro também entrou
+Documentos:
+acesso.log
+alunos.csv
+notas.txt
+projetos
+relatorio.odt</pre>
+
+<p>O Bash tem um atalho que faz a mesma coisa: <code>&amp;&gt;</code> (e <code>&amp;&gt;&gt;</code> para acrescentar).</p>
+
+<pre class="term">$ ls Documentos nada &amp;&gt; tudo2.txt
+$ cmp tudo.txt tudo2.txt &amp;&amp; echo iguais
+iguais</pre>
+
+<div class="warning">
+<strong>A ordem importa</strong>
+<p><code>comando 2&gt;&amp;1 &gt; arquivo</code> <strong>não</strong> junta os dois. O <code>2&gt;&amp;1</code> é lido primeiro, quando o 1 ainda aponta para a tela. Então o erro continua na tela, e só a saída vai para o arquivo. Escreva sempre <code>&gt; arquivo 2&gt;&amp;1</code>.</p>
+</div>
+
+<p>O contrário também existe: <code>&gt;&amp;2</code> manda a saída de um comando para o canal de <strong>erro</strong>. É assim que os scripts escrevem as suas mensagens de erro: <code>echo "arquivo não encontrado" &gt;&amp;2</code>.</p>
+
+<hr>
+
+<h2>Ler a entrada de um arquivo: <code>&lt;</code></h2>
+<p>O <code>&lt;</code> faz o caminho contrário: em vez do teclado, a entrada (canal 0) vem de um arquivo. Muitos comandos aceitam o nome do arquivo direto, mas há uma diferença sutil:</p>
+
+<pre class="term">$ wc -l frutas.txt
+8 frutas.txt                 « o wc abriu o arquivo e sabe o nome dele
+$ wc -l &lt; frutas.txt
+8                            « o wc só recebeu o conteúdo, sem nome</pre>
+
+<p>(São 8 linhas porque acrescentamos o kiwi lá em cima.) A segunda forma é ótima para scripts, quando você quer só o número:</p>
+
+<pre class="term">$ echo "Tenho $(wc -l &lt; frutas.txt) frutas na lista"
+Tenho 8 frutas na lista</pre>
+
+<h3>De volta à lista de pacotes</h3>
+<p>O <code>pacman</code> aceita um <code>-</code> no lugar dos nomes, que quer dizer "leia os nomes da entrada padrão". Junto com <code>&lt;</code>, ele instala a lista que você salvou com <code>pacman -Qqe &gt; pacotes.txt</code>. O <code>--needed</code> pula o que já está instalado. Num sistema que já tem tudo, a resposta é esta (aqui com uma lista curta, de três pacotes):</p>
+
+<pre class="term">$ printf "base\nbash\nsed\n" &gt; tres.txt
+$ sudo pacman -S --needed - &lt; tres.txt
+[sudo] senha para ana:
+atenção: base-3-3 está atualizado -- ignorando
+atenção: bash-5.3.20-1 está atualizado -- ignorando
+atenção: sed-4.10-2 está atualizado -- ignorando
+nada para fazer</pre>
+
+<p>Numa instalação nova, o mesmo comando instalaria tudo de uma vez. A Arch Wiki chama isso de "reinstalar a partir de uma lista" (link no fim da página).</p>
+
+<h2>Texto no próprio comando: here-doc e here-string</h2>
+<p>O <strong>here-doc</strong> ("documento aqui") envia várias linhas digitadas como entrada. Ele começa com <code>&lt;&lt;FIM</code> e termina na linha que tem <strong>só</strong> <code>FIM</code>. Junto com <code>&gt;</code>, é a forma mais prática de criar um arquivo de várias linhas dentro de um script.</p>
+
+<dl class="anatomy">
+  <dt>cat</dt><dd>Repete o que recebe.</dd>
+  <dt>&lt;&lt;FIM</dt><dd>"A entrada são as próximas linhas, até aparecer FIM." O nome <code>FIM</code> é livre; <code>EOF</code> (<em>end of file</em>) é o mais comum.</dd>
+  <dt>&gt; config.txt</dt><dd>Grava o resultado no arquivo.</dd>
+</dl>
+
+<pre class="term">$ cat &lt;&lt;FIM &gt; config.txt
+&gt; nome=loja
+&gt; porta=8080
+&gt; FIM
+$ cat config.txt
+nome=loja
+porta=8080</pre>
+
+<p>O <code>&gt;</code> no começo das linhas do meio é o prompt de continuação do Bash. Você não digita esse sinal. Dentro do here-doc, as variáveis são trocadas pelo valor; com o nome entre aspas (<code>&lt;&lt;'EOF'</code>), o texto vai exatamente como está:</p>
+
+<pre class="term">$ cat &lt;&lt;EOF
+&gt; Usuária: $USER
+&gt; EOF
+Usuária: ana
+$ cat &lt;&lt;'EOF'
+&gt; Usuária: $USER
+&gt; EOF
+Usuária: $USER</pre>
+
+<p>A <strong>here-string</strong>, <code>&lt;&lt;&lt;</code>, manda uma única linha:</p>
+
+<pre class="term">$ tr a-z A-Z &lt;&lt;&lt; "ola mundo"
+OLA MUNDO</pre>
+
+<h3>Formas diferentes de criar um arquivo com texto</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Melhor quando…</th></tr>
+<tr><td><code>echo</code> + <code>&gt;</code></td><td><code>echo "porta=80" &gt; app.conf</code></td><td>É uma linha só.</td></tr>
+<tr><td><code>printf</code> + <code>&gt;</code></td><td><code>printf "a\nb\n" &gt; lista.txt</code></td><td>São poucas linhas e você quer controlar as quebras.</td></tr>
+<tr><td>here-doc</td><td><code>cat &lt;&lt;EOF &gt; app.conf … EOF</code></td><td>São várias linhas, dentro de um script.</td></tr>
+<tr><td><code>sudo tee</code></td><td><code>echo "x" | sudo tee /etc/app.conf</code></td><td>O arquivo é do root (veja abaixo).</td></tr>
+<tr><td>Editor</td><td><code>nano app.conf</code></td><td>Você vai digitar e revisar com calma (<a href="editores.html">nano e vim</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Gravar num arquivo do root: <code>sudo tee</code></h2>
+<p>Este é um dos erros mais comuns de quem está começando. A ana quer acrescentar um apelido de rede no <code>/etc/hosts</code>, que é do root:</p>
+
+<pre class="term">$ ls -l /etc/hosts
+-rw-r--r-- 1 root root 119 12 out  2025 /etc/hosts    « só o root escreve
+$ echo "192.168.0.50 servidor" &gt;&gt; /etc/hosts
+bash: /etc/hosts: Permissão negada
+$ sudo echo "192.168.0.50 servidor" &gt;&gt; /etc/hosts
+bash: /etc/hosts: Permissão negada                     « nem com sudo!</pre>
+
+<p>Por que o <code>sudo</code> não resolveu? Repare que quem reclama é o <code>bash:</code>, não o <code>sudo</code>. Quem abre o arquivo para escrever é o <strong>seu shell</strong>, que roda como a ana, e ele faz isso <strong>antes</strong> de rodar o comando. O <code>sudo</code> só eleva o <code>echo</code>, que não precisa de poder nenhum. O <code>&gt;&gt;</code> ficou de fora.</p>
+
+<pre class="syntax">  sudo echo "…"  &gt;&gt; /etc/hosts
+  └─── root ───┘  └── ana (o shell) ──► Permissão negada</pre>
+
+<p>A solução é ter um programa <strong>rodando como root</strong> que escreva no arquivo. Esse programa é o <code>tee</code>: ele lê a entrada e grava num arquivo (e também mostra na tela). Com <code>sudo</code> na frente, quem abre o arquivo é o <code>tee</code> do root:</p>
+
+<dl class="anatomy">
+  <dt>echo "192.168.0.50 servidor"</dt><dd>Produz a linha, como a ana (não precisa de root).</dd>
+  <dt>|</dt><dd>Um <a href="pipes.html">pipe</a>: a saída do echo vira a entrada do próximo comando.</dd>
+  <dt>sudo tee</dt><dd>O <code>tee</code>, rodando como root.</dd>
+  <dt>-a</dt><dd><em>append</em>: acrescenta no fim (como <code>&gt;&gt;</code>). <strong>Sem</strong> o <code>-a</code>, o tee substitui o arquivo (como <code>&gt;</code>)!</dd>
+  <dt>/etc/hosts</dt><dd>O arquivo do root.</dd>
+</dl>
+
+<pre class="term">$ echo "192.168.0.50 servidor" | sudo tee -a /etc/hosts
+[sudo] senha para ana:
+192.168.0.50 servidor               « o tee mostra o que gravou
+$ tail -n 1 /etc/hosts
+192.168.0.50 servidor</pre>
+
+<p class="tip">No laboratório, o <code>/etc/hosts</code> é compartilhado, então este <code>sudo tee -a</code> foi feito num arquivo de teste do root, com a mesma saída (a sessão acima é <strong>ilustrativa</strong> quanto ao caminho). No primeiro <code>sudo</code> de um Arch novo, antes da senha aparece o "sermão" do sudo ("Presumimos que você recebeu as instruções de sempre…"). Para não ver a linha repetida na tela, acrescente <code>&gt; /dev/null</code> no fim: <code>echo "…" | sudo tee -a /etc/hosts &gt; /dev/null</code>.</p>
+
+<div class="try" data-goal="contains:/etc/hosts=192.168.0.50 servidor" data-solucao="echo &quot;192.168.0.50 servidor&quot; | sudo tee -a /etc/hosts" data-stdin="ana">
+<p class="try-task"><strong>Missão (simulada, nada muda no seu computador):</strong> acrescente a linha <code>192.168.0.50 servidor</code> ao fim do <code>/etc/hosts</code>. Tente primeiro com <code>&gt;&gt;</code> para ver o erro; depois faça do jeito certo. A senha da ana é <code>ana</code>.</p>
+</div>
+
+<h3>Outras formas de gravar como root</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Observação</th></tr>
+<tr><td><code>sudo tee -a</code></td><td><code>echo "x" | sudo tee -a /etc/arq</code></td><td>A mais usada na Arch Wiki. Acrescenta.</td></tr>
+<tr><td><code>sudo tee</code></td><td><code>echo "x" | sudo tee /etc/arq</code></td><td>Substitui o arquivo inteiro. Cuidado.</td></tr>
+<tr><td><code>sudo sh -c</code></td><td><code>sudo sh -c 'echo "x" &gt;&gt; /etc/arq'</code></td><td>Um shell inteiro como root; o <code>&gt;&gt;</code> vai <strong>dentro</strong> das aspas.</td></tr>
+<tr><td><code>sudoedit</code> / editor</td><td><code>sudoedit /etc/arq</code></td><td>Para editar com calma (veja <a href="sudo-usuarios.html">sudo</a>).</td></tr>
+<tr><td><code>sudo sed -i</code></td><td><code>sudo sed -i.bak 's/a/b/' /etc/arq</code></td><td>Para trocar algo que já existe (<a href="sed.html">sed</a>).</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong><code>tee</code> sem <code>-a</code> apaga o arquivo</strong>
+<p><code>echo "x" | sudo tee /etc/pacman.conf</code> deixaria o seu <code>pacman.conf</code> com uma única linha "x" — e o pacman deixaria de funcionar. Em arquivos do sistema, confira duas vezes se o <code>-a</code> está lá, ou faça um backup antes (<code>sudo cp /etc/arq /etc/arq.bak</code>).</p>
+</div>
+
+<hr>
+
+<h2>Quando não funciona</h2>
+
+<div class="cenario">
+<strong>O arquivo ficou vazio</strong>
+<pre class="term">$ sort frutas.txt &gt; frutas.txt
+$ cat frutas.txt
+$ wc -l frutas.txt
+0 frutas.txt                      « o arquivo foi esvaziado</pre>
+<p><strong>O que aconteceu:</strong> o <code>&gt;</code> esvaziou <code>frutas.txt</code> antes de o <code>sort</code> ler.</p>
+<p><strong>Como resolver:</strong> grave em outro arquivo e depois renomeie: <code>sort frutas.txt &gt; ordenado.txt &amp;&amp; mv ordenado.txt frutas.txt</code>. O conteúdo perdido não volta, a não ser que você tenha backup (ou snapshots, veja <a href="snapshots.html">Snapshots</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"impossível sobrescrever arquivo existente"</strong>
+<pre class="term">$ echo "teste" &gt; tudo.txt
+bash: tudo.txt: impossível sobrescrever arquivo existente</pre>
+<p><strong>O que aconteceu:</strong> a proteção <code>noclobber</code> está ligada (alguém rodou <code>set -o noclobber</code> ou colocou isso no <code>~/.bashrc</code>).</p>
+<p><strong>Como confirmar:</strong> <code>set -o | grep noclobber</code> mostra <code>on</code>.</p>
+<p><strong>Como resolver:</strong> se tiver certeza, force com <code>&gt;|</code>: <code>echo "teste" &gt;| tudo.txt</code>. Para desligar a proteção: <code>set +o noclobber</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>"Arquivo ou diretório inexistente" ao gravar</strong>
+<pre class="term">$ ls &gt; relatorios/hoje.txt
+bash: relatorios/hoje.txt: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> o <code>&gt;</code> cria o arquivo, mas <strong>não cria pastas</strong>. A pasta <code>relatorios</code> não existe.</p>
+<p><strong>Como resolver:</strong> <code>mkdir -p relatorios</code> e repita o comando (veja <a href="criar.html">touch e mkdir</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>"Permissão negada" mesmo com sudo</strong>
+<pre class="term">$ sudo echo "192.168.0.50 servidor" &gt;&gt; /etc/hosts
+bash: /etc/hosts: Permissão negada</pre>
+<p><strong>O que aconteceu:</strong> o redirecionamento é feito pelo seu shell (a ana), não pelo <code>sudo</code>. A mensagem começa com <code>bash:</code>, o que confirma que quem falhou foi o shell.</p>
+<p><strong>Como resolver:</strong> <code>echo "…" | sudo tee -a /etc/hosts</code>, ou <code>sudo sh -c 'echo "…" &gt;&gt; /etc/hosts'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usei <code>2&gt;&amp;1</code> e o erro continuou na tela</strong>
+<pre class="term">$ ls Documentos nada 2&gt;&amp;1 &gt; tudo.txt
+ls: não foi possível acessar 'nada': Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> a ordem está trocada. Quando o <code>2&gt;&amp;1</code> foi lido, o canal 1 ainda era a tela.</p>
+<p><strong>Como resolver:</strong> <code>ls Documentos nada &gt; tudo.txt 2&gt;&amp;1</code>, ou o atalho <code>&amp;&gt; tudo.txt</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Escrevi <code>2 &gt; erros.txt</code> (com espaço)</strong>
+<p><strong>O que aconteceu:</strong> com espaço, o <code>2</code> deixa de ser o número do canal e vira um <strong>argumento</strong> do comando. <code>ls nada 2 &gt; erros.txt</code> procura um arquivo chamado "2", e o erro continua na tela.</p>
+<p><strong>Como resolver:</strong> escreva <code>2&gt;</code> grudado.</p>
+</div>
+
+<hr>
+
+<h2>Referência</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>&gt;</code></td><td>Saída para arquivo (substitui)</td><td><code>pacman -Qqe &gt; pacotes.txt</code></td></tr>
+<tr><td><code>&gt;&gt;</code></td><td>Saída para arquivo (acrescenta)</td><td><code>echo "x" &gt;&gt; log.txt</code></td></tr>
+<tr><td><code>2&gt;</code></td><td>Erros para arquivo (substitui)</td><td><code>cmd 2&gt; erros.txt</code></td></tr>
+<tr><td><code>2&gt;&gt;</code></td><td>Erros para arquivo (acrescenta)</td><td><code>cmd 2&gt;&gt; erros.txt</code></td></tr>
+<tr><td><code>&gt; arq 2&gt;&amp;1</code></td><td>Saída e erros no mesmo arquivo</td><td><code>cmd &gt; tudo.log 2&gt;&amp;1</code></td></tr>
+<tr><td><code>&amp;&gt;</code> / <code>&amp;&gt;&gt;</code></td><td>Atalho do Bash para o anterior (substitui / acrescenta)</td><td><code>cmd &amp;&gt; tudo.log</code></td></tr>
+<tr><td><code>&gt;&amp;2</code></td><td>Manda a saída para o canal de erro</td><td><code>echo "falhou" &gt;&amp;2</code></td></tr>
+<tr><td><code>2&gt;/dev/null</code></td><td>Descarta os erros</td><td><code>pacman -Q x 2&gt;/dev/null</code></td></tr>
+<tr><td><code>&gt;/dev/null</code></td><td>Descarta a saída</td><td><code>cmd &gt;/dev/null</code></td></tr>
+<tr><td><code>&lt;</code></td><td>Entrada a partir de arquivo</td><td><code>wc -l &lt; frutas.txt</code></td></tr>
+<tr><td><code>&lt;&lt;EOF</code></td><td>Here-doc: várias linhas como entrada</td><td><code>cat &lt;&lt;EOF &gt; a.txt</code></td></tr>
+<tr><td><code>&lt;&lt;&lt;</code></td><td>Here-string: uma linha como entrada</td><td><code>tr a-z A-Z &lt;&lt;&lt; "oi"</code></td></tr>
+<tr><td><code>&gt;|</code></td><td>Sobrescreve mesmo com <code>noclobber</code></td><td><code>echo x &gt;| a.txt</code></td></tr>
+<tr><td><code>| sudo tee -a</code></td><td>Acrescenta num arquivo do root</td><td><code>echo x | sudo tee -a /etc/arq</code></td></tr>
+</table>
+</div>
+
+<div class="try" data-goal="contains:~/log.txt=nada,contains:~/log.txt=acesso.log,contains:~/pacotes.txt=base-devel" data-solucao="pacman -Qqe &gt; pacotes.txt;;ls Documentos nada &gt; log.txt 2&gt;&amp;1">
+<p class="try-task"><strong>Missão final:</strong> (1) grave em <code>pacotes.txt</code> a lista dos pacotes instalados explicitamente (<code>pacman -Qqe</code>). (2) Rode <code>ls Documentos nada</code> gravando <strong>saída e erro juntos</strong> em <code>log.txt</code>. Confira os dois arquivos com <code>cat</code>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Acrescentar sem apagar</h3>
+<p>Complete para adicionar a linha "reunião às 15h" ao fim de <code>agenda.txt</code>, sem perder o que já está lá:</p>
+<div class="ex-code">echo "reunião às 15h" <input data-answer="&gt;&gt;" aria-label="operador"> agenda.txt</div>
+</div>
+
+<div class="exercise">
+<h3>2. Esconder os erros</h3>
+<p>Complete para ver a primeira linha dos arquivos sem as mensagens de "Permissão negada":</p>
+<div class="ex-code">head -n 1 /etc/hostname /etc/shadow <input data-answer="2&gt;/dev/null" aria-label="redirecionamento"></div>
+</div>
+
+<div class="exercise">
+<h3>3. Tudo no mesmo log</h3>
+<p>Complete para gravar saída e erros de <code>./backup.sh</code> no arquivo <code>backup.log</code>:</p>
+<div class="ex-code">./backup.sh &gt; backup.log <input data-answer="2&gt;&amp;1" aria-label="redirecionamento"></div>
+</div>
+
+<div class="exercise">
+<h3>4. Arquivo do root</h3>
+<p>Complete para acrescentar uma linha ao <code>/etc/hosts</code> como root:</p>
+<div class="ex-code">echo "10.0.0.5 nas" | sudo <input data-answer="tee -a" aria-label="comando e opção"> /etc/hosts</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Você rodou <code>ls Documentos nada &gt; saida.txt</code>. O que acontece com a mensagem de erro sobre "nada"?</p>
+<label><input type="radio" name="q5"> Vai para o arquivo saida.txt.</label>
+<label><input type="radio" name="q5"> Aparece na tela, porque o <code>&gt;</code> só redireciona o canal 1.</label>
+<label><input type="radio" name="q5"> É descartada.</label>
+<label><input type="radio" name="q5"> O comando inteiro falha e nada é gravado.</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A ana rodou <code>sudo echo "x" &gt; /etc/teste</code> e recebeu "bash: /etc/teste: Permissão negada". Por quê?</p>
+<label><input type="radio" name="q6"> Porque o echo não pode ser usado com sudo.</label>
+<label><input type="radio" name="q6"> Porque a senha estava errada.</label>
+<label><input type="radio" name="q6"> Porque /etc não aceita arquivos novos.</label>
+<label><input type="radio" name="q6"> Porque quem abre o arquivo é o shell da ana, antes do sudo rodar; o sudo só elevou o echo.</label>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todo comando tem três canais: <code>0</code> (entrada), <code>1</code> (saída) e <code>2</code> (erro).</li>
+  <li><code>&gt;</code> grava substituindo, <code>&gt;&gt;</code> grava acrescentando. Os dois criam o arquivo, mas não a pasta. <code>noclobber</code> protege contra o <code>&gt;</code>.</li>
+  <li><code>2&gt;</code> mexe só nos erros; <code>2&gt;/dev/null</code> joga os erros fora; o código de saída continua valendo.</li>
+  <li>Para juntar tudo: <code>&gt; arquivo 2&gt;&amp;1</code>, nessa ordem, ou <code>&amp;&gt; arquivo</code>.</li>
+  <li><code>&lt;</code> usa um arquivo como entrada; <code>pacman -Qqe &gt; lista</code> e <code>pacman -S --needed - &lt; lista</code> salvam e restauram seus pacotes.</li>
+  <li>Para escrever em arquivos do root: <code>echo … | sudo tee -a /etc/arq</code>. <code>sudo echo … &gt; /etc/arq</code> não funciona.</li>
+</ul>
+
+<p><strong>Na Arch Wiki:</strong> o redirecionamento é um recurso do shell, descrito em <a href="https://wiki.archlinux.org/title/Bash">Bash</a> (<a href="https://wiki.archlinux.org/title/Bash_(Portugu%C3%AAs)">em português</a>) e, em detalhes, no manual do Bash (<code>man bash</code>, seção REDIRECTION). O truque de salvar e restaurar a lista de pacotes está em <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#List_of_installed_packages">pacman/Tips and tricks — List of installed packages</a> e <a href="https://wiki.archlinux.org/title/Pacman/Tips_and_tricks#Install_packages_from_a_list">Install packages from a list</a>. A Wiki usa <code>echo … | sudo tee</code> em muitos comandos; o <code>sudo</code> em si está em <a href="https://wiki.archlinux.org/title/Sudo">Sudo</a> (<a href="https://wiki.archlinux.org/title/Sudo_(Portugu%C3%AAs)">em português</a>).</p>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
