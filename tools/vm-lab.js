@@ -15,7 +15,7 @@
 */
 "use strict";
 var cp = require("child_process"), path = require("path");
-var VM = path.join(process.env.HOME || "/home/wallyson", "guia-arch-lab", "vm");
+var VM = path.join(process.env.HOME || "/home/ana", "guia-arch-lab", "vm");
 
 var DRIVER = [
   'set +o histexpand',

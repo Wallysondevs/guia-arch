@@ -21,7 +21,7 @@
 var fs = require("fs"), path = require("path"), zlib = require("zlib"), cp = require("child_process");
 var RAIZ = path.join(__dirname, "..");
 var VMDIR = path.join(__dirname, "vm");
-var VM = path.join(process.env.HOME || "/home/wallyson", "guia-arch-lab", "vm");
+var VM = path.join(process.env.HOME || "/home/ana", "guia-arch-lab", "vm");
 
 if (process.argv.indexOf("--extrair") >= 0) {
   [["extrair-pacman.py", "pacman.json", []], ["extrair-sistema.py", "sistema.json", ["-u", "root"]], ["extrair-home.py", "home.json", []]].forEach(function (x) {
