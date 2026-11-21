@@ -25,6 +25,7 @@ CONTRIBUINDO.md            como escrever uma aula (e os fatos já conferidos na 
 ```bash
 node tools/testar-missoes.js --sem-lab   # todas as missões no simulador
 node tools/testar-missoes.js             # comparando com a VM real (precisa do laboratório)
+bash tools/checar-privacidade.sh             # páginas e histórico; lista extra: PROIBIDO=lista.txt
 ```
 
 ## Publicar no GitHub Pages
