@@ -86,7 +86,7 @@
 
 <pre class="term" data-host="archiso" data-user="root">#> ip -brief link
 lo               UNKNOWN        00:00:00:00:00:00 &lt;LOOPBACK,UP,LOWER_UP&gt;
-wlan0            DOWN           3c:a9:f4:12:34:56 &lt;NO-CARRIER,BROADCAST,MULTICAST,UP&gt;
+wlan0            DOWN           02:00:00:00:00:04 &lt;NO-CARRIER,BROADCAST,MULTICAST,UP&gt;
 enp0s20f0u2      UP             02:00:00:00:00:03 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;   « o celular
 </pre>
 
@@ -389,7 +389,7 @@ IDX LINK   TYPE               OPERATIONAL SETUP
 
 <pre class="term" data-host="archiso" data-user="root">#> ip -brief address
 lo               UNKNOWN        127.0.0.1/8 ::1/128
-enp0s3           UP             10.0.2.15/24 metric 100 fd17:625c:f037:2:a00:27ff:fe3e:4495/64 …   « cabo: métrica 100
+enp0s3           UP             10.0.2.15/24 metric 100 fd17:625c:f037:2:0:ff:fe00:2/64 …   « cabo: métrica 100
 hwsim0           DOWN
 wlan0            UP             192.168.50.144/24 metric 600 fe80::ff:fe00:0/64                     « Wi-Fi: métrica 600
 wlan1            UP             192.168.50.1/24 fe80::ff:fe00:100/64
