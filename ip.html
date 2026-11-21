@@ -132,8 +132,8 @@ enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621
     inet6 ::1/128 scope host noprefixroute
        valid_lft forever preferred_lft forever
 2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000   « placa 2
-    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff                                                    « MAC
-    altname enx08002774b203                                                                               « outro nome
+    link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff                                                    « MAC
+    altname enx020000000001                                                                               « outro nome
     inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3                            « o IPv4
        valid_lft 86267sec preferred_lft 86267sec                                                          « validade
     inet6 fd17:625c:f037:2:3074:376a:4fe9:621c/64 scope global dynamic noprefixroute
@@ -151,8 +151,8 @@ enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621
 <tr><td><code>mtu 1500</code></td><td>Tamanho máximo de cada pacote, em bytes. 1500 é o padrão das redes com cabo.</td></tr>
 <tr><td><code>qdisc fq_codel</code></td><td>A "fila" que organiza os pacotes que saem. Pode ignorar.</td></tr>
 <tr><td><code>state UP</code></td><td>O estado do enlace (a mesma coluna do <code>-br</code>).</td></tr>
-<tr><td><code>link/ether 08:00:27:74:b2:03</code></td><td>O endereço físico (<strong>MAC</strong>) da placa, gravado de fábrica. <code>brd ff:ff:…</code> é o endereço "para todos".</td></tr>
-<tr><td><code>altname enx08002774b203</code></td><td>Um nome alternativo da mesma placa, montado a partir do MAC. Os dois nomes funcionam.</td></tr>
+<tr><td><code>link/ether 02:00:00:00:00:01</code></td><td>O endereço físico (<strong>MAC</strong>) da placa. Neste exemplo começa com <code>02:</code> (administrado localmente, não gravado de fábrica). <code>brd ff:ff:…</code> é o endereço "para todos".</td></tr>
+<tr><td><code>altname enx020000000001</code></td><td>Um nome alternativo da mesma placa, montado a partir do MAC. Os dois nomes funcionam.</td></tr>
 <tr><td><code>inet 10.0.2.15/24</code></td><td>O endereço <strong>IPv4</strong> e o tamanho da rede (<code>/24</code> = máscara <code>255.255.255.0</code>).</td></tr>
 <tr><td><code>brd 10.0.2.255</code></td><td>Endereço de <em>broadcast</em>: falar com todos da rede local de uma vez.</td></tr>
 <tr><td><code>scope global</code></td><td>Vale fora da máquina (o <code>127.0.0.1</code> é <code>scope host</code>: só dentro dela).</td></tr>
@@ -166,7 +166,7 @@ enp0s3           UP             10.0.2.15/24 fd17:625c:f037:2:3074:376a:4fe9:621
 
 <pre class="term">$ ip -4 a show enp0s3
 2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP group default qlen 1000
-    altname enx08002774b203
+    altname enx020000000001
     inet 10.0.2.15/24 brd 10.0.2.255 scope global dynamic noprefixroute enp0s3
        valid_lft 85726sec preferred_lft 85726sec</pre>
 
@@ -185,11 +185,11 @@ $ echo $?
 1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
 2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
-    altname enx08002774b203
+    link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+    altname enx020000000001
 $ ip -br link
 lo               UNKNOWN        00:00:00:00:00:00 &lt;LOOPBACK,UP,LOWER_UP&gt;
-enp0s3           UP             08:00:27:74:b2:03 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;      « nome, estado, MAC, bandeiras</pre>
+enp0s3           UP             02:00:00:00:00:01 &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt;      « nome, estado, MAC, bandeiras</pre>
 
 <p>Num notebook, se a placa Wi-Fi <strong>não aparece</strong> no <code>ip link</code>, o kernel não a reconheceu (falta driver ou firmware). Se aparece mas está <code>DOWN</code>, ela existe e só não está conectada.</p>
 
@@ -198,12 +198,12 @@ enp0s3           UP             08:00:27:74:b2:03 &lt;BROADCAST,MULTICAST,UP,LOW
 
 <pre class="term">$ ip -s link show enp0s3
 2: enp0s3: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-    link/ether 08:00:27:74:b2:03 brd ff:ff:ff:ff:ff:ff
+    link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
     RX:  bytes packets errors dropped  missed   mcast
          81168     544      0       0       0       1     « recebidos
     TX:  bytes packets errors dropped carrier collsns
         118642     486      0       0       0       0     « enviados
-    altname enx08002774b203</pre>
+    altname enx020000000001</pre>
 
 <p><strong>RX</strong> (de <em>receive</em>) é o que chegou e <strong>TX</strong> (de <em>transmit</em>), o que saiu. Números crescendo em <code>errors</code> ou <code>dropped</code> indicam cabo ruim, placa com defeito ou Wi-Fi fraco.</p>
 
@@ -558,7 +558,7 @@ Try 'hostname --help' or 'hostname --usage' for more information.</pre>
 <p class="try-task"><strong>Missão 2:</strong> descubra o <strong>gateway</strong> da máquina: mostre a tabela de rotas e encontre a linha <code>default</code>.</p>
 </div>
 
-<div class="try" data-goal="ran:^\s*ip\s+(-\S+\s+)*l(ink)?\b,out:08:00:27:74:b2:03" data-solucao="ip -br link">
+<div class="try" data-goal="ran:^\s*ip\s+(-\S+\s+)*l(ink)?\b,out:02:00:00:00:00:01" data-solucao="ip -br link">
 <p class="try-task"><strong>Missão 3:</strong> qual é o endereço físico (MAC) da placa <code>enp0s3</code>? Use o objeto do <code>ip</code> que mostra as placas sem os IPs.</p>
 </div>
 
